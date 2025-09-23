@@ -1,2 +1,2 @@
 console.log("Hello world");
-console.log("Hello Dang Gia Bao");
+console.log("tuitenlagiahuydeptraiso1tg");
