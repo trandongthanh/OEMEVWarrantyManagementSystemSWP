@@ -90,12 +90,12 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
   ];
 
   const colors = [
-    'Trắng Ngọc Trai',
-    'Đen Obsidian', 
-    'Xanh Navy',
-    'Bạc Metallic',
-    'Đỏ Cherry',
-    'Xám Titan'
+    'Pearl White',
+    'Obsidian Black', 
+    'Navy Blue',
+    'Metallic Silver',
+    'Cherry Red',
+    'Titan Gray'
   ];
 
   const batteryOptions = [
@@ -136,6 +136,9 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
     }
   };
 
+  
+  
+
   const calculateWarrantyDates = (purchaseDate: string) => {
     if (!purchaseDate) return;
     
@@ -170,14 +173,14 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
       <Card className="w-full max-w-3xl max-h-[90vh] overflow-hidden">
-        <CardHeader className="border-b">
+        <CardHeader className="border-b pb-2">
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center space-x-2">
                 <Car className="h-5 w-5 text-primary" />
                 <span>Register New Vehicle</span>
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="mt-1 ml-3">
                 Register a new electric vehicle and link to customer
               </CardDescription>
             </div>
@@ -194,13 +197,13 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
               { number: 3, title: 'Warranty' }
             ].map((step) => (
               <div key={step.number} className="flex items-center space-x-2">
-                <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
+                <div className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-medium ${
                   currentStep >= step.number 
                     ? 'bg-primary text-primary-foreground' 
                     : 'bg-muted text-muted-foreground'
                 }`}>
                   {currentStep > step.number ? (
-                    <CheckCircle className="h-4 w-4" />
+                    <CheckCircle className="h-5 w-5" />
                   ) : (
                     step.number
                   )}
@@ -225,7 +228,7 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
                     onChange={(e) => setVehicleData(prev => ({ ...prev, vin: e.target.value.toUpperCase() }))}
                     maxLength={17}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-xs text-muted-foreground mt-1 ml-2">
                     Vehicle Identification Number (17 characters)
                   </p>
                 </div>
@@ -259,7 +262,6 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
                 </div>
               </div>
 
-              {/* Customer Search */}
               <div className="space-y-4">
                 <Label>Link to Customer</Label>
                 <div className="flex space-x-2">
@@ -292,25 +294,6 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
                     </CardContent>
                   </Card>
                 )}
-
-                {/* Demo Search Helper */}
-                <Card className="bg-accent/20">
-                  <CardContent className="pt-4">
-                    <p className="text-sm font-medium mb-2">Demo customers to search:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {mockCustomers.map((customer) => (
-                        <Badge 
-                          key={customer.id}
-                          variant="outline" 
-                          className="cursor-pointer hover:bg-primary hover:text-primary-foreground"
-                          onClick={() => setCustomerSearch(customer.name)}
-                        >
-                          {customer.name}
-                        </Badge>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
               </div>
             </div>
           )}
