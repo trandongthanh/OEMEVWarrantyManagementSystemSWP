@@ -23,68 +23,8 @@ const CaseManagement = ({ onViewCase, onCreateCase }: CaseManagementProps) => {
   const [dateFrom, setDateFrom] = useState<Date>();
   const [dateTo, setDateTo] = useState<Date>();
 
-  const mockCases = [
-    {
-      id: "WC-2024-001",
-      customer: "Nguyễn Văn A",
-      vin: "1HGBH41JXMN109186",
-      status: "pending",
-      dateCreated: "2024-01-15",
-      lastUpdated: "2024-01-16",
-      assignedTech: "Trần Minh B",
-      finalCost: null,
-      issue: "Battery Performance Issue",
-      priority: "high"
-    },
-    {
-      id: "WC-2024-002",
-      customer: "Lê Thị C",
-      vin: "WVWZZZ1JZ3W386752",
-      status: "approved",
-      dateCreated: "2024-01-14",
-      lastUpdated: "2024-01-16",
-      assignedTech: "Phạm Văn D",
-      finalCost: 2500000,
-      issue: "Motor Controller Fault",
-      priority: "critical"
-    },
-    {
-      id: "WC-2024-003",
-      customer: "Hoàng Minh E",
-      vin: "1N4AL11D75C109151",
-      status: "in-progress",
-      dateCreated: "2024-01-13",
-      lastUpdated: "2024-01-16",
-      assignedTech: "Võ Thị F",
-      finalCost: null,
-      issue: "Charging System Error",
-      priority: "medium"
-    },
-    {
-      id: "WC-2024-004",
-      customer: "Trần Văn G",
-      vin: "JM1BK32F781234567",
-      status: "completed",
-      dateCreated: "2024-01-10",
-      lastUpdated: "2024-01-15",
-      assignedTech: "Nguyễn Thị H",
-      finalCost: 1800000,
-      issue: "DC-DC Converter Replacement",
-      priority: "low"
-    },
-    {
-      id: "WC-2024-005",
-      customer: "Phạm Thị I",
-      vin: "WVWZZZ1JZ3W123456",
-      status: "rejected",
-      dateCreated: "2024-01-12",
-      lastUpdated: "2024-01-14",
-      assignedTech: "Lê Văn K",
-      finalCost: null,
-      issue: "Cosmetic Paint Issue",
-      priority: "low"
-    }
-  ];
+  // In real app, data would come from API
+  const mockCases: any[] = [];
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
@@ -132,14 +72,14 @@ const CaseManagement = ({ onViewCase, onCreateCase }: CaseManagementProps) => {
   };
 
   const filteredCases = mockCases.filter(caseItem => {
-    const matchesSearch = 
+    const matchesSearch =
       caseItem.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       caseItem.vin.toLowerCase().includes(searchTerm.toLowerCase()) ||
       caseItem.customer.toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     const matchesStatus = statusFilter === "all" || caseItem.status === statusFilter;
     const matchesTechnician = technicianFilter === "all" || caseItem.assignedTech === technicianFilter;
-    
+
     return matchesSearch && matchesStatus && matchesTechnician;
   });
 

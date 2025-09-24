@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { 
+import {
   CheckCircle,
   X,
   Eye,
@@ -35,39 +35,8 @@ const ClaimReviewInterfacePro = () => {
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [pendingRejectReportId, setPendingRejectReportId] = useState("");
 
-  // Mock data for pending claims queue
-  const pendingClaims = [
-    {
-      id: "WC-25-09-001",
-      serviceCenter: "VinFast Service Center Hanoi",
-      customer: "Nguyễn Văn An",
-      vin: "VF8ABC123456789",
-      model: "VF8 Plus",
-      dateSubmitted: "2025-01-17",
-      priority: "high",
-      reportsCount: 2
-    },
-    {
-      id: "WC-25-09-006",
-      serviceCenter: "VinFast Service Center HCMC",
-      customer: "Trần Thị Bích",
-      vin: "VF9DEF456789012",
-      model: "VF9 Premium",
-      dateSubmitted: "2025-01-16",
-      priority: "medium",
-      reportsCount: 1
-    },
-    {
-      id: "WC-25-09-007",
-      serviceCenter: "VinFast Service Center Da Nang",
-      customer: "Lê Minh Hoàng",
-      vin: "VF8GHI789012345",
-      model: "VF8 Eco",
-      dateSubmitted: "2025-01-15",
-      priority: "low",
-      reportsCount: 3
-    }
-  ];
+  // In real app, data would be fetched from API
+  const pendingClaims: any[] = [];
 
   // Mock data for selected claim details
   const claimDetails = {
@@ -109,7 +78,7 @@ const ClaimReviewInterfacePro = () => {
       {
         id: "DR-002",
         title: "Charging System Analysis",
-        technician: "Trần Minh Bảo", 
+        technician: "Trần Minh Bảo",
         diagnosis: "Onboard charger operating within normal parameters. DC-DC converter efficiency at 94.2% (within spec). AC charging tested at 7.2kW with no faults detected. No hardware issues identified in charging system components.",
         requiredParts: [],
         photos: [
@@ -137,20 +106,20 @@ const ClaimReviewInterfacePro = () => {
     if (rejectReason.trim() && pendingRejectReportId) {
       setDecisions(prev => ({
         ...prev,
-        [pendingRejectReportId]: { 
-          reportId: pendingRejectReportId, 
+        [pendingRejectReportId]: {
+          reportId: pendingRejectReportId,
           status: 'rejected',
           rejectReason: rejectReason.trim()
         }
       }));
-      
+
       setRejectReason("");
       setPendingRejectReportId("");
       setIsRejectDialogOpen(false);
     }
   };
 
-  const canFinalize = claimDetails.diagnosticReports.every(report => 
+  const canFinalize = claimDetails.diagnosticReports.every(report =>
     decisions[report.id]?.status === 'approved' || decisions[report.id]?.status === 'rejected'
   );
 
@@ -173,7 +142,7 @@ const ClaimReviewInterfacePro = () => {
       medium: { className: "bg-warning/10 text-warning border-warning" },
       low: { className: "bg-muted text-muted-foreground border-muted-foreground" }
     };
-    
+
     const style = config[priority as keyof typeof config] || config.medium;
     return (
       <Badge variant="outline" className={`${style.className} text-xs capitalize`}>
@@ -190,14 +159,13 @@ const ClaimReviewInterfacePro = () => {
           <h2 className="text-xl font-bold">Claims Pending Review</h2>
           <p className="text-sm text-muted-foreground mt-1">{pendingClaims.length} claims awaiting decision</p>
         </div>
-        
+
         <div className="overflow-y-auto h-full pb-20">
           {pendingClaims.map((claim) => (
             <div
               key={claim.id}
-              className={`p-4 border-b cursor-pointer hover:bg-muted/50 transition-colors ${
-                selectedClaim === claim.id ? 'bg-primary/5 border-r-4 border-r-primary' : ''
-              }`}
+              className={`p-4 border-b cursor-pointer hover:bg-muted/50 transition-colors ${selectedClaim === claim.id ? 'bg-primary/5 border-r-4 border-r-primary' : ''
+                }`}
               onClick={() => setSelectedClaim(claim.id)}
             >
               <div className="space-y-2">
@@ -205,12 +173,12 @@ const ClaimReviewInterfacePro = () => {
                   <span className="font-mono text-sm font-medium text-primary">{claim.id}</span>
                   {getPriorityBadge(claim.priority)}
                 </div>
-                
+
                 <div>
                   <p className="font-medium text-sm">{claim.customer}</p>
                   <p className="text-xs text-muted-foreground">{claim.model} • {claim.vin}</p>
                 </div>
-                
+
                 <div className="text-xs text-muted-foreground">
                   <div className="flex items-center space-x-1">
                     <MapPin className="h-3 w-3" />
@@ -240,7 +208,7 @@ const ClaimReviewInterfacePro = () => {
               <h1 className="text-3xl font-bold">{claimDetails.id}</h1>
               <p className="text-muted-foreground">Submitted by {claimDetails.submittedBy} on {claimDetails.dateSubmitted}</p>
             </div>
-            <Button 
+            <Button
               size="lg"
               disabled={!canFinalize}
               onClick={handleFinalize}
@@ -266,17 +234,16 @@ const ClaimReviewInterfacePro = () => {
               {/* Diagnostic Reports for Review */}
               <div className="space-y-4">
                 <h2 className="text-2xl font-bold">Reports for Approval</h2>
-                
+
                 {claimDetails.diagnosticReports.map((report, index) => {
                   const status = getReportStatus(report.id);
                   const decision = decisions[report.id];
-                  
+
                   return (
-                    <Card key={report.id} className={`border-l-4 ${
-                      status === 'approved' ? 'border-l-success bg-success/5' :
-                      status === 'rejected' ? 'border-l-destructive bg-destructive/5' :
-                      'border-l-warning bg-warning/5'
-                    }`}>
+                    <Card key={report.id} className={`border-l-4 ${status === 'approved' ? 'border-l-success bg-success/5' :
+                        status === 'rejected' ? 'border-l-destructive bg-destructive/5' :
+                          'border-l-warning bg-warning/5'
+                      }`}>
                       <CardHeader className="pb-4">
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-lg">{report.title}</CardTitle>
@@ -303,7 +270,7 @@ const ClaimReviewInterfacePro = () => {
                         </div>
                         <CardDescription>By {report.technician}</CardDescription>
                       </CardHeader>
-                      
+
                       <CardContent className="space-y-4">
                         <div>
                           <h4 className="font-medium mb-2">Diagnosis</h4>
@@ -350,15 +317,15 @@ const ClaimReviewInterfacePro = () => {
 
                         {status === 'pending' && (
                           <div className="flex space-x-3 pt-4 border-t">
-                            <Button 
+                            <Button
                               onClick={() => handleApproveReport(report.id)}
                               className="flex-1 bg-success hover:bg-success/90 text-success-foreground"
                             >
                               <CheckCircle className="h-4 w-4 mr-2" />
                               Approve Report
                             </Button>
-                            <Button 
-                              variant="destructive" 
+                            <Button
+                              variant="destructive"
                               onClick={() => handleRejectReport(report.id)}
                               className="flex-1"
                             >
@@ -455,7 +422,7 @@ const ClaimReviewInterfacePro = () => {
                       </div>
                     ))}
                   </div>
-                  
+
                   {!canFinalize && (
                     <div className="mt-4 p-3 bg-warning/10 border border-warning/20 rounded-lg">
                       <div className="flex items-center space-x-2">
@@ -489,7 +456,7 @@ const ClaimReviewInterfacePro = () => {
                 required
               />
             </div>
-            
+
             <div className="flex space-x-3 pt-4">
               <Button
                 variant="outline"

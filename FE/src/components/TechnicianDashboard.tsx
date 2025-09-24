@@ -4,13 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
-import { 
-  Wrench, 
-  Clock, 
-  CheckCircle, 
-  AlertCircle, 
-  FileText, 
-  Package, 
+import {
+  Wrench,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  FileText,
+  Package,
   User,
   Search,
   LogOut,
@@ -37,68 +37,8 @@ const TechnicianDashboard = ({
   const [viewMode, setViewMode] = useState<"list" | "kanban">("kanban");
   const { user, logout } = useAuth();
 
-  const myTasks = [
-    {
-      id: "WC-2024-001",
-      customer: "Nguyễn Văn A",
-      vehicle: "VinFast VF8 2023",
-      vin: "1HGBH41JXMN109186",
-      issue: "Battery Performance Issue",
-      status: "in-progress",
-      priority: "high",
-      assignedDate: "2024-01-15",
-      dueDate: "2024-01-20",
-      progress: 60,
-      lastUpdate: "2024-01-16 14:30",
-      reportsSubmitted: 2,
-      partsWaiting: 1
-    },
-    {
-      id: "WC-2024-003",
-      customer: "Hoàng Minh E", 
-      vehicle: "VinFast VF9 2023",
-      vin: "1N4AL11D75C109151",
-      issue: "Charging System Error",
-      status: "blocked",
-      priority: "medium",
-      assignedDate: "2024-01-13",
-      dueDate: "2024-01-18",
-      progress: 30,
-      lastUpdate: "2024-01-14 09:15",
-      reportsSubmitted: 1,
-      partsWaiting: 2
-    },
-    {
-      id: "WC-2024-005",
-      customer: "Trần Thị K",
-      vehicle: "VinFast VF8 2023", 
-      vin: "WVWZZZ1JZ3W654321",
-      issue: "AC System Malfunction",
-      status: "todo",
-      priority: "low",
-      assignedDate: "2024-01-16",
-      dueDate: "2024-01-22",
-      progress: 0,
-      lastUpdate: "2024-01-16 08:00",
-      reportsSubmitted: 0,
-      partsWaiting: 0
-    },
-    {
-      id: "WC-2024-006",
-      customer: "Lê Văn M",
-      vehicle: "VinFast VF9 2023",
-      vin: "JM1BK32F787654321", 
-      issue: "Software Update Required",
-      status: "ready-for-handover",
-      priority: "medium",
-      assignedDate: "2024-01-10",
-      dueDate: "2024-01-15",
-      progress: 100,
-      lastUpdate: "2024-01-15 16:45",
-      reportsSubmitted: 1,
-      partsWaiting: 0
-    }
-  ];
+  // In real app, data would be fetched from API
+  const myTasks: any[] = [];
 
   const stats = [
     {
@@ -109,7 +49,7 @@ const TechnicianDashboard = ({
       color: "text-primary"
     },
     {
-      title: "In Progress", 
+      title: "In Progress",
       value: myTasks.filter(t => t.status === "in-progress").length.toString(),
       change: "Active work",
       icon: Wrench,
@@ -205,10 +145,10 @@ const TechnicianDashboard = ({
         <div className="space-y-3">
           <div>
             <p className="text-sm font-medium mb-2">{task.issue}</p>
-            
+
             {/* Progress Bar */}
             <div className="w-full bg-muted rounded-full h-2">
-              <div 
+              <div
                 className={`h-2 rounded-full transition-all ${getProgressColor(task.progress)}`}
                 style={{ width: `${task.progress}%` }}
               />
@@ -235,9 +175,9 @@ const TechnicianDashboard = ({
 
           {/* Quick Actions */}
           <div className="flex items-center space-x-2 pt-2 border-t">
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => onViewCase?.(task.id)}
             >
               <Eye className="h-3 w-3 mr-1" />
@@ -245,16 +185,16 @@ const TechnicianDashboard = ({
             </Button>
             {task.status === "in-progress" && (
               <>
-                <Button 
-                  variant="secondary" 
+                <Button
+                  variant="secondary"
                   size="sm"
                   onClick={() => onAddReport?.(task.id)}
                 >
                   <Plus className="h-3 w-3 mr-1" />
                   Report
                 </Button>
-                <Button 
-                  variant="gradient" 
+                <Button
+                  variant="gradient"
                   size="sm"
                   onClick={() => onLogProgress?.(task.id)}
                 >
@@ -342,15 +282,15 @@ const TechnicianDashboard = ({
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-lg font-semibold">My Assigned Cases</h2>
           <div className="flex items-center space-x-2">
-            <Button 
-              variant={viewMode === "kanban" ? "default" : "outline"} 
+            <Button
+              variant={viewMode === "kanban" ? "default" : "outline"}
               size="sm"
               onClick={() => setViewMode("kanban")}
             >
               Kanban View
             </Button>
-            <Button 
-              variant={viewMode === "list" ? "default" : "outline"} 
+            <Button
+              variant={viewMode === "list" ? "default" : "outline"}
               size="sm"
               onClick={() => setViewMode("list")}
             >
@@ -424,16 +364,16 @@ const TechnicianDashboard = ({
                       </p>
                     </div>
                     <div className="flex space-x-2">
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => onViewCase?.(task.id)}
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
                       {task.status === "in-progress" && (
-                        <Button 
-                          variant="gradient" 
+                        <Button
+                          variant="gradient"
                           size="sm"
                           onClick={() => onLogProgress?.(task.id)}
                         >

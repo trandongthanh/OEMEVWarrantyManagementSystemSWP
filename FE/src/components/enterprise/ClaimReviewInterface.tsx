@@ -7,10 +7,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  CheckCircle, 
-  XCircle, 
-  Clock, 
+import {
+  CheckCircle,
+  XCircle,
+  Clock,
   AlertTriangle,
   FileText,
   Camera,
@@ -65,33 +65,8 @@ const ClaimReviewInterface = () => {
   const [showRejectDialog, setShowRejectDialog] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
 
-  // Mock data for pending claims queue
-  const pendingClaims = [
-    {
-      id: "WC-25-09-001",
-      serviceCenter: "SC Ho Chi Minh 1",
-      dateSubmitted: "2025-01-15",
-      status: "pending-review" as const,
-      priority: "high",
-      daysWaiting: 2
-    },
-    {
-      id: "WC-25-09-008",
-      serviceCenter: "SC Hanoi 2", 
-      dateSubmitted: "2025-01-14",
-      status: "in-review" as const,
-      priority: "medium",
-      daysWaiting: 3
-    },
-    {
-      id: "WC-25-09-015",
-      serviceCenter: "SC Da Nang 1",
-      dateSubmitted: "2025-01-13", 
-      status: "pending-review" as const,
-      priority: "low",
-      daysWaiting: 4
-    }
-  ];
+  // In real app, data would be fetched from API
+  const pendingClaims: any[] = [];
 
   // Mock detailed claim data
   const claimData: ClaimData = {
@@ -102,7 +77,7 @@ const ClaimReviewInterface = () => {
     customer: {
       name: "Nguyễn Văn A",
       phone: "+84 901 234 567",
-      email: "nguyen.van.a@email.com", 
+      email: "nguyen.van.a@email.com",
       address: "123 Lê Lợi, Quận 1, TP.HCM"
     },
     vehicle: {
@@ -115,7 +90,7 @@ const ClaimReviewInterface = () => {
     reports: [
       {
         id: "DR-001",
-        summary: "Battery capacity degradation detected", 
+        summary: "Battery capacity degradation detected",
         technician: "Trần Minh B",
         dateSubmitted: "2025-01-15 10:30",
         details: "Initial diagnostic shows 15% capacity loss in battery cells 3-6. Temperature monitoring indicates overheating in charging cycles. Requires battery module replacement and cooling system inspection.",
@@ -126,7 +101,7 @@ const ClaimReviewInterface = () => {
       {
         id: "DR-002",
         summary: "Thermal management system inspection",
-        technician: "Trần Minh B", 
+        technician: "Trần Minh B",
         dateSubmitted: "2025-01-15 16:45",
         details: "Cooling system functioning within normal parameters. Thermal sensors show consistent readings. No immediate issues detected with cooling pump or radiator systems.",
         attachments: 4,
@@ -137,7 +112,7 @@ const ClaimReviewInterface = () => {
         id: "DR-003",
         summary: "Charging port connection analysis",
         technician: "Lê Thị C",
-        dateSubmitted: "2025-01-16 09:15", 
+        dateSubmitted: "2025-01-16 09:15",
         details: "Charging port shows signs of wear but connections are secure. Minor corrosion detected on pins 2 and 5. Recommend cleaning and protective coating application.",
         attachments: 3,
         requiredParts: ["Charging Port Protection Kit"],
@@ -171,7 +146,7 @@ const ClaimReviewInterface = () => {
       medium: { variant: "warning" as const, text: "Medium Priority" },
       low: { variant: "secondary" as const, text: "Low Priority" }
     };
-    
+
     const priorityConfig = config[priority as keyof typeof config];
     return priorityConfig ? <Badge variant={priorityConfig.variant} className="text-xs">{priorityConfig.text}</Badge> : null;
   };
@@ -179,8 +154,8 @@ const ClaimReviewInterface = () => {
   const getReportStatusBadge = (reportId: string, originalStatus: string) => {
     const decision = reportDecisions[reportId];
     if (decision) {
-      return decision.status === "approved" ? 
-        <Badge variant="success">Approved</Badge> : 
+      return decision.status === "approved" ?
+        <Badge variant="success">Approved</Badge> :
         <Badge variant="destructive">Rejected</Badge>;
     }
     return <Badge variant="warning">Pending Decision</Badge>;
@@ -223,14 +198,13 @@ const ClaimReviewInterface = () => {
           <h2 className="text-lg font-semibold text-foreground">Claims Review Queue</h2>
           <p className="text-sm text-muted-foreground">Pending manufacturer approval</p>
         </div>
-        
+
         <div className="overflow-y-auto h-full pb-20">
           {pendingClaims.map((claim) => (
-            <Card 
+            <Card
               key={claim.id}
-              className={`m-2 cursor-pointer transition-all duration-200 hover:shadow-md ${
-                selectedClaim === claim.id ? 'ring-2 ring-primary border-primary' : ''
-              }`}
+              className={`m-2 cursor-pointer transition-all duration-200 hover:shadow-md ${selectedClaim === claim.id ? 'ring-2 ring-primary border-primary' : ''
+                }`}
               onClick={() => setSelectedClaim(claim.id)}
             >
               <CardContent className="p-4">
@@ -239,12 +213,12 @@ const ClaimReviewInterface = () => {
                     <span className="font-mono font-medium text-sm">{claim.id}</span>
                     {getPriorityBadge(claim.priority)}
                   </div>
-                  
+
                   <div>
                     <p className="font-medium text-sm">{claim.serviceCenter}</p>
                     <p className="text-xs text-muted-foreground">Submitted {claim.dateSubmitted}</p>
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     {getStatusBadge(claim.status)}
                     <span className="text-xs text-muted-foreground">
@@ -272,8 +246,8 @@ const ClaimReviewInterface = () => {
                 <MessageSquare className="mr-2 h-4 w-4" />
                 Request More Info
               </Button>
-              <Button 
-                variant="gradient" 
+              <Button
+                variant="gradient"
                 disabled={!canFinalize}
                 onClick={handleFinalizeDecisions}
               >
@@ -329,7 +303,7 @@ const ClaimReviewInterface = () => {
                       </div>
                     </div>
                   </CardHeader>
-                  
+
                   <CardContent className="space-y-4">
                     <div className="bg-muted/50 p-4 rounded-lg">
                       <p className="text-sm">{report.details}</p>
@@ -363,8 +337,8 @@ const ClaimReviewInterface = () => {
 
                       {!reportDecisions[report.id] && (
                         <div className="flex items-center space-x-2">
-                          <Button 
-                            variant="outline" 
+                          <Button
+                            variant="outline"
                             size="sm"
                             onClick={() => handleRejectReport(report.id)}
                             className="text-destructive hover:bg-destructive/10"
@@ -372,8 +346,8 @@ const ClaimReviewInterface = () => {
                             <XCircle className="h-4 w-4 mr-1" />
                             Reject
                           </Button>
-                          <Button 
-                            variant="success" 
+                          <Button
+                            variant="success"
                             size="sm"
                             onClick={() => handleApproveReport(report.id)}
                           >
@@ -511,8 +485,8 @@ const ClaimReviewInterface = () => {
               <Button variant="outline" onClick={() => setShowRejectDialog(null)}>
                 Cancel
               </Button>
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 onClick={confirmRejectReport}
                 disabled={!rejectionReason.trim()}
               >
