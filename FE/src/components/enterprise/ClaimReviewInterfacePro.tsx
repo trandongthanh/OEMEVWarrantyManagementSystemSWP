@@ -35,8 +35,42 @@ const ClaimReviewInterfacePro = () => {
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState(false);
   const [pendingRejectReportId, setPendingRejectReportId] = useState("");
 
-  // In real app, data would be fetched from API
-  const pendingClaims: any[] = [];
+  // Mock data - In real app would be fetched from API
+  const pendingClaims = [
+    // Sample pending claims data - uncomment for testing UI
+    /*
+    {
+      id: "WC-25-09-001",
+      serviceCenter: "VinFast Service Center Hanoi",
+      customer: "Nguyễn Văn An",
+      vin: "VF8ABC123456789",
+      model: "VF8 Plus",
+      dateSubmitted: "2025-01-17",
+      priority: "high",
+      reportsCount: 2
+    },
+    {
+      id: "WC-25-09-006",
+      serviceCenter: "VinFast Service Center HCMC",
+      customer: "Trần Thị Bích",
+      vin: "VF9DEF456789012",
+      model: "VF9 Premium",
+      dateSubmitted: "2025-01-16",
+      priority: "medium",
+      reportsCount: 1
+    },
+    {
+      id: "WC-25-09-007",
+      serviceCenter: "VinFast Service Center Da Nang",
+      customer: "Lê Minh Hoàng",
+      vin: "VF8GHI789012345",
+      model: "VF8 Eco",
+      dateSubmitted: "2025-01-15",
+      priority: "low",
+      reportsCount: 3
+    }
+    */
+  ];
 
   // Mock data for selected claim details
   const claimDetails = {
@@ -241,8 +275,8 @@ const ClaimReviewInterfacePro = () => {
 
                   return (
                     <Card key={report.id} className={`border-l-4 ${status === 'approved' ? 'border-l-success bg-success/5' :
-                        status === 'rejected' ? 'border-l-destructive bg-destructive/5' :
-                          'border-l-warning bg-warning/5'
+                      status === 'rejected' ? 'border-l-destructive bg-destructive/5' :
+                        'border-l-warning bg-warning/5'
                       }`}>
                       <CardHeader className="pb-4">
                         <div className="flex items-center justify-between">
