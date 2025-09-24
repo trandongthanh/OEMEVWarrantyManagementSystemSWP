@@ -56,85 +56,85 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
 
-  // Mock customers
-  const mockCustomers = [
-    {
-      id: 'cust-001',
-      name: 'Nguyễn Văn Minh',
-      phone: '0901234567',
-      email: 'minh.nguyen@email.com',
-      address: '123 Đường ABC, Quận 1, TP.HCM'
-    },
-    {
-      id: 'cust-002', 
-      name: 'Trần Thị Lan',
-      phone: '0987654321',
-      email: 'lan.tran@email.com',
-      address: '456 Đường XYZ, Quận 2, TP.HCM'
-    },
-    {
-      id: 'cust-003',
-      name: 'Lê Hoàng Nam',
-      phone: '0976543210',
-      email: 'nam.le@email.com', 
-      address: '789 Đường DEF, Quận 3, TP.HCM'
-    }
-  ];
+  // // Mock customers
+  // const mockCustomers = [
+  //   {
+  //     id: 'cust-001',
+  //     name: 'Nguyễn Văn Minh',
+  //     phone: '0901234567',
+  //     email: 'minh.nguyen@email.com',
+  //     address: '123 Đường ABC, Quận 1, TP.HCM'
+  //   },
+  //   {
+  //     id: 'cust-002', 
+  //     name: 'Trần Thị Lan',
+  //     phone: '0987654321',
+  //     email: 'lan.tran@email.com',
+  //     address: '456 Đường XYZ, Quận 2, TP.HCM'
+  //   },
+  //   {
+  //     id: 'cust-003',
+  //     name: 'Lê Hoàng Nam',
+  //     phone: '0976543210',
+  //     email: 'nam.le@email.com', 
+  //     address: '789 Đường DEF, Quận 3, TP.HCM'
+  //   }
+  // ];
 
-  const evModels = [
-    'EV Model X Pro',
-    'EV Compact Plus',
-    'EV SUV Premium',
-    'EV Sedan Elite',
-    'EV Crossover'
-  ];
+  // const evModels = [
+  //   'EV Model X Pro',
+  //   'EV Compact Plus',
+  //   'EV SUV Premium',
+  //   'EV Sedan Elite',
+  //   'EV Crossover'
+  // ];
 
-  const colors = [
-    'Pearl White',
-    'Obsidian Black', 
-    'Navy Blue',
-    'Metallic Silver',
-    'Cherry Red',
-    'Titan Gray'
-  ];
+  // const colors = [
+  //   'Pearl White',
+  //   'Obsidian Black', 
+  //   'Navy Blue',
+  //   'Metallic Silver',
+  //   'Cherry Red',
+  //   'Titan Gray'
+  // ];
 
-  const batteryOptions = [
-    '60 kWh',
-    '75 kWh', 
-    '85 kWh',
-    '100 kWh',
-    '120 kWh'
-  ];
+  // const batteryOptions = [
+  //   '60 kWh',
+  //   '75 kWh', 
+  //   '85 kWh',
+  //   '100 kWh',
+  //   '120 kWh'
+  // ];
 
-  const motorTypes = [
-    'Single Motor RWD',
-    'Dual Motor AWD',
-    'Triple Motor AWD',
-    'Performance Motor'
-  ];
+  // const motorTypes = [
+  //   'Single Motor RWD',
+  //   'Dual Motor AWD',
+  //   'Triple Motor AWD',
+  //   'Performance Motor'
+  // ];
 
-  const searchCustomer = () => {
-    const customer = mockCustomers.find(c => 
-      c.phone === customerSearch || 
-      c.email === customerSearch ||
-      c.name.toLowerCase().includes(customerSearch.toLowerCase())
-    );
+  // const searchCustomer = () => {
+  //   const customer = mockCustomers.find(c => 
+  //     c.phone === customerSearch || 
+  //     c.email === customerSearch ||
+  //     c.name.toLowerCase().includes(customerSearch.toLowerCase())
+  //   );
     
-    if (customer) {
-      setSelectedCustomer(customer);
-      setVehicleData(prev => ({ ...prev, customerId: customer.id }));
-      toast({
-        title: "Customer Found!",
-        description: `Found ${customer.name}`,
-      });
-    } else {
-      toast({
-        title: "Customer Not Found",
-        description: "Please check the information or add a new customer",
-        variant: "destructive"
-      });
-    }
-  };
+  //   if (customer) {
+  //     setSelectedCustomer(customer);
+  //     setVehicleData(prev => ({ ...prev, customerId: customer.id }));
+  //     toast({
+  //       title: "Customer Found!",
+  //       description: `Found ${customer.name}`,
+  //     });
+  //   } else {
+  //     toast({
+  //       title: "Customer Not Found",
+  //       description: "Please check the information or add a new customer",
+  //       variant: "destructive"
+  //     });
+  //   }
+  // };
 
   
   
@@ -240,9 +240,9 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
                       <SelectValue placeholder="Select vehicle model" />
                     </SelectTrigger>
                     <SelectContent>
-                      {evModels.map((model) => (
+                      {/* {evModels.map((model) => (
                         <SelectItem key={model} value={model}>{model}</SelectItem>
-                      ))}
+                      ))} */}
                     </SelectContent>
                   </Select>
                 </div>
@@ -271,10 +271,10 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
                     onChange={(e) => setCustomerSearch(e.target.value)}
                     className="flex-1"
                   />
-                  <Button onClick={searchCustomer} disabled={!customerSearch}>
+                  {/* <Button onClick={searchCustomer} disabled={!customerSearch}>
                     <Search className="h-4 w-4 mr-2" />
                     Search
-                  </Button>
+                  </Button> */}
                 </div>
 
                 {selectedCustomer && (
@@ -309,9 +309,9 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
                       <SelectValue placeholder="Select color" />
                     </SelectTrigger>
                     <SelectContent>
-                      {colors.map((color) => (
+                      {/* {colors.map((color) => (
                         <SelectItem key={color} value={color}>{color}</SelectItem>
-                      ))}
+                      ))} */}
                     </SelectContent>
                   </Select>
                 </div>
@@ -323,9 +323,9 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
                       <SelectValue placeholder="Select battery capacity" />
                     </SelectTrigger>
                     <SelectContent>
-                      {batteryOptions.map((battery) => (
+                      {/* {batteryOptions.map((battery) => (
                         <SelectItem key={battery} value={battery}>{battery}</SelectItem>
-                      ))}
+                      ))} */}
                     </SelectContent>
                   </Select>
                 </div>
@@ -337,9 +337,9 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
                       <SelectValue placeholder="Select motor configuration" />
                     </SelectTrigger>
                     <SelectContent>
-                      {motorTypes.map((motor) => (
+                      {/* {motorTypes.map((motor) => (
                         <SelectItem key={motor} value={motor}>{motor}</SelectItem>
-                      ))}
+                      ))} */}
                     </SelectContent>
                   </Select>
                 </div>
