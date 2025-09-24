@@ -63,142 +63,28 @@ const AllClaims = () => {
   const [selectedClaimId, setSelectedClaimId] = useState('');
   const [selectedClaimStatus, setSelectedClaimStatus] = useState('');
 
-  // Mock data - In real app would come from API
-  const allClaims: Claim[] = [
-    {
-      id: 'WC-2024-001',
-      vin: '1HGBH41JXMN109186',
-      customer: 'Nguyễn Văn Minh',
-      customerPhone: '0901234567',
-      vehicle: 'EV Model X Pro 2023',
-      issue: 'Battery Performance Issue',
-      category: 'battery',
-      status: 'pending',
-      priority: 'high',
-      technician: 'Trần Minh Quân',
-      createdDate: '2024-01-15',
-      updatedDate: '2024-01-16',
-      estimatedCost: '15,000,000 VND',
-      serviceCenter: 'EV Service Hà Nội'
-    },
-    {
-      id: 'WC-2024-002',
-      vin: 'WVWZZZ1JZ3W386752',
-      customer: 'Lê Thị Lan',
-      customerPhone: '0987654321',
-      vehicle: 'EV Compact Plus 2022',
-      issue: 'Motor Controller Fault',
-      category: 'motor',
-      status: 'approved',
-      priority: 'medium',
-      technician: 'Phạm Văn Nam',
-      createdDate: '2024-01-14',
-      updatedDate: '2024-01-15',
-      estimatedCost: '8,500,000 VND',
-      serviceCenter: 'EV Service TP.HCM'
-    },
-    {
-      id: 'WC-2024-003',
-      vin: '1N4AL11D75C109151',
-      customer: 'Hoàng Minh Đức',
-      customerPhone: '0976543210',
-      vehicle: 'EV SUV Premium 2023',
-      issue: 'Charging System Error',
-      category: 'charging',
-      status: 'in-progress',
-      priority: 'low',
-      technician: 'Võ Thị Mai',
-      createdDate: '2024-01-13',
-      updatedDate: '2024-01-14',
-      estimatedCost: '3,200,000 VND',
-      serviceCenter: 'EV Service Đà Nẵng'
-    },
-    {
-      id: 'WC-2024-004',
-      vin: '3FADP4AJ8DM234567',
-      customer: 'Trần Thị Hương',
-      customerPhone: '0912345678',
-      vehicle: 'EV Sedan Elite 2022',
-      issue: 'Software Bug - Infotainment',
-      category: 'electronics',
-      status: 'completed',
-      priority: 'low',
-      technician: 'Nguyễn Văn Tài',
-      createdDate: '2024-01-12',
-      updatedDate: '2024-01-13',
-      estimatedCost: '1,500,000 VND',
-      serviceCenter: 'EV Service Hải Phòng'
-    },
-    {
-      id: 'WC-2024-005',
-      vin: '1FTFW1ET5BKC87654',
-      customer: 'Phạm Quang Huy',
-      customerPhone: '0923456789',
-      vehicle: 'EV Crossover 2023',
-      issue: 'Battery Cell Degradation',
-      category: 'battery',
-      status: 'rejected',
-      priority: 'high',
-      technician: 'Lê Thị Nga',
-      createdDate: '2024-01-11',
-      updatedDate: '2024-01-12',
-      estimatedCost: '12,000,000 VND',
-      serviceCenter: 'EV Service Cần Thơ'
-    },
-    {
-      id: 'WC-2024-006',
-      vin: '1GKKVRKD5CJ123456',
-      customer: 'Võ Thị Kim',
-      customerPhone: '0934567890',
-      vehicle: 'EV Model X Pro 2023',
-      issue: 'ADAS Sensor Malfunction',
-      category: 'electronics',
-      status: 'pending',
-      priority: 'medium',
-      technician: 'Đặng Văn Long',
-      createdDate: '2024-01-10',
-      updatedDate: '2024-01-10',
-      estimatedCost: '5,800,000 VND',
-      serviceCenter: 'EV Service Nha Trang'
-    },
-    // Add more claims...
-    ...Array.from({ length: 50 }, (_, i) => ({
-      id: `WC-2024-${String(i + 7).padStart(3, '0')}`,
-      vin: `VIN${String(i + 7).padStart(10, '0')}123456`,
-      customer: `Customer ${i + 7}`,
-      customerPhone: `09${String(i + 10).padStart(8, '0')}`,
-      vehicle: ['EV Model X Pro', 'EV Compact Plus', 'EV SUV Premium'][i % 3] + ` ${2022 + (i % 3)}`,
-      issue: ['Battery Issue', 'Motor Problem', 'Charging Error', 'Software Bug'][i % 4],
-      category: ['battery', 'motor', 'charging', 'electronics'][i % 4] as any,
-      status: ['pending', 'approved', 'rejected', 'in-progress', 'completed'][i % 5] as any,
-      priority: ['low', 'medium', 'high'][i % 3] as any,
-      technician: ['Tech A', 'Tech B', 'Tech C', 'Tech D'][i % 4],
-      createdDate: new Date(2024, 0, Math.max(1, 20 - i)).toISOString().split('T')[0],
-      updatedDate: new Date(2024, 0, Math.max(1, 21 - i)).toISOString().split('T')[0],
-      estimatedCost: `${((i + 1) * 1.5).toFixed(1).replace('.', ',')}00,000 VND`,
-      serviceCenter: ['EV Service Hà Nội', 'EV Service TP.HCM', 'EV Service Đà Nẵng'][i % 3]
-    }))
-  ];
+  // In real app, data would come from API
+  const allClaims: Claim[] = [];
 
   // Filtering and sorting logic
   const filteredAndSortedClaims = useMemo(() => {
     let filtered = allClaims.filter(claim => {
       // Search filter
-      const searchMatch = !searchTerm || 
+      const searchMatch = !searchTerm ||
         claim.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
         claim.vin.toLowerCase().includes(searchTerm.toLowerCase()) ||
         claim.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
         claim.issue.toLowerCase().includes(searchTerm.toLowerCase());
-      
+
       // Status filter
       const statusMatch = statusFilter === 'all' || claim.status === statusFilter;
-      
+
       // Priority filter
       const priorityMatch = priorityFilter === 'all' || claim.priority === priorityFilter;
-      
+
       // Category filter
       const categoryMatch = categoryFilter === 'all' || claim.category === categoryFilter;
-      
+
       return searchMatch && statusMatch && priorityMatch && categoryMatch;
     });
 
@@ -206,13 +92,13 @@ const AllClaims = () => {
     filtered.sort((a, b) => {
       let aValue: any = a[sortBy as keyof Claim];
       let bValue: any = b[sortBy as keyof Claim];
-      
+
       // Handle date sorting
       if (sortBy === 'createdDate' || sortBy === 'updatedDate') {
         aValue = new Date(aValue as string).getTime();
         bValue = new Date(bValue as string).getTime();
       }
-      
+
       if (sortOrder === 'asc') {
         return aValue > bValue ? 1 : -1;
       } else {
@@ -314,7 +200,7 @@ const AllClaims = () => {
               <div>
                 <h1 className="text-xl font-bold text-foreground">All Warranty Claims</h1>
                 <p className="text-sm text-muted-foreground">
-                  {user?.role === 'technician' 
+                  {user?.role === 'technician'
                     ? `Showing claims you can work on (${filteredAndSortedClaims.length} of ${allClaims.length})`
                     : `Showing ${filteredAndSortedClaims.length} of ${allClaims.length} claims`
                   }
@@ -564,7 +450,7 @@ const AllClaims = () => {
                   <ChevronLeft className="h-4 w-4" />
                   Previous
                 </Button>
-                
+
                 <div className="flex space-x-1">
                   {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                     const page = i + 1;

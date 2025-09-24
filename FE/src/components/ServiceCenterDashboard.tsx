@@ -12,12 +12,12 @@ import AddCustomer from "./AddCustomer";
 import AttachParts from "./AttachParts";
 import ClaimDetails from "./ClaimDetails";
 import UpdateClaimStatus from "./UpdateClaimStatus";
-import { 
-  Car, 
-  User, 
-  Wrench, 
-  FileText, 
-  Search, 
+import {
+  Car,
+  User,
+  Wrench,
+  FileText,
+  Search,
   Plus,
   Clock,
   CheckCircle,
@@ -71,35 +71,8 @@ const ServiceCenterDashboard = () => {
     }
   ];
 
-  const recentClaims = [
-    {
-      id: "WC-2024-001",
-      vin: "1HGBH41JXMN109186",
-      customer: "Nguyễn Văn A",
-      issue: "Battery Performance Issue",
-      status: "pending",
-      technician: "Trần Minh B",
-      date: "2024-01-15"
-    },
-    {
-      id: "WC-2024-002", 
-      vin: "WVWZZZ1JZ3W386752",
-      customer: "Lê Thị C", 
-      issue: "Motor Controller Fault",
-      status: "approved",
-      technician: "Phạm Văn D",
-      date: "2024-01-14"
-    },
-    {
-      id: "WC-2024-003",
-      vin: "1N4AL11D75C109151",
-      customer: "Hoàng Minh E",
-      issue: "Charging System Error",
-      status: "in-progress",
-      technician: "Võ Thị F",
-      date: "2024-01-13"
-    }
-  ];
+  // In real app, data would be fetched from API
+  const recentClaims: any[] = [];
 
   const handleViewDetails = (claimId: string) => {
     setSelectedClaimId(claimId);
@@ -277,9 +250,9 @@ const ServiceCenterDashboard = () => {
                           View Details
                         </Button>
                         {(hasPermission(user, 'approve_reject_claims') || hasPermission(user, 'update_technical_status')) && (
-                          <Button 
-                            variant="secondary" 
-                            size="sm" 
+                          <Button
+                            variant="secondary"
+                            size="sm"
                             onClick={() => handleUpdateStatus(claim.id, claim.status)}
                           >
                             {user?.role === 'technician' ? 'Update Progress' : 'Update Status'}
@@ -449,8 +422,8 @@ const ServiceCenterDashboard = () => {
         <AttachParts onClose={() => setShowAttachParts(false)} />
       )}
       {showClaimDetails && (
-        <ClaimDetails 
-          claimId={selectedClaimId} 
+        <ClaimDetails
+          claimId={selectedClaimId}
           onClose={() => setShowClaimDetails(false)}
           onUpdateStatus={() => {
             setShowClaimDetails(false);
@@ -459,7 +432,7 @@ const ServiceCenterDashboard = () => {
         />
       )}
       {showUpdateStatus && (
-        <UpdateClaimStatus 
+        <UpdateClaimStatus
           claimId={selectedClaimId}
           currentStatus={selectedClaimStatus}
           onClose={() => setShowUpdateStatus(false)}

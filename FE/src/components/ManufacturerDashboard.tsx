@@ -12,7 +12,7 @@ import ManufacturerApproval from "./ManufacturerApproval";
 import DashboardStats from "./DashboardStats";
 import RecallManagement from "./RecallManagement";
 import PartsManagement from "./PartsManagement";
-import { 
+import {
   Building2,
   Package,
   Shield,
@@ -55,7 +55,7 @@ const ManufacturerDashboard = () => {
     {
       title: "Approved Claims",
       value: "324",
-      change: "+8% from last week", 
+      change: "+8% from last week",
       trend: "up",
       icon: CheckCircle,
       color: "text-success"
@@ -64,7 +64,7 @@ const ManufacturerDashboard = () => {
       title: "Parts Inventory",
       value: "12,450",
       change: "-3% from last week",
-      trend: "down", 
+      trend: "down",
       icon: Package,
       color: "text-primary"
     },
@@ -78,38 +78,8 @@ const ManufacturerDashboard = () => {
     }
   ];
 
-  const recentClaims = [
-    {
-      id: "WC-2024-156",
-      serviceCenter: "EV Service Hà Nội",
-      vin: "1HGBH41JXMN109186",
-      issue: "Battery Cell Degradation",
-      cost: "15,000,000 VND",
-      status: "pending-review",
-      priority: "high",
-      date: "2024-01-15"
-    },
-    {
-      id: "WC-2024-155",
-      serviceCenter: "EV Service TP.HCM", 
-      vin: "WVWZZZ1JZ3W386752",
-      issue: "Motor Controller Replacement",
-      cost: "8,500,000 VND",
-      status: "approved",
-      priority: "medium",
-      date: "2024-01-14"
-    },
-    {
-      id: "WC-2024-154",
-      serviceCenter: "EV Service Đà Nẵng",
-      vin: "1N4AL11D75C109151", 
-      issue: "Charging Port Malfunction",
-      cost: "3,200,000 VND",
-      status: "in-validation",
-      priority: "low",
-      date: "2024-01-14"
-    }
-  ];
+  // In real app, data would be fetched from API
+  const recentClaims: any[] = [];
 
   const lowStockItems = [
     { name: "Li-ion Battery Cell Type A", current: 45, minimum: 100, urgency: "critical" },
@@ -117,66 +87,8 @@ const ManufacturerDashboard = () => {
     { name: "Charging Port Assembly CPA-V2", current: 234, minimum: 200, urgency: "normal" }
   ];
 
-  // Mock pending claims data for comprehensive approval
-  const pendingClaims = [
-    {
-      id: 'WC-2024-001',
-      vehicleInfo: {
-        vin: '1HGBH41JXMN109186',
-        model: 'EV Model X Pro',
-        year: '2023',
-        customer: {
-          name: 'Nguyễn Văn Minh',
-          phone: '0901234567',
-          email: 'minh.nguyen@email.com'
-        }
-      },
-      issueCategory: 'Battery Performance',
-      issueDescription: 'Pin sạc không đủ dung lượng theo thông số kỹ thuật, giảm 30% so với ban đầu.',
-      diagnostic: {
-        mainTechnician: 'Trần Minh Quân',
-        assistantTechnicians: ['Lê Thị Hoa'],
-        finalDiagnosis: 'Pin bị suy giảm dung lượng do lỗi của cell pin số 5 và 12. Cần thay thế module pin hoàn toàn.',
-        images: ['image1.jpg', 'image2.jpg', 'image3.jpg'],
-        reportDocument: 'diagnostic_report_001.pdf'
-      },
-      partsNeeded: [
-        { partCode: 'BAT-XP-001', partName: 'Module pin chính EV Model X Pro', quantity: 1, estimatedCost: 15000000 },
-        { partCode: 'CONN-BAT-05', partName: 'Connector pin 400V', quantity: 2, estimatedCost: 500000 }
-      ],
-      submittedDate: '2024-01-15',
-      serviceCenter: 'Trung tâm dịch vụ Hà Nội',
-      status: 'pending_approval'
-    },
-    {
-      id: 'WC-2024-002',
-      vehicleInfo: {
-        vin: 'WVWZZZ1JZ3W386752',
-        model: 'EV Compact Plus',
-        year: '2022',
-        customer: {
-          name: 'Trần Thị Lan',
-          phone: '0987654321',
-          email: 'lan.tran@email.com'
-        }
-      },
-      issueCategory: 'Motor Controller',
-      issueDescription: 'Động cơ bị giật, mất lực khi tăng tốc đột ngột.',
-      diagnostic: {
-        mainTechnician: 'Phạm Văn Nam',
-        assistantTechnicians: [],
-        finalDiagnosis: 'IC điều khiển động cơ bị lỗi, cần thay thế bộ điều khiển hoàn toàn.',
-        images: ['image4.jpg', 'image5.jpg'],
-        reportDocument: 'diagnostic_report_002.pdf'
-      },
-      partsNeeded: [
-        { partCode: 'CTRL-CP-001', partName: 'Bộ điều khiển động cơ EV Compact', quantity: 1, estimatedCost: 8000000 }
-      ],
-      submittedDate: '2024-01-16',
-      serviceCenter: 'Trung tâm dịch vụ TP.HCM',
-      status: 'pending_approval'
-    }
-  ];
+  // In real app, data would be fetched from API
+  const pendingClaims: any[] = [];
 
   const handleClaimApproval = (claimId: string) => {
     const claim = pendingClaims.find(c => c.id === claimId);
@@ -290,9 +202,8 @@ const ManufacturerDashboard = () => {
                         {stat.title}
                       </p>
                       <p className="text-2xl font-bold">{stat.value}</p>
-                      <p className={`text-xs flex items-center ${
-                        stat.trend === "up" ? "text-success" : "text-destructive"
-                      }`}>
+                      <p className={`text-xs flex items-center ${stat.trend === "up" ? "text-success" : "text-destructive"
+                        }`}>
                         <TrendIcon className="mr-1 h-3 w-3" />
                         {stat.change}
                       </p>
@@ -342,7 +253,7 @@ const ManufacturerDashboard = () => {
                               Chờ duyệt
                             </Badge>
                           </div>
-                          
+
                           <div className="space-y-2 text-sm">
                             <p><strong>Sự cố:</strong> {claim.issueCategory}</p>
                             <p><strong>Trung tâm:</strong> {claim.serviceCenter}</p>
@@ -353,8 +264,8 @@ const ManufacturerDashboard = () => {
                           </div>
 
                           <div className="flex gap-2 mt-4">
-                            <Button 
-                              size="sm" 
+                            <Button
+                              size="sm"
                               onClick={() => handleClaimApproval(claim.id)}
                               className="flex-1"
                             >
@@ -365,7 +276,7 @@ const ManufacturerDashboard = () => {
                         </CardContent>
                       </Card>
                     ))}
-                    
+
                     {pendingClaims.length === 0 && (
                       <div className="text-center py-8 text-muted-foreground">
                         <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -501,8 +412,8 @@ const ManufacturerDashboard = () => {
                     </CardHeader>
                     <CardContent>
                       <p className="text-sm text-muted-foreground mb-3">8 years or 160,000 km</p>
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         size="sm"
                         onClick={() => {
                           setSelectedPolicyType('battery');
@@ -520,8 +431,8 @@ const ManufacturerDashboard = () => {
                     </CardHeader>
                     <CardContent>
                       <p className="text-sm text-muted-foreground mb-3">5 years or 100,000 km</p>
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         size="sm"
                         onClick={() => {
                           setSelectedPolicyType('motor');
@@ -539,8 +450,8 @@ const ManufacturerDashboard = () => {
                     </CardHeader>
                     <CardContent>
                       <p className="text-sm text-muted-foreground mb-3">3 years or 60,000 km</p>
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         size="sm"
                         onClick={() => {
                           setSelectedPolicyType('electronics');
@@ -649,7 +560,7 @@ const ManufacturerDashboard = () => {
 
       {/* Modals */}
       {showConfigurePolicy && (
-        <ConfigureWarrantyPolicy 
+        <ConfigureWarrantyPolicy
           policyType={selectedPolicyType}
           onClose={() => {
             setShowConfigurePolicy(false);
@@ -658,16 +569,16 @@ const ManufacturerDashboard = () => {
         />
       )}
       {showAddPart && (
-        <AddPartInventory 
+        <AddPartInventory
           onClose={() => setShowAddPart(false)}
         />
       )}
       {showCreateCampaign && (
-        <CreateCampaign 
+        <CreateCampaign
           onClose={() => setShowCreateCampaign(false)}
         />
       )}
-      
+
       {showApprovalModal && selectedClaim && (
         <ManufacturerApproval
           claimData={selectedClaim}
