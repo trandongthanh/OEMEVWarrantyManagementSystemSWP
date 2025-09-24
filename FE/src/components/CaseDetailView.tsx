@@ -43,17 +43,33 @@ const CaseDetailView = ({
 }: CaseDetailViewProps) => {
   const [activeTab, setActiveTab] = useState("summary");
 
-  // In real app, data would be fetched based on caseId
+  // Mock data - In real app would be fetched based on caseId
   const caseData = {
     id: caseId,
-    status: "pending",
+    status: "in-progress",
     customer: {
+      // Sample customer data - uncomment for testing UI
+      /*
+      name: "Nguyễn Văn A",
+      phone: "+84 901 234 567",
+      email: "nguyen.van.a@email.com",
+      address: "123 Lê Lợi, Quận 1, TP.HCM"
+      */
       name: "",
       phone: "",
       email: "",
       address: ""
     },
     vehicle: {
+      // Sample vehicle data - uncomment for testing UI
+      /*
+      vin: "1HGBH41JXMN109186",
+      model: "VinFast VF8 2023",
+      purchaseDate: "2023-06-15",
+      odometer: "15,420 km",
+      warrantyExpiry: "2026-06-15",
+      color: "Xanh Ocean"
+      */
       vin: "",
       model: "",
       purchaseDate: "",
@@ -62,26 +78,117 @@ const CaseDetailView = ({
       color: ""
     },
     assignedTech: {
+      // Sample technician data - uncomment for testing UI
+      /*
+      id: "tech-002",
+      name: "Trần Minh B",
+      specialty: "Battery Systems",
+      phone: "+84 901 234 568",
+      avatar: "TB"
+      */
       id: "",
       name: "",
       specialty: "",
       phone: "",
       avatar: ""
     },
+    // Sample issue data - uncomment for testing UI
+    /*
+    issue: "Battery Performance Issue",
+    priority: "high",
+    dateCreated: "2024-01-15",
+    lastUpdated: "2024-01-16 14:30"
+    */
     issue: "",
     priority: "low",
     dateCreated: "",
     lastUpdated: ""
   };
 
-  // In real app, data would be fetched from API
-  const diagnosticReports: any[] = [];
+  // Mock data - In real app would be fetched from API
+  const diagnosticReports = [
+    // Sample diagnostic reports data - uncomment for testing UI
+    /*
+    {
+      id: "DR-001",
+      summary: "Battery capacity degradation detected",
+      technician: "Trần Minh B",
+      status: "pending",
+      dateSubmitted: "2024-01-16",
+      details: "Initial diagnostic shows 15% capacity loss in battery cells 3-6. Requires detailed testing.",
+      attachments: 3,
+      requiredParts: ["Battery Cell Module", "Cooling System Sensor"]
+    },
+    {
+      id: "DR-002", 
+      summary: "Thermal management system inspection",
+      technician: "Trần Minh B",
+      status: "approved",
+      dateSubmitted: "2024-01-15",
+      details: "Cooling system functioning within normal parameters. No issues detected.",
+      attachments: 2,
+      requiredParts: []
+    }
+    */
+  ];
 
-  // In real app, data would be fetched from API
-  const partShipments: any[] = [];
+  // Mock data - In real app would be fetched from API
+  const partShipments = [
+    // Sample part shipments data - uncomment for testing UI
+    /*
+    {
+      id: "PS-001",
+      status: "in-transit",
+      shippedDate: "2024-01-14",
+      expectedArrival: "2024-01-18",
+      items: ["Battery Cell Module x2", "Thermal Sensor x1"],
+      trackingNumber: "VF2024001234"
+    },
+    {
+      id: "PS-002",
+      status: "delivered",
+      shippedDate: "2024-01-12",
+      expectedArrival: "2024-01-15",
+      items: ["Diagnostic Cable", "Software Update Kit"],
+      trackingNumber: "VF2024001235"
+    }
+    */
+  ];
 
-  // In real app, data would be fetched from API
-  const activityLog: any[] = [];
+  // Mock data - In real app would be fetched from API
+  const activityLog = [
+    // Sample activity log data - uncomment for testing UI
+    /*
+    {
+      id: 1,
+      timestamp: "2024-01-16 14:30",
+      user: "Trần Minh B",
+      action: "Updated diagnostic report DR-001",
+      type: "update"
+    },
+    {
+      id: 2,
+      timestamp: "2024-01-16 10:15",
+      user: "System",
+      action: "Parts shipment PS-001 status changed to in-transit",
+      type: "system"
+    },
+    {
+      id: 3,
+      timestamp: "2024-01-15 16:45",
+      user: "Trần Minh B",
+      action: "Submitted diagnostic report DR-002",
+      type: "report"
+    },
+    {
+      id: 4,
+      timestamp: "2024-01-15 09:30",
+      user: "Nguyễn Thị Staff",
+      action: "Case created and assigned to Trần Minh B",
+      type: "assignment"
+    }
+    */
+  ];
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {

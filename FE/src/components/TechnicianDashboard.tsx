@@ -37,8 +37,72 @@ const TechnicianDashboard = ({
   const [viewMode, setViewMode] = useState<"list" | "kanban">("kanban");
   const { user, logout } = useAuth();
 
-  // In real app, data would be fetched from API
-  const myTasks: any[] = [];
+  // Mock data - In real app would be fetched from API
+  const myTasks = [
+    // Sample tasks data - uncomment for testing UI
+    /*
+    {
+      id: "WC-2024-001",
+      customer: "Nguyễn Văn A",
+      vehicle: "VinFast VF8 2023",
+      vin: "1HGBH41JXMN109186",
+      issue: "Battery Performance Issue",
+      status: "in-progress",
+      priority: "high",
+      assignedDate: "2024-01-15",
+      dueDate: "2024-01-20",
+      progress: 60,
+      lastUpdate: "2024-01-16 14:30",
+      reportsSubmitted: 2,
+      partsWaiting: 1
+    },
+    {
+      id: "WC-2024-003",
+      customer: "Hoàng Minh E", 
+      vehicle: "VinFast VF9 2023",
+      vin: "1N4AL11D75C109151",
+      issue: "Charging System Error",
+      status: "blocked",
+      priority: "medium",
+      assignedDate: "2024-01-13",
+      dueDate: "2024-01-18",
+      progress: 30,
+      lastUpdate: "2024-01-14 09:15",
+      reportsSubmitted: 1,
+      partsWaiting: 2
+    },
+    {
+      id: "WC-2024-005",
+      customer: "Trần Thị K",
+      vehicle: "VinFast VF8 2023", 
+      vin: "WVWZZZ1JZ3W654321",
+      issue: "AC System Malfunction",
+      status: "todo",
+      priority: "low",
+      assignedDate: "2024-01-16",
+      dueDate: "2024-01-22",
+      progress: 0,
+      lastUpdate: "2024-01-16 08:00",
+      reportsSubmitted: 0,
+      partsWaiting: 0
+    },
+    {
+      id: "WC-2024-006",
+      customer: "Lê Văn M",
+      vehicle: "VinFast VF9 2023",
+      vin: "JM1BK32F787654321", 
+      issue: "Software Update Required",
+      status: "ready-for-handover",
+      priority: "medium",
+      assignedDate: "2024-01-10",
+      dueDate: "2024-01-15",
+      progress: 100,
+      lastUpdate: "2024-01-15 16:45",
+      reportsSubmitted: 1,
+      partsWaiting: 0
+    }
+    */
+  ];
 
   const stats = [
     {

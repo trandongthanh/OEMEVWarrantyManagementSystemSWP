@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { 
+import {
   Search,
   Filter,
   CalendarIcon,
@@ -34,8 +34,10 @@ const EVMClaimReviewQueue = ({ onReviewClaim }: EVMClaimReviewQueueProps) => {
   const [dateFrom, setDateFrom] = useState<Date>();
   const [dateTo, setDateTo] = useState<Date>();
 
-  // Mock data for claims pending review
+  // Mock data - In real app would come from API
   const pendingClaims = [
+    // Sample claims pending review data - uncomment for testing UI
+    /*
     {
       id: "WC-2024-001",
       serviceCenter: "VinFast Service Center HCM",
@@ -126,11 +128,12 @@ const EVMClaimReviewQueue = ({ onReviewClaim }: EVMClaimReviewQueueProps) => {
       warrantyValid: false,
       daysInQueue: 2
     }
+    */
   ];
 
   const serviceCenters = [
     "VinFast Service Center HCM",
-    "VinFast Service Center Hanoi", 
+    "VinFast Service Center Hanoi",
     "VinFast Service Center Da Nang",
     "VinFast Service Center Can Tho"
   ];
@@ -177,15 +180,15 @@ const EVMClaimReviewQueue = ({ onReviewClaim }: EVMClaimReviewQueueProps) => {
   };
 
   const filteredClaims = pendingClaims.filter(claim => {
-    const matchesSearch = 
+    const matchesSearch =
       claim.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
       claim.vin.toLowerCase().includes(searchTerm.toLowerCase()) ||
       claim.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       claim.serviceCenter.toLowerCase().includes(searchTerm.toLowerCase());
-    
+
     const matchesStatus = statusFilter === "all" || claim.status === statusFilter;
     const matchesServiceCenter = serviceCenterFilter === "all" || claim.serviceCenter === serviceCenterFilter;
-    
+
     return matchesSearch && matchesStatus && matchesServiceCenter;
   });
 

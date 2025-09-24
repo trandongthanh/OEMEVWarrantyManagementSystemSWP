@@ -78,8 +78,42 @@ const ManufacturerDashboard = () => {
     }
   ];
 
-  // In real app, data would be fetched from API
-  const recentClaims: any[] = [];
+  // Mock data - In real app would be fetched from API
+  const recentClaims = [
+    // Sample recent claims data - uncomment for testing UI
+    /*
+    {
+      id: "WC-2024-156",
+      serviceCenter: "EV Service Hà Nội",
+      vin: "1HGBH41JXMN109186",
+      issue: "Battery Cell Degradation",
+      cost: "15,000,000 VND",
+      status: "pending-review",
+      priority: "high",
+      date: "2024-01-15"
+    },
+    {
+      id: "WC-2024-155",
+      serviceCenter: "EV Service TP.HCM", 
+      vin: "WVWZZZ1JZ3W386752",
+      issue: "Motor Controller Replacement",
+      cost: "8,500,000 VND",
+      status: "approved",
+      priority: "medium",
+      date: "2024-01-14"
+    },
+    {
+      id: "WC-2024-154",
+      serviceCenter: "EV Service Đà Nẵng",
+      vin: "1N4AL11D75C109151", 
+      issue: "Charging Port Malfunction",
+      cost: "3,200,000 VND",
+      status: "in-validation",
+      priority: "low",
+      date: "2024-01-14"
+    }
+    */
+  ];
 
   const lowStockItems = [
     { name: "Li-ion Battery Cell Type A", current: 45, minimum: 100, urgency: "critical" },
@@ -87,8 +121,69 @@ const ManufacturerDashboard = () => {
     { name: "Charging Port Assembly CPA-V2", current: 234, minimum: 200, urgency: "normal" }
   ];
 
-  // In real app, data would be fetched from API
-  const pendingClaims: any[] = [];
+  // Mock data - In real app would be fetched from API
+  const pendingClaims = [
+    // Sample pending claims data - uncomment for testing UI
+    /*
+    {
+      id: 'WC-2024-001',
+      vehicleInfo: {
+        vin: '1HGBH41JXMN109186',
+        model: 'EV Model X Pro',
+        year: '2023',
+        customer: {
+          name: 'Nguyễn Văn Minh',
+          phone: '0901234567',
+          email: 'minh.nguyen@email.com'
+        }
+      },
+      issueCategory: 'Battery Performance',
+      issueDescription: 'Pin sạc không đủ dung lượng theo thông số kỹ thuật, giảm 30% so với ban đầu.',
+      diagnostic: {
+        mainTechnician: 'Trần Minh Quân',
+        assistantTechnicians: ['Lê Thị Hoa'],
+        finalDiagnosis: 'Pin bị suy giảm dung lượng do lỗi của cell pin số 5 và 12. Cần thay thế module pin hoàn toàn.',
+        images: ['image1.jpg', 'image2.jpg', 'image3.jpg'],
+        reportDocument: 'diagnostic_report_001.pdf'
+      },
+      partsNeeded: [
+        { partCode: 'BAT-XP-001', partName: 'Module pin chính EV Model X Pro', quantity: 1, estimatedCost: 15000000 },
+        { partCode: 'CONN-BAT-05', partName: 'Connector pin 400V', quantity: 2, estimatedCost: 500000 }
+      ],
+      submittedDate: '2024-01-15',
+      serviceCenter: 'Trung tâm dịch vụ Hà Nội',
+      status: 'pending_approval'
+    },
+    {
+      id: 'WC-2024-002',
+      vehicleInfo: {
+        vin: 'WVWZZZ1JZ3W386752',
+        model: 'EV Compact Plus',
+        year: '2022',
+        customer: {
+          name: 'Trần Thị Lan',
+          phone: '0987654321',
+          email: 'lan.tran@email.com'
+        }
+      },
+      issueCategory: 'Motor Controller',
+      issueDescription: 'Động cơ bị giật, mất lực khi tăng tốc đột ngột.',
+      diagnostic: {
+        mainTechnician: 'Phạm Văn Nam',
+        assistantTechnicians: [],
+        finalDiagnosis: 'IC điều khiển động cơ bị lỗi, cần thay thế bộ điều khiển hoàn toàn.',
+        images: ['image4.jpg', 'image5.jpg'],
+        reportDocument: 'diagnostic_report_002.pdf'
+      },
+      partsNeeded: [
+        { partCode: 'CTRL-CP-001', partName: 'Bộ điều khiển động cơ EV Compact', quantity: 1, estimatedCost: 8000000 }
+      ],
+      submittedDate: '2024-01-16',
+      serviceCenter: 'Trung tâm dịch vụ TP.HCM',
+      status: 'pending_approval'
+    }
+    */
+  ];
 
   const handleClaimApproval = (claimId: string) => {
     const claim = pendingClaims.find(c => c.id === claimId);
