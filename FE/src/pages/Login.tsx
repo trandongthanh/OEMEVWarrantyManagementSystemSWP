@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
-import { Shield, Car, Eye, EyeOff, LogIn, AlertCircle, Users } from 'lucide-react';
+import { Shield, Car, Eye, EyeOff, LogIn, LogOut, AlertCircle, Users } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 const Login = () => {
@@ -79,16 +79,34 @@ const Login = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-muted/20 to-accent/20">
       {/* Header */}
-      <header className="border-b bg-card/80 backdrop-blur-sm shadow-elegant">
+      <header className="border-b bg-gradient-primary backdrop-blur-sm shadow-elegant">
         <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center space-x-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-primary">
-              <Shield className="h-6 w-6 text-primary-foreground" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/20">
+                <Shield className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-white">EV Warranty Management</h1>
+                <p className="text-sm text-primary-foreground/80">Professional Service Platform</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-foreground">EV Warranty Management</h1>
-              <p className="text-sm text-muted-foreground">Professional Service Platform</p>
-            </div>
+            
+            {/* Logout Button */}
+            <Button 
+              variant="ghost" 
+              size="sm"
+              className="text-white hover:bg-white/20 hover:text-white"
+              onClick={() => {
+                // Clear any stored auth data and navigate to login
+                localStorage.clear();
+                sessionStorage.clear();
+                navigate('/');
+              }}
+            >
+              <LogOut className="h-4 w-4 mr-2" />
+              Đăng Xuất
+            </Button>
           </div>
         </div>
       </header>
@@ -99,12 +117,12 @@ const Login = () => {
           {/* Login Form */}
           <div className="flex items-center justify-center">
             <Card className="w-full max-w-md shadow-glow">
-              <CardHeader className="text-center">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-primary">
-                  <LogIn className="h-8 w-8 text-primary-foreground" />
+              <CardHeader className="text-center bg-gradient-primary text-white rounded-t-lg">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/20">
+                  <LogIn className="h-8 w-8 text-white" />
                 </div>
-                <CardTitle className="text-2xl">Đăng Nhập Hệ Thống</CardTitle>
-                <CardDescription>
+                <CardTitle className="text-2xl text-white">Đăng Nhập Hệ Thống</CardTitle>
+                <CardDescription className="text-primary-foreground/80">
                   Truy cập vào nền tảng quản lý bảo hành xe điện
                 </CardDescription>
               </CardHeader>
@@ -183,7 +201,8 @@ const Login = () => {
             </Card>
           </div>
 
-          {/* Demo Accounts */}
+          {/* Demo Accounts - Commented out */}
+          {/* 
           <div className="space-y-6">
             <div className="text-center">
               <div className="inline-flex items-center space-x-2 rounded-full bg-accent px-4 py-2">
@@ -247,6 +266,21 @@ const Login = () => {
                 </div>
               </CardContent>
             </Card>
+          </div>
+          */}
+
+          {/* Car Image */}
+          <div className="flex items-center justify-center">
+            <img 
+              src="/CAR.png" 
+              alt="Electric Vehicle" 
+              className="w-full h-auto object-contain mix-blend-multiply"
+              style={{ 
+                maxWidth: '2000px',
+                filter: 'drop-shadow(0 10px 30px rgba(0,0,0,0.3))',
+                background: 'transparent'
+              }}
+            />
           </div>
         </div>
       </div>
