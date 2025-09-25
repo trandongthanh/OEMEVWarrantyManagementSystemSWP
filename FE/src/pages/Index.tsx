@@ -54,7 +54,7 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b bg-card shadow-elegant">
+      <header className="border-b shadow-elegant" style={{ backgroundColor: '#7476F2' }}>
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -62,14 +62,14 @@ const Index = () => {
                 <Shield className="h-6 w-6 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-foreground">EV Warranty Management System</h1>
-                <p className="text-sm text-muted-foreground">Professional Electric Vehicle Service Platform</p>
+                <h1 className="text-xl font-bold text-white">EV Warranty Management System</h1>
+                <p className="text-sm text-white">Professional Electric Vehicle Service Platform</p>
               </div>
             </div>
             <div className="flex items-center space-x-3">
               <Button variant="outline" onClick={() => navigate('/login')}>
                 <LogIn className="mr-2 h-4 w-4" />
-                Đăng Nhập
+                LOGIN
               </Button>
             </div>
           </div>
