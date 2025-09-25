@@ -19,55 +19,55 @@ const Login = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const demoAccounts = [
-    {
-      role: 'Service Center Staff',
-      email: 'staff@evservice.com',
-      password: 'staff123',
-      description: 'Tạo hồ sơ xe, xử lý khách hàng',
-      color: 'bg-primary'
-    },
-    {
-      role: 'Technician', 
-      email: 'tech@evservice.com',
-      password: 'tech123',
-      description: 'Chẩn đoán, sửa chữa, cập nhật tiến độ',
-      color: 'bg-success'
-    },
-    {
-      role: 'EVM Admin',
-      email: 'admin@evm.com', 
-      password: 'admin123',
-      description: 'Quản lý toàn bộ hệ thống',
-      color: 'bg-destructive'
-    },
-    {
-      role: 'EVM Staff',
-      email: 'evmstaff@evm.com',
-      password: 'evm123', 
-      description: 'Duyệt warranty claims, quản lý parts',
-      color: 'bg-warning'
-    }
-  ];
+  // const demoAccounts = [
+  //   {
+  //     role: 'Service Center Staff',
+  //     email: 'staff@evservice.com',
+  //     password: 'staff123',
+  //     description: 'Tạo hồ sơ xe, xử lý khách hàng',
+  //     color: 'bg-primary'
+  //   },
+  //   {
+  //     role: 'Technician', 
+  //     email: 'tech@evservice.com',
+  //     password: 'tech123',
+  //     description: 'Chẩn đoán, sửa chữa, cập nhật tiến độ',
+  //     color: 'bg-success'
+  //   },
+  //   {
+  //     role: 'EVM Admin',
+  //     email: 'admin@evm.com', 
+  //     password: 'admin123',
+  //     description: 'Quản lý toàn bộ hệ thống',
+  //     color: 'bg-destructive'
+  //   },
+  //   {
+  //     role: 'EVM Staff',
+  //     email: 'evmstaff@evm.com',
+  //     password: 'evm123', 
+  //     description: 'Duyệt warranty claims, quản lý parts',
+  //     color: 'bg-warning'
+  //   }
+  // ];
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
     if (!email || !password) {
-      setError('Vui lòng nhập đầy đủ email và mật khẩu');
+      setError('Please enter both email and password');
       return;
     }
 
     const success = await login(email, password);
     if (success) {
       toast({
-        title: "Đăng nhập thành công!",
-        description: "Chào mừng bạn đến với hệ thống EV Warranty Management",
+        title: "Login Successful!",
+        description: "Welcome to EV Warranty Management System",
       });
       navigate('/dashboard');
     } else {
-      setError('Email hoặc mật khẩu không chính xác');
+      setError('Invalid email or password');
     }
   };
 
@@ -105,25 +105,37 @@ const Login = () => {
               }}
             >
               <LogOut className="h-4 w-4 mr-2" />
-              Đăng Xuất
+              Log Out
             </Button>
           </div>
         </div>
       </header>
 
-      <div className="flex min-h-[calc(100vh-80px)] items-center justify-center p-6">
-        <div className="w-full max-w-6xl grid gap-8 lg:grid-cols-2">
-          
-          {/* Login Form */}
-          <div className="flex items-center justify-center">
-            <Card className="w-full max-w-md shadow-glow">
+      <div className="flex min-h-[calc(100vh-80px)] items-center justify-center p-6 relative">
+        {/* Car Image Background */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
+          <img 
+            src="/CAR2.png" 
+            alt="Electric Vehicle" 
+            className="w-full h-auto object-contain mix-blend-multiply opacity-70"
+            style={{ 
+              maxWidth: '1500px',
+              filter: 'drop-shadow(0 10px 30px rgba(0,0,0,0.7))',
+              background: 'transparent'
+            }}
+          />
+        </div>
+
+        {/* Login Form */}
+        <div className="relative z-10 flex items-center justify-center">
+          <Card className="w-full max-w-md shadow-glow backdrop-blur-sm">
               <CardHeader className="text-center bg-gradient-primary text-white rounded-t-lg">
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/20">
                   <LogIn className="h-8 w-8 text-white" />
                 </div>
-                <CardTitle className="text-2xl text-white">Đăng Nhập Hệ Thống</CardTitle>
+                <CardTitle className="text-2xl text-white">System Login</CardTitle>
                 <CardDescription className="text-primary-foreground/80">
-                  Truy cập vào nền tảng quản lý bảo hành xe điện
+                  Access to EV Warranty Management Platform
                 </CardDescription>
               </CardHeader>
               
@@ -141,7 +153,7 @@ const Login = () => {
                     <Input
                       id="email"
                       type="email"
-                      placeholder="Nhập địa chỉ email"
+                      placeholder="Enter your email address"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       disabled={isLoading}
@@ -155,7 +167,7 @@ const Login = () => {
                       <Input
                         id="password"
                         type={showPassword ? 'text' : 'password'}
-                        placeholder="Nhập mật khẩu"
+                        placeholder="Enter your password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         disabled={isLoading}
@@ -187,101 +199,18 @@ const Login = () => {
                     {isLoading ? (
                       <div className="flex items-center space-x-2">
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                        <span>Đang đăng nhập...</span>
+                        <span>Signing in...</span>
                       </div>
                     ) : (
                       <>
                         <LogIn className="mr-2 h-4 w-4" />
-                        Đăng Nhập
+                        Sign In
                       </>
                     )}
                   </Button>
                 </form>
               </CardContent>
             </Card>
-          </div>
-
-          {/* Demo Accounts - Commented out */}
-          {/* 
-          <div className="space-y-6">
-            <div className="text-center">
-              <div className="inline-flex items-center space-x-2 rounded-full bg-accent px-4 py-2">
-                <Users className="h-4 w-4 text-accent-foreground" />
-                <span className="text-sm font-medium text-accent-foreground">Demo Accounts</span>
-              </div>
-              <h2 className="mt-4 text-2xl font-bold text-foreground">Tài Khoản Demo</h2>
-              <p className="text-muted-foreground">Click vào tài khoản để đăng nhập nhanh</p>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              {demoAccounts.map((account, index) => (
-                <Card 
-                  key={index}
-                  className="cursor-pointer transition-all hover:shadow-glow hover:scale-105"
-                  onClick={() => quickLogin(account.email, account.password)}
-                >
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center space-x-3">
-                      <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${account.color}`}>
-                        <Car className="h-5 w-5 text-white" />
-                      </div>
-                      <div className="flex-1">
-                        <CardTitle className="text-base">{account.role}</CardTitle>
-                        <CardDescription className="text-xs">
-                          {account.description}
-                        </CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  
-                  <CardContent className="space-y-2 pt-0">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Email:</span>
-                      <Badge variant="outline" className="text-xs">
-                        {account.email}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Password:</span>
-                      <Badge variant="secondary" className="text-xs">
-                        {account.password}
-                      </Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            <Card className="bg-accent/50 border-primary/20">
-              <CardContent className="pt-6">
-                <div className="flex items-start space-x-3">
-                  <Shield className="h-5 w-5 text-primary mt-0.5" />
-                  <div>
-                    <h3 className="font-semibold text-foreground">Lưu ý về Demo</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Đây là phiên bản demo với dữ liệu mẫu. Trong môi trường thực tế, 
-                      hệ thống sẽ kết nối với database và có bảo mật cao hơn.
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-          */}
-
-          {/* Car Image */}
-          <div className="flex items-center justify-center">
-            <img 
-              src="/CAR.png" 
-              alt="Electric Vehicle" 
-              className="w-full h-auto object-contain mix-blend-multiply"
-              style={{ 
-                maxWidth: '2000px',
-                filter: 'drop-shadow(0 10px 30px rgba(0,0,0,0.3))',
-                background: 'transparent'
-              }}
-            />
-          </div>
         </div>
       </div>
     </div>
