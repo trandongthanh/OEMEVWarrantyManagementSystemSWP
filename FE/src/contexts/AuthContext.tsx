@@ -132,7 +132,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         if (token) {
           // Store only token in localStorage
           localStorage.setItem('ev_warranty_token', token);
-          console.log('Token:', token); // Only log token once
           
           // Set a minimal user object to indicate authentication
           const userData: User = {
