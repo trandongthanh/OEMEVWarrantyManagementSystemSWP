@@ -11,11 +11,11 @@ import { Shield, Car, Eye, EyeOff, LogIn, LogOut, AlertCircle, Users } from 'luc
 import { useToast } from '@/hooks/use-toast';
 
 const Login = () => {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const { login, isLoading } = useAuth();
+  const { login, isLoading, getToken } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -54,12 +54,12 @@ const Login = () => {
     e.preventDefault();
     setError('');
 
-    if (!email || !password) {
-      setError('Please enter both email and password');
+    if (!username || !password) {
+      setError('Please enter both username and password');
       return;
     }
 
-    const success = await login(email, password);
+    const success = await login(username, password);
     if (success) {
       toast({
         title: "Login Successful!",
@@ -67,12 +67,12 @@ const Login = () => {
       });
       navigate('/dashboard');
     } else {
-      setError('Invalid email or password');
+      setError('Invalid username or password');
     }
   };
 
-  const quickLogin = (demoEmail: string, demoPassword: string) => {
-    setEmail(demoEmail);
+  const quickLogin = (demoUsername: string, demoPassword: string) => {
+    setUsername(demoUsername);
     setPassword(demoPassword);
   };
 
@@ -149,13 +149,13 @@ const Login = () => {
                   )}
 
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email</Label>
+                    <Label htmlFor="username">Username</Label>
                     <Input
-                      id="email"
-                      type="email"
-                      placeholder="Enter your email address"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      id="username"
+                      type="text"
+                      placeholder="Enter your username"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
                       disabled={isLoading}
                       className="h-11"
                     />
