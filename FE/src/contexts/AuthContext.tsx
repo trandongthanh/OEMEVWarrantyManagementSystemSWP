@@ -133,13 +133,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           // Store only token in localStorage
           localStorage.setItem('ev_warranty_token', token);
           
-          // Set a minimal user object to indicate authentication
-          const userData: User = {
-            id: username,
-            email: username,
-            name: username,
-            role: 'service_center_staff'
-          };
+          // Extract user info from backend response
+          let userData: User;
+          
+          if (data.data && data.data.user) {
+            // Use user info from backend response
+            const backendUser = data.data.user;
+            userData = {
+              id: backendUser.userId || backendUser.id || username,
+              email: backendUser.email || username,
+              name: backendUser.name || username,
+              role: backendUser.role?.roleName || backendUser.role || 'service_center_staff',
+              serviceCenter: backendUser.serviceCenter,
+              department: backendUser.department
+            };
+          } else {
+            // Fallback to minimal user object
+            userData = {
+              id: username,
+              email: username,
+              name: username,
+              role: 'service_center_staff'
+            };
+          }
           
           setUser(userData);
           setIsLoading(false);
