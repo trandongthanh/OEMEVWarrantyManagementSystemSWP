@@ -25,11 +25,14 @@ import {
   XCircle,
   Calendar,
   Users,
-  LogOut
+  LogOut,
+  Save
 } from "lucide-react";
 
 const ServiceCenterDashboard = () => {
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchResult, setSearchResult] = useState<any>(null);
+  const [showVehicleForm, setShowVehicleForm] = useState(false);
   const [showNewClaim, setShowNewClaim] = useState(false);
   const [showRegisterVehicle, setShowRegisterVehicle] = useState(false);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
@@ -38,7 +41,66 @@ const ServiceCenterDashboard = () => {
   const [showUpdateStatus, setShowUpdateStatus] = useState(false);
   const [selectedClaimId, setSelectedClaimId] = useState<string>('');
   const [selectedClaimStatus, setSelectedClaimStatus] = useState<string>('');
+  const [ownerForm, setOwnerForm] = useState({
+    name: '',
+    phone: '',
+    email: '',
+    address: ''
+  });
   const { user, logout } = useAuth();
+
+  // Mock vehicle data for VIN search
+  const mockVehicles = [
+    {
+      vin: "1HGBH41JXMN109186",
+      model: "EV Model X Pro",
+      year: "2023",
+      color: "Pearl White",
+      batteryCapacity: "85 kWh",
+      motorType: "Dual Motor AWD",
+      purchaseDate: "2023-06-15",
+      warrantyStartDate: "2023-06-15",
+      warrantyEndDate: "2031-06-15",
+      dealerInfo: "EV Center Hanoi",
+      owner: {
+        name: "Nguyễn Văn Minh",
+        phone: "0901234567",
+        email: "minh.nguyen@email.com",
+        address: "123 Đường ABC, Quận 1, TP.HCM"
+      }
+    },
+    {
+      vin: "WVWZZZ1JZ3W386752",
+      model: "EV Compact Plus",
+      year: "2024",
+      color: "Obsidian Black",
+      batteryCapacity: "60 kWh",
+      motorType: "Single Motor RWD",
+      purchaseDate: "2024-02-20",
+      warrantyStartDate: "2024-02-20",
+      warrantyEndDate: "2032-02-20",
+      dealerInfo: "EV Center HCMC",
+      owner: null
+    },
+    {
+      vin: "1N4AL11D75C109151",
+      model: "EV SUV Premium",
+      year: "2023",
+      color: "Metallic Silver",
+      batteryCapacity: "100 kWh",
+      motorType: "Triple Motor AWD",
+      purchaseDate: "2023-09-10",
+      warrantyStartDate: "2023-09-10",
+      warrantyEndDate: "2031-09-10",
+      dealerInfo: "EV Center Da Nang",
+      owner: {
+        name: "Trần Thị Lan",
+        phone: "0987654321",
+        email: "lan.tran@email.com",
+        address: "456 Đường XYZ, Quận 2, TP.HCM"
+      }
+    }
+  ];
 
   const stats = [
     {
@@ -122,6 +184,44 @@ const ServiceCenterDashboard = () => {
     setShowClaimDetails(false);
   };
 
+  const handleVinSearch = () => {
+    if (!searchTerm.trim()) return;
+    
+    const vehicle = mockVehicles.find(v => 
+      v.vin.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    
+    if (vehicle) {
+      setSearchResult(vehicle);
+      setShowVehicleForm(true);
+    } else {
+      setSearchResult(null);
+      setShowVehicleForm(false);
+      // Could show a "Vehicle not found" message here
+    }
+  };
+
+  const handleRegisterOwner = () => {
+    if (searchResult && ownerForm.name && ownerForm.phone) {
+      // In real app, would make API call to register owner
+      const updatedVehicle = {
+        ...searchResult,
+        owner: { ...ownerForm }
+      };
+      
+      // Update the mock data
+      const vehicleIndex = mockVehicles.findIndex(v => v.vin === searchResult.vin);
+      if (vehicleIndex !== -1) {
+        mockVehicles[vehicleIndex] = updatedVehicle;
+      }
+      
+      setSearchResult(updatedVehicle);
+      setOwnerForm({ name: '', phone: '', email: '', address: '' });
+      
+      console.log('Owner registered successfully:', updatedVehicle);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const statusConfig = {
       pending: { variant: "pending" as const, icon: Clock, text: "Chờ duyệt" },
@@ -164,7 +264,7 @@ const ServiceCenterDashboard = () => {
               <Badge variant="outline">{user?.serviceCenter}</Badge>
               <Button variant="outline" onClick={logout}>
                 <LogOut className="mr-2 h-4 w-4" />
-                Đăng xuất
+                Logout
               </Button>
               {hasPermission(user, 'manage_campaigns') && (
                 <Button variant="outline">
@@ -186,16 +286,27 @@ const ServiceCenterDashboard = () => {
       <div className="container mx-auto px-6 py-6">
         {/* Quick Search */}
         <div className="mb-6">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by VIN or Customer ID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
+          <div className="flex w-full space-x-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by VIN"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Button 
+              variant="gradient"
+              onClick={handleVinSearch}
+            >
+              <Search className="h-4 w-4 mr-2" />
+              Search
+            </Button>
           </div>
         </div>
+
+
 
         {/* Statistics Cards */}
         <div className="mb-6 grid gap-4 md:grid-cols-4">
@@ -469,6 +580,243 @@ const ServiceCenterDashboard = () => {
           onClose={() => setShowUpdateStatus(false)}
           onStatusUpdated={handleStatusUpdated}
         />
+      )}
+
+      {/* Vehicle Information Modal */}
+      {showVehicleForm && searchResult && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden">
+            <CardHeader className="border-b pb-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center space-x-2">
+                    <Car className="h-5 w-5 text-primary" />
+                    <span>Vehicle Information</span>
+                  </CardTitle>
+                  <CardDescription>
+                    Edit vehicle details and owner information
+                  </CardDescription>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => {
+                    setShowVehicleForm(false);
+                    setSearchResult(null);
+                    setSearchTerm('');
+                  }}
+                >
+                  <XCircle className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 overflow-y-auto max-h-[calc(90vh-200px)] space-y-6">
+              {/* Vehicle Details Form */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg border-b pb-2">Vehicle Details</h3>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">VIN Number</label>
+                    <Input 
+                      value={searchResult.vin}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Model</label>
+                    <Input 
+                      value={searchResult.model}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Year</label>
+                    <Input 
+                      value={searchResult.year}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Color</label>
+                    <Input 
+                      value={searchResult.color}
+                      onChange={(e) => setSearchResult(prev => ({ ...prev, color: e.target.value }))}
+                      placeholder="Enter vehicle color"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Battery Capacity</label>
+                    <Input 
+                      value={searchResult.batteryCapacity}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Motor Type</label>
+                    <Input 
+                      value={searchResult.motorType}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Purchase Date</label>
+                    <Input 
+                      type="date"
+                      value={searchResult.purchaseDate}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Dealer Information</label>
+                    <Input 
+                      value={searchResult.dealerInfo}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Owner Information Form */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg border-b pb-2">Owner Information</h3>
+                {searchResult.owner ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-2 mb-4">
+                      <Badge variant="success">
+                        <CheckCircle className="mr-1 h-3 w-3" />
+                        Registered Owner
+                      </Badge>
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Owner Name</label>
+                        <Input 
+                          value={searchResult.owner.name}
+                          onChange={(e) => setSearchResult(prev => ({ 
+                            ...prev, 
+                            owner: { ...prev.owner, name: e.target.value }
+                          }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Phone Number</label>
+                        <Input 
+                          value={searchResult.owner.phone}
+                          onChange={(e) => setSearchResult(prev => ({ 
+                            ...prev, 
+                            owner: { ...prev.owner, phone: e.target.value }
+                          }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Email</label>
+                        <Input 
+                          type="email"
+                          value={searchResult.owner.email}
+                          onChange={(e) => setSearchResult(prev => ({ 
+                            ...prev, 
+                            owner: { ...prev.owner, email: e.target.value }
+                          }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Address</label>
+                        <Input 
+                          value={searchResult.owner.address}
+                          onChange={(e) => setSearchResult(prev => ({ 
+                            ...prev, 
+                            owner: { ...prev.owner, address: e.target.value }
+                          }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-2 p-3 bg-warning/10 border border-warning/20 rounded-lg">
+                      <AlertCircle className="h-4 w-4 text-warning" />
+                      <p className="text-warning font-medium">This car is unowned</p>
+                    </div>
+                    
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Owner Name *</label>
+                        <Input
+                          placeholder="Enter owner name"
+                          value={ownerForm.name}
+                          onChange={(e) => setOwnerForm(prev => ({ ...prev, name: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Phone Number *</label>
+                        <Input
+                          placeholder="Enter phone number"
+                          value={ownerForm.phone}
+                          onChange={(e) => setOwnerForm(prev => ({ ...prev, phone: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Email</label>
+                        <Input
+                          placeholder="Enter email address"
+                          type="email"
+                          value={ownerForm.email}
+                          onChange={(e) => setOwnerForm(prev => ({ ...prev, email: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Address</label>
+                        <Input
+                          placeholder="Enter address"
+                          value={ownerForm.address}
+                          onChange={(e) => setOwnerForm(prev => ({ ...prev, address: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="flex justify-end">
+                      <Button 
+                        variant="gradient" 
+                        onClick={handleRegisterOwner}
+                        disabled={!ownerForm.name || !ownerForm.phone}
+                      >
+                        <User className="mr-2 h-4 w-4" />
+                        Register Owner
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+            
+            {/* Modal Footer */}
+            <div className="border-t p-6">
+              <div className="flex justify-between">
+                <Button variant="outline">
+                  <Save className="mr-2 h-4 w-4" />
+                  Save Changes
+                </Button>
+                <Button 
+                  variant="secondary"
+                  onClick={() => {
+                    setShowVehicleForm(false);
+                    setSearchResult(null);
+                    setSearchTerm('');
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
       )}
     </div>
   );
