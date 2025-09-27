@@ -77,7 +77,17 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-muted/20 to-accent/20">
+    <div className="min-h-screen w-full relative">
+      {/* Radial Gradient Background from Bottom */}
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          background: "radial-gradient(125% 125% at 50% 90%, #fff 40%, #6366f1 100%)",
+        }}
+      />
+      
+      {/* Content Container */}
+      <div className="relative z-10 min-h-screen">
       {/* Header */}
       <header className="border-b bg-gradient-primary backdrop-blur-sm shadow-elegant">
         <div className="container mx-auto px-6 py-4">
@@ -105,29 +115,15 @@ const Login = () => {
               }}
             >
               <LogOut className="h-4 w-4 mr-2" />
-              Log Out
+              Back to Homepage
             </Button>
           </div>
         </div>
       </header>
 
-      <div className="flex min-h-[calc(100vh-80px)] items-center justify-center p-6 relative">
-        {/* Car Image Background */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
-          <img 
-            src="/CAR2.png" 
-            alt="Electric Vehicle" 
-            className="w-full h-auto object-contain mix-blend-multiply opacity-70"
-            style={{ 
-              maxWidth: '1500px',
-              filter: 'drop-shadow(0 10px 30px rgba(0,0,0,0.7))',
-              background: 'transparent'
-            }}
-          />
-        </div>
-
-        {/* Login Form */}
-        <div className="relative z-10 flex items-center justify-center">
+      <div className="flex min-h-[calc(100vh-80px)] relative">
+        {/* Left Side - Login Form */}
+        <div className="flex-1 flex items-center justify-center p-8 lg:p-12">
           <Card className="w-full max-w-md shadow-glow backdrop-blur-sm">
               <CardHeader className="text-center bg-gradient-primary text-white rounded-t-lg">
                 <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/20">
@@ -212,6 +208,53 @@ const Login = () => {
               </CardContent>
             </Card>
         </div>
+
+        {/* Right Side - 3D Car Image */}
+        <div className="hidden lg:flex flex-1 items-center justify-start p-8 pl-0 relative">
+          <div className="relative ml-8">
+            {/* 3D Container */}
+            <div 
+              className="relative transform-gpu"
+              style={{
+                perspective: '1000px',
+                transformStyle: 'preserve-3d'
+              }}
+            >
+              {/* Car Image with 3D Effects */}
+              <img 
+                src="/CAR2.png" 
+                alt="Electric Vehicle" 
+                className="w-[450px] xl:w-[600px] 2xl:w-[750px] h-auto object-contain transition-transform duration-700 hover:scale-105"
+                style={{ 
+                  transform: 'rotateY(-15deg) rotateX(5deg)',
+                  filter: 'drop-shadow(20px 20px 40px rgba(0,0,0,0.3)) drop-shadow(-5px -5px 20px rgba(255,255,255,0.1))',
+                  background: 'transparent'
+                }}
+              />
+              
+              {/* 3D Shadow/Base */}
+              <div 
+                className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-4"
+                style={{
+                  width: '400px',
+                  height: '40px',
+                  background: 'radial-gradient(ellipse, rgba(0,0,0,0.3) 0%, transparent 70%)',
+                  borderRadius: '50%',
+                  transform: 'rotateX(75deg) scale(1.6)',
+                  filter: 'blur(15px)'
+                }}
+              />
+              
+              {/* Floating Animation Elements */}
+              <div className="absolute inset-0">
+                <div className="absolute top-10 left-10 w-4 h-4 bg-blue-400/30 rounded-full animate-bounce" />
+                <div className="absolute top-20 right-16 w-3 h-3 bg-purple-400/20 rounded-full animate-pulse" />
+                <div className="absolute bottom-20 left-20 w-2 h-2 bg-indigo-400/25 rounded-full animate-ping" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       </div>
     </div>
   );
