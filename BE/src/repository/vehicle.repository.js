@@ -1,24 +1,63 @@
-const {
-  Vehicle,
-  VehicleModel,
-  TypeComponent,
-  WarrantyPolicy,
-  Customer,
-} = require("../../models/index");
-const { calculateExpiationDates } = require("../../util");
+import db from "../../models/index.cjs";
+const { Vehicle, Customer, VehicleModel, VehicleCompany } = db;
 
 class VehicleRepository {
-  async registerVehicleWithCustomer({
+  findVehicleByVinWithOwner = async ({ vin, companyId }) => {
+    console.log("Vin, company: ", vin, companyId);
+
+    const existingVehicle = await Vehicle.findOne({
+      where: {
+        vin: vin,
+      },
+
+      attributes: [
+        "vin",
+        "dateOfManufacture",
+        "placeOfManufacture",
+        "licensePlate",
+        "purchaseDate",
+      ],
+
+      include: [
+        {
+          model: Customer,
+          as: "owner",
+        },
+
+        {
+          model: VehicleModel,
+          as: "model",
+          attributes: [["vehicle_model_name", "modelName"]],
+
+          include: [
+            {
+              model: VehicleCompany,
+              as: "company",
+              where: { vehicleCompanyId: companyId },
+              attributes: ["name"],
+            },
+          ],
+        },
+      ],
+    });
+
+    console.log("Exist vehicle: ", existingVehicle);
+
+    return existingVehicle;
+  };
+
+  registerOwnerForVehicle = async ({
+    companyId,
     vin,
+    customerId,
     licensePlate,
     purchaseDate,
-    ownerId,
-  }) {
+  }) => {
     const rowEffect = await Vehicle.update(
       {
-        licensePlate,
-        purchaseDate,
-        ownerId,
+        ownerId: customerId,
+        licensePlate: licensePlate,
+        purchaseDate: purchaseDate,
       },
       {
         where: {
@@ -27,119 +66,17 @@ class VehicleRepository {
       }
     );
 
-    if (rowEffect === 0) {
+    if (rowEffect <= 0) {
       return null;
     }
 
-    const updatedVehicle = await Vehicle.findOne({
-      where: {
-        vin: vin,
-      },
-
-      attributes: [
-        "vin",
-        "dateOfManufacture",
-        "placeOfManufacture",
-        "licensePlate",
-        "purchaseDate",
-      ],
-
-      include: [
-        {
-          model: Customer,
-          as: "owner",
-          attributes: ["fullName", "email", "phone", "address"],
-        },
-        {
-          model: VehicleModel,
-          as: "model",
-          attributes: ["vehicleModelName", "yearOfLaunch"],
-        },
-      ],
+    const updatedVehicle = await this.findVehicleByVinWithOwner({
+      vin: vin,
+      companyId: companyId,
     });
 
     return updatedVehicle;
-  }
-
-  async checkWarrantyByVin({ vin }) {
-    //find vehicle
-    const vehicle = await Vehicle.findOne({
-      where: {
-        vin: vin,
-      },
-
-      include: [
-        {
-          model: VehicleModel,
-          as: "model",
-
-          include: [
-            {
-              model: TypeComponent,
-              as: "typeComponents",
-              through: {
-                attributes: [],
-              },
-              include: {
-                model: WarrantyPolicy,
-                as: "specificPolicy",
-              },
-            },
-            {
-              model: WarrantyPolicy,
-              as: "mainPolicy",
-            },
-          ],
-        },
-      ],
-    });
-
-    if (!vehicle) {
-      return null;
-    }
-
-    const typeComponentWarranty = calculateExpiationDates({ vehicle: vehicle });
-
-    return {
-      vin: vehicle.vin,
-      purchaseDate: vehicle.purchaseDate,
-      model: vehicle.model,
-      mainPolicy: vehicle.model.mainPolicy,
-
-      components_warranty: typeComponentWarranty,
-    };
-  }
-
-  async findVehicleByVin({ vin }) {
-    const vehicle = await Vehicle.findOne({
-      where: {
-        vin: vin,
-      },
-
-      attributes: [
-        "vin",
-        "dateOfManufacture",
-        "placeOfManufacture",
-        "licensePlate",
-        "purchaseDate",
-      ],
-
-      include: [
-        {
-          model: Customer,
-          as: "owner",
-          attributes: ["fullName", "email", "phone", "address"],
-        },
-        {
-          model: VehicleModel,
-          as: "model",
-          attributes: ["vehicleModelName", "yearOfLaunch"],
-        },
-      ],
-    });
-
-    return vehicle;
-  }
+  };
 }
 
-module.exports = new VehicleRepository();
+export default VehicleRepository;

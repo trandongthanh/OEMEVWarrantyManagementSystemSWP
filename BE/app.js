@@ -1,29 +1,26 @@
-const express = require("express");
-const cors = require("cors");
+import express from "express";
+import { scopePerRequest } from "awilix-express";
+import container from "./container.js";
+import { hanldeError } from "./middleware/index.js";
 const app = express();
-app.use(cors());
-app.use(express.json());
-const authRouter = require("./src/routes/auth.router");
-const roleRouter = require("./src/routes/role.router");
-const vehicleCompanyRouter = require("./src/routes/vehicleCompany.router");
-const vehicleRouter = require("./src/routes/vehicle.router");
 
-app.get("/", (req, res) => {
+app.use(express.json());
+app.use(scopePerRequest(container));
+
+import authRouter from "./src/routes/auth.router.js";
+import vehicleRouter from "./src/routes/vehicle.router.js";
+import customerRouter from "./src/routes/customer.router.js";
+
+app.get("/", async (req, res) => {
   res.send("Hello world");
 });
 
-app.use("/api/v1/auth", authRouter);
-app.use("/api/v1/role", roleRouter);
-app.use("/api/v1/vehicleComany", vehicleCompanyRouter);
-app.use("/api/v1/vehicle", vehicleRouter);
+const url = "/api/v1";
 
-app.use((error, req, res, next) => {
-  if (error.statusCode) {
-    return res.status(error.statusCode).json({
-      status: "error",
-      message: error.message,
-    });
-  }
-});
+app.use(`${url}/auth`, authRouter);
+app.use(`${url}/vehicle`, vehicleRouter);
+app.use(`${url}/customer`, customerRouter);
 
-module.exports = app;
+app.use(hanldeError);
+
+export default app;

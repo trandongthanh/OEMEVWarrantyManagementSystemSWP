@@ -1,34 +1,24 @@
-const { Op } = require("sequelize");
-const { User, Role } = require("../../models/index");
+import db from "../../models/index.cjs";
+
+const { User, Role } = db;
 
 class UserRepository {
-  async findUserByUsername({ username }) {
-    const rawUser = await User.findOne({
+  async findByUsername({ username }) {
+    const existingUser = await User.findOne({
       where: {
-        username,
+        username: username,
       },
 
-      attributes: ["userId", "email", "phone", "address", "name", "password"],
-      include: [{ model: Role, as: "role", attributes: ["roleName"] }],
+      include: [
+        {
+          model: Role,
+          as: "role",
+          attributes: ["roleName"],
+        },
+      ],
     });
 
-    return rawUser;
-  }
-
-  async findUserById({ id }) {
-    const rawUser = await User.findByPk(id);
-
-    return rawUser;
-  }
-
-  async findUserByEmailOrPhone(identifier) {
-    const rawUser = await User.findOne({
-      where: {
-        [Op.or]: [{ phone: identifier.phone }, { email: identifier.email }],
-      },
-    });
-
-    return rawUser;
+    return existingUser;
   }
 
   async createUser({
@@ -40,17 +30,8 @@ class UserRepository {
     address,
     roleId,
     serviceCenterId,
+    vehicleCompanyId,
   }) {
-    console.log(
-      username,
-      password,
-      phone,
-      email,
-      name,
-      address,
-      roleId,
-      serviceCenterId
-    );
     const newUser = await User.create({
       username,
       password,
@@ -60,10 +41,11 @@ class UserRepository {
       address,
       roleId,
       serviceCenterId,
+      vehicleCompanyId,
     });
 
     return newUser;
   }
 }
 
-module.exports = new UserRepository();
+export default UserRepository;

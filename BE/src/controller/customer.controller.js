@@ -1,33 +1,32 @@
-const CustomerService = require("../service/customer.service");
-
 class CustomerController {
-  constructor() {
-    this.customerService = CustomerService;
+  constructor({ customerService }) {
+    this.customerService = customerService;
   }
 
-  createCustomer = async (req, res) => {
-    try {
-      const result = await this.customerService.createCustomer(req.body);
+  findCustomerByPhoneOrEmail = async (req, res, next) => {
+    let { phone, email } = req.query;
 
-      res.status(201).json({
-        status: "success",
-        data: {
-          result,
-        },
-      });
-    } catch (error) {
-      if (error.statusCode) {
-        return res.statusCode(error.statusCode).json({
-          status: "error",
-        });
-      }
-
-      res.status(500).json({
-        status: "fail",
-        message: error.message,
-      });
+    if (!email) {
+      email = null;
     }
+
+    if (!phone) {
+      phone = null;
+    }
+
+    const existingCustomer =
+      await this.customerService.findCustomerByPhoneOrEmail({
+        phone: phone,
+        email: email,
+      });
+
+    res.status(200).json({
+      status: "sucess",
+      data: {
+        customer: existingCustomer,
+      },
+    });
   };
 }
 
-module.exports = new CustomerController();
+export default CustomerController;

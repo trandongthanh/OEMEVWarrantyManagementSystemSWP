@@ -47,7 +47,6 @@ module.exports = (sequelize, DataTypes) => {
 
       licensePlate: {
         type: DataTypes.STRING,
-        allowNull: false,
         validate: {
           notEmpty: {
             msg: "licensePlate cannot be empty",

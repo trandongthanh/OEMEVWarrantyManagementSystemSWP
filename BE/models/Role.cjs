@@ -9,7 +9,12 @@ module.exports = (sequelize, DataTypes) => {
         field: "role_id",
       },
       roleName: {
-        type: DataTypes.ENUM("customer", "staff", "technician"),
+        type: DataTypes.ENUM(
+          "service_center_staff",
+          "service_center_technician",
+          "emv_staff",
+          "emv_admin"
+        ),
         allowNull: false,
         field: "role_name",
       },

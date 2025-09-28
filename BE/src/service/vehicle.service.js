@@ -1,60 +1,96 @@
-const VehicleRepository = require("../repository/vehicle.repository");
-const UserRepository = require("../repository/user.repository");
-const { BadRequestError, ConflictError, NotFoundError } = require("../error");
+import { BadRequestError, ConflictError } from "../error/index.js";
 
 class VehicleService {
-  constructor() {
-    this.vehicleRepository = VehicleRepository;
-    this.userRepository = UserRepository;
+  constructor({ vehicleRepository, validateVehicleDatesWithDayjs }) {
+    this.vehicleRepository = vehicleRepository;
+    this.validateVehicleDatesWithDayjs = validateVehicleDatesWithDayjs;
   }
 
-  async registerVehicleWithCustomer(vehicleData) {
-    const { vin, licensePlate, purchaseDate, ownerId } = vehicleData;
+  findVehicleByVin = async ({ vehicleVin, companyId }) => {
+    if (!vehicleVin || !companyId) {
+      throw new BadRequestError("vin, companyId is required");
+    }
 
-    if (!vin || !licensePlate || !purchaseDate || !ownerId) {
+    const vehicle = await this.vehicleRepository.findVehicleByVinWithOwner({
+      vin: vehicleVin,
+      companyId: companyId,
+    });
+
+    console.log("Vehicle serviceL ", vehicle);
+
+    if (!vehicle.model) {
+      return null;
+    }
+
+    const formatResult = {
+      vin: vehicle.vin,
+      dateOfManufacture: vehicle.dateOfManufacture,
+      placeOfManufacture: vehicle.dateOfManufacture,
+      licensePlate: vehicle.licensePlate,
+      purchaseDate: vehicle.purchaseDate,
+      owner: vehicle.owner,
+      model: vehicle.model.dataValues.modelName,
+      company: vehicle.model.company.name,
+    };
+
+    return formatResult;
+  };
+
+  registerOwnerForVehicle = async ({
+    companyId,
+    vin,
+    customerId,
+    dateOfManufacture,
+    licensePlate,
+    purchaseDate,
+  }) => {
+    if (!vin || !customerId || !licensePlate || !purchaseDate) {
       throw new BadRequestError(
-        "vin, liscensePlate, vehicleModelId, ownerId  are required"
+        "vin, customerId, licensePlate, purchaseDate is required"
       );
     }
 
-    // const validateDate =
-    //   /^(?:(?:31(\/|-|\.)(?:0?[13578]|1[02]))\1|(?:(?:29|30)(\/|-|\.)(?:0?[13-9]|1[0-2])\2))(?:(?:1[6-9]|[2-9]\d)?\d{4})$|^(?:29(\/|-|\.)0?2\3(?:(?:(?:1[6-9]|[2-9]\d)?(?:0[48]|[2468][048]|[13579][26])|(?:(?:16|[2468][048]|[3579][26])00))))$|^(?:0?[1-9]|1\d|2[0-8])(\/|-|\.)(?:(?:0?[1-9])|(?:1[0-2]))\4(?:(?:1[6-9]|[2-9]\d)?\d{2})$/;
-
-    const validateFormat = /^\d{4}-\d{2}-\d{2}$/;
-
-    if (!validateFormat.test(purchaseDate)) {
-      throw new BadRequestError(
-        "dateOfManuFacture, purchaseDate is required follow format yyyy-mm-dd"
-      );
-    }
-
-    const newVehicle = await this.vehicleRepository.registerVehicleWithCustomer(
-      {
-        vin,
-        licensePlate,
-        purchaseDate,
-        ownerId,
-      }
+    const isValidDate = this.validateVehicleDatesWithDayjs(
+      purchaseDate,
+      dateOfManufacture
     );
 
-    return newVehicle;
-  }
-
-  findVehicleByVin = async (vinVehicle) => {
-    const { vin } = vinVehicle;
-
-    if (!vin) {
-      throw new BadRequestError("vin is required");
+    if (!isValidDate) {
+      throw new BadRequestError("Purchasedate or dateOfmanufacture is invalid");
     }
 
-    const vehicle = await this.vehicleRepository.findVehicleByVin({ vin: vin });
+    const existingVehicle = await this.findVehicleByVin({
+      vehicleVin: vin,
+      companyId: companyId,
+    });
 
-    if (!vehicle) {
-      throw new NotFoundError("Cannot find vehicle with vin");
+    if (existingVehicle.owner) {
+      throw new ConflictError("This vehicle has owner");
     }
 
-    return vehicle;
+    const vehicle = await this.vehicleRepository.registerOwnerForVehicle({
+      companyId: companyId,
+      vin: vin,
+      customerId: customerId,
+      licensePlate: licensePlate,
+      purchaseDate: purchaseDate,
+    });
+
+    console.log("Vehicle: ", vehicle);
+
+    const formatResult = {
+      vin: vehicle.vin,
+      dateOfManufacture: vehicle.dateOfManufacture,
+      placeOfManufacture: vehicle.dateOfManufacture,
+      licensePlate: vehicle.licensePlate,
+      purchaseDate: vehicle.purchaseDate,
+      owner: vehicle.owner,
+      model: vehicle.model.dataValues.modelName,
+      company: vehicle.model.company.name,
+    };
+
+    return formatResult;
   };
 }
 
-module.exports = new VehicleService();
+export default VehicleService;

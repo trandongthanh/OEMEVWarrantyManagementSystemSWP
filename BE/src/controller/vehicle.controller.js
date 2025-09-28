@@ -1,78 +1,109 @@
-const UserService = require("../service/User.service.js");
-const VehicleService = require("../service/vehicle.service.js");
-const CustomerService = require("../service/customer.service.js");
+import { BadRequestError } from "../error/index.js";
 
 class VehicleController {
-  constructor() {
-    this.userService = UserService;
-    this.vehicleService = VehicleService;
-    this.customerService = CustomerService;
+  constructor({ vehicleService, serviceCenterService, customerService }) {
+    this.vehicleService = vehicleService;
+    this.serviceCenterService = serviceCenterService;
+    this.customerService = customerService;
   }
 
-  registerVehicleWithCustomer = async (req, res) => {
-    try {
-      const { customer, licensePlate, purchaseDate } = req.body;
-      const { vin } = req.params;
+  findVehicleByVin = async (req, res, next) => {
+    const { vin } = req.query;
+
+    const { serviceCenterId, companyId: vehicleCompanyId } = req.user;
+
+    let companyId;
+    if (serviceCenterId) {
+      const vehicleCompany =
+        await this.serviceCenterService.findCompanyWithServiceCenterId({
+          serviceCenterId: serviceCenterId,
+        });
+
+      companyId = vehicleCompany.dataValues.vehicle_company_id;
+    } else if (vehicleCompanyId) {
+      companyId = vehicleCompanyId;
+    } else {
+      throw new BadRequestError("Staff not belong to company");
+    }
+
+    const vehicle = await this.vehicleService.findVehicleByVin({
+      vehicleVin: vin,
+      companyId: companyId,
+    });
+
+    let result = vehicle;
+    if (!vehicle) {
+      result = {};
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        vehicle: result,
+      },
+    });
+  };
+
+  registerCustomerForVehicle = async (req, res, next) => {
+    const {
+      customer,
+      customerId: ownerId,
+      dateOfManufacture,
+      licensePlate,
+      purchaseDate,
+    } = req.body;
+
+    const { vin } = req.params;
+
+    console.log(ownerId);
+
+    let customerId;
+    if (ownerId) {
+      await this.customerService.checkCustomerById({
+        id: ownerId,
+      });
+
+      customerId = ownerId;
+    } else if (customer) {
+      await this.customerService.checkduplicateCustomer({
+        phone: customer.phone,
+        email: customer.email,
+      });
 
       const newCustomer = await this.customerService.createCustomer(customer);
 
-      const ownerId = newCustomer.id;
+      console.log("newCustomer: ", newCustomer);
 
-      console.log(vin, licensePlate, purchaseDate, ownerId);
-
-      const updatedVehicle =
-        await this.vehicleService.registerVehicleWithCustomer({
-          vin,
-          licensePlate,
-          purchaseDate,
-          ownerId,
-        });
-
-      res.status(200).json({
-        status: "success",
-        data: {
-          updatedVehicle,
-        },
-      });
-    } catch (error) {
-      if (error.statusCode) {
-        return res.status(error.statusCode).json({
-          status: "error",
-          message: error.message,
-        });
-      }
-
-      res.status(500).json({
-        status: "fail",
-        message: `Server error: ${error.message}`,
-      });
+      customerId = newCustomer.dataValues.id;
+    } else {
+      throw new BadRequestError(
+        "Client must provide customer or customerId to register for owner for vehicle"
+      );
     }
-  };
 
-  findVehicleByVin = async (req, res) => {
-    try {
-      const result = await this.vehicleService.findVehicleByVin(req.body);
-
-      res.status(200).json({
-        status: "success",
-        data: {
-          result,
-        },
+    const company =
+      await this.serviceCenterService.findCompanyWithServiceCenterId({
+        serviceCenterId: req.user.serviceCenterId,
       });
-    } catch (error) {
-      if (error.statusCode) {
-        return res.status(error.statusCode).json({
-          status: "error",
-          message: error.message,
-        });
-      }
 
-      res.status(500).json({
-        status: "fail",
-        message: `Server error: ${error.message}`,
-      });
-    }
+    console.log("CompanId: ", company.dataValues.vehicle_company_id);
+
+    const updatedVehicle = await this.vehicleService.registerOwnerForVehicle({
+      companyId: company.dataValues.vehicle_company_id,
+      vin: vin,
+      customerId: customerId,
+      dateOfManufacture: dateOfManufacture,
+      licensePlate: licensePlate,
+      purchaseDate: purchaseDate,
+    });
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        vehicle: updatedVehicle,
+      },
+    });
   };
 }
 
-module.exports = new VehicleController();
+export default VehicleController;

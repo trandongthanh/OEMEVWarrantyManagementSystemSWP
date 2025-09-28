@@ -1,45 +1,51 @@
-const {
-  AuthorizationError,
-  TokenMissing,
-  ForbiddenError,
-} = require("../src/error");
-require("dotenv").config();
-const SECRET_KEY = process.env.SECRET_KEY;
-const jwt = require("jsonwebtoken");
+import { BadRequestError, ForbiddenError } from "../src/error/index.js";
+import TokenService from "../src/service/token.service.js";
 
-function authencationWithJwtToken(req, res, next) {
-  const authHeader = req.headers.authorization;
+export function authentication(req, res, next) {
+  const requestHeader = req.headers.authorization;
 
-  if (!authHeader) {
-    next(new AuthorizationError());
+  if (!requestHeader) {
+    throw new BadRequestError("Header is not contain information");
   }
 
-  const token = authHeader.split(" ")[1];
+  const token = requestHeader.split(" ")[1];
 
   if (!token) {
-    throw new TokenMissing();
+    throw new BadRequestError("You missing token in heaer");
   }
 
-  const decodePayload = jwt.verify(token, SECRET_KEY);
+  const tokenService = new TokenService();
 
-  req.user = decodePayload;
+  const decode = tokenService.verify(token);
+
+  if (!decode) {
+    throw new BadRequestError("Token is invalid");
+  }
+
+  // console.log(decode);
+
+  req.user = decode;
 
   next();
 }
 
-function authorizeWithRole(allowedRoled) {
+export function authorizationByRole(roles) {
   return (req, res, next) => {
-    const role = req.user.role;
-
-    if (!allowedRoled.includes(role)) {
-      next(new ForbiddenError());
+    if (!roles.includes(req.user.roleName)) {
+      throw new ForbiddenError();
     }
 
     next();
   };
 }
 
-module.exports = {
-  authencationWithJwtToken,
-  authorizeWithRole,
-};
+export function hanldeError(err, req, res, next) {
+  const statusCode = err.statusCode || 500;
+  const message = err.message || "Server error";
+  const status = statusCode !== 500 ? "error" : "fail";
+
+  res.status(statusCode).json({
+    status: status,
+    message: message,
+  });
+}

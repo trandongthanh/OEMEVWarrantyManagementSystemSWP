@@ -84,11 +84,11 @@ module.exports = (sequelize, DataTypes) => {
         field: "service_center_id",
       },
 
-      // vehicleCompanyId: {
-      //   type: DataTypes.UUID,
-      //   allowNull: true,
-      //   field: "vehicle_company_id",
-      // },
+      vehicleCompanyId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        field: "vehicle_company_id",
+      },
     },
     {
       tableName: "user",
@@ -106,10 +106,10 @@ module.exports = (sequelize, DataTypes) => {
       as: "serviceCenter",
     });
 
-    // User.belongsTo(models.VehicleCompany, {
-    //   foreignKey: "vehicle_company_id",
-    //   as: "vehicleCompany",
-    // });
+    User.belongsTo(models.VehicleCompany, {
+      foreignKey: "vehicle_company_id",
+      as: "vehicleCompany",
+    });
 
     // User.hasMany(models.VehicleProcessingRecord, {
     //   foreignKey: "created_by_staff_id",
