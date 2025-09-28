@@ -16,7 +16,6 @@ app.use(cors({
 app.use(express.json());
 app.use(scopePerRequest(container));
 
-// Swagger UI
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 
 import authRouter from "./src/routes/auth.router.js";
