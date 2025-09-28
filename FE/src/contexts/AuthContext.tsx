@@ -13,9 +13,10 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   isAuthenticated: boolean;
+  getToken: () => string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -71,39 +72,121 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is already logged in
-    const savedUser = localStorage.getItem('ev_warranty_user');
-    if (savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch (error) {
-        localStorage.removeItem('ev_warranty_user');
-      }
+    // Check if token exists to determine if user is logged in
+    const token = localStorage.getItem('ev_warranty_token');
+    if (token) {
+      // Set a generic user object when token exists
+      setUser({
+        id: 'user',
+        email: 'user',
+        name: 'User',
+        role: 'service_center_staff'
+      });
     }
     setIsLoading(false);
   }, []);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (username: string, password: string): Promise<boolean> => {
     setIsLoading(true);
     
-    // Simulate API call delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    const account = DEMO_ACCOUNTS[email];
-    if (account && account.password === password) {
-      setUser(account.user);
-      localStorage.setItem('ev_warranty_user', JSON.stringify(account.user));
+    try {
+      const response = await fetch('http://localhost:3000/api/v1/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username,
+          password
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Handle different response structures
+        let token = null;
+        
+        // Check if response has nested data structure
+        if (data.data && data.data.token) {
+          token = data.data.token;
+        }
+        // Try standard token field names
+        else if (data.token) {
+          token = data.token;
+        }
+        else if (data.accessToken) {
+          token = data.accessToken;
+        }
+        else if (data.access_token) {
+          token = data.access_token;
+        }
+        else if (data.authToken) {
+          token = data.authToken;
+        }
+        // If entire response is a token string
+        else if (typeof data === 'string') {
+          token = data;
+        }
+        
+        if (token) {
+          // Store only token in localStorage
+          localStorage.setItem('ev_warranty_token', token);
+          
+          // Extract user info from backend response
+          let userData: User;
+          
+          if (data.data && data.data.user) {
+            // Use user info from backend response
+            const backendUser = data.data.user;
+            userData = {
+              id: backendUser.userId || backendUser.id || username,
+              email: backendUser.email || username,
+              name: backendUser.name || username,
+              role: backendUser.role?.roleName || backendUser.role || 'service_center_staff',
+              serviceCenter: backendUser.serviceCenter,
+              department: backendUser.department
+            };
+          } else {
+            // Fallback to minimal user object
+            userData = {
+              id: username,
+              email: username,
+              name: username,
+              role: 'service_center_staff'
+            };
+          }
+          
+          setUser(userData);
+          setIsLoading(false);
+          return true;
+        } else {
+          console.error('No token received from server');
+          setIsLoading(false);
+          return false;
+        }
+      } else {
+        // Response not ok - log the status and response
+        console.error('Login failed - Status:', response.status);
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        setIsLoading(false);
+        return false;
+      }
+    } catch (error) {
+      console.error('Login error:', error);
       setIsLoading(false);
-      return true;
+      return false;
     }
-    
-    setIsLoading(false);
-    return false;
   };
 
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('ev_warranty_user');
+    localStorage.removeItem('ev_warranty_token');
+  };
+
+  const getToken = (): string | null => {
+    return localStorage.getItem('ev_warranty_token');
   };
 
   const value = {
@@ -112,6 +195,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     login,
     logout,
     isAuthenticated: !!user,
+    getToken,
   };
 
   return (
