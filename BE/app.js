@@ -2,10 +2,15 @@ import express from "express";
 import { scopePerRequest } from "awilix-express";
 import container from "./container.js";
 import { hanldeError } from "./middleware/index.js";
+import { specs, swaggerUi } from "./config/swagger.js";
+
 const app = express();
 
 app.use(express.json());
 app.use(scopePerRequest(container));
+
+// Swagger UI
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 
 import authRouter from "./src/routes/auth.router.js";
 import vehicleRouter from "./src/routes/vehicle.router.js";
