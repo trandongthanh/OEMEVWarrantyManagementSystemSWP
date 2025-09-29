@@ -1,10 +1,15 @@
 import db from "../../models/index.cjs";
-const { Vehicle, Customer, VehicleModel, VehicleCompany } = db;
+const {
+  Vehicle,
+  Customer,
+  VehicleModel,
+  VehicleCompany,
+  WarrantyComponent,
+  TypeComponent,
+} = db;
 
 class VehicleRepository {
   findVehicleByVinWithOwner = async ({ vin, companyId }) => {
-    console.log("Vin, company: ", vin, companyId);
-
     const existingVehicle = await Vehicle.findOne({
       where: {
         vin: vin,
@@ -41,9 +46,7 @@ class VehicleRepository {
       ],
     });
 
-    console.log("Exist vehicle: ", existingVehicle);
-
-    return existingVehicle;
+    return existingVehicle.toJSON();
   };
 
   registerOwnerForVehicle = async ({
@@ -76,6 +79,48 @@ class VehicleRepository {
     });
 
     return updatedVehicle;
+  };
+
+  findVehicleByVinWithWarranty = async ({ vin, companyId }) => {
+    const existingVehicle = await Vehicle.findOne({
+      where: {
+        vin: vin,
+      },
+
+      attributes: [
+        "vin",
+        "dateOfManufacture",
+        "placeOfManufacture",
+        "licensePlate",
+        "purchaseDate",
+      ],
+
+      include: [
+        {
+          model: VehicleModel,
+          as: "model",
+          attributes: ["generalWarrantyDuration", "generalWarrantyMileage"],
+
+          include: [
+            {
+              model: TypeComponent,
+              as: "typeComponents",
+              attributes: ["name"],
+              through: { attributes: ["durationMonth", "mileageLimit"] },
+            },
+
+            {
+              model: VehicleCompany,
+              as: "company",
+              where: { vehicleCompanyId: companyId },
+              attributes: ["name"],
+            },
+          ],
+        },
+      ],
+    });
+
+    return existingVehicle.toJSON();
   };
 }
 

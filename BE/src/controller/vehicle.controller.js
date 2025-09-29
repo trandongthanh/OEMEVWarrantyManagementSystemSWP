@@ -19,7 +19,7 @@ class VehicleController {
           serviceCenterId: serviceCenterId,
         });
 
-      companyId = vehicleCompany.dataValues.vehicle_company_id;
+      companyId = vehicleCompany.vehicle_company_id;
     } else if (vehicleCompanyId) {
       companyId = vehicleCompanyId;
     } else {
@@ -55,8 +55,6 @@ class VehicleController {
 
     const { vin } = req.params;
 
-    console.log(ownerId);
-
     let customerId;
     if (ownerId) {
       await this.customerService.checkCustomerById({
@@ -72,8 +70,6 @@ class VehicleController {
 
       const newCustomer = await this.customerService.createCustomer(customer);
 
-      console.log("newCustomer: ", newCustomer);
-
       customerId = newCustomer.dataValues.id;
     } else {
       throw new BadRequestError(
@@ -86,10 +82,8 @@ class VehicleController {
         serviceCenterId: req.user.serviceCenterId,
       });
 
-    console.log("CompanId: ", company.dataValues.vehicle_company_id);
-
     const updatedVehicle = await this.vehicleService.registerOwnerForVehicle({
-      companyId: company.dataValues.vehicle_company_id,
+      companyId: company.vehicle_company_id,
       vin: vin,
       customerId: customerId,
       dateOfManufacture: dateOfManufacture,
@@ -101,6 +95,38 @@ class VehicleController {
       status: "success",
       data: {
         vehicle: updatedVehicle,
+      },
+    });
+  };
+
+  findVehicleByVinWithWarranty = async (req, res, next) => {
+    const { vin } = req.params;
+
+    const { serviceCenterId } = req.user;
+
+    const company =
+      await this.serviceCenterService.findCompanyWithServiceCenterId({
+        serviceCenterId: serviceCenterId,
+      });
+
+    const vehicleCompanyId = company.vehicle_company_id;
+
+    const existingVehicle =
+      await this.vehicleService.findVehicleByVinWithWarranty({
+        vin: vin,
+        companyId: vehicleCompanyId,
+      });
+
+    let result = existingVehicle;
+
+    if (!existingVehicle) {
+      result = {};
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        vehicle: result,
       },
     });
   };

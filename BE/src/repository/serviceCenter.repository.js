@@ -20,7 +20,7 @@ class ServiceCenterRepository {
       ],
     });
 
-    return company;
+    return company.toJSON();
   };
 }
 

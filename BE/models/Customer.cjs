@@ -6,13 +6,13 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.UUID,
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
-        filed: "id",
+        field: "id",
       },
 
       fullName: {
         type: DataTypes.STRING,
         allowNull: false,
-        filed: "full_name",
+        field: "full_name",
       },
 
       email: {

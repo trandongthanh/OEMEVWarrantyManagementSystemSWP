@@ -12,7 +12,9 @@ const server = http.createServer(app);
 
 db.sequelize
   .authenticate()
+  // .sync()
   // .sync({ alter: true })
+  // .sync({ force: true })
   .then(() => {
     console.log("Connect DB succesfull");
     server.listen(PORT, () => {

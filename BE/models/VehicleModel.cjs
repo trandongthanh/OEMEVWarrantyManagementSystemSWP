@@ -4,7 +4,7 @@ module.exports = (sequelize, DataTypes) => {
     {
       vehicleModelId: {
         type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV1,
+        defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
         field: "vehicle_model_id",
       },
@@ -18,15 +18,19 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         field: "year_of_launch",
       },
+      generalWarrantyDuration: {
+        type: DataTypes.INTEGER,
+        field: "general_warranty_duration",
+      },
+      generalWarrantyMileage: {
+        type: DataTypes.INTEGER,
+        field: "general_warranty_mileage",
+      },
       vehicleCompanyId: {
         type: DataTypes.UUID,
         allowNull: false,
         field: "vehicle_company_id",
       },
-      // warrantyPolicyId: {
-      //   type: DataTypes.UUID,
-      //   field: "warranty_policy_id",
-      // },
     },
     {
       tableName: "vehicle_model",
@@ -36,7 +40,7 @@ module.exports = (sequelize, DataTypes) => {
   VehicleModel.associate = function (models) {
     VehicleModel.hasMany(models.Vehicle, {
       foreignKey: "vehicle_model_id",
-      as: "vihicles",
+      as: "vehicles",
     });
 
     VehicleModel.belongsTo(models.VehicleCompany, {
@@ -44,16 +48,11 @@ module.exports = (sequelize, DataTypes) => {
       as: "company",
     });
 
-    // VehicleModel.belongsToMany(models.TypeComponent, {
-    //   through: models.BillOfMaterial,
-    //   foreignKey: "vehicle_model_id",
-    //   as: "typeComponents",
-    // });
-
-    // VehicleModel.belongsTo(models.WarrantyPolicy, {
-    //   foreignKey: "warranty_policy_id",
-    //   as: "mainPolicy",
-    // });
+    VehicleModel.belongsToMany(models.TypeComponent, {
+      through: models.WarrantyComponent,
+      foreignKey: "vehicle_model_id",
+      as: "typeComponents",
+    });
 
     // VehicleModel.belongsToMany(models.Campaign, {
     //   through: models.VehicleModelCampaign,

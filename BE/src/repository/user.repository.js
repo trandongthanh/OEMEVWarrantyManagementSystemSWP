@@ -18,7 +18,7 @@ class UserRepository {
       ],
     });
 
-    return existingUser;
+    return existingUser.toJSON();
   }
 
   async createUser({
