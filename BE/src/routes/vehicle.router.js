@@ -279,7 +279,7 @@ router.get(
  *                   type: string
  *                   example: "Access denied. Required role: service_center_staff"
  */
-router.put(
+router.patch(
   "/:vin/update-owner",
   authentication,
   authorizationByRole(["service_center_staff"]),
