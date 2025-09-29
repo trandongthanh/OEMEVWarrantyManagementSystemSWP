@@ -252,47 +252,212 @@ const ServiceCenterDashboard = () => {
   };
 
   const handleRegisterOwner = async () => {
-    if (searchResult && ownerForm.fullName && ownerForm.phone) {
-      try {
-        // Get token from AuthContext
-        const token = localStorage.getItem('ev_warranty_token');
-        
-        if (!token) {
-          alert('Please login first');
-          return;
+    // Validate owner form
+    if (!ownerForm.fullName?.trim() || !ownerForm.phone?.trim() || !ownerForm.email?.trim() || !ownerForm.address?.trim()) {
+      alert('Please fill in all owner information (Full Name, Phone, Email, Address).');
+      return;
+    }
+
+    try {
+      // Get token from AuthContext
+      const token = localStorage.getItem('ev_warranty_token');
+      
+      if (!token) {
+        alert('Please login first');
+        return;
+      }
+
+      // Search for existing customer or create new one (same logic as save)
+      let customerData = null;
+      
+      const searchResponse = await axios.get(`http://localhost:3000/api/v1/customer/find-customer-with-phone-or-email`, {
+        params: {
+          phone: ownerForm.phone.trim()
+        },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
-
-        // Prepare request body for registering owner
-        const requestBody = {
-          customerId: `new-${Date.now()}`, // This should be actual customer ID from backend
-        };
-
-        console.log('Registering owner for vehicle:', searchResult.vin, requestBody);
-
-        // For now, just update local state
-        const newOwner = {
-          id: `new-${Date.now()}`,
-          fullName: ownerForm.fullName,
-          email: ownerForm.email,
-          phone: ownerForm.phone,
-          address: ownerForm.address
-        };
+      });
+      
+      if (searchResponse.data?.data?.customer) {
+        // Customer exists
+        customerData = searchResponse.data.data.customer;
+        console.log('Existing customer found:', customerData);
+      } else {
+        // Customer doesn't exist, create new one
+        const createResponse = await axios.post(`http://localhost:3000/api/v1/customer`, {
+          fullName: ownerForm.fullName.trim(),
+          email: ownerForm.email.trim(),
+          phone: ownerForm.phone.trim(),
+          address: ownerForm.address.trim()
+        }, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
         
+        if (createResponse.data?.status === 'success') {
+          customerData = createResponse.data.data.customer;
+          console.log('New customer created:', customerData);
+        } else {
+          throw new Error('Failed to create customer');
+        }
+      }
+
+      // Update searchResult with owner information for Save Changes button
+      const updatedVehicle = {
+        ...searchResult,
+        owner: {
+          id: customerData.id,
+          fullName: customerData.fullName || customerData.fullname,
+          email: customerData.email,
+          phone: customerData.phone,
+          address: customerData.address
+        }
+      };
+      
+      setSearchResult(updatedVehicle);
+      
+      // Update form with backend data
+      setOwnerForm({
+        fullName: customerData.fullName || customerData.fullname || '',
+        phone: customerData.phone || '',
+        email: customerData.email || '',
+        address: customerData.address || ''
+      });
+      
+      console.log('Owner registered in response body:', updatedVehicle);
+      alert('Owner information added to vehicle. Click "Save Changes" to save to backend.');
+      
+    } catch (error) {
+      console.error('Error registering owner:', error);
+      if (error.response?.data?.message) {
+        alert(`Failed to register owner: ${error.response.data.message}`);
+      } else {
+        alert('Failed to register owner. Please try again.');
+      }
+    }
+  };
+
+  const handleUpdateOwnerInBackend = async () => {
+    // Validate owner form
+    if (!ownerForm.fullName?.trim() || !ownerForm.phone?.trim() || !ownerForm.email?.trim() || !ownerForm.address?.trim()) {
+      alert('Please fill in all owner information (Full Name, Phone, Email, Address).');
+      return;
+    }
+
+    if (!searchResult?.owner?.id) {
+      alert('No owner information found. Please register owner first.');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      
+      if (!token) {
+        alert('Please login first');
+        return;
+      }
+
+      // First, update or create customer with new information
+      let customerId = searchResult.owner.id;
+      
+      // Check if phone number changed - if so, search for existing customer or create new
+      if (ownerForm.phone.trim() !== searchResult.owner.phone) {
+        const searchResponse = await axios.get(`http://localhost:3000/api/v1/customer/find-customer-with-phone-or-email`, {
+          params: {
+            phone: ownerForm.phone.trim()
+          },
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (searchResponse.data?.data?.customer) {
+          // Customer with new phone exists
+          customerId = searchResponse.data.data.customer.id;
+        } else {
+          // Create new customer with new phone
+          const createResponse = await axios.post(`http://localhost:3000/api/v1/customer`, {
+            fullName: ownerForm.fullName.trim(),
+            email: ownerForm.email.trim(),
+            phone: ownerForm.phone.trim(),
+            address: ownerForm.address.trim()
+          }, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (createResponse.data?.status === 'success') {
+            customerId = createResponse.data.data.customer.id;
+          } else {
+            throw new Error('Failed to create new customer');
+          }
+        }
+      }
+
+      // Prepare request body for update-owner endpoint
+      const requestBody = {
+        customerId: customerId,
+        licensePlate: searchResult.licensePlate || searchResult.licenseplate,
+        purchaseDate: searchResult.purchaseDate || searchResult.purchasedate,
+        dateOfManufacture: searchResult.dateOfManufacture || searchResult.dateofmanufacture
+      };
+
+      console.log('Updating vehicle owner in backend:', requestBody);
+
+      // API call to backend using HTTP PATCH
+      const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${searchResult.vin}/update-owner`, requestBody, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.data && response.data.status === 'success') {
+        console.log('Vehicle owner updated successfully:', response.data);
+        alert('Vehicle owner information updated successfully!');
+        
+        // Update local state with new owner info
         const updatedVehicle = {
           ...searchResult,
-          owner: newOwner
+          owner: {
+            id: customerId,
+            fullName: ownerForm.fullName,
+            phone: ownerForm.phone,
+            email: ownerForm.email,
+            address: ownerForm.address
+          }
         };
-        
         setSearchResult(updatedVehicle);
-        setOwnerForm({ fullName: '', phone: '', email: '', address: '' });
-        setCustomerSearchPhone('');
-        setHasSearchedCustomer(false);
         
-        console.log('Owner registered successfully (local state):', updatedVehicle);
-        alert('Owner registered successfully! (Note: This is currently updating local state only)');
-      } catch (error) {
-        console.error('Error registering owner:', error);
-        alert('Failed to register owner. Please try again.');
+      } else {
+        console.error('Unexpected response format:', response.data);
+        alert('Unexpected response from server. Please try again.');
+      }
+      
+    } catch (error) {
+      console.error('Error updating vehicle owner:', error);
+      if (error.response) {
+        console.error('Backend error:', error.response.data);
+        const errorMessage = error.response.data.message || 'Server error';
+        
+        if (errorMessage.includes('This vehicle has owner')) {
+          alert('This vehicle already has an owner registered. The backend currently does not support updating existing owner information. Please contact the administrator for assistance.');
+        } else {
+          alert(`Failed to update vehicle owner: ${errorMessage}`);
+        }
+      } else if (error.request) {
+        console.error('No response from server:', error.request);
+        alert('No response from server. Please check if backend is running.');
+      } else {
+        console.error('Request error:', error.message);
+        alert('An error occurred while updating. Please try again.');
       }
     }
   };
@@ -320,14 +485,16 @@ const ServiceCenterDashboard = () => {
       return;
     }
 
+    // Debug: Check owner form values
+    console.log('Owner form values:', ownerForm);
+    
+    // Check if owner information is available in searchResult
+    if (!searchResult.owner?.id) {
+      alert('Please register owner information first by clicking "Register Owner" button.');
+      return;
+    }
+
     try {
-      // Prepare request body for register-owner endpoint
-      const requestBody = {
-        customerId: searchResult.owner?.id || null
-      };
-
-      console.log('Sending vehicle data to backend:', requestBody);
-
       // Get token from AuthContext
       const token = localStorage.getItem('ev_warranty_token');
       
@@ -336,8 +503,22 @@ const ServiceCenterDashboard = () => {
         return;
       }
 
+      // Use owner ID from searchResult (already validated in Register Owner step)
+      const customerId = searchResult.owner.id;
+
+      // Prepare request body for register-owner endpoint
+      const requestBody = {
+        customerId: customerId,
+        licensePlate: licensePlate,
+        purchaseDate: purchaseDate,
+        dateOfManufacture: searchResult.dateOfManufacture || searchResult.dateofmanufacture
+      };
+
+      console.log('Sending vehicle data to backend:', requestBody);
+      console.log('Using customer ID:', customerId);
+
       // API call to backend using HTTP PATCH
-      const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${searchResult.vin}/register-owner`, requestBody, {
+      const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${searchResult.vin}/update-owner`, requestBody, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -346,7 +527,7 @@ const ServiceCenterDashboard = () => {
 
       if (response.data && response.data.status === 'success') {
         console.log('Vehicle data saved successfully:', response.data);
-        alert('Vehicle data saved successfully!');
+        alert('Vehicle owner registered successfully!');
         
         // Close modal and reset states
         setShowVehicleForm(false);
@@ -960,15 +1141,25 @@ const ServiceCenterDashboard = () => {
                           </div>
                         </div>
                         
-                        <div className="flex justify-start">
+                        <div className="flex justify-start gap-2">
                           <Button 
                             variant="gradient" 
                             onClick={handleRegisterOwner}
                             disabled={!ownerForm.fullName || !ownerForm.phone}
                           >
                             <User className="mr-2 h-4 w-4" />
-                            Register Owner
+                            {searchResult?.owner ? 'Update Owner Info' : 'Register Owner'}
                           </Button>
+                          {searchResult?.owner && (
+                            <Button 
+                              variant="outline"
+                              onClick={handleUpdateOwnerInBackend}
+                              disabled={!ownerForm.fullName || !ownerForm.phone}
+                            >
+                              <Save className="mr-2 h-4 w-4" />
+                              Update Changes
+                            </Button>
+                          )}
                         </div>
                       </>
                     )}
@@ -987,7 +1178,8 @@ const ServiceCenterDashboard = () => {
                     !searchResult || 
                     !(searchResult.placeOfManufacture || searchResult.placeofmanufacture)?.trim() ||
                     !(searchResult.licensePlate || searchResult.licenseplate)?.trim() ||
-                    !(searchResult.purchaseDate || searchResult.purchasedate)
+                    !(searchResult.purchaseDate || searchResult.purchasedate) ||
+                    !searchResult.owner?.id
                   }
                 >
                   <Save className="mr-2 h-4 w-4" />
