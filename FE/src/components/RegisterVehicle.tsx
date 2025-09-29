@@ -56,88 +56,126 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
   const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
 
-  // // Mock customers
-  // const mockCustomers = [
-  //   {
-  //     id: 'cust-001',
-  //     name: 'Nguyễn Văn Minh',
-  //     phone: '0901234567',
-  //     email: 'minh.nguyen@email.com',
-  //     address: '123 Đường ABC, Quận 1, TP.HCM'
-  //   },
-  //   {
-  //     id: 'cust-002', 
-  //     name: 'Trần Thị Lan',
-  //     phone: '0987654321',
-  //     email: 'lan.tran@email.com',
-  //     address: '456 Đường XYZ, Quận 2, TP.HCM'
-  //   },
-  //   {
-  //     id: 'cust-003',
-  //     name: 'Lê Hoàng Nam',
-  //     phone: '0976543210',
-  //     email: 'nam.le@email.com', 
-  //     address: '789 Đường DEF, Quận 3, TP.HCM'
-  //   }
-  // ];
+  // Mock customers
+  const mockCustomers = [
+    {
+      id: 'cust-001',
+      name: 'Nguyễn Văn Minh',
+      phone: '0901234567',
+      email: 'minh.nguyen@email.com',
+      address: '123 Đường ABC, Quận 1, TP.HCM'
+    },
+    {
+      id: 'cust-002', 
+      name: 'Trần Thị Lan',
+      phone: '0987654321',
+      email: 'lan.tran@email.com',
+      address: '456 Đường XYZ, Quận 2, TP.HCM'
+    },
+    {
+      id: 'cust-003',
+      name: 'Lê Hoàng Nam',
+      phone: '0976543210',
+      email: 'nam.le@email.com', 
+      address: '789 Đường DEF, Quận 3, TP.HCM'
+    },
+    {
+      id: 'cust-004',
+      name: 'Phạm Thị Hồng',
+      phone: '0912345678',
+      email: 'hong.pham@email.com',
+      address: '101 Đường Lê Lợi, Quận 1, TP.HCM'
+    },
+    {
+      id: 'cust-005',
+      name: 'Võ Minh Tuấn',
+      phone: '0923456789',
+      email: 'tuan.vo@email.com',
+      address: '202 Đường Nguyễn Huệ, Quận 1, TP.HCM'
+    }
+  ];
 
-  // const evModels = [
-  //   'EV Model X Pro',
-  //   'EV Compact Plus',
-  //   'EV SUV Premium',
-  //   'EV Sedan Elite',
-  //   'EV Crossover'
-  // ];
+  const evModels = [
+    'EV Model X Pro',
+    'EV Compact Plus',
+    'EV SUV Premium',
+    'EV Sedan Elite',
+    'EV Crossover'
+  ];
 
-  // const colors = [
-  //   'Pearl White',
-  //   'Obsidian Black', 
-  //   'Navy Blue',
-  //   'Metallic Silver',
-  //   'Cherry Red',
-  //   'Titan Gray'
-  // ];
+  const colors = [
+    'Pearl White',
+    'Obsidian Black', 
+    'Navy Blue',
+    'Metallic Silver',
+    'Cherry Red',
+    'Titan Gray'
+  ];
 
-  // const batteryOptions = [
-  //   '60 kWh',
-  //   '75 kWh', 
-  //   '85 kWh',
-  //   '100 kWh',
-  //   '120 kWh'
-  // ];
+  const batteryOptions = [
+    '60 kWh',
+    '75 kWh', 
+    '85 kWh',
+    '100 kWh',
+    '120 kWh'
+  ];
 
-  // const motorTypes = [
-  //   'Single Motor RWD',
-  //   'Dual Motor AWD',
-  //   'Triple Motor AWD',
-  //   'Performance Motor'
-  // ];
+  const motorTypes = [
+    'Single Motor RWD',
+    'Dual Motor AWD',
+    'Triple Motor AWD',
+    'Performance Motor'
+  ];
 
-  // const searchCustomer = () => {
-  //   const customer = mockCustomers.find(c => 
-  //     c.phone === customerSearch || 
-  //     c.email === customerSearch ||
-  //     c.name.toLowerCase().includes(customerSearch.toLowerCase())
-  //   );
+  const searchCustomer = () => {
+    if (!customerSearch.trim()) {
+      toast({
+        title: "Thiếu thông tin tìm kiếm",
+        description: "Vui lòng nhập tên, số điện thoại hoặc email để tìm kiếm khách hàng",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const searchTerm = customerSearch.trim().toLowerCase();
     
-  //   if (customer) {
-  //     setSelectedCustomer(customer);
-  //     setVehicleData(prev => ({ ...prev, customerId: customer.id }));
-  //     toast({
-  //       title: "Customer Found!",
-  //       description: `Found ${customer.name}`,
-  //     });
-  //   } else {
-  //     toast({
-  //       title: "Customer Not Found",
-  //       description: "Please check the information or add a new customer",
-  //       variant: "destructive"
-  //     });
-  //   }
-  // };
-
-  
-  
+    // Tìm kiếm linh hoạt - hỗ trợ tìm theo tên, phone, email
+    const customers = mockCustomers.filter(c => 
+      c.phone.includes(searchTerm) || 
+      c.email.toLowerCase().includes(searchTerm) ||
+      c.name.toLowerCase().includes(searchTerm) ||
+      c.address.toLowerCase().includes(searchTerm)
+    );
+    
+    if (customers.length === 1) {
+      // Tìm thấy đúng 1 khách hàng
+      const customer = customers[0];
+      setSelectedCustomer(customer);
+      setVehicleData(prev => ({ ...prev, customerId: customer.id }));
+      toast({
+        title: "Tìm thấy khách hàng!",
+        description: `Đã liên kết với khách hàng: ${customer.name}`,
+      });
+    } else if (customers.length > 1) {
+      // Tìm thấy nhiều khách hàng - chọn khách hàng đầu tiên
+      const customer = customers[0];
+      setSelectedCustomer(customer);
+      setVehicleData(prev => ({ ...prev, customerId: customer.id }));
+      toast({
+        title: "Tìm thấy nhiều khách hàng",
+        description: `Tìm thấy ${customers.length} khách hàng. Đã chọn: ${customer.name}. Vui lòng nhập thông tin cụ thể hơn nếu không đúng.`,
+      });
+    } else {
+      // Không tìm thấy khách hàng
+      setSelectedCustomer(null);
+      setVehicleData(prev => ({ ...prev, customerId: '' }));
+      toast({
+        title: "Không tìm thấy khách hàng",
+        description: "Không có khách hàng nào phù hợp với thông tin tìm kiếm. Vui lòng kiểm tra lại.",
+        variant: "destructive"
+      });
+    }
+  };
 
   const calculateWarrantyDates = (purchaseDate: string) => {
     if (!purchaseDate) return;
@@ -156,11 +194,23 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
 
   const handleSubmit = () => {
     setIsLoading(true);
+    
+    // Giả lập việc đăng ký xe
     setTimeout(() => {
       toast({
-        title: "Vehicle Registered Successfully!",
-        description: `VIN ${vehicleData.vin} has been registered for ${selectedCustomer?.name}`,
+        title: "Đăng ký xe thành công! ✅",
+        description: `VIN ${vehicleData.vin} đã được đăng ký cho khách hàng ${selectedCustomer?.name}`,
       });
+      
+      // Log thông tin để debug
+      console.log('Vehicle registered successfully:', {
+        vehicleId: 'VEH-' + Date.now(),
+        vin: vehicleData.vin,
+        customer: selectedCustomer?.name,
+        registrationTime: new Date().toLocaleString('vi-VN'),
+        vehicleData: vehicleData
+      });
+      
       setIsLoading(false);
       onClose();
     }, 2000);
@@ -190,7 +240,7 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
           </div>
 
           {/* Progress Steps */}
-          <div className="flex items-center space-x-4 mt-6">
+          <div className="flex items-center justify-between mt-6 px-4">
             {[
               { number: 1, title: 'Vehicle Info' },
               { number: 2, title: 'Specifications' },
@@ -217,49 +267,48 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
         <CardContent className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
           {/* Step 1: Basic Vehicle Info */}
           {currentStep === 1 && (
-            <div className="space-y-6">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="vin">VIN Number</Label>
-                  <Input
-                    id="vin"
-                    placeholder="Enter 17-character VIN"
-                    value={vehicleData.vin}
-                    onChange={(e) => setVehicleData(prev => ({ ...prev, vin: e.target.value.toUpperCase() }))}
-                    maxLength={17}
-                  />
-                  <p className="text-xs text-muted-foreground mt-1 ml-2">
-                    Vehicle Identification Number (17 characters)
-                  </p>
-                </div>
+            <div className="space-y-5 min-h-[550px]">
+              <div>
+                <Label htmlFor="vin">VIN Number</Label>
+                <Input
+                  id="vin"
+                  placeholder="Enter 17-character VIN"
+                  value={vehicleData.vin}
+                  onChange={(e) => setVehicleData(prev => ({ ...prev, vin: e.target.value.toUpperCase() }))}
+                  maxLength={17}
+                  className="w-full"
+                />
+                <p className="text-xs text-muted-foreground mt-1 ml-2">
+                  Vehicle Identification Number (17 characters)
+                </p>
+              </div>
 
-                <div>
-                  <Label>Model</Label>
-                  <Select value={vehicleData.model} onValueChange={(value) => setVehicleData(prev => ({ ...prev, model: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select vehicle model" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* {evModels.map((model) => (
-                        <SelectItem key={model} value={model}>{model}</SelectItem>
-                      ))} */}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div>
+                <Label>Model</Label>
+                <Select value={vehicleData.model} onValueChange={(value) => setVehicleData(prev => ({ ...prev, model: value }))}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select vehicle model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {evModels.map((model) => (
+                      <SelectItem key={model} value={model}>{model}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-                <div>
-                  <Label>Manufacturing Year</Label>
-                  <Select value={vehicleData.year} onValueChange={(value) => setVehicleData(prev => ({ ...prev, year: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select year" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[2024, 2023, 2022, 2021, 2020].map((year) => (
-                        <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div>
+                <Label>Manufacturing Year</Label>
+                <Select value={vehicleData.year} onValueChange={(value) => setVehicleData(prev => ({ ...prev, year: value }))}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select year" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[2024, 2023, 2022, 2021, 2020].map((year) => (
+                      <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-4">
@@ -271,10 +320,10 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
                     onChange={(e) => setCustomerSearch(e.target.value)}
                     className="flex-1"
                   />
-                  {/* <Button onClick={searchCustomer} disabled={!customerSearch}>
+                  <Button onClick={searchCustomer} disabled={!customerSearch}>
                     <Search className="h-4 w-4 mr-2" />
-                    Search
-                  </Button> */}
+                    Tìm kiếm
+                  </Button>
                 </div>
 
                 {selectedCustomer && (
@@ -300,59 +349,58 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
 
           {/* Step 2: Specifications */}
           {currentStep === 2 && (
-            <div className="space-y-6">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <Label>Color</Label>
-                  <Select value={vehicleData.color} onValueChange={(value) => setVehicleData(prev => ({ ...prev, color: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select color" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* {colors.map((color) => (
-                        <SelectItem key={color} value={color}>{color}</SelectItem>
-                      ))} */}
-                    </SelectContent>
-                  </Select>
-                </div>
+            <div className="space-y-5 min-h-[550px]">
+              <div>
+                <Label>Color</Label>
+                <Select value={vehicleData.color} onValueChange={(value) => setVehicleData(prev => ({ ...prev, color: value }))}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select color" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {colors.map((color) => (
+                      <SelectItem key={color} value={color}>{color}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-                <div>
-                  <Label>Battery Capacity</Label>
-                  <Select value={vehicleData.batteryCapacity} onValueChange={(value) => setVehicleData(prev => ({ ...prev, batteryCapacity: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select battery capacity" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* {batteryOptions.map((battery) => (
-                        <SelectItem key={battery} value={battery}>{battery}</SelectItem>
-                      ))} */}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div>
+                <Label>Battery Capacity</Label>
+                <Select value={vehicleData.batteryCapacity} onValueChange={(value) => setVehicleData(prev => ({ ...prev, batteryCapacity: value }))}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select battery capacity" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {batteryOptions.map((battery) => (
+                      <SelectItem key={battery} value={battery}>{battery}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-                <div>
-                  <Label>Motor Type</Label>
-                  <Select value={vehicleData.motorType} onValueChange={(value) => setVehicleData(prev => ({ ...prev, motorType: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select motor configuration" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* {motorTypes.map((motor) => (
-                        <SelectItem key={motor} value={motor}>{motor}</SelectItem>
-                      ))} */}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div>
+                <Label>Motor Type</Label>
+                <Select value={vehicleData.motorType} onValueChange={(value) => setVehicleData(prev => ({ ...prev, motorType: value }))}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select motor configuration" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {motorTypes.map((motor) => (
+                      <SelectItem key={motor} value={motor}>{motor}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-                <div>
-                  <Label htmlFor="dealer">Dealer Information</Label>
-                  <Input
-                    id="dealer"
-                    placeholder="Dealer name or code"
-                    value={vehicleData.dealerInfo}
-                    onChange={(e) => setVehicleData(prev => ({ ...prev, dealerInfo: e.target.value }))}
-                  />
-                </div>
+              <div>
+                <Label htmlFor="dealer">Dealer Information</Label>
+                <Input
+                  id="dealer"
+                  placeholder="Dealer name or code"
+                  value={vehicleData.dealerInfo}
+                  onChange={(e) => setVehicleData(prev => ({ ...prev, dealerInfo: e.target.value }))}
+                  className="w-full"
+                />
               </div>
 
               {/* Specifications Preview */}
@@ -380,40 +428,41 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
 
           {/* Step 3: Warranty Information */}
           {currentStep === 3 && (
-            <div className="space-y-6">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="purchase-date">Purchase Date</Label>
-                  <Input
-                    id="purchase-date"
-                    type="date"
-                    value={vehicleData.purchaseDate}
-                    onChange={(e) => {
-                      setVehicleData(prev => ({ ...prev, purchaseDate: e.target.value }));
-                      calculateWarrantyDates(e.target.value);
-                    }}
-                  />
-                </div>
+            <div className="space-y-5 min-h-[550px]">
+              <div>
+                <Label htmlFor="purchase-date">Purchase Date</Label>
+                <Input
+                  id="purchase-date"
+                  type="date"
+                  value={vehicleData.purchaseDate}
+                  onChange={(e) => {
+                    setVehicleData(prev => ({ ...prev, purchaseDate: e.target.value }));
+                    calculateWarrantyDates(e.target.value);
+                  }}
+                  className="w-full"
+                />
+              </div>
 
-                <div>
-                  <Label htmlFor="warranty-start">Warranty Start Date</Label>
-                  <Input
-                    id="warranty-start"
-                    type="date"
-                    value={vehicleData.warrantyStartDate}
-                    onChange={(e) => setVehicleData(prev => ({ ...prev, warrantyStartDate: e.target.value }))}
-                  />
-                </div>
+              <div>
+                <Label htmlFor="warranty-start">Warranty Start Date</Label>
+                <Input
+                  id="warranty-start"
+                  type="date"
+                  value={vehicleData.warrantyStartDate}
+                  onChange={(e) => setVehicleData(prev => ({ ...prev, warrantyStartDate: e.target.value }))}
+                  className="w-full"
+                />
+              </div>
 
-                <div>
-                  <Label htmlFor="warranty-end">Warranty End Date</Label>
-                  <Input
-                    id="warranty-end"
-                    type="date"
-                    value={vehicleData.warrantyEndDate}
-                    onChange={(e) => setVehicleData(prev => ({ ...prev, warrantyEndDate: e.target.value }))}
-                  />
-                </div>
+              <div>
+                <Label htmlFor="warranty-end">Warranty End Date</Label>
+                <Input
+                  id="warranty-end"
+                  type="date"
+                  value={vehicleData.warrantyEndDate}
+                  onChange={(e) => setVehicleData(prev => ({ ...prev, warrantyEndDate: e.target.value }))}
+                  className="w-full"
+                />
               </div>
 
               {/* Warranty Summary */}
@@ -506,12 +555,12 @@ const RegisterVehicle = ({ onClose }: { onClose: () => void }) => {
                 {isLoading ? (
                   <div className="flex items-center space-x-2">
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                    <span>Registering...</span>
+                    <span>Đang đăng ký xe...</span>
                   </div>
                 ) : (
                   <>
                     <Save className="h-4 w-4 mr-2" />
-                    Register Vehicle
+                    Đăng ký xe
                   </>
                 )}
               </Button>

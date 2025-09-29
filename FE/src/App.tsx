@@ -11,6 +11,12 @@ import AllClaims from "./pages/AllClaims";
 import NotFound from "./pages/NotFound";
 import ServiceCenterDashboard from "./components/ServiceCenterDashboard";
 import ManufacturerDashboard from "./components/ManufacturerDashboard";
+import CampaignList from "./components/CampaignList";
+import CampaignDetail from "./components/CampaignDetail";
+import CampaignProgress from "./components/CampaignProgress";
+import WarrantyClaims from "./components/WarrantyClaims";
+import WarrantyClaimDetail from "./components/WarrantyClaimDetail";
+import WarrantyDashboard from "./components/WarrantyDashboard";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
@@ -43,6 +49,36 @@ const App = () => (
             <Route path="/manufacturer" element={
               <ProtectedRoute allowedRoles={['evm_admin', 'evm_staff']}>
                 <ManufacturerDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/campaigns" element={
+              <ProtectedRoute allowedRoles={['service_center_staff', 'service_center_manager']}>
+                <CampaignList />
+              </ProtectedRoute>
+            } />
+            <Route path="/campaigns/:id" element={
+              <ProtectedRoute allowedRoles={['service_center_staff', 'service_center_manager']}>
+                <CampaignDetail />
+              </ProtectedRoute>
+            } />
+            <Route path="/campaigns/progress" element={
+              <ProtectedRoute allowedRoles={['service_center_staff', 'service_center_manager']}>
+                <CampaignProgress />
+              </ProtectedRoute>
+            } />
+            <Route path="/warranty-claims" element={
+              <ProtectedRoute allowedRoles={['evm_admin', 'evm_staff']}>
+                <WarrantyClaims />
+              </ProtectedRoute>
+            } />
+            <Route path="/warranty-claims/:id" element={
+              <ProtectedRoute allowedRoles={['evm_admin', 'evm_staff']}>
+                <WarrantyClaimDetail />
+              </ProtectedRoute>
+            } />
+            <Route path="/warranty-dashboard" element={
+              <ProtectedRoute allowedRoles={['evm_admin', 'evm_staff']}>
+                <WarrantyDashboard />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

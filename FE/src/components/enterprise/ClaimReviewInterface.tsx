@@ -65,36 +65,8 @@ const ClaimReviewInterface = () => {
   const [showRejectDialog, setShowRejectDialog] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
 
-  // Mock data - In real app would be fetched from API  
-  const pendingClaims = [
-    // Sample pending claims data - uncomment for testing UI
-    /*
-    {
-      id: "WC-25-09-001",
-      serviceCenter: "SC Ho Chi Minh 1",
-      dateSubmitted: "2025-01-15",
-      status: "pending-review" as const,
-      priority: "high",
-      daysWaiting: 2
-    },
-    {
-      id: "WC-25-09-008",
-      serviceCenter: "SC Hanoi 2", 
-      dateSubmitted: "2025-01-14",
-      status: "in-review" as const,
-      priority: "medium",
-      daysWaiting: 3
-    },
-    {
-      id: "WC-25-09-015",
-      serviceCenter: "SC Da Nang 1",
-      dateSubmitted: "2025-01-13", 
-      status: "pending-review" as const,
-      priority: "low",
-      daysWaiting: 4
-    }
-    */
-  ];
+  // In real app, data would be fetched from API
+  const pendingClaims: any[] = [];
 
   // Mock detailed claim data
   const claimData: ClaimData = {
