@@ -16,8 +16,6 @@ class VehicleService {
       companyId: companyId,
     });
 
-    console.log("Vehicle serviceL ", vehicle);
-
     if (!vehicle.model) {
       return null;
     }
@@ -25,11 +23,11 @@ class VehicleService {
     const formatResult = {
       vin: vehicle.vin,
       dateOfManufacture: vehicle.dateOfManufacture,
-      placeOfManufacture: vehicle.dateOfManufacture,
+      placeOfManufacture: vehicle.placeOfManufacture,
       licensePlate: vehicle.licensePlate,
       purchaseDate: vehicle.purchaseDate,
       owner: vehicle.owner,
-      model: vehicle.model.dataValues.modelName,
+      model: vehicle.model.modelName,
       company: vehicle.model.company.name,
     };
 
@@ -44,9 +42,16 @@ class VehicleService {
     licensePlate,
     purchaseDate,
   }) => {
-    if (!vin || !customerId || !licensePlate || !purchaseDate) {
+    if (
+      !companyId ||
+      !vin ||
+      !customerId ||
+      !licensePlate ||
+      !purchaseDate ||
+      !dateOfManufacture
+    ) {
       throw new BadRequestError(
-        "vin, customerId, licensePlate, purchaseDate is required"
+        "vin, customerId, licensePlate, purchaseDate, dateOfManufacture, customerId is required"
       );
     }
 
@@ -76,20 +81,36 @@ class VehicleService {
       purchaseDate: purchaseDate,
     });
 
-    console.log("Vehicle: ", vehicle);
-
     const formatResult = {
       vin: vehicle.vin,
       dateOfManufacture: vehicle.dateOfManufacture,
-      placeOfManufacture: vehicle.dateOfManufacture,
+      placeOfManufacture: vehicle.placeOfManufacture,
       licensePlate: vehicle.licensePlate,
       purchaseDate: vehicle.purchaseDate,
       owner: vehicle.owner,
-      model: vehicle.model.dataValues.modelName,
+      model: vehicle.model.modelName,
       company: vehicle.model.company.name,
     };
 
     return formatResult;
+  };
+
+  findVehicleByVinWithWarranty = async ({ vin, companyId }) => {
+    if (!vin || !companyId) {
+      throw new BadRequestError("vin and companyId is required");
+    }
+
+    const existingVehicle =
+      await this.vehicleRepository.findVehicleByVinWithWarranty({
+        vin: vin,
+        companyId,
+      });
+
+    if (!existingVehicle.model) {
+      return null;
+    }
+
+    if (existingVehicle.model) return existingVehicle;
   };
 }
 

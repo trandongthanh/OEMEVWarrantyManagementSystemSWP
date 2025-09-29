@@ -15,7 +15,7 @@ class ServiceCenterService {
         serviceCenterId: serviceCenterId,
       });
 
-    const company = serviceCenter.dataValues.vehicleCompany;
+    const company = serviceCenter.vehicleCompany;
 
     return company;
   };
