@@ -52,8 +52,18 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
+    <div className="min-h-screen w-full relative">
+      {/* Radial Gradient Background */}
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          background: "radial-gradient(125% 125% at 50% 10%, #fff 40%, #6366f1 100%)",
+        }}
+      />
+      
+      {/* Content Wrapper */}
+      <div className="relative z-10">
+        {/* Header */}
       <header className="border-b shadow-elegant" style={{ backgroundColor: '#7476F2' }}>
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
@@ -76,6 +86,15 @@ const Index = () => {
         </div>
       </header>
 
+      {/* Homepage Image */}
+      <div className="w-full h-80 overflow-hidden">
+        <img 
+          src="/Homepagepic.png" 
+          alt="Professional EV Service Center"
+          className="w-full h-full object-cover"
+        />
+      </div>
+
       {/* Hero Section */}
       <section className="py-16">
         <div className="container mx-auto px-6 text-center">
@@ -96,6 +115,29 @@ const Index = () => {
               Comprehensive warranty management system for electric vehicle manufacturers and service centers.
               Handle everything from vehicle registration to claim processing with professional efficiency.
             </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Warranty Information Section */}
+      <section className="py-16 bg-muted/20">
+        <div className="container mx-auto px-6">
+          <div className="grid gap-8 md:grid-cols-2 items-center">
+            {/* Left Side - Car Image */}
+            <div className="flex justify-center">
+              <img 
+                src="/CAR.png" 
+                alt="Electric Vehicle"
+                className="max-w-full h-auto object-contain"
+              />
+            </div>
+            
+            {/* Right Side - Warranty Text */}
+            <div className="space-y-4">
+              <p className="text-lg text-muted-foreground leading-relaxed">
+                Thời hạn bảo hành ô tô là khoảng thời gian mà nhà sản xuất hoặc đại lý ủy quyền cam kết sửa chữa, thay thế miễn phí các lỗi kỹ thuật phát sinh do lỗi của nhà sản xuất trong quá trình chế tạo hoặc lắp ráp. Thông thường, thời hạn bảo hành được quy định theo số năm sử dụng hoặc số km vận hành (tùy điều kiện nào đến trước). Ví dụ, nhiều hãng xe áp dụng mức bảo hành 3 năm hoặc 100.000 km. Thời hạn này giúp khách hàng yên tâm hơn khi sử dụng xe, đồng thời thể hiện trách nhiệm và uy tín của nhà sản xuất đối với chất lượng sản phẩm.
+              </p>
+            </div>
           </div>
         </div>
       </section>
@@ -210,14 +252,15 @@ const Index = () => {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t bg-card py-8">
-        <div className="container mx-auto px-6 text-center">
-          <p className="text-muted-foreground">
-            © 2024 EV Warranty Management System. Professional automotive service platform.
-          </p>
-        </div>
-      </footer>
+        {/* Footer */}
+        <footer className="border-t bg-card py-8">
+          <div className="container mx-auto px-6 text-center">
+            <p className="text-muted-foreground">
+              © 2024 EV Warranty Management System. Professional automotive service platform.
+            </p>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 };
