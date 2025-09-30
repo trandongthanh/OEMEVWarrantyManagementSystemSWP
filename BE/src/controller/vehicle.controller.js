@@ -57,18 +57,29 @@ class VehicleController {
 
     let customerId;
     if (ownerId) {
+      // Case 1: Use existing customer
+      console.log('Using existing customer with ID:', ownerId);
       await this.customerService.checkCustomerById({
         id: ownerId,
       });
 
       customerId = ownerId;
     } else if (customer) {
+      // Case 2: Create new customer
+      console.log('Creating new customer:', customer);
+      
+      // Check if all customer fields are provided when creating new customer
+      if (!customer.fullName || !customer.email || !customer.phone || !customer.address) {
+        throw new BadRequestError("All customer fields are required: fullName, email, phone, address");
+      }
+
       await this.customerService.checkduplicateCustomer({
         phone: customer.phone,
         email: customer.email,
       });
 
       const newCustomer = await this.customerService.createCustomer(customer);
+      console.log('New customer created with ID:', newCustomer.dataValues.id);
 
       customerId = newCustomer.dataValues.id;
     } else {
@@ -76,6 +87,16 @@ class VehicleController {
         "Client must provide customer or customerId to register for owner for vehicle"
       );
     }
+
+    // Validate vehicle fields
+    if (!dateOfManufacture || !licensePlate || !purchaseDate) {
+      throw new BadRequestError("All vehicle fields are required: dateOfManufacture, licensePlate, purchaseDate");
+    }
+
+    console.log('Vehicle fields - VIN:', vin);
+    console.log('Vehicle fields - Date of Manufacture:', dateOfManufacture);
+    console.log('Vehicle fields - License Plate:', licensePlate);
+    console.log('Vehicle fields - Purchase Date:', purchaseDate);
 
     const company =
       await this.serviceCenterService.findCompanyWithServiceCenterId({
