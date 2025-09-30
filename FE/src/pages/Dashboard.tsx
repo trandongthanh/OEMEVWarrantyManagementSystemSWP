@@ -22,11 +22,11 @@ const Dashboard = () => {
   }
 
   if (user.role === 'emv_staff') {
-    return <WarrantyDashboard />;
+    return <ManufacturerDashboard />;
   }
 
   if (user.role === 'evm_admin' || user.role === 'evm_staff') {
-    return <ManufacturerDashboard />;
+    return <WarrantyDashboard />;
   }
 
   return (
