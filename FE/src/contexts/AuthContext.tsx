@@ -4,7 +4,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'service_center_staff' | 'technician' | 'evm_admin' | 'evm_staff';
+  role: 'service_center_staff' | 'service_center_technician' | 'evm_admin' | 'evm_staff' | 'emv_staff';
   avatar?: string;
   serviceCenter?: string;
   department?: string;
@@ -21,52 +21,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Demo accounts - hardcoded for frontend simulation
-const DEMO_ACCOUNTS: Record<string, { password: string; user: User }> = {
-  'staff@evservice.com': {
-    password: 'staff123',
-    user: {
-      id: 'sc-staff-1',
-      email: 'staff@evservice.com',
-      name: 'Nguyễn Văn Minh',
-      role: 'service_center_staff',
-      serviceCenter: 'EV Service Hà Nội',
-      department: 'Customer Service'
-    }
-  },
-  'tech@evservice.com': {
-    password: 'tech123',
-    user: {
-      id: 'tech-1',
-      email: 'tech@evservice.com', 
-      name: 'Trần Thị Hoa',
-      role: 'technician',
-      serviceCenter: 'EV Service Hà Nội',
-      department: 'Technical Repair'
-    }
-  },
-  'admin@evm.com': {
-    password: 'admin123',
-    user: {
-      id: 'evm-admin-1',
-      email: 'admin@evm.com',
-      name: 'Lê Hoàng Nam',
-      role: 'evm_admin',
-      department: 'System Administration'
-    }
-  },
-  'evmstaff@evm.com': {
-    password: 'evm123',
-    user: {
-      id: 'evm-staff-1', 
-      email: 'evmstaff@evm.com',
-      name: 'Phạm Thị Linh',
-      role: 'evm_staff',
-      department: 'Warranty Management'
-    }
-  }
-};
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -74,14 +28,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     // Check if token exists to determine if user is logged in
     const token = localStorage.getItem('ev_warranty_token');
-    if (token) {
-      // Set a generic user object when token exists
-      setUser({
-        id: 'user',
-        email: 'user',
-        name: 'User',
-        role: 'service_center_staff'
-      });
+    const savedUser = localStorage.getItem('ev_warranty_user');
+    
+    if (token && savedUser) {
+      try {
+        // Restore user data from localStorage
+        const userData = JSON.parse(savedUser);
+        setUser(userData);
+      } catch (error) {
+        console.error('Error parsing saved user data:', error);
+        // Clear invalid data
+        localStorage.removeItem('ev_warranty_token');
+        localStorage.removeItem('ev_warranty_user');
+      }
     }
     setIsLoading(false);
   }, []);
@@ -130,7 +89,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
         
         if (token) {
-          // Store only token in localStorage
+          // Store token and user data in localStorage
           localStorage.setItem('ev_warranty_token', token);
           
           // Extract user info from backend response
@@ -148,14 +107,45 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               department: backendUser.department
             };
           } else {
-            // Fallback to minimal user object
+            // Fallback based on username to determine appropriate role
+            let fallbackRole: User['role'] = 'service_center_staff';
+            
+            // Check specific usernames first
+            if (username.toLowerCase() === 'admin01') {
+              fallbackRole = 'evm_admin';
+            }
+            else if (username.toLowerCase() === 'emvstaff01') {
+              fallbackRole = 'emv_staff';
+            }
+            // Check if username indicates technician role
+            else if (username.toLowerCase().includes('technician') || 
+                     username.toLowerCase().includes('tech')) {
+              fallbackRole = 'service_center_technician';
+            }
+            // Check if username indicates EVM admin role
+            else if (username.toLowerCase().includes('admin') && 
+                     username.toLowerCase().includes('evm')) {
+              fallbackRole = 'evm_admin';
+            }
+            // Check if username indicates EVM staff role
+            else if (username.toLowerCase().includes('evm')) {
+              fallbackRole = 'evm_staff';
+            }
+            
             userData = {
               id: username,
               email: username,
               name: username,
-              role: 'service_center_staff'
+              role: fallbackRole
             };
           }
+          
+          // Store user data in localStorage for persistence
+          localStorage.setItem('ev_warranty_user', JSON.stringify(userData));
+          
+          // Debug log to check user data
+          console.log('Login successful - User data:', userData);
+          console.log('Username:', username, 'Role:', userData.role);
           
           setUser(userData);
           setIsLoading(false);
@@ -183,6 +173,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = () => {
     setUser(null);
     localStorage.removeItem('ev_warranty_token');
+    localStorage.removeItem('ev_warranty_user');
   };
 
   const getToken = (): string | null => {

@@ -734,7 +734,7 @@ const ServiceCenterDashboard = () => {
                             size="sm"
                             onClick={() => handleUpdateStatus(claim.id, claim.status)}
                           >
-                            {user?.role === 'technician' ? 'Update Progress' : 'Update Status'}
+                            {user?.role === 'service_center_technician' ? 'Update Progress' : 'Update Status'}
                           </Button>
                         )}
                       </div>
