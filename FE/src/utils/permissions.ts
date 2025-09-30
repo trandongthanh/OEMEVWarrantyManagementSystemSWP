@@ -29,7 +29,7 @@ const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'attach_parts',
     'view_claim_details'
   ],
-  technician: [
+  service_center_technician: [
     'view_claim_details',
     'update_diagnostic',
     'finalize_diagnosis',
@@ -80,7 +80,7 @@ export const getAvailableStatuses = (userRole: string, currentStatus: string): s
     }
   }
   
-  if (userRole === 'technician') {
+  if (userRole === 'service_center_technician') {
     switch (currentStatus) {
       case 'technician_assigned':
         return ['diagnostic_in_progress'];

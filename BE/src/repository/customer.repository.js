@@ -10,8 +10,6 @@ class CustomerRepository {
       },
     });
 
-    console.log("Customer exist: ", existingCustomer);
-
     return existingCustomer;
   };
 
