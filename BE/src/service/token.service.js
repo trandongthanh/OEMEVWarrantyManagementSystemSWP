@@ -1,15 +1,22 @@
-const jwt = require("jsonwebtoken");
-require("dotenv").config();
-const SECRET_KEY = process.env.SECRET_KEY;
+import jwt from "jsonwebtoken";
+import { configDotenv } from "dotenv";
+configDotenv();
 
+const SECRET_KEY = process.env.SECRET_KEY;
 class TokenService {
-  generateToken({ user }) {
-    const payload = { userId: user.userId, role: user.role.roleName };
+  generateToken({ userId, roleName, serviceCenterId, companyId }) {
+    const payload = { userId, roleName, serviceCenterId, companyId };
 
     return jwt.sign(payload, SECRET_KEY, {
       expiresIn: "5h",
     });
   }
+
+  verify(token) {
+    const decode = jwt.verify(token, SECRET_KEY);
+
+    return decode;
+  }
 }
 
-module.exports = new TokenService();
+export default TokenService;

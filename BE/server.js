@@ -1,20 +1,24 @@
-const app = require("./app");
-const http = require("http");
-const db = require("./models/index");
-require("dotenv").config();
+import app from "./app.js";
 
-const server = http.createServer(app);
+import db from "./models/index.cjs";
+
+import http from "http";
+
+import { configDotenv } from "dotenv";
+configDotenv();
 
 const PORT = process.env.PORT;
+const server = http.createServer(app);
 
 db.sequelize
   .authenticate()
+  // .sync()
   // .sync({ alter: true })
   // .sync({ force: true })
   .then(() => {
-    console.log("Connect database successful");
+    console.log("Connect DB succesfull");
     server.listen(PORT, () => {
-      console.log(`Server is listening on ${PORT}`);
+      console.log(`Server is running on ${PORT}`);
     });
   })
-  .catch((err) => console.log(`Error is: ${err}`));
+  .catch((err) => console.log(`Error is ${err}`));

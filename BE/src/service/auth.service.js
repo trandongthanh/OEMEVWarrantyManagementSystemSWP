@@ -1,96 +1,45 @@
-const UserRepository = require("../repository/user.repository");
-const { BadRequestError, ConflictError } = require("../error");
-const BcryptService = require("./bcrypt.service");
-const TokenService = require("./token.service");
-const RoleRepository = require("../repository/role.repository");
+import { BadRequestError, NotFoundError } from "../error/index.js";
 
 class AuthService {
-  constructor() {
-    this.userRepository = UserRepository;
-    this.bcryptService = BcryptService;
-    this.tokenService = TokenService;
-    this.roleRepository = RoleRepository;
+  constructor({ userRepository, hashService, tokenService }) {
+    this.userRepository = userRepository;
+    this.hashService = hashService;
+    this.tokenService = tokenService;
   }
 
-  registerStaffForAdmin = async (userData) => {
-    const {
-      username,
-      password,
-      phone,
-      email,
-      name,
-      address,
-      roleId,
-      serviceCenterId,
-    } = userData;
+  login = async (userLoginData) => {
+    const { username, password } = userLoginData;
 
-    console.log("UserData", userData);
-
-    const validateEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const validatePhone = /^\d{10}$/;
-
-    if (!validateEmail.test(email) || !validatePhone.test(phone)) {
-      throw new BadRequestError("Inappropriate email or phone");
+    if (!username || !password) {
+      throw new BadRequestError("Username and password is requied");
     }
 
-    if (!address || !name || !roleId) {
-      throw new BadRequestError(
-        "Address, name, roleId, serviceCenterId is required"
-      );
-    }
-
-    const existingUser = await this.userRepository.findUserByUsername({
-      username,
+    const existingUser = await this.userRepository.findByUsername({
+      username: username,
     });
-
-    if (existingUser) {
-      throw new ConflictError("User already exists");
-    }
-
-    const hashedPassword = await this.bcryptService.hash(password);
-
-    const newUser = await this.userRepository.createUser({
-      ...userData,
-      password: hashedPassword,
-      roleId,
-    });
-
-    if (newUser) {
-      return true;
-    }
-  };
-
-  login = async (userData) => {
-    const { username, password } = userData;
-
-    const existingUser = await this.userRepository.findUserByUsername({
-      username,
-    });
-
-    console.log(existingUser);
 
     if (!existingUser) {
-      throw new Error("User is not exists");
+      throw new NotFoundError("Cannot find user with this username");
     }
 
-    const isMatch = await this.bcryptService.compare(
-      password,
-      existingUser.password
-    );
+    const isMatchedPasword = await this.hashService.compare({
+      string: password,
+      hashed: existingUser.password,
+    });
 
-    if (!isMatch) {
-      throw new Error("Password is false");
+    if (!isMatchedPasword) {
+      throw new BadRequestError("Password is wrong");
     }
 
-    const token = this.tokenService.generateToken({ user: existingUser });
+    const token = this.tokenService.generateToken({
+      userId: existingUser.userId,
+      roleName: existingUser.role.roleName,
+      serviceCenterId: existingUser.serviceCenterId,
+      companyId: existingUser.vehicleCompanyId,
+    });
 
-    existingUser.password = undefined;
-
-    return {
-      user: existingUser,
-      token,
-    };
+    return token;
   };
 }
 
-module.exports = new AuthService();
+export default AuthService;
