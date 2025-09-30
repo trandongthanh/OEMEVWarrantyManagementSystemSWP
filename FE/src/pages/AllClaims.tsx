@@ -200,7 +200,7 @@ const AllClaims = () => {
               <div>
                 <h1 className="text-xl font-bold text-foreground">All Warranty Claims</h1>
                 <p className="text-sm text-muted-foreground">
-                  {user?.role === 'technician'
+                  {user?.role === 'service_center_technician'
                     ? `Showing claims you can work on (${filteredAndSortedClaims.length} of ${allClaims.length})`
                     : `Showing ${filteredAndSortedClaims.length} of ${allClaims.length} claims`
                   }
@@ -422,7 +422,7 @@ const AllClaims = () => {
                               variant="ghost"
                               size="sm"
                               onClick={() => handleUpdateStatus(claim.id, claim.status)}
-                              title={user?.role === 'technician' ? 'Update Progress' : 'Update Status'}
+                              title={user?.role === 'service_center_technician' ? 'Update Progress' : 'Update Status'}
                             >
                               <RefreshCw className="h-4 w-4" />
                             </Button>
