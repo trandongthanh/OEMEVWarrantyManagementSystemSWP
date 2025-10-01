@@ -10,7 +10,6 @@ const Dashboard = () => {
   // Debug log to check user data in Dashboard
   console.log('Dashboard - Current user:', user);
 
-
   if (!user) return null;
 
   // Route to appropriate dashboard based on user role
@@ -22,11 +21,11 @@ const Dashboard = () => {
     return <TechnicianDashboard />;
   }
 
-  if (user.role === 'emv_admin' ) {
+  if (user.role === 'emv_staff') {
     return <ManufacturerDashboard />;
   }
-  
-   if ( user.role === 'emv_staff' ) {
+
+  if (user.role === 'evm_admin' || user.role === 'evm_staff') {
     return <WarrantyDashboard />;
   }
 

@@ -91,7 +91,7 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
   const handleWarrantyValidation = (vehicleInfo: VehicleWarrantyInfo | null) => {
     setClaimData(prev => ({ ...prev, vehicleInfo }));
     setShowWarrantyValidator(false);
-    
+
     if (vehicleInfo) {
       if (vehicleInfo.warrantyStatus === 'valid') {
         toast({
@@ -113,7 +113,7 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
   const handleTechnicianAssignment = (assignment: any) => {
     setClaimData(prev => ({ ...prev, technicianAssignment: assignment }));
     setShowTechnicianAssignment(false);
-    
+
     toast({
       title: "Technician assignment successful",
       description: `Assigned ${assignment.mainTechnician.name} and ${assignment.assistantTechnicians.length} assistant technicians.`,
@@ -150,7 +150,7 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
   };
 
   const nextStep = () => {
-    if (currentStep === 2 && claimData.issue) {
+    if (currentStep === 2 && claimData.issue && claimData.description) {
       setCurrentStep(3);
     } else if (currentStep === 4) {
       setCurrentStep(5);
@@ -188,11 +188,10 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
           <div className="flex items-center space-x-4 mt-6">
             {steps.map((step) => (
               <div key={step.number} className="flex items-center space-x-2">
-                <div className={`flex h-16 w-8 items-center justify-center rounded-full text-sm font-medium ${
-                  currentStep >= step.number 
-                    ? 'bg-primary text-primary-foreground' 
+                <div className={`flex h-16 w-8 items-center justify-center rounded-full text-sm font-medium ${currentStep >= step.number
+                    ? 'bg-primary text-primary-foreground'
                     : 'bg-muted text-muted-foreground'
-                }`}>
+                  }`}>
                   {currentStep > step.number ? (
                     <CheckCircle className="h-4 w-4" />
                   ) : (
@@ -221,11 +220,11 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
                 </div>
                 <h3 className="text-xl font-semibold mb-2">Check vehicle warranty</h3>
                 <p className="text-muted-foreground mb-6">
-                  The customer comes to the service center for vehicle warranty. 
+                  The customer comes to the service center for vehicle warranty.
                   Please check the VIN to verify whether the vehicle is still under warranty.
                 </p>
-                
-                <Button 
+
+                <Button
                   onClick={() => setShowWarrantyValidator(true)}
                   className="w-full"
                 >
@@ -236,11 +235,10 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
 
               {/* Display result if vehicle info exists */}
               {claimData.vehicleInfo && (
-                <Card className={`max-w-2xl mx-auto ${
-                  claimData.vehicleInfo.warrantyStatus === 'valid' 
-                    ? 'border-green-200 bg-green-50' 
+                <Card className={`max-w-2xl mx-auto ${claimData.vehicleInfo.warrantyStatus === 'valid'
+                    ? 'border-green-200 bg-green-50'
                     : 'border-amber-200 bg-amber-50'
-                }`}>
+                  }`}>
                   <CardContent className="pt-6">
                     <div className="flex items-center justify-between mb-4">
                       <h4 className="font-semibold">Inspection result</h4>
@@ -248,7 +246,7 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
                         {claimData.vehicleInfo.warrantyStatus === 'valid' ? 'Under warranty' : 'Out of warranty'}
                       </Badge>
                     </div>
-                    
+
                     <div className="grid md:grid-cols-2 gap-4 text-sm">
                       <div>
                         <p><strong>Vehicle:</strong> {claimData.vehicleInfo.model} ({claimData.vehicleInfo.year})</p>
@@ -263,7 +261,7 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
                     {claimData.vehicleInfo.warrantyStatus !== 'valid' && (
                       <div className="mt-4 p-3 bg-amber-100 border border-amber-300 rounded">
                         <p className="text-sm text-amber-800">
-                          <strong>Suggestion:</strong> The vehicle is out of warranty. You may suggest the customer 
+                          <strong>Suggestion:</strong> The vehicle is out of warranty. You may suggest the customer
                           extend the warranty or use paid repair services.
                         </p>
                       </div>
@@ -319,8 +317,8 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
                   Staff select the appropriate technician based on expertise to handle this case.
                   The system will suggest the most suitable technician.
                 </p>
-                
-                <Button 
+
+                <Button
                   onClick={() => setShowTechnicianAssignment(true)}
                   className="w-full"
                 >
@@ -334,13 +332,13 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
                 <Card className="max-w-2xl mx-auto border-primary/20 bg-primary/5">
                   <CardContent className="pt-6">
                     <h4 className="font-semibold mb-4">Assignment Completed</h4>
-                    
+
                     <div className="text-sm space-y-3">
                       <div>
                         <p><strong>Main Technician:</strong></p>
                         <p className="ml-4">{claimData.technicianAssignment.mainTechnician.name} - {claimData.technicianAssignment.mainTechnician.specialty}</p>
                       </div>
-                      
+
                       {claimData.technicianAssignment.assistantTechnicians.length > 0 && (
                         <div>
                           <p><strong>Assistant Technicians:</strong></p>
@@ -349,7 +347,7 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
                           ))}
                         </div>
                       )}
-                      
+
                       <div>
                         <p><strong>Estimated Time:</strong> {claimData.technicianAssignment.estimatedTime}</p>
                       </div>
@@ -368,7 +366,7 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
                 <p className="text-sm text-muted-foreground mb-3">
                   Upload initial documents and images related to the issue
                 </p>
-                
+
                 <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
                   <input
                     type="file"
@@ -404,9 +402,9 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
                           <Button variant="ghost" size="sm">
                             <Eye className="h-4 w-4" />
                           </Button>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => removeFile(index)}
                             className="text-destructive hover:text-destructive"
                           >
@@ -458,7 +456,7 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
                       </div>
                       <div>
                         <p><strong>Customer:</strong> {claimData.vehicleInfo.customer.name}</p>
-                        <p><strong>Warranty Status:</strong> 
+                        <p><strong>Warranty Status:</strong>
                           <Badge variant={claimData.vehicleInfo.warrantyStatus === 'valid' ? 'success' : 'destructive'} className="ml-2">
                             {claimData.vehicleInfo.warrantyStatus === 'valid' ? 'Under Warranty' : 'Out of Warranty'}
                           </Badge>
@@ -500,8 +498,8 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
 
           {/* Navigation Buttons */}
           <div className="flex justify-between pt-6 border-t mt-6">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={currentStep === 1 ? onClose : prevStep}
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
@@ -515,28 +513,28 @@ const NewClaim = ({ onClose }: { onClose: () => void }) => {
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               )}
-              
+
               {currentStep === 2 && (
                 <Button onClick={nextStep} disabled={!canProceedFromStep2}>
                   Next
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               )}
-              
+
               {currentStep === 3 && claimData.technicianAssignment && (
                 <Button onClick={() => setCurrentStep(4)}>
                   Next
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               )}
-              
+
               {currentStep === 4 && (
                 <Button onClick={nextStep} disabled={!canProceedFromStep4}>
                   Next
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               )}
-              
+
               {currentStep === 5 && (
                 <Button onClick={handleSubmit} disabled={!canSubmit || isLoading}>
                   {isLoading ? 'Creating...' : 'Create warranty request'}

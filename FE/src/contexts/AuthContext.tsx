@@ -4,7 +4,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'service_center_staff' | 'service_center_technician' | 'emv_admin' | 'emv_staff';
+  role: 'service_center_staff' | 'service_center_technician' | 'evm_admin' | 'evm_staff' | 'emv_staff';
   avatar?: string;
   serviceCenter?: string;
   department?: string;
@@ -107,29 +107,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               department: backendUser.department
             };
           } else {
-            // Decode JWT token to get role from payload
-            try {
-              const payload = JSON.parse(atob(token.split('.')[1]));
-              const roleName = payload.roleName || 'service_center_staff';
-              
-              userData = {
-                id: payload.userId || username,
-                email: payload.email || username,
-                name: username,
-                role: roleName,
-                serviceCenter: payload.serviceCenterId,
-                department: payload.department
-              };
-            } catch (decodeError) {
-              console.error('Failed to decode token:', decodeError);
-              // Fallback to default role if token decode fails
-              userData = {
-                id: username,
-                email: username,
-                name: username,
-                role: 'service_center_staff'
-              };
+            // Fallback based on username to determine appropriate role
+            let fallbackRole: User['role'] = 'service_center_staff';
+            
+            // Check specific usernames first
+            if (username.toLowerCase() === 'admin01') {
+              fallbackRole = 'evm_admin';
             }
+            else if (username.toLowerCase() === 'emvstaff01') {
+              fallbackRole = 'emv_staff';
+            }
+            // Check if username indicates technician role
+            else if (username.toLowerCase().includes('technician') || 
+                     username.toLowerCase().includes('tech')) {
+              fallbackRole = 'service_center_technician';
+            }
+            // Check if username indicates EVM admin role
+            else if (username.toLowerCase().includes('admin') && 
+                     username.toLowerCase().includes('evm')) {
+              fallbackRole = 'evm_admin';
+            }
+            // Check if username indicates EVM staff role
+            else if (username.toLowerCase().includes('evm')) {
+              fallbackRole = 'evm_staff';
+            }
+            
+            userData = {
+              id: username,
+              email: username,
+              name: username,
+              role: fallbackRole
+            };
           }
           
           // Store user data in localStorage for persistence
