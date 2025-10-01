@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import db from "../../models/index.cjs";
 const {
   Vehicle,
@@ -9,7 +10,7 @@ const {
 } = db;
 
 class VehicleRepository {
-  findVehicleByVinWithOwner = async ({ vin, companyId }) => {
+  findVehicleByVinWithOwner = async ({ vin, companyId }, option = null) => {
     const existingVehicle = await Vehicle.findOne({
       where: {
         vin: vin,
@@ -32,6 +33,11 @@ class VehicleRepository {
         {
           model: VehicleModel,
           as: "model",
+          where: {
+            vehicleModelId: {
+              [Op.not]: null,
+            },
+          },
           attributes: [["vehicle_model_name", "modelName"]],
 
           include: [
@@ -44,18 +50,21 @@ class VehicleRepository {
           ],
         },
       ],
+
+      transaction: option,
     });
+
+    if (!existingVehicle) {
+      return null;
+    }
 
     return existingVehicle.toJSON();
   };
 
-  registerOwnerForVehicle = async ({
-    companyId,
-    vin,
-    customerId,
-    licensePlate,
-    purchaseDate,
-  }) => {
+  registerOwnerForVehicle = async (
+    { companyId, vin, customerId, licensePlate, purchaseDate },
+    option = null
+  ) => {
     const rowEffect = await Vehicle.update(
       {
         ownerId: customerId,
@@ -66,6 +75,7 @@ class VehicleRepository {
         where: {
           vin: vin,
         },
+        transaction: option,
       }
     );
 
@@ -73,10 +83,13 @@ class VehicleRepository {
       return null;
     }
 
-    const updatedVehicle = await this.findVehicleByVinWithOwner({
-      vin: vin,
-      companyId: companyId,
-    });
+    const updatedVehicle = await this.findVehicleByVinWithOwner(
+      {
+        vin: vin,
+        companyId: companyId,
+      },
+      option
+    );
 
     return updatedVehicle;
   };
@@ -85,6 +98,9 @@ class VehicleRepository {
     const existingVehicle = await Vehicle.findOne({
       where: {
         vin: vin,
+        ownerId: {
+          [Op.not]: null,
+        },
       },
 
       attributes: [
@@ -119,6 +135,10 @@ class VehicleRepository {
         },
       ],
     });
+
+    if (!existingVehicle) {
+      return null;
+    }
 
     return existingVehicle.toJSON();
   };
