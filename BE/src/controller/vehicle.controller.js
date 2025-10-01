@@ -31,15 +31,17 @@ class VehicleController {
       companyId: companyId,
     });
 
-    let result = vehicle;
     if (!vehicle) {
-      result = {};
+      return res.status(404).json({
+        status: "success",
+        message: `Cannot find vehicle with this vin: ${vin}`,
+      });
     }
 
     res.status(200).json({
       status: "success",
       data: {
-        vehicle: result,
+        vehicle: vehicle,
       },
     });
   };
@@ -55,37 +57,18 @@ class VehicleController {
 
     const { vin } = req.params;
 
-    let customerId;
-    if (ownerId) {
-      await this.customerService.checkCustomerById({
-        id: ownerId,
-      });
-
-      customerId = ownerId;
-    } else if (customer) {
-      await this.customerService.checkduplicateCustomer({
-        phone: customer.phone,
-        email: customer.email,
-      });
-
-      const newCustomer = await this.customerService.createCustomer(customer);
-
-      customerId = newCustomer.dataValues.id;
-    } else {
-      throw new BadRequestError(
-        "Client must provide customer or customerId to register for owner for vehicle"
-      );
-    }
+    const serviceCenterId = req.user.serviceCenterId;
 
     const company =
       await this.serviceCenterService.findCompanyWithServiceCenterId({
-        serviceCenterId: req.user.serviceCenterId,
+        serviceCenterId: serviceCenterId,
       });
 
     const updatedVehicle = await this.vehicleService.registerOwnerForVehicle({
-      companyId: company.vehicle_company_id,
+      customer: customer,
       vin: vin,
-      customerId: customerId,
+      ownerId: ownerId,
+      companyId: company.vehicle_company_id,
       dateOfManufacture: dateOfManufacture,
       licensePlate: licensePlate,
       purchaseDate: purchaseDate,
@@ -104,6 +87,8 @@ class VehicleController {
 
     const { serviceCenterId } = req.user;
 
+    const { odermeter } = req.body;
+
     const company =
       await this.serviceCenterService.findCompanyWithServiceCenterId({
         serviceCenterId: serviceCenterId,
@@ -115,18 +100,20 @@ class VehicleController {
       await this.vehicleService.findVehicleByVinWithWarranty({
         vin: vin,
         companyId: vehicleCompanyId,
+        odermeter: odermeter,
       });
 
-    let result = existingVehicle;
-
     if (!existingVehicle) {
-      result = {};
+      return res.status(404).json({
+        status: "success",
+        message: `Cannot check warranty for vehicle with this VIN: ${vin} because this vehicle don't have owner`,
+      });
     }
 
     res.status(200).json({
       status: "success",
       data: {
-        vehicle: result,
+        result: existingVehicle,
       },
     });
   };
