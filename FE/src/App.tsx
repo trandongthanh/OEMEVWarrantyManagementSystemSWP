@@ -37,17 +37,17 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="/all-claims" element={
-              <ProtectedRoute allowedRoles={['service_center_staff', 'technician']}>
+              <ProtectedRoute allowedRoles={['service_center_staff', 'service_center_technician']}>
                 <AllClaims />
               </ProtectedRoute>
             } />
             <Route path="/service-center" element={
-              <ProtectedRoute allowedRoles={['service_center_staff', 'technician']}>
+              <ProtectedRoute allowedRoles={['service_center_staff', 'service_center_technician']}>
                 <ServiceCenterDashboard />
               </ProtectedRoute>
             } />
             <Route path="/manufacturer" element={
-              <ProtectedRoute allowedRoles={['evm_admin', 'evm_staff']}>
+              <ProtectedRoute allowedRoles={['emv_admin', 'emv_staff']}>
                 <ManufacturerDashboard />
               </ProtectedRoute>
             } />
@@ -67,17 +67,17 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="/warranty-claims" element={
-              <ProtectedRoute allowedRoles={['evm_admin', 'evm_staff']}>
+              <ProtectedRoute allowedRoles={['emv_admin', 'emv_staff']}>
                 <WarrantyClaims />
               </ProtectedRoute>
             } />
             <Route path="/warranty-claims/:id" element={
-              <ProtectedRoute allowedRoles={['evm_admin', 'evm_staff']}>
+              <ProtectedRoute allowedRoles={['emv_admin', 'emv_staff']}>
                 <WarrantyClaimDetail />
               </ProtectedRoute>
             } />
             <Route path="/warranty-dashboard" element={
-              <ProtectedRoute allowedRoles={['evm_admin', 'evm_staff']}>
+              <ProtectedRoute allowedRoles={['emv_admin', 'emv_staff']}>
                 <WarrantyDashboard />
               </ProtectedRoute>
             } />
