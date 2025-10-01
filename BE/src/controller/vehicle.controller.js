@@ -31,15 +31,17 @@ class VehicleController {
       companyId: companyId,
     });
 
-    let result = vehicle;
     if (!vehicle) {
-      result = {};
+      return res.status(404).json({
+        status: "success",
+        message: `Cannot find vehicle with this vin: ${vin}`,
+      });
     }
 
     res.status(200).json({
       status: "success",
       data: {
-        vehicle: result,
+        vehicle: vehicle,
       },
     });
   };
@@ -55,58 +57,18 @@ class VehicleController {
 
     const { vin } = req.params;
 
-    let customerId;
-    if (ownerId) {
-      // Case 1: Use existing customer
-      console.log('Using existing customer with ID:', ownerId);
-      await this.customerService.checkCustomerById({
-        id: ownerId,
-      });
-
-      customerId = ownerId;
-    } else if (customer) {
-      // Case 2: Create new customer
-      console.log('Creating new customer:', customer);
-      
-      // Check if all customer fields are provided when creating new customer
-      if (!customer.fullName || !customer.email || !customer.phone || !customer.address) {
-        throw new BadRequestError("All customer fields are required: fullName, email, phone, address");
-      }
-
-      await this.customerService.checkduplicateCustomer({
-        phone: customer.phone,
-        email: customer.email,
-      });
-
-      const newCustomer = await this.customerService.createCustomer(customer);
-      console.log('New customer created with ID:', newCustomer.dataValues.id);
-
-      customerId = newCustomer.dataValues.id;
-    } else {
-      throw new BadRequestError(
-        "Client must provide customer or customerId to register for owner for vehicle"
-      );
-    }
-
-    // Validate vehicle fields
-    if (!dateOfManufacture || !licensePlate || !purchaseDate) {
-      throw new BadRequestError("All vehicle fields are required: dateOfManufacture, licensePlate, purchaseDate");
-    }
-
-    console.log('Vehicle fields - VIN:', vin);
-    console.log('Vehicle fields - Date of Manufacture:', dateOfManufacture);
-    console.log('Vehicle fields - License Plate:', licensePlate);
-    console.log('Vehicle fields - Purchase Date:', purchaseDate);
+    const serviceCenterId = req.user.serviceCenterId;
 
     const company =
       await this.serviceCenterService.findCompanyWithServiceCenterId({
-        serviceCenterId: req.user.serviceCenterId,
+        serviceCenterId: serviceCenterId,
       });
 
     const updatedVehicle = await this.vehicleService.registerOwnerForVehicle({
-      companyId: company.vehicle_company_id,
+      customer: customer,
       vin: vin,
-      customerId: customerId,
+      ownerId: ownerId,
+      companyId: company.vehicle_company_id,
       dateOfManufacture: dateOfManufacture,
       licensePlate: licensePlate,
       purchaseDate: purchaseDate,
@@ -125,6 +87,8 @@ class VehicleController {
 
     const { serviceCenterId } = req.user;
 
+    const { odermeter } = req.body;
+
     const company =
       await this.serviceCenterService.findCompanyWithServiceCenterId({
         serviceCenterId: serviceCenterId,
@@ -136,18 +100,20 @@ class VehicleController {
       await this.vehicleService.findVehicleByVinWithWarranty({
         vin: vin,
         companyId: vehicleCompanyId,
+        odermeter: odermeter,
       });
 
-    let result = existingVehicle;
-
     if (!existingVehicle) {
-      result = {};
+      return res.status(404).json({
+        status: "success",
+        message: `Cannot check warranty for vehicle with this VIN: ${vin} because this vehicle don't have owner`,
+      });
     }
 
     res.status(200).json({
       status: "success",
       data: {
-        vehicle: result,
+        result: existingVehicle,
       },
     });
   };

@@ -37,13 +37,13 @@ const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'view_all_claims',
     'update_technical_status'
   ],
-  emv_admin: [
+  evm_admin: [
     'approve_reject_claims',
     'view_all_claims',
     'view_claim_details',
     'manage_campaigns'
   ],
-  emv_staff: [
+  evm_staff: [
     'approve_reject_claims',
     'view_all_claims',
     'view_claim_details'
@@ -95,7 +95,7 @@ export const getAvailableStatuses = (userRole: string, currentStatus: string): s
     }
   }
 
-  if (userRole === 'emv_admin' || userRole === 'emv_staff') {
+  if (userRole === 'evm_admin' || userRole === 'evm_staff') {
     switch (currentStatus) {
       case 'pending_approval':
         return ['approved', 'rejected'];
