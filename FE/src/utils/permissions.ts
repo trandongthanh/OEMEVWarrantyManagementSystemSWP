@@ -29,7 +29,7 @@ const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'attach_parts',
     'view_claim_details'
   ],
-  technician: [
+  service_center_technician: [
     'view_claim_details',
     'update_diagnostic',
     'finalize_diagnosis',
@@ -37,13 +37,13 @@ const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'view_all_claims',
     'update_technical_status'
   ],
-  evm_admin: [
+  emv_admin: [
     'approve_reject_claims',
     'view_all_claims',
     'view_claim_details',
     'manage_campaigns'
   ],
-  evm_staff: [
+  emv_staff: [
     'approve_reject_claims',
     'view_all_claims',
     'view_claim_details'
@@ -80,7 +80,7 @@ export const getAvailableStatuses = (userRole: string, currentStatus: string): s
     }
   }
   
-  if (userRole === 'technician') {
+  if (userRole === 'service_center_technician') {
     switch (currentStatus) {
       case 'technician_assigned':
         return ['diagnostic_in_progress'];
@@ -95,7 +95,7 @@ export const getAvailableStatuses = (userRole: string, currentStatus: string): s
     }
   }
 
-  if (userRole === 'evm_admin' || userRole === 'evm_staff') {
+  if (userRole === 'emv_admin' || userRole === 'emv_staff') {
     switch (currentStatus) {
       case 'pending_approval':
         return ['approved', 'rejected'];

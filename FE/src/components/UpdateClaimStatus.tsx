@@ -169,11 +169,11 @@ const UpdateClaimStatus = ({ claimId, currentStatus, onClose, onStatusUpdated }:
                 <CardTitle className="flex items-center space-x-2">
                   <RefreshCw className="h-5 w-5 text-primary" />
                   <span>
-                    {user?.role === 'technician' ? 'Update Repair Progress' : 'Update Claim Status'}
+                    {user?.role === 'service_center_technician' ? 'Update Repair Progress' : 'Update Claim Status'}
                   </span>
                 </CardTitle>
                 <CardDescription>
-                  {user?.role === 'technician' 
+                  {user?.role === 'service_center_technician' 
                     ? `Update repair progress for claim ${claimId}`
                     : `Change status for claim ${claimId}`
                   }
@@ -324,7 +324,7 @@ const UpdateClaimStatus = ({ claimId, currentStatus, onClose, onStatusUpdated }:
           <div className="text-xs text-muted-foreground border-t pt-4">
             <div className="flex items-center justify-between">
               <span>Status will be updated by: {user?.name} ({user?.role})</span>
-              {user?.role === 'technician' && (
+              {user?.role === 'service_center_technician' && (
                 <Badge variant="outline" className="text-xs">
                   Limited to technical progress only
                 </Badge>

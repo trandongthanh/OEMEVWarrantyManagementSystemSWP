@@ -4,7 +4,7 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'service_center_staff' | 'technician' | 'evm_admin' | 'evm_staff';
+  role: 'service_center_staff' | 'service_center_technician' | 'emv_admin' | 'emv_staff';
   avatar?: string;
   serviceCenter?: string;
   department?: string;
@@ -21,52 +21,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Demo accounts - hardcoded for frontend simulation
-const DEMO_ACCOUNTS: Record<string, { password: string; user: User }> = {
-  'staff@evservice.com': {
-    password: 'staff123',
-    user: {
-      id: 'sc-staff-1',
-      email: 'staff@evservice.com',
-      name: 'Nguyễn Văn Minh',
-      role: 'service_center_staff',
-      serviceCenter: 'EV Service Hà Nội',
-      department: 'Customer Service'
-    }
-  },
-  'tech@evservice.com': {
-    password: 'tech123',
-    user: {
-      id: 'tech-1',
-      email: 'tech@evservice.com', 
-      name: 'Trần Thị Hoa',
-      role: 'technician',
-      serviceCenter: 'EV Service Hà Nội',
-      department: 'Technical Repair'
-    }
-  },
-  'admin@evm.com': {
-    password: 'admin123',
-    user: {
-      id: 'evm-admin-1',
-      email: 'admin@evm.com',
-      name: 'Lê Hoàng Nam',
-      role: 'evm_admin',
-      department: 'System Administration'
-    }
-  },
-  'evmstaff@evm.com': {
-    password: 'evm123',
-    user: {
-      id: 'evm-staff-1', 
-      email: 'evmstaff@evm.com',
-      name: 'Phạm Thị Linh',
-      role: 'evm_staff',
-      department: 'Warranty Management'
-    }
-  }
-};
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -74,14 +28,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     // Check if token exists to determine if user is logged in
     const token = localStorage.getItem('ev_warranty_token');
-    if (token) {
-      // Set a generic user object when token exists
-      setUser({
-        id: 'user',
-        email: 'user',
-        name: 'User',
-        role: 'service_center_staff'
-      });
+    const savedUser = localStorage.getItem('ev_warranty_user');
+    
+    if (token && savedUser) {
+      try {
+        // Restore user data from localStorage
+        const userData = JSON.parse(savedUser);
+        setUser(userData);
+      } catch (error) {
+        console.error('Error parsing saved user data:', error);
+        // Clear invalid data
+        localStorage.removeItem('ev_warranty_token');
+        localStorage.removeItem('ev_warranty_user');
+      }
     }
     setIsLoading(false);
   }, []);
@@ -130,7 +89,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
         
         if (token) {
-          // Store only token in localStorage
+          // Store token and user data in localStorage
           localStorage.setItem('ev_warranty_token', token);
           
           // Extract user info from backend response
@@ -148,14 +107,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               department: backendUser.department
             };
           } else {
-            // Fallback to minimal user object
-            userData = {
-              id: username,
-              email: username,
-              name: username,
-              role: 'service_center_staff'
-            };
+            // Decode JWT token to get role from payload
+            try {
+              const payload = JSON.parse(atob(token.split('.')[1]));
+              const roleName = payload.roleName || 'service_center_staff';
+              
+              userData = {
+                id: payload.userId || username,
+                email: payload.email || username,
+                name: username,
+                role: roleName,
+                serviceCenter: payload.serviceCenterId,
+                department: payload.department
+              };
+            } catch (decodeError) {
+              console.error('Failed to decode token:', decodeError);
+              // Fallback to default role if token decode fails
+              userData = {
+                id: username,
+                email: username,
+                name: username,
+                role: 'service_center_staff'
+              };
+            }
           }
+          
+          // Store user data in localStorage for persistence
+          localStorage.setItem('ev_warranty_user', JSON.stringify(userData));
+          
+          // Debug log to check user data
+          console.log('Login successful - User data:', userData);
+          console.log('Username:', username, 'Role:', userData.role);
           
           setUser(userData);
           setIsLoading(false);
@@ -183,6 +165,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = () => {
     setUser(null);
     localStorage.removeItem('ev_warranty_token');
+    localStorage.removeItem('ev_warranty_user');
   };
 
   const getToken = (): string | null => {

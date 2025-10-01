@@ -57,7 +57,8 @@ class VehicleController {
 
     const { vin } = req.params;
 
-    const serviceCenterId = req.user.serviceCenterId;
+
+   const serviceCenterId = req.user.serviceCenterId;
 
     const company =
       await this.serviceCenterService.findCompanyWithServiceCenterId({

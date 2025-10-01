@@ -1,19 +1,33 @@
 import { useAuth } from '@/contexts/AuthContext';
 import ServiceCenterDashboard from '@/components/ServiceCenterDashboard';
 import ManufacturerDashboard from '@/components/ManufacturerDashboard';
+import TechnicianDashboard from '@/components/TechnicianDashboard';
+import WarrantyDashboard from '@/components/WarrantyDashboard';
 
 const Dashboard = () => {
   const { user } = useAuth();
 
+  // Debug log to check user data in Dashboard
+  console.log('Dashboard - Current user:', user);
+
+
   if (!user) return null;
 
   // Route to appropriate dashboard based on user role
-  if (user.role === 'service_center_staff' || user.role === 'technician') {
+  if (user.role === 'service_center_staff') {
     return <ServiceCenterDashboard />;
   }
 
-  if (user.role === 'evm_admin' || user.role === 'evm_staff') {
+  if (user.role === 'service_center_technician') {
+    return <TechnicianDashboard />;
+  }
+
+  if (user.role === 'emv_admin' ) {
     return <ManufacturerDashboard />;
+  }
+  
+   if ( user.role === 'emv_staff' ) {
+    return <WarrantyDashboard />;
   }
 
   return (
