@@ -71,36 +71,3 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
-
-## ⚠️ Important: Role Migration (October 1, 2025)
-
-Frontend roles have been updated to match backend. **You must clear localStorage before testing.**
-
-### Quick Start After Migration
-
-```javascript
-// Clear localStorage in browser console
-localStorage.clear();
-window.location.href = '/login';
-```
-
-### Updated Role Names
-
-- `technician` → `service_center_technician`
-- `evm_staff` → `emv_staff`
-- `evm_admin` → `emv_admin`
-
-### Test Accounts
-
-```
-staff01 / staff123 → service_center_staff
-technician01 / tech123 → service_center_technician
-emvstaff01 / emv123 → emv_staff
-admin01 / admin123 → emv_admin
-```
-
-### Documentation
-
-- **Quick Test Guide**: See [TEST_GUIDE.md](./TEST_GUIDE.md)
-- **Full Migration Details**: See [ROLE_MIGRATION_GUIDE.md](./ROLE_MIGRATION_GUIDE.md)
-- **Summary**: See [ROLE_MIGRATION_SUMMARY.md](./ROLE_MIGRATION_SUMMARY.md)

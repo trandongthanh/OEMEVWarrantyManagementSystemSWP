@@ -35,84 +35,171 @@ const WarrantyValidator = ({ onValidationComplete, onClose }: WarrantyValidatorP
   const [validationResult, setValidationResult] = useState<VehicleWarrantyInfo | null>(null);
   const { toast } = useToast();
 
-  // Mock vehicle warranty database
-  // const vehicleDatabase: VehicleWarrantyInfo[] = [
-  //   {
-  //     vin: '1HGBH41JXMN109186',
-  //     model: 'EV Model X Pro',
-  //     year: '2023',
-  //     purchaseDate: '2023-03-15',
-  //     warrantyStartDate: '2023-03-15',
-  //     warrantyEndDate: '2028-03-15',
-  //     mileage: 15000,
-  //     maxMileage: 100000,
-  //     warrantyStatus: 'valid',
-  //     customer: {
-  //       name: 'Nguyễn Văn Minh',
-  //       phone: '0901234567',
-  //       email: 'minh.nguyen@email.com'
-  //     }
-  //   },
-  //   {
-  //     vin: 'WVWZZZ1JZ3W386752',
-  //     model: 'EV Compact Plus',
-  //     year: '2022',
-  //     purchaseDate: '2022-01-20',
-  //     warrantyStartDate: '2022-01-20',
-  //     warrantyEndDate: '2025-01-20',
-  //     mileage: 85000,
-  //     maxMileage: 100000,
-  //     warrantyStatus: 'valid',
-  //     customer: {
-  //       name: 'Trần Thị Lan',
-  //       phone: '0987654321',
-  //       email: 'lan.tran@email.com'
-  //     }
-  //   },
-  //   {
-  //     vin: 'JH4KA7532MC123456',
-  //     model: 'EV City Car',
-  //     year: '2020',
-  //     purchaseDate: '2020-06-10',
-  //     warrantyStartDate: '2020-06-10',
-  //     warrantyEndDate: '2023-06-10',
-  //     mileage: 45000,
-  //     maxMileage: 100000,
-  //     warrantyStatus: 'expired_time',
-  //     customer: {
-  //       name: 'Phạm Văn Hùng',
-  //       phone: '0912345678',
-  //       email: 'hung.pham@email.com'
-  //     }
-  //   },
-  //   {
-  //     vin: 'KMHGH4JH3EA123789',
-  //     model: 'EV Sport Sedan',
-  //     year: '2021',
-  //     purchaseDate: '2021-08-15',
-  //     warrantyStartDate: '2021-08-15',
-  //     warrantyEndDate: '2026-08-15',
-  //     mileage: 105000,
-  //     maxMileage: 100000,
-  //     warrantyStatus: 'expired_mileage',
-  //     customer: {
-  //       name: 'Võ Thị Mai',
-  //       phone: '0934567890',
-  //       email: 'mai.vo@email.com'
-  //     }
-  //   }
-  // ];
+  // Mock vehicle warranty database với dữ liệu test chi tiết
+  const vehicleDatabase: VehicleWarrantyInfo[] = [
+    // === VEHICLE CÒN BẢO HÀNH (VALID) ===
+    {
+      vin: '1HGBH41JXMN109186',
+      model: 'VinFast VF8 Plus',
+      year: '2023',
+      purchaseDate: '2023-03-15',
+      warrantyStartDate: '2023-03-15',
+      warrantyEndDate: '2031-03-15', // 8 năm bảo hành
+      mileage: 15000,
+      maxMileage: 160000, // 160,000km theo chính sách VinFast
+      warrantyStatus: 'valid',
+      customer: {
+        name: 'Nguyễn Văn Minh',
+        phone: '0901234567',
+        email: 'minh.nguyen@gmail.com'
+      }
+    },
+    {
+      vin: 'WVWZZZ1JZ3W386752',
+      model: 'VinFast VF9 Premium',
+      year: '2024',
+      purchaseDate: '2024-01-20',
+      warrantyStartDate: '2024-01-20',
+      warrantyEndDate: '2032-01-20',
+      mileage: 8500,
+      maxMileage: 160000,
+      warrantyStatus: 'valid',
+      customer: {
+        name: 'Trần Thị Lan Anh',
+        phone: '0987654321',
+        email: 'lan.tran@vinfast.vn'
+      }
+    },
+    {
+      vin: 'VF8ABC123DEF456789',
+      model: 'VinFast VF8 Eco',
+      year: '2023',
+      purchaseDate: '2023-06-10',
+      warrantyStartDate: '2023-06-10',
+      warrantyEndDate: '2031-06-10',
+      mileage: 25000,
+      maxMileage: 160000,
+      warrantyStatus: 'valid',
+      customer: {
+        name: 'Lê Hoàng Nam',
+        phone: '0912345678',
+        email: 'nam.le@email.com'
+      }
+    },
+
+    // === VEHICLE HẾT BẢO HÀNH THEO THỜI GIAN (EXPIRED_TIME) ===
+    {
+      vin: 'JH4KA7532MC123456',
+      model: 'VinFast VF5 Basic',
+      year: '2016',
+      purchaseDate: '2016-06-10',
+      warrantyStartDate: '2016-06-10',
+      warrantyEndDate: '2024-06-10', // Đã hết hạn
+      mileage: 45000,
+      maxMileage: 160000,
+      warrantyStatus: 'expired_time',
+      customer: {
+        name: 'Phạm Văn Hùng',
+        phone: '0912888999',
+        email: 'hung.pham@yahoo.com'
+      }
+    },
+    {
+      vin: 'OLD2017VIN1234567',
+      model: 'VinFast Klara S',
+      year: '2017',
+      purchaseDate: '2017-03-15',
+      warrantyStartDate: '2017-03-15',
+      warrantyEndDate: '2025-03-15', // Gần hết hạn
+      mileage: 35000,
+      maxMileage: 160000,
+      warrantyStatus: 'expired_time',
+      customer: {
+        name: 'Đỗ Thị Hương',
+        phone: '0933777888',
+        email: 'huong.do@hotmail.com'
+      }
+    },
+
+    // === VEHICLE HẾT BẢO HÀNH THEO KM (EXPIRED_MILEAGE) ===
+    {
+      vin: 'KMHGH4JH3EA123789',
+      model: 'VinFast VF8 City',
+      year: '2022',
+      purchaseDate: '2022-08-15',
+      warrantyStartDate: '2022-08-15',
+      warrantyEndDate: '2030-08-15',
+      mileage: 165000, // Vượt quá giới hạn
+      maxMileage: 160000,
+      warrantyStatus: 'expired_mileage',
+      customer: {
+        name: 'Võ Thị Mai Phương',
+        phone: '0934567890',
+        email: 'mai.vo@company.com'
+      }
+    },
+    {
+      vin: 'HIGHMILE123456789',
+      model: 'VinFast VF9 Luxury',
+      year: '2021',
+      purchaseDate: '2021-12-01',
+      warrantyStartDate: '2021-12-01',
+      warrantyEndDate: '2029-12-01',
+      mileage: 180000, // Chạy nhiều km
+      maxMileage: 160000,
+      warrantyStatus: 'expired_mileage',
+      customer: {
+        name: 'Nguyễn Đức Thành',
+        phone: '0945123456',
+        email: 'thanh.nguyen@logistics.vn'
+      }
+    },
+
+    // === VEHICLE ĐẶC BIỆT (EDGE CASES) ===
+    {
+      vin: 'NEWCAR2025TEST123',
+      model: 'VinFast VF Wild (Concept)',
+      year: '2025',
+      purchaseDate: '2025-01-01',
+      warrantyStartDate: '2025-01-01',
+      warrantyEndDate: '2033-01-01',
+      mileage: 500, // Xe mới
+      maxMileage: 160000,
+      warrantyStatus: 'valid',
+      customer: {
+        name: 'Bùi Văn Đạt',
+        phone: '0977888999',
+        email: 'dat.bui@vinfast-test.com'
+      }
+    },
+    {
+      vin: 'ALMOSTEXPIRE2024',
+      model: 'VinFast VF6 Standard',
+      year: '2020',
+      purchaseDate: '2020-10-15',
+      warrantyStartDate: '2020-10-15',
+      warrantyEndDate: '2028-10-15', // Còn vài năm
+      mileage: 159000, // Gần hết km
+      maxMileage: 160000,
+      warrantyStatus: 'valid', // Vẫn còn hạn
+      customer: {
+        name: 'Hoàng Thị Bích',
+        phone: '0888123456',
+        email: 'bich.hoang@gmail.com'
+      }
+    }
+  ];
 
   const validateWarranty = () => {
     setIsLoading(true);
-    
-    // Simulate API call
+
+    // Simulate API call với mock data
     setTimeout(() => {
-      // Comment: Mock data usage - replaced with API call
-      // const vehicle = vehicleDatabase.find(v => v.vin.toLowerCase() === vinSearch.toLowerCase());
-      const vehicle = undefined;
-      
+      // Tìm vehicle theo VIN trong mock database
+      const vehicle = vehicleDatabase.find(v => v.vin.toLowerCase() === vinSearch.toLowerCase());
+
       if (!vehicle) {
+        // VIN không tìm thấy
         setValidationResult({
           vin: vinSearch,
           model: 'Unknown',
@@ -131,39 +218,40 @@ const WarrantyValidator = ({ onValidationComplete, onClose }: WarrantyValidatorP
         });
         toast({
           title: "Vehicle not found",
-          description: "VIN not found in the system. Please check again.",
+          description: `VIN "${vinSearch}" không tồn tại trong hệ thống. Vui lòng kiểm tra lại.`,
           variant: "destructive"
         });
-      } 
-      // Comment: Mock data processing logic - will be replaced with API response processing
-      // else {
-      //   // Check warranty status
-      //   const today = new Date();
-      //   const warrantyEnd = new Date(vehicle.warrantyEndDate);
-      //   const timeExpired = today > warrantyEnd;
-      //   const mileageExpired = vehicle.mileage > vehicle.maxMileage;
-      //   
-      //   let status: VehicleWarrantyInfo['warrantyStatus'] = 'valid';
-      //   if (timeExpired) status = 'expired_time';
-      //   else if (mileageExpired) status = 'expired_mileage';
-      //   
-      //   const updatedVehicle = { ...vehicle, warrantyStatus: status };
-      //   setValidationResult(updatedVehicle);
-      //   
-      //   if (status === 'valid') {
-      //     toast({
-      //       title: "Vehicle under warranty",
-      //       description: `${vehicle.model} of ${vehicle.customer.name} is still under warranty.`
-      //     });
-      //   } else {
-      //     const reason = status === 'expired_time' ? 'warranty period expired' : 'exceeded mileage limit';
-      //     toast({
-      //       title: "Vehicle out of warranty",
-      //       description: `${vehicle.model} has ${reason}. Suggest customer to extend warranty.`,
-      //       variant: "destructive"
-      //     });
-      //   }
-      // }
+      } else {
+        // Tìm thấy vehicle - kiểm tra warranty status
+        const today = new Date();
+        const warrantyEnd = new Date(vehicle.warrantyEndDate);
+        const timeExpired = today > warrantyEnd;
+        const mileageExpired = vehicle.mileage > vehicle.maxMileage;
+
+        let status: VehicleWarrantyInfo['warrantyStatus'] = 'valid';
+        if (timeExpired) status = 'expired_time';
+        else if (mileageExpired) status = 'expired_mileage';
+
+        const updatedVehicle = { ...vehicle, warrantyStatus: status };
+        setValidationResult(updatedVehicle);
+
+        // Hiển thị thông báo tương ứng
+        if (status === 'valid') {
+          toast({
+            title: "✅ Xe vẫn còn bảo hành",
+            description: `${vehicle.model} của ${vehicle.customer.name} vẫn trong thời gian bảo hành.`
+          });
+        } else {
+          const reason = status === 'expired_time'
+            ? 'đã hết thời gian bảo hành'
+            : 'đã vượt quá số km cho phép';
+          toast({
+            title: "⚠️ Xe đã hết bảo hành",
+            description: `${vehicle.model} ${reason}. Khuyến nghị khách hàng gia hạn bảo hành hoặc sử dụng dịch vụ có phí.`,
+            variant: "destructive"
+          });
+        }
+      }
       setIsLoading(false);
     }, 1500);
   };
@@ -212,8 +300,8 @@ const WarrantyValidator = ({ onValidationComplete, onClose }: WarrantyValidatorP
                 onChange={(e) => setVinSearch(e.target.value)}
                 className="flex-1"
               />
-              <Button 
-                onClick={validateWarranty} 
+              <Button
+                onClick={validateWarranty}
                 disabled={!vinSearch.trim() || isLoading}
               >
                 <Search className="h-4 w-4 mr-2" />
@@ -222,17 +310,16 @@ const WarrantyValidator = ({ onValidationComplete, onClose }: WarrantyValidatorP
             </div>
           </div>
 
-          
+
 
           {/* Validation Result */}
           {validationResult && (
-            <Card className={`border-2 ${
-              validationResult.warrantyStatus === 'valid' 
-                ? 'border-green-200' 
+            <Card className={`border-2 ${validationResult.warrantyStatus === 'valid'
+                ? 'border-green-200'
                 : validationResult.warrantyStatus === 'not_found'
-                ? 'border-gray-200'
-                : 'border-red-200'
-            }`}>
+                  ? 'border-gray-200'
+                  : 'border-red-200'
+              }`}>
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">Validation Result</CardTitle>
@@ -298,7 +385,7 @@ const WarrantyValidator = ({ onValidationComplete, onClose }: WarrantyValidatorP
                   <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
                     <h5 className="font-medium text-amber-800 mb-2">Suggestions for Customers:</h5>
                     <p className="text-sm text-amber-700">
-                      The vehicle has exceeded the maximum mileage allowed for the warranty. 
+                      The vehicle has exceeded the maximum mileage allowed for the warranty.
                       Customers can extend the warranty based on mileage or use paid repair services.
                     </p>
                   </div>
@@ -311,12 +398,12 @@ const WarrantyValidator = ({ onValidationComplete, onClose }: WarrantyValidatorP
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleProceed}
               disabled={!validationResult || validationResult.warrantyStatus === 'not_found'}
             >
-              {validationResult?.warrantyStatus === 'valid' 
-                ? 'Continue to create warranty request' 
+              {validationResult?.warrantyStatus === 'valid'
+                ? 'Continue to create warranty request'
                 : 'Record request'}
             </Button>
           </div>

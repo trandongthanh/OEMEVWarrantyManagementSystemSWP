@@ -39,63 +39,206 @@ const TechnicianAssignment = ({ claimId, issueCategory, onAssignmentComplete, on
   const [estimatedTime, setEstimatedTime] = useState('');
   const { toast } = useToast();
 
-  // Mock technicians database
-  // const technicians: Technician[] = [
-  //   {
-  //     id: 'tech-1',
-  //     name: 'Trần Minh Quân',
-  //     specialty: 'Battery Systems',
-  //     experience: 8,
-  //     workload: 3,
-  //     rating: 4.8,
-  //     isAvailable: true
-  //   },
-  //   {
-  //     id: 'tech-2',
-  //     name: 'Lê Thị Hoa',
-  //     specialty: 'Motor & Drivetrain',
-  //     experience: 6,
-  //     workload: 2,
-  //     rating: 4.7,
-  //     isAvailable: true
-  //   },
-  //   {
-  //     id: 'tech-3',
-  //     name: 'Phạm Văn Nam',
-  //     specialty: 'Electronics & Software',
-  //     experience: 5,
-  //     workload: 4,
-  //     rating: 4.6,
-  //     isAvailable: true
-  //   },
-  //   {
-  //     id: 'tech-4',
-  //     name: 'Võ Thị Mai',
-  //     specialty: 'General Diagnostics',
-  //     experience: 10,
-  //     workload: 2,
-  //     rating: 4.9,
-  //     isAvailable: true
-  //   },
-  //   {
-  //     id: 'tech-5',
-  //     name: 'Nguyễn Văn Đức',
-  //     specialty: 'Charging Systems',
-  //     experience: 4,
-  //     workload: 1,
-  //     rating: 4.5,
-  //     isAvailable: true
-  //   },
-  //   {
-  //     id: 'tech-6',
-  //     name: 'Trần Thị Linh',
-  //     specialty: 'Body & Interior',
-  //     experience: 7,
-  //     workload: 5,
-  //     rating: 4.4,
-  //     isAvailable: false
-  //   }
-  // ];
+  // Mock technicians database với dữ liệu test chi tiết
+  const technicians: Technician[] = [
+    // === BATTERY SYSTEMS SPECIALISTS ===
+    {
+      id: 'tech-001',
+      name: 'Trần Minh Quân',
+      specialty: 'Battery Systems',
+      experience: 8,
+      workload: 3,
+      rating: 4.8,
+      avatar: 'TMQ',
+      isAvailable: true
+    },
+    {
+      id: 'tech-002',
+      name: 'Nguyễn Thị Bảo An',
+      specialty: 'Battery Systems',
+      experience: 6,
+      workload: 2,
+      rating: 4.7,
+      avatar: 'NBA',
+      isAvailable: true
+    },
+
+    // === MOTOR & DRIVETRAIN SPECIALISTS ===
+    {
+      id: 'tech-003',
+      name: 'Lê Thị Hoa',
+      specialty: 'Motor & Drivetrain',
+      experience: 10,
+      workload: 2,
+      rating: 4.9,
+      avatar: 'LTH',
+      isAvailable: true
+    },
+    {
+      id: 'tech-004',
+      name: 'Phạm Văn Thành',
+      specialty: 'Motor & Drivetrain',
+      experience: 7,
+      workload: 4,
+      rating: 4.6,
+      avatar: 'PVT',
+      isAvailable: true
+    },
+
+    // === ELECTRONICS & SOFTWARE SPECIALISTS ===
+    {
+      id: 'tech-005',
+      name: 'Võ Minh Tuấn',
+      specialty: 'Electronics & Software',
+      experience: 5,
+      workload: 1,
+      rating: 4.8,
+      avatar: 'VMT',
+      isAvailable: true
+    },
+    {
+      id: 'tech-006',
+      name: 'Đỗ Thị Kim Loan',
+      specialty: 'Electronics & Software',
+      experience: 4,
+      workload: 3,
+      rating: 4.5,
+      avatar: 'DTL',
+      isAvailable: true
+    },
+
+    // === CHARGING SYSTEMS SPECIALISTS ===
+    {
+      id: 'tech-007',
+      name: 'Nguyễn Văn Đức',
+      specialty: 'Charging Systems',
+      experience: 6,
+      workload: 1,
+      rating: 4.7,
+      avatar: 'NVD',
+      isAvailable: true
+    },
+    {
+      id: 'tech-008',
+      name: 'Lý Thị Phương',
+      specialty: 'Charging Systems',
+      experience: 3,
+      workload: 2,
+      rating: 4.4,
+      avatar: 'LTP',
+      isAvailable: true
+    },
+
+    // === GENERAL DIAGNOSTICS SPECIALISTS ===
+    {
+      id: 'tech-009',
+      name: 'Võ Thị Mai',
+      specialty: 'General Diagnostics',
+      experience: 12,
+      workload: 2,
+      rating: 4.9,
+      avatar: 'VTM',
+      isAvailable: true
+    },
+    {
+      id: 'tech-010',
+      name: 'Hoàng Văn Long',
+      specialty: 'General Diagnostics',
+      experience: 8,
+      workload: 3,
+      rating: 4.6,
+      avatar: 'HVL',
+      isAvailable: true
+    },
+
+    // === BODY & INTERIOR SPECIALISTS ===
+    {
+      id: 'tech-011',
+      name: 'Trần Thị Linh',
+      specialty: 'Body & Interior',
+      experience: 7,
+      workload: 4,
+      rating: 4.5,
+      avatar: 'TTL',
+      isAvailable: true
+    },
+    {
+      id: 'tech-012',
+      name: 'Bùi Minh Đức',
+      specialty: 'Body & Interior',
+      experience: 5,
+      workload: 2,
+      rating: 4.3,
+      avatar: 'BMD',
+      isAvailable: true
+    },
+
+    // === SENIOR TECHNICIANS (HIGH RATING) ===
+    {
+      id: 'tech-013',
+      name: 'Nguyễn Văn Sơn',
+      specialty: 'General Diagnostics',
+      experience: 15,
+      workload: 3,
+      rating: 5.0,
+      avatar: 'NVS',
+      isAvailable: true
+    },
+    {
+      id: 'tech-014',
+      name: 'Trần Thị Xuân',
+      specialty: 'Battery Systems',
+      experience: 11,
+      workload: 2,
+      rating: 4.95,
+      avatar: 'TTX',
+      isAvailable: true
+    },
+
+    // === BUSY/UNAVAILABLE TECHNICIANS ===
+    {
+      id: 'tech-015',
+      name: 'Lê Văn Cường',
+      specialty: 'Motor & Drivetrain',
+      experience: 9,
+      workload: 6,
+      rating: 4.8,
+      avatar: 'LVC',
+      isAvailable: false // Đang bận
+    },
+    {
+      id: 'tech-016',
+      name: 'Phạm Thị Hương',
+      specialty: 'Electronics & Software',
+      experience: 6,
+      workload: 5,
+      rating: 4.7,
+      avatar: 'PTH',
+      isAvailable: false // Không available
+    },
+
+    // === JUNIOR TECHNICIANS ===
+    {
+      id: 'tech-017',
+      name: 'Vũ Đình Nam',
+      specialty: 'General Diagnostics',
+      experience: 2,
+      workload: 1,
+      rating: 4.2,
+      avatar: 'VDN',
+      isAvailable: true
+    },
+    {
+      id: 'tech-018',
+      name: 'Đinh Thị Lan',
+      specialty: 'Charging Systems',
+      experience: 1,
+      workload: 1,
+      rating: 4.0,
+      avatar: 'DTL2',
+      isAvailable: true
+    }
+  ];
 
   // Get recommended technicians based on issue category
   const getRecommendedTechnicians = () => {
@@ -109,24 +252,24 @@ const TechnicianAssignment = ({ claimId, issueCategory, onAssignmentComplete, on
     };
 
     const relevantSpecialties = categorySpecialtyMap[issueCategory] || ['General Diagnostics'];
-    
-    // return technicians
-    //   .filter(tech => tech.isAvailable)
-    //   .sort((a, b) => {
-    //     // Priority: specialty match > rating > lower workload
-    //     const aSpecialtyMatch = relevantSpecialties.includes(a.specialty);
-    //     const bSpecialtyMatch = relevantSpecialties.includes(b.specialty);
-        
-    //     if (aSpecialtyMatch && !bSpecialtyMatch) return -1;
-    //     if (!aSpecialtyMatch && bSpecialtyMatch) return 1;
-        
-    //     if (b.rating !== a.rating) return b.rating - a.rating;
-    //     return a.workload - b.workload;
-    //   });
+
+    return technicians
+      .filter(tech => tech.isAvailable)
+      .sort((a, b) => {
+        // Priority: specialty match > rating > lower workload
+        const aSpecialtyMatch = relevantSpecialties.includes(a.specialty);
+        const bSpecialtyMatch = relevantSpecialties.includes(b.specialty);
+
+        if (aSpecialtyMatch && !bSpecialtyMatch) return -1;
+        if (!aSpecialtyMatch && bSpecialtyMatch) return 1;
+
+        if (b.rating !== a.rating) return b.rating - a.rating;
+        return a.workload - b.workload;
+      });
   };
 
   const recommendedTechs = getRecommendedTechnicians();
-  const availableTechs =  undefined//technicians.filter(tech => tech.isAvailable);
+  const availableTechs = technicians.filter(tech => tech.isAvailable);
 
   const getWorkloadColor = (workload: number) => {
     if (workload <= 2) return 'text-green-600';
@@ -152,7 +295,7 @@ const TechnicianAssignment = ({ claimId, issueCategory, onAssignmentComplete, on
 
   const handleAssistantSelect = (tech: Technician) => {
     if (selectedMainTech?.id === tech.id) return; // Can't be assistant if main
-    
+
     const isSelected = selectedAssistants.some(t => t.id === tech.id);
     if (isSelected) {
       setSelectedAssistants(prev => prev.filter(t => t.id !== tech.id));
@@ -189,15 +332,14 @@ const TechnicianAssignment = ({ claimId, issueCategory, onAssignmentComplete, on
   const TechnicianCard = ({ tech, isRecommended = false }: { tech: Technician; isRecommended?: boolean }) => {
     const isMainSelected = selectedMainTech?.id === tech.id;
     const isAssistantSelected = selectedAssistants.some(t => t.id === tech.id);
-    
+
     return (
-      <Card className={`cursor-pointer transition-all relative ${
-        isMainSelected 
-          ? 'border-primary bg-primary/5' 
+      <Card className={`cursor-pointer transition-all relative ${isMainSelected
+          ? 'border-primary bg-primary/5'
           : isAssistantSelected
-          ? 'border-blue-300 bg-blue-50'
-          : 'hover:border-primary/50'
-      }`}>
+            ? 'border-blue-300 bg-blue-50'
+            : 'hover:border-primary/50'
+        }`}>
         {isRecommended && (
           <div className="absolute -top-2 -right-2">
             <Badge variant="default" className="text-xs">
@@ -206,7 +348,7 @@ const TechnicianAssignment = ({ claimId, issueCategory, onAssignmentComplete, on
             </Badge>
           </div>
         )}
-        
+
         <CardContent className="p-4">
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-3">
@@ -253,7 +395,7 @@ const TechnicianAssignment = ({ claimId, issueCategory, onAssignmentComplete, on
                 'Select as Main'
               )}
             </Button>
-            
+
             {!isMainSelected && (
               <Button
                 size="sm"
@@ -297,9 +439,9 @@ const TechnicianAssignment = ({ claimId, issueCategory, onAssignmentComplete, on
               Recommended Technicians
             </h3>
             <div className="grid md:grid-cols-2 gap-4">
-              {/* {recommendedTechs.slice(0, 4).map((tech) => (
+              {recommendedTechs.slice(0, 4).map((tech) => (
                 <TechnicianCard key={tech.id} tech={tech} isRecommended={true} />
-              ))} */}
+              ))}
             </div>
           </div>
 
@@ -324,7 +466,7 @@ const TechnicianAssignment = ({ claimId, issueCategory, onAssignmentComplete, on
                   <Label className="font-medium">Main Technician:</Label>
                   <p className="text-sm mt-1">{selectedMainTech.name} - {selectedMainTech.specialty}</p>
                 </div>
-                
+
                 {selectedAssistants.length > 0 && (
                   <div>
                     <Label className="font-medium">Assistant Technicians:</Label>
