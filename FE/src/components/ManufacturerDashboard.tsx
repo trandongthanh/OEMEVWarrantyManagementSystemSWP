@@ -161,7 +161,7 @@ const ManufacturerDashboard = () => {
               <div>
                 <h1 className="text-xl font-bold text-foreground">EVM Dashboard</h1>
                 <p className="text-sm text-muted-foreground">
-                  Xin chào, {user?.name} ({user?.role === 'evm_admin' ? 'Admin' : 'Staff'}) - {user?.department}
+                  Xin chào, {user?.name} ({user?.role === 'emv_admin' ? 'Admin' : 'Staff'}) - {user?.department}
                 </p>
               </div>
             </div>
