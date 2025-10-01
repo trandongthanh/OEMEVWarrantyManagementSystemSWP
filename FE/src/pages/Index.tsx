@@ -135,8 +135,7 @@ const Index = () => {
             {/* Right Side - Warranty Text */}
             <div className="space-y-4">
               <p className="text-lg text-muted-foreground leading-relaxed">
-                Thời hạn bảo hành ô tô là khoảng thời gian mà nhà sản xuất hoặc đại lý ủy quyền cam kết sửa chữa, thay thế miễn phí các lỗi kỹ thuật phát sinh do lỗi của nhà sản xuất trong quá trình chế tạo hoặc lắp ráp. Thông thường, thời hạn bảo hành được quy định theo số năm sử dụng hoặc số km vận hành (tùy điều kiện nào đến trước). Ví dụ, nhiều hãng xe áp dụng mức bảo hành 3 năm hoặc 100.000 km. Thời hạn này giúp khách hàng yên tâm hơn khi sử dụng xe, đồng thời thể hiện trách nhiệm và uy tín của nhà sản xuất đối với chất lượng sản phẩm.
-              </p>
+              The car warranty period is the duration during which the manufacturer or authorized dealer commits to repair or replace, free of charge, any technical defects arising from the manufacturer's faults during the manufacturing or assembly process. Typically, the warranty period is specified based on either the number of years of use or the number of kilometers driven (whichever comes first). For example, many car brands offer a warranty of 3 years or 100,000 km. This period helps customers feel more secure when using the car while also demonstrating the manufacturer's responsibility and credibility regarding product quality.              </p>
             </div>
           </div>
         </div>
