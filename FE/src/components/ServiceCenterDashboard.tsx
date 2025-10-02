@@ -30,9 +30,39 @@ import {
   Save
 } from "lucide-react";
 
+interface VehicleResult {
+  vin: string;
+  licensePlate?: string;
+  licenseplate?: string;
+  purchaseDate?: string;
+  purchasedate?: string;
+  dateOfManufacture?: string;
+  dateofmanufacture?: string;
+  placeOfManufacture?: string;
+  placeofmanufacture?: string;
+  owner?: {
+    id: string;
+    fullName?: string;
+    fullname?: string;
+    phone: string;
+    email: string;
+    address: string;
+  };
+}
+
+interface Claim {
+  id: string;
+  vin: string;
+  customer: string;
+  issue: string;
+  technician: string;
+  date: string;
+  status: string;
+}
+
 const ServiceCenterDashboard = () => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchResult, setSearchResult] = useState<any>(null);
+  const [searchResult, setSearchResult] = useState<VehicleResult | null>(null);
   const [showVehicleForm, setShowVehicleForm] = useState(false);
   const [showNotFoundToast, setShowNotFoundToast] = useState(false);
   const [showNewClaim, setShowNewClaim] = useState(false);
@@ -113,7 +143,7 @@ const ServiceCenterDashboard = () => {
   ];
 
   // In real app, data would be fetched from API
-  const recentClaims: any[] = [];
+  const recentClaims: Claim[] = [];
 
   const handleViewDetails = (claimId: string) => {
     setSelectedClaimId(claimId);
