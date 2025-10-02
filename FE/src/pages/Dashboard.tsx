@@ -1,44 +1,43 @@
-import { useAuth } from '@/contexts/AuthContext';
-import ServiceCenterDashboard from '@/components/ServiceCenterDashboard';
-import ManufacturerDashboard from '@/components/ManufacturerDashboard';
-import TechnicianDashboard from '@/components/TechnicianDashboard';
-import WarrantyDashboard from '@/components/WarrantyDashboard';
+import { useAuth } from "@/contexts/AuthContext";
+import ServiceCenterDashboard from "@/components/ServiceCenterDashboard";
+import ManufacturerDashboard from "@/components/ManufacturerDashboard";
+import TechnicianDashboard from "@/components/TechnicianDashboard";
+import WarrantyDashboard from "@/components/WarrantyDashboard";
 
 const Dashboard = () => {
-  const { user } = useAuth();
+	const { user } = useAuth();
 
-  // Debug log to check user data in Dashboard
-  console.log('Dashboard - Current user:', user);
+	if (!user) return null;
 
-  if (!user) return null;
+	// Route to appropriate dashboard based on user role
+	if (user.role === "service_center_staff") {
+		return <ServiceCenterDashboard />;
+	}
 
-  // Route to appropriate dashboard based on user role
-  if (user.role === 'service_center_staff') {
-    return <ServiceCenterDashboard />;
-  }
+	if (user.role === "service_center_technician") {
+		return <TechnicianDashboard />;
+	}
 
-  if (user.role === 'service_center_technician') {
-    return <TechnicianDashboard />;
-  }
+	if (user.role === "emv_admin") {
+		return <ManufacturerDashboard />;
+	}
 
-  if (user.role === 'emv_staff') {
-    return <ManufacturerDashboard />;
-  }
+	if (user.role === "emv_staff") {
+		return <WarrantyDashboard />;
+	}
 
-  if (user.role === 'evm_admin' || user.role === 'evm_staff') {
-    return <WarrantyDashboard />;
-  }
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-foreground mb-2">Vai trò không xác định</h1>
-        <p className="text-muted-foreground">
-          Không thể xác định dashboard phù hợp cho vai trò của bạn.
-        </p>
-      </div>
-    </div>
-  );
+	return (
+		<div className="min-h-screen flex items-center justify-center bg-background">
+			<div className="text-center">
+				<h1 className="text-2xl font-bold text-foreground mb-2">
+					Vai trò không xác định
+				</h1>
+				<p className="text-muted-foreground">
+					Không thể xác định dashboard phù hợp cho vai trò của bạn.
+				</p>
+			</div>
+		</div>
+	);
 };
 
 export default Dashboard;
