@@ -149,7 +149,17 @@ const ManufacturerDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen w-full relative">
+      {/* Radial Gradient Background */}
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          background: "radial-gradient(125% 125% at 50% 10%, #fff 40%, #6366f1 100%)",
+        }}
+      />
+      
+      {/* Your Content/Components */}
+      <div className="min-h-screen bg-transparent relative z-10">
       {/* Header */}
       <header className="border-b bg-card shadow-elegant">
         <div className="container mx-auto px-6 py-4">
@@ -589,6 +599,7 @@ const ManufacturerDashboard = () => {
           }}
         />
       )}
+      </div>
     </div>
   );
 };

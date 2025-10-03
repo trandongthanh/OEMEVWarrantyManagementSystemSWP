@@ -5,6 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+		LogOut,
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface ClaimStatistics {
   totalClaims: number;
@@ -47,6 +51,7 @@ interface MonthlyTrend {
 }
 
 const WarrantyDashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [statistics, setStatistics] = useState<ClaimStatistics | null>(null);
   const [modelStats, setModelStats] = useState<ModelStatistics[]>([]);
   const [centerPerformance, setCenterPerformance] = useState<ServiceCenterPerformance[]>([]);
@@ -183,7 +188,17 @@ const WarrantyDashboard: React.FC = () => {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="min-h-screen w-full relative">
+      {/* Radial Gradient Background */}
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          background: "radial-gradient(125% 125% at 50% 10%, #fff 40%, #6366f1 100%)",
+        }}
+      />
+      
+      {/* Your Content/Components */}
+      <div className="relative z-10 container mx-auto p-6 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -202,6 +217,21 @@ const WarrantyDashboard: React.FC = () => {
             </SelectContent>
           </Select>
         </div>
+        <Button
+								variant="ghost"
+								size="sm"
+								className="text-black hover:text-black"
+								style={{ backgroundColor: '#7476F2' }}
+								onClick={() => {
+									// Clear any stored auth data and navigate to login
+									localStorage.clear();
+									sessionStorage.clear();
+									navigate("/login");
+								}}
+							>
+								<LogOut className="h-4 w-4 mr-2" />
+								Back to Homepage
+							</Button>
       </div>
 
       {/* Overview Statistics */}
@@ -436,6 +466,9 @@ const WarrantyDashboard: React.FC = () => {
         <Button variant="outline" className="flex items-center gap-2">
           📈 Phân tích xu hướng
         </Button>
+
+        
+      </div>
       </div>
     </div>
   );
