@@ -6,9 +6,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Progress } from '@/components/ui/progress';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
-		LogOut,
+		LogOut,Wrench
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface ClaimStatistics {
   totalClaims: number;
@@ -57,7 +58,7 @@ const WarrantyDashboard: React.FC = () => {
   const [centerPerformance, setCenterPerformance] = useState<ServiceCenterPerformance[]>([]);
   const [monthlyTrends, setMonthlyTrends] = useState<MonthlyTrend[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<string>('this-quarter');
-
+  const { user, logout } = useAuth();
   useEffect(() => {
     // Mock data
     const mockStatistics: ClaimStatistics = {
@@ -201,9 +202,16 @@ const WarrantyDashboard: React.FC = () => {
       <div className="relative z-10 container mx-auto p-6 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard Theo dõi Bảo hành</h1>
-          <p className="text-gray-600 mt-1">Tổng quan về tình hình xét duyệt và chi phí bảo hành</p>
+        <div  className=" flex items-center justify-between " >
+          <div className="mr-4 flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-primary">
+                <Wrench className="h-6 w-6 text-primary-foreground" />
+              </div>
+          <div>
+          <h1 className="text-3xl font-bold text-gray-900">Warranty Dashboard</h1>
+          <p className="text-gray-600 mt-1">Welcome,{user?.role === 'emv_staff' ? 'EMVstaff' : 'Staff'}
+</p>    
+        </div>
+         
         </div>
         <div className="flex gap-2">
           <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>

@@ -603,7 +603,7 @@ const ServiceCenterDashboard = () => {
               <div>
                 <h1 className="text-xl font-bold text-foreground">Service Center Dashboard</h1>
                 <p className="text-sm text-muted-foreground">
-                  Xin chào, {user?.name} ({user?.role === 'service_center_staff' ? 'Staff' : 'Technician'})
+                  Welcome,{user?.role === 'service_center_staff' ? 'Staff' : 'Technician'}
                 </p>
               </div>
             </div>
