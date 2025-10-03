@@ -273,7 +273,7 @@ const TechnicianDashboard = ({
               <div>
                 <h1 className="text-xl font-bold text-foreground">Technician Warranty Dashboard</h1>
                 <p className="text-sm text-muted-foreground">
-                  Welcome back, {user?.name} - Technician
+                  Welcome,Technician
                 </p>
               </div>
             </div>
