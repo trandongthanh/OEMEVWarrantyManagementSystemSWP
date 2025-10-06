@@ -252,48 +252,9 @@ const ServiceCenterDashboard = () => {
   };
 
   const handleRegisterOwner = async () => {
-    // Validate all 8 required fields (4 customer + 4 vehicle)
-    
-    // Customer fields validation
-    if (!ownerForm.fullName?.trim()) {
-      alert('Please fill in Customer Full Name.');
-      return;
-    }
-    if (!ownerForm.email?.trim()) {
-      alert('Please fill in Customer Email.');
-      return;
-    }
-    if (!ownerForm.phone?.trim()) {
-      alert('Please fill in Customer Phone.');
-      return;
-    }
-    if (!ownerForm.address?.trim()) {
-      alert('Please fill in Customer Address.');
-      return;
-    }
-
-    // Vehicle form fields validation
-    const licensePlate = searchResult.licensePlate || searchResult.licenseplate;
-    const purchaseDate = searchResult.purchaseDate || searchResult.purchasedate;
-    const dateOfManufacture = searchResult.dateOfManufacture || searchResult.dateofmanufacture;
-
-    if (!searchResult.vin?.trim()) {
-      alert('VIN Number is required.');
-      return;
-    }
-
-    if (!dateOfManufacture) {
-      alert('Please set Date of Manufacture.');
-      return;
-    }
-
-    if (!licensePlate || !licensePlate.trim()) {
-      alert('Please fill in License Plate.');
-      return;
-    }
-
-    if (!purchaseDate) {
-      alert('Please select Purchase Date.');
+    // Validate owner form
+    if (!ownerForm.fullName?.trim() || !ownerForm.phone?.trim() || !ownerForm.email?.trim() || !ownerForm.address?.trim()) {
+      alert('Please fill in all owner information (Full Name, Phone, Email, Address).');
       return;
     }
 
@@ -306,139 +267,74 @@ const ServiceCenterDashboard = () => {
         return;
       }
 
-      // Step 1: Check if customer already exists
-      console.log('Checking if customer exists with phone:', ownerForm.phone.trim());
+      // Search for existing customer or create new one (same logic as save)
+      let customerData = null;
       
-      let requestBody;
-      try {
-        const searchResponse = await axios.get(`http://localhost:3000/api/v1/customer/find-customer-with-phone-or-email`, {
-          params: {
-            phone: ownerForm.phone.trim()
-          },
+      const searchResponse = await axios.get(`http://localhost:3000/api/v1/customer/find-customer-with-phone-or-email`, {
+        params: {
+          phone: ownerForm.phone.trim()
+        },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (searchResponse.data?.data?.customer) {
+        // Customer exists
+        customerData = searchResponse.data.data.customer;
+        console.log('Existing customer found:', customerData);
+      } else {
+        // Customer doesn't exist, create new one
+        const createResponse = await axios.post(`http://localhost:3000/api/v1/customer`, {
+          fullName: ownerForm.fullName.trim(),
+          email: ownerForm.email.trim(),
+          phone: ownerForm.phone.trim(),
+          address: ownerForm.address.trim()
+        }, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           }
         });
         
-        if (searchResponse.data?.data?.customer) {
-          // Customer exists - use customerId approach
-          const existingCustomer = searchResponse.data.data.customer;
-          console.log('Customer already exists:', existingCustomer);
-          
-          requestBody = {
-            customerId: existingCustomer.id,     // Use existing customer ID
-            dateOfManufacture: dateOfManufacture,
-            licensePlate: licensePlate,
-            purchaseDate: purchaseDate
-          };
-          
-          console.log('Using existing customer ID:', existingCustomer.id);
-          console.log('Vehicle fields - Date of Manufacture:', dateOfManufacture);
-          console.log('Vehicle fields - License Plate:', licensePlate);
-          console.log('Vehicle fields - Purchase Date:', purchaseDate);
-          console.log('Vehicle fields - VIN (in URL):', searchResult.vin);
-          
+        if (createResponse.data?.status === 'success') {
+          customerData = createResponse.data.data.customer;
+          console.log('New customer created:', customerData);
         } else {
-          // Customer doesn't exist - use customer object approach
-          console.log('Customer not found, will create new customer');
-          
-          requestBody = {
-            customer: {
-              fullName: ownerForm.fullName.trim(),   // Field 1
-              email: ownerForm.email.trim(),         // Field 2  
-              phone: ownerForm.phone.trim(),         // Field 3
-              address: ownerForm.address.trim()      // Field 4
-            },
-            dateOfManufacture: dateOfManufacture,    // Field 5
-            licensePlate: licensePlate,              // Field 6
-            purchaseDate: purchaseDate               // Field 7
-            // Field 8: VIN is in URL path: ${searchResult.vin}
-          };
-          
-          console.log('Creating new customer with all 8 fields:');
-          console.log('1. Customer Full Name:', ownerForm.fullName.trim());
-          console.log('2. Customer Email:', ownerForm.email.trim());
-          console.log('3. Customer Phone:', ownerForm.phone.trim());
-          console.log('4. Customer Address:', ownerForm.address.trim());
-          console.log('5. Date of Manufacture:', dateOfManufacture);
-          console.log('6. License Plate:', licensePlate);
-          console.log('7. Purchase Date:', purchaseDate);
-          console.log('8. VIN (in URL):', searchResult.vin);
+          throw new Error('Failed to create customer');
         }
-      } catch (searchError) {
-        // If search fails, assume customer doesn't exist and create new one
-        console.log('Customer search failed, will create new customer:', searchError.message);
-        
-        requestBody = {
-          customer: {
-            fullName: ownerForm.fullName.trim(),
-            email: ownerForm.email.trim(),
-            phone: ownerForm.phone.trim(),
-            address: ownerForm.address.trim()
-          },
-          dateOfManufacture: dateOfManufacture,
-          licensePlate: licensePlate,
-          purchaseDate: purchaseDate
-        };
       }
 
-      console.log('Final request body:', requestBody);
-
-      // Step 2: Register vehicle with customer (existing or new)
-      const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${searchResult.vin}/update-owner`, requestBody, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+      // Update searchResult with owner information for Save Changes button
+      const updatedVehicle = {
+        ...searchResult,
+        owner: {
+          id: customerData.id,
+          fullName: customerData.fullName || customerData.fullname,
+          email: customerData.email,
+          phone: customerData.phone,
+          address: customerData.address
         }
+      };
+      
+      setSearchResult(updatedVehicle);
+      
+      // Update form with backend data
+      setOwnerForm({
+        fullName: customerData.fullName || customerData.fullname || '',
+        phone: customerData.phone || '',
+        email: customerData.email || '',
+        address: customerData.address || ''
       });
-
-      if (response.data && response.data.status === 'success') {
-        console.log('Vehicle and owner registered successfully:', response.data);
-        
-        // Update searchResult with the complete vehicle data from response
-        const updatedVehicle = response.data.data.vehicle;
-        setSearchResult(updatedVehicle);
-        
-        // Update form with backend data
-        setOwnerForm({
-          fullName: updatedVehicle.owner.fullName || '',
-          phone: updatedVehicle.owner.phone || '',
-          email: updatedVehicle.owner.email || '',
-          address: updatedVehicle.owner.address || ''
-        });
-        
-        // Determine success message based on whether customer was existing or new
-        const successMessage = requestBody.customerId 
-          ? 'Vehicle registered successfully with existing customer!' 
-          : 'Vehicle owner registered successfully! New customer created and vehicle assigned.';
-        
-        alert(successMessage + ' All information has been saved to the backend.');
-        
-        // Close modal and reset states
-        setShowVehicleForm(false);
-        setSearchResult(null);
-        setSearchTerm('');
-        setCustomerSearchPhone('');
-        setHasSearchedCustomer(false);
-        setOwnerForm({ fullName: '', phone: '', email: '', address: '' });
-        
-      } else {
-        console.error('Unexpected response format:', response.data);
-        alert('Unexpected response from server. Please try again.');
-      }
+      
+      console.log('Owner registered in response body:', updatedVehicle);
+      alert('Owner information added to vehicle. Click "Save Changes" to save to backend.');
       
     } catch (error) {
       console.error('Error registering owner:', error);
       if (error.response?.data?.message) {
-        const errorMessage = error.response.data.message;
-        if (errorMessage.includes('This vehicle has owner')) {
-          alert('This vehicle already has an owner registered.');
-        } else if (errorMessage.includes('duplicate')) {
-          alert('A customer with this phone number or email already exists. Please use different contact information.');
-        } else {
-          alert(`Failed to register owner: ${errorMessage}`);
-        }
+        alert(`Failed to register owner: ${error.response.data.message}`);
       } else {
         alert('Failed to register owner. Please try again.');
       }
@@ -567,7 +463,100 @@ const ServiceCenterDashboard = () => {
   };
 
   const handleSaveVehicleData = async () => {
-    alert('Vehicle data has already been saved when registering the owner. No additional action needed.');
+    if (!searchResult) return;
+
+    // Validate required fields
+    const placeOfManufacture = searchResult.placeOfManufacture || searchResult.placeofmanufacture;
+    const licensePlate = searchResult.licensePlate || searchResult.licenseplate;
+    const purchaseDate = searchResult.purchaseDate || searchResult.purchasedate;
+
+    if (!placeOfManufacture || !placeOfManufacture.trim()) {
+      alert('Please fill in Place of Manufacture before saving.');
+      return;
+    }
+
+    if (!licensePlate || !licensePlate.trim()) {
+      alert('Please fill in License Plate before saving.');
+      return;
+    }
+
+    if (!purchaseDate) {
+      alert('Please select Purchase Date before saving.');
+      return;
+    }
+
+    // Debug: Check owner form values
+    console.log('Owner form values:', ownerForm);
+    
+    // Check if owner information is available in searchResult
+    if (!searchResult.owner?.id) {
+      alert('Please register owner information first by clicking "Register Owner" button.');
+      return;
+    }
+
+    try {
+      // Get token from AuthContext
+      const token = localStorage.getItem('ev_warranty_token');
+      
+      if (!token) {
+        alert('Please login first');
+        return;
+      }
+
+      // Use owner ID from searchResult (already validated in Register Owner step)
+      const customerId = searchResult.owner.id;
+
+      // Prepare request body for register-owner endpoint
+      const requestBody = {
+        customerId: customerId,
+        licensePlate: licensePlate,
+        purchaseDate: purchaseDate,
+        dateOfManufacture: searchResult.dateOfManufacture || searchResult.dateofmanufacture
+      };
+
+      console.log('Sending vehicle data to backend:', requestBody);
+      console.log('Using customer ID:', customerId);
+
+      // API call to backend using HTTP PATCH
+      const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${searchResult.vin}/update-owner`, requestBody, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.data && response.data.status === 'success') {
+        console.log('Vehicle data saved successfully:', response.data);
+        alert('Vehicle owner registered successfully!');
+        
+        // Close modal and reset states
+        setShowVehicleForm(false);
+        setSearchResult(null);
+        setSearchTerm('');
+        setCustomerSearchPhone('');
+        setHasSearchedCustomer(false);
+        setOwnerForm({ fullName: '', phone: '', email: '', address: '' });
+      } else {
+        console.error('Unexpected response format:', response.data);
+        alert('Unexpected response from server. Please try again.');
+      }
+      
+    } catch (error) {
+      console.error('Error saving vehicle data:', error);
+      if (error.response) {
+        // Backend returned an error response
+        console.error('Backend error:', error.response.data);
+        alert(`Failed to save vehicle data: ${error.response.data.message || 'Server error'}`);
+      } else if (error.request) {
+        // Request was made but no response received
+        console.error('No response from server:', error.request);
+        alert('No response from server. Please check if backend is running.');
+      } else {
+        // Something else happened
+        console.error('Request error:', error.message);
+        alert('An error occurred while saving. Please try again.');
+      }
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -592,7 +581,17 @@ const ServiceCenterDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen w-full relative">
+      {/* Radial Gradient Background */}
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          background: "radial-gradient(125% 125% at 50% 10%, #fff 40%, #6366f1 100%)",
+        }}
+      />
+      
+      {/* Your Content/Components */}
+      <div className="min-h-screen bg-transparent relative z-10">
       {/* Header */}
       <header className="border-b bg-card shadow-elegant">
         <div className="container mx-auto px-6 py-4">
@@ -604,7 +603,7 @@ const ServiceCenterDashboard = () => {
               <div>
                 <h1 className="text-xl font-bold text-foreground">Service Center Dashboard</h1>
                 <p className="text-sm text-muted-foreground">
-                  Xin chào, {user?.name} ({user?.role === 'service_center_staff' ? 'Staff' : 'Technician'})
+                  Welcome,{user?.role === 'service_center_staff' ? 'Staff' : 'Technician'}
                 </p>
               </div>
             </div>
@@ -1152,7 +1151,26 @@ const ServiceCenterDashboard = () => {
                           </div>
                         </div>
                         
-                        {/* Register Owner button removed - owner registration now integrated with Save Changes */}
+                        <div className="flex justify-start gap-2">
+                          <Button 
+                            variant="gradient" 
+                            onClick={handleRegisterOwner}
+                            disabled={!ownerForm.fullName || !ownerForm.phone}
+                          >
+                            <User className="mr-2 h-4 w-4" />
+                            {searchResult?.owner ? 'Update Owner Info' : 'Register Owner'}
+                          </Button>
+                          {searchResult?.owner && (
+                            <Button 
+                              variant="outline"
+                              onClick={handleUpdateOwnerInBackend}
+                              disabled={!ownerForm.fullName || !ownerForm.phone}
+                            >
+                              <Save className="mr-2 h-4 w-4" />
+                              Update Changes
+                            </Button>
+                          )}
+                        </div>
                       </>
                     )}
                   </div>
@@ -1165,23 +1183,17 @@ const ServiceCenterDashboard = () => {
               <div className="flex justify-between">
                 <Button 
                   variant="outline"
-                  onClick={handleRegisterOwner}
+                  onClick={handleSaveVehicleData}
                   disabled={
                     !searchResult || 
-                    // Customer fields validation (4 fields)
-                    !ownerForm.fullName?.trim() ||
-                    !ownerForm.phone?.trim() ||
-                    !ownerForm.email?.trim() ||
-                    !ownerForm.address?.trim() ||
-                    // Vehicle fields validation (4 fields: VIN, dateOfManufacture, licensePlate, purchaseDate)
-                    !searchResult.vin?.trim() ||
-                    !(searchResult.dateOfManufacture || searchResult.dateofmanufacture) ||
+                    !(searchResult.placeOfManufacture || searchResult.placeofmanufacture)?.trim() ||
                     !(searchResult.licensePlate || searchResult.licenseplate)?.trim() ||
-                    !(searchResult.purchaseDate || searchResult.purchasedate)
+                    !(searchResult.purchaseDate || searchResult.purchasedate) ||
+                    !searchResult.owner?.id
                   }
                 >
                   <Save className="mr-2 h-4 w-4" />
-                  Register & Save
+                  Save Changes
                 </Button>
                 <Button 
                   variant="secondary"
@@ -1223,6 +1235,7 @@ const ServiceCenterDashboard = () => {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };
