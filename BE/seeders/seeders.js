@@ -6,18 +6,19 @@ const bcrypt = require("bcrypt");
 const env = process.env.NODE_ENV || "development";
 const config = require(__dirname + "/../config/config.json")[env];
 
-// Import tất cả các model cần thiết
+// Import tất cả các model bạn có
 const {
   VehicleCompany,
   VehicleModel,
   Vehicle,
   ServiceCenter,
   TypeComponent,
-  ComponentCompany,
-  TypeComponentByCompany,
   WarrantyComponent,
   User,
   Role,
+  Warehouse,
+  Stock,
+  Customer,
 } = require("../models/index.cjs");
 
 let sequelize = new Sequelize(
@@ -32,342 +33,330 @@ const generateData = async () => {
     await sequelize.authenticate();
     console.log("✅ Connection has been established successfully.");
 
-    // Tạm thời tắt kiểm tra khóa ngoại để việc xóa diễn ra suôn sẻ
-    await sequelize.query("SET FOREIGN_KEY_CHECKS = 0", null);
+    console.log("🔥 Resetting database...");
 
-    // Xóa dữ liệu trong tất cả các bảng (dùng destroy() không có truncate)
-    // Thứ tự xóa: Bảng con -> Bảng cha
-    await User.destroy({ where: {} });
-    await Role.destroy({ where: {} });
-    await ServiceCenter.destroy({ where: {} });
-    await Vehicle.destroy({ where: {} });
-    await WarrantyComponent.destroy({ where: {} });
-    await TypeComponentByCompany.destroy({ where: {} });
-    await ComponentCompany.destroy({ where: {} });
-    await TypeComponent.destroy({ where: {} });
-    await VehicleModel.destroy({ where: {} });
-    await VehicleCompany.destroy({ where: {} });
+    // Tắt kiểm tra khóa ngoại để truncate
+    await sequelize.query("SET FOREIGN_KEY_CHECKS = 0", { raw: true });
+
+    const tableNames = await sequelize.getQueryInterface().showAllTables();
+    for (const tableName of tableNames) {
+      // Bỏ qua bảng SequelizeMeta dùng cho migrations
+      if (String(tableName).toLowerCase() !== "sequelizemeta") {
+        console.log(`- Truncating ${tableName}...`);
+        await sequelize.query(`TRUNCATE TABLE \`${tableName}\``, { raw: true });
+      }
+    }
 
     // Bật lại kiểm tra khóa ngoại
-    await sequelize.query("SET FOREIGN_KEY_CHECKS = 1", null);
+    await sequelize.query("SET FOREIGN_KEY_CHECKS = 1", { raw: true });
+    console.log("✅ Database reset successfully.");
 
-    // --- 1. SEED ENTITIES WITHOUT DEPENDENCIES ---
-    console.log("🌱 Seeding Vehicle Companies...");
-    const companyData = [
-      {
-        name: "Tesla",
-        address: faker.location.streetAddress(),
-        phone: faker.phone.number(),
-        email: faker.internet.email(),
-      },
-      {
-        name: "VinFast",
-        address: faker.location.streetAddress(),
-        phone: faker.phone.number(),
-        email: faker.internet.email(),
-      },
-      {
-        name: "BYD",
-        address: faker.location.streetAddress(),
-        phone: faker.phone.number(),
-        email: faker.internet.email(),
-      },
-      {
-        name: "Hyundai",
-        address: faker.location.streetAddress(),
-        phone: faker.phone.number(),
-        email: faker.internet.email(),
-      },
-      {
-        name: "Ford",
-        address: faker.location.streetAddress(),
-        phone: faker.phone.number(),
-        email: faker.internet.email(),
-      },
-    ];
-    const createdCompanies = await VehicleCompany.bulkCreate(companyData, {
-      returning: true,
+    // --- 1. SEED CORE DATA ---
+    console.log("🌱 Seeding Core Data...");
+
+    const createdCompany = await VehicleCompany.create({
+      name: "VinFast",
+      address: "Hải Phòng, Việt Nam",
+      phone: faker.phone.number(),
+      email: "info@vinfast.vn",
     });
-    console.log(`✅ Created ${createdCompanies.length} companies.`);
 
-    console.log("🌱 Seeding Component Suppliers...");
-    const supplierData = [
-      {
-        name: "Bosch",
-        address: faker.location.streetAddress(),
-        phone: faker.phone.number(),
-        email: faker.internet.email(),
-      },
-      {
-        name: "LG Energy Solution",
-        address: faker.location.streetAddress(),
-        phone: faker.phone.number(),
-        email: faker.internet.email(),
-      },
-      {
-        name: "CATL",
-        address: faker.location.streetAddress(),
-        phone: faker.phone.number(),
-        email: faker.internet.email(),
-      },
-      {
-        name: "Michelin",
-        address: faker.location.streetAddress(),
-        phone: faker.phone.number(),
-        email: faker.internet.email(),
-      },
-      {
-        name: "ZF Friedrichshafen",
-        address: faker.location.streetAddress(),
-        phone: faker.phone.number(),
-        email: faker.internet.email(),
-      },
-    ];
-    const createdSuppliers = await ComponentCompany.bulkCreate(supplierData, {
-      returning: true,
-    });
-    console.log(`✅ Created ${createdSuppliers.length} component suppliers.`);
+    const createdRoles = await Role.bulkCreate(
+      [
+        { roleName: "service_center_staff" },
+        { roleName: "service_center_manager" },
+        { roleName: "service_center_technician" },
+        { roleName: "emv_admin" },
+      ],
+      { returning: true }
+    );
 
-    console.log("🌱 Seeding Component Types...");
     const typeComponentData = [
       {
-        name: "Pin Cao áp (EV Battery)",
-        price: faker.commerce.price({ min: 5000, max: 10000 }),
+        name: "Bộ sạc trong xe 11kW",
+        sku: "VF-OBC-11",
+        price: 800,
+        category: "CHARGING_SYSTEM",
       },
       {
-        name: "Ắc quy 12V (12V Battery)",
-        price: faker.commerce.price({ min: 100, max: 200 }),
+        name: "Má phanh trước VF8",
+        sku: "VF8-BRK-FRT",
+        price: 150,
+        category: "BRAKING",
       },
       {
-        name: "Động cơ điện (Electric Motor)",
-        price: faker.commerce.price({ min: 3000, max: 7000 }),
+        name: "Cảm biến ABS bánh sau",
+        sku: "VF-ABS-SEN-R",
+        price: 50,
+        category: "BRAKING",
       },
       {
-        name: "Hệ thống phanh (Braking System)",
-        price: faker.commerce.price({ min: 500, max: 1500 }),
+        name: "Giảm xóc trước",
+        sku: "VF-SUS-FRT",
+        price: 200,
+        category: "SUSPENSION_STEERING",
+      },
+      {
+        name: "Màn hình trung tâm 15.6 inch",
+        sku: "VF-INF-15.6",
+        price: 1200,
+        category: "INFOTAINMENT_ADAS",
+      },
+      {
+        name: "Ắc quy 12V",
+        sku: "VF-BAT-12V",
+        price: 120,
+        category: "LOW_VOLTAGE_SYSTEM",
       },
     ];
     const createdTypeComponents = await TypeComponent.bulkCreate(
       typeComponentData,
       { returning: true }
     );
-    console.log(`✅ Created ${createdTypeComponents.length} component types.`);
 
-    console.log("🌱 Seeding Roles...");
-    const roles = [
-      { roleName: "service_center_staff" },
-      { roleName: "service_center_technician" },
-      { roleName: "emv_staff" },
-      { roleName: "emv_admin" },
-    ];
-    const createdRoles = await Role.bulkCreate(roles, { returning: true });
-    console.log(`✅ Created ${createdRoles.length} roles.`);
+    console.log("✅ Seeded Core Data (Company, Roles, TypeComponents).");
 
-    // --- 2. SEED ENTITIES THAT DEPEND ON THE ABOVE ---
-    console.log("🌱 Seeding Service Centers...");
-    const serviceCenters = [];
-    createdCompanies.forEach((company) => {
-      for (let i = 0; i < 5; i++) {
-        serviceCenters.push({
-          name: `${company.name} Service ${faker.location.city()}`,
-          address: faker.location.streetAddress(true),
-          phone: faker.phone.number(),
-          vehicleCompanyId: company.vehicleCompanyId,
-        });
-      }
-    });
+    // --- 2. SEED LOCATIONS, PEOPLE & VEHICLE MODELS ---
+    console.log("🌱 Seeding Locations, People & Vehicle Models...");
+
     const createdServiceCenters = await ServiceCenter.bulkCreate(
-      serviceCenters,
+      [
+        {
+          name: "VinFast Thảo Điền",
+          address: "12 Quốc Hương, Thảo Điền, TP. Thủ Đức",
+          phone: faker.phone.number(),
+          vehicleCompanyId: createdCompany.vehicleCompanyId,
+        },
+        {
+          name: "VinFast Long Biên",
+          address: "Vincom Plaza Long Biên, Hà Nội",
+          phone: faker.phone.number(),
+          vehicleCompanyId: createdCompany.vehicleCompanyId,
+        },
+      ],
       { returning: true }
     );
-    console.log(`✅ Created ${createdServiceCenters.length} service centers.`);
 
-    console.log("🌱 Seeding Vehicle Models...");
-    const modelData = {
-      Tesla: ["Model S", "Model 3", "Model X", "Model Y", "Cybertruck"],
-      VinFast: ["VF 5", "VF 6", "VF 7", "VF 8", "VF 9", "VF 3"],
-      BYD: ["Dolphin", "Seal", "Atto 3", "Han", "Tang"],
-      Hyundai: ["Ioniq 5", "Ioniq 6", "Kona Electric"],
-      Ford: ["Mustang Mach-E", "F-150 Lightning"],
-    };
-    const models = [];
-    createdCompanies.forEach((company) => {
-      const companyModels = modelData[company.name] || [faker.vehicle.model()];
-      companyModels.forEach((modelName) => {
-        models.push({
-          vehicleModelName: modelName,
-          yearOfLaunch: faker.date.past({ years: 5 }),
-          generalWarrantyDuration: faker.helpers.arrayElement([36, 60, 84]),
-          generalWarrantyMileage: faker.helpers.arrayElement([
-            50000, 100000, 150000,
-          ]),
-          vehicleCompanyId: company.vehicleCompanyId,
-        });
-      });
+    // Kho tổng của hãng (không thuộc service center)
+    const centralWarehouse = await Warehouse.create({
+      name: "Tổng kho VinFast Việt Nam",
+      address: "Hải Phòng",
+      vehicleCompanyId: createdCompany.vehicleCompanyId,
     });
-    const createdModels = await VehicleModel.bulkCreate(models, {
-      returning: true,
-    });
-    console.log(`✅ Created ${createdModels.length} models.`);
 
-    // --- 3. SEED USERS (DEPENDS ON ROLES, SERVICE CENTERS, COMPANIES) ---
-    console.log("🌱 Seeding Users...");
-    const hashedPassword = await bcrypt.hash("password123", 10);
-    const vinfastCompany = createdCompanies.find((c) => c.name === "VinFast");
-    const teslaServiceCenter = createdServiceCenters.find((sc) =>
-      sc.name.includes("Tesla")
+    // Tạo nhiều warehouse cho mỗi service center (ví dụ: 2 kho/SC)
+    const perSCWarehousesPayload = createdServiceCenters.flatMap((sc) => [
+      {
+        name: `${sc.name} - Kho A`,
+        address: `${sc.address} - Khu A`,
+        serviceCenterId: sc.serviceCenterId,
+      },
+      {
+        name: `${sc.name} - Kho B`,
+        address: `${sc.address} - Khu B`,
+        serviceCenterId: sc.serviceCenterId,
+      },
+    ]);
+
+    const createdSCWarehouses = await Warehouse.bulkCreate(
+      perSCWarehousesPayload,
+      { returning: true }
     );
 
-    // ...
-    const users = [
-      {
-        username: "staff01",
-        name: faker.person.fullName(),
-        password: hashedPassword,
-        email: faker.internet.email(),
-        phone: faker.phone.number(),
-        address: faker.location.streetAddress(),
-        roleId: createdRoles.find((r) => r.roleName === "service_center_staff")
-          .roleId,
-        serviceCenterId: teslaServiceCenter?.serviceCenterId || null,
-        vehicleCompanyId: null,
-      },
-      {
-        username: "technician01",
-        name: faker.person.fullName(),
-        password: hashedPassword,
-        email: faker.internet.email(),
-        phone: faker.phone.number(),
-        address: faker.location.streetAddress(),
-        roleId: createdRoles.find(
-          (r) => r.roleName === "service_center_technician"
-        ).roleId,
-        serviceCenterId: teslaServiceCenter?.serviceCenterId || null,
-        vehicleCompanyId: null,
-      },
-      {
-        username: "emvstaff01",
-        name: faker.person.fullName(),
-        password: hashedPassword,
-        email: faker.internet.email(),
-        phone: faker.phone.number(),
-        address: faker.location.streetAddress(),
-        roleId: createdRoles.find((r) => r.roleName === "emv_staff").roleId,
-        serviceCenterId: null,
-        vehicleCompanyId: vinfastCompany?.vehicleCompanyId || null,
-      },
-      {
-        username: "admin01",
-        name: faker.person.fullName(),
-        password: hashedPassword,
-        email: faker.internet.email(),
-        phone: faker.phone.number(),
-        address: faker.location.streetAddress(),
-        roleId: createdRoles.find((r) => r.roleName === "emv_admin").roleId,
-        serviceCenterId: null,
-        vehicleCompanyId: vinfastCompany?.vehicleCompanyId || null,
-      },
-      // --- USER CỦA BẠN ---
-      {
-        username: "thanhtd",
-        name: "Trần Đông Thạnh",
-        password: hashedPassword,
-        email: "thanh.tran@email.com",
-        phone: "0912345678",
-        address: "123 Đường ABC, Q1, TP.HCM",
-        roleId: createdRoles.find((r) => r.roleName === "service_center_staff")
-          .roleId,
-        serviceCenterId: teslaServiceCenter?.serviceCenterId || null,
-        vehicleCompanyId: null,
-      },
-    ];
+    const allWarehouses = [centralWarehouse, ...createdSCWarehouses];
 
-    await User.bulkCreate(users);
+    const hashedPassword = await bcrypt.hash("123456", 10);
+    await User.bulkCreate(
+      [
+        {
+          username: "admin-vinfast",
+          name: "Admin Hãng",
+          password: hashedPassword,
+          email: "admin@vinfast.vn",
+          phone: faker.phone.number(),
+          address: faker.location.streetAddress(),
+          roleId: createdRoles.find((r) => r.roleName === "emv_admin").roleId,
+          vehicleCompanyId: createdCompany.vehicleCompanyId,
+        },
+        {
+          username: "manager-thaodien",
+          name: "Quản lý Thảo Điền",
+          password: hashedPassword,
+          email: "manager.td@vinfast.vn",
+          phone: faker.phone.number(),
+          address: faker.location.streetAddress(),
+          roleId: createdRoles.find(
+            (r) => r.roleName === "service_center_manager"
+          ).roleId,
+          serviceCenterId: createdServiceCenters[0].serviceCenterId,
+        },
+        {
+          username: "staff-thaodien",
+          name: "SA Thảo Điền",
+          password: hashedPassword,
+          email: "staff.td@vinfast.vn",
+          phone: faker.phone.number(),
+          address: faker.location.streetAddress(),
+          roleId: createdRoles.find(
+            (r) => r.roleName === "service_center_staff"
+          ).roleId,
+          serviceCenterId: createdServiceCenters[0].serviceCenterId,
+        },
+        {
+          username: "thanhtd",
+          name: "Trần Đông Thạnh",
+          password: hashedPassword,
+          email: "thanh.td@vinfast.vn",
+          phone: faker.phone.number(),
+          address: faker.location.streetAddress(),
+          roleId: createdRoles.find(
+            (r) => r.roleName === "service_center_staff"
+          ).roleId,
+          serviceCenterId: createdServiceCenters[0].serviceCenterId,
+        },
+        {
+          username: "tech-thaodien",
+          name: "Tech Thảo Điền",
+          password: hashedPassword,
+          email: "tech.td@vinfast.vn",
+          phone: faker.phone.number(),
+          address: faker.location.streetAddress(),
+          roleId: createdRoles.find(
+            (r) => r.roleName === "service_center_technician"
+          ).roleId,
+          serviceCenterId: createdServiceCenters[0].serviceCenterId,
+        },
+      ],
+      { returning: true }
+    );
+
+    const createdModels = await VehicleModel.bulkCreate(
+      [
+        {
+          vehicleModelName: "VF 8 Eco",
+          yearOfLaunch: "2022-01-01",
+          generalWarrantyDuration: 120,
+          generalWarrantyMileage: 200000,
+          vehicleCompanyId: createdCompany.vehicleCompanyId,
+        },
+        {
+          vehicleModelName: "VF 9 Plus",
+          yearOfLaunch: "2022-01-01",
+          generalWarrantyDuration: 120,
+          generalWarrantyMileage: 200000,
+          vehicleCompanyId: createdCompany.vehicleCompanyId,
+        },
+      ],
+      { returning: true }
+    );
     console.log(
-      `✅ Created ${users.length} users. Default password for all is "password123"`
+      `✅ Seeded Locations, People & Vehicle Models. Default password for all is "123456"`
     );
 
-    // --- 4. SEED JOIN TABLES (M-N RELATIONSHIPS) ---
-    console.log(
-      "🌱 Seeding M-N relationship for TypeComponent and ComponentCompany..."
-    );
-    const typeComponentSupplierLinks = [];
-    createdTypeComponents.forEach((type) => {
-      const randomSuppliers = faker.helpers.arrayElements(createdSuppliers, {
-        min: 1,
-        max: 2,
-      });
-      randomSuppliers.forEach((supplier) => {
-        typeComponentSupplierLinks.push({
+    // --- 3. SEED INVENTORY ---
+    console.log("🌱 Seeding Inventory (Stock for all warehouses)...");
+    const stockData = [];
+    for (const type of createdTypeComponents) {
+      for (const wh of allWarehouses) {
+        const isCentral = !wh.serviceCenterId && !!wh.vehicleCompanyId;
+        stockData.push({
           typeComponentId: type.typeComponentId,
-          componentCompanyId: supplier.componentCompanyId,
-        });
-      });
-    });
-    await TypeComponentByCompany.bulkCreate(typeComponentSupplierLinks);
-    console.log(
-      `✅ Created ${typeComponentSupplierLinks.length} component-supplier links.`
-    );
-
-    console.log(
-      "🌱 Seeding specific component warranties (Battery & 12V Battery)..."
-    );
-    const warrantyComponents = [];
-    const evBatteryType = createdTypeComponents.find((c) =>
-      c.name.includes("Pin Cao áp")
-    );
-    const twelveVoltBatteryType = createdTypeComponents.find((c) =>
-      c.name.includes("Ắc quy 12V")
-    );
-
-    if (evBatteryType && twelveVoltBatteryType) {
-      createdModels.forEach((model) => {
-        warrantyComponents.push({
-          vehicleModelId: model.vehicleModelId,
-          typeComponentId: evBatteryType.typeComponentId,
-          quantity: 1,
-          durationMonth: 96, // 8 năm = 96 tháng
-          mileageLimit: 160000,
-        });
-        warrantyComponents.push({
-          vehicleModelId: model.vehicleModelId,
-          typeComponentId: twelveVoltBatteryType.typeComponentId,
-          quantity: 1,
-          durationMonth: 12, // 1 năm = 12 tháng
-          mileageLimit: 20000,
-        });
-      });
-    }
-    await WarrantyComponent.bulkCreate(warrantyComponents);
-    console.log(
-      `✅ Created ${warrantyComponents.length} specific component warranties.`
-    );
-
-    // --- 5. SEED FINAL DATA ---
-    console.log("🌱 Seeding vehicles...");
-    const vehicles = [];
-    createdModels.forEach((model) => {
-      for (let i = 0; i < 10; i++) {
-        vehicles.push({
-          vin: faker.vehicle.vin(),
-          dateOfManufacture: faker.date.between({
-            from: model.yearOfLaunch,
-            to: new Date(),
-          }),
-          placeOfManufacture: faker.location.city(),
-          vehicleModelId: model.vehicleModelId,
-          licensePlate: null,
-          ownerId: null,
-          purchaseDate: null,
+          warehouseId: wh.warehouseId,
+          quantityInStock: isCentral
+            ? faker.number.int({ min: 200, max: 500 }) // kho tổng nhiều
+            : faker.number.int({ min: 15, max: 60 }), // kho chi nhánh ít hơn
+          // quantityReserved sẽ = 0 theo default của model Stock
         });
       }
-    });
+    }
+    await Stock.bulkCreate(stockData);
+    console.log(
+      `✅ Seeded ${stockData.length} stock records across ${allWarehouses.length} warehouses.`
+    );
+
+    // --- 3b. SEED COMPATIBILITY (WarrantyComponent) ---
+    console.log("🌱 Seeding Compatibility (WarrantyComponent)...");
+    const warrantyComponents = [];
+    for (const model of createdModels) {
+      for (const type of createdTypeComponents) {
+        warrantyComponents.push({
+          vehicleModelId: model.vehicleModelId,
+          typeComponentId: type.typeComponentId,
+          durationMonth: type.name.includes("Ắc quy") ? 24 : 12,
+          mileageLimit: type.name.includes("Ắc quy") ? 40000 : 20000,
+        });
+      }
+    }
+    await WarrantyComponent.bulkCreate(warrantyComponents);
+    console.log(`✅ Seeded ${warrantyComponents.length} compatibility links.`);
+
+    // --- 4. SEED VEHICLES & CUSTOMERS ---
+    console.log("🌱 Seeding Vehicles & Customers...");
+    const vehicles = [];
+    // 10 new, unactivated vehicles
+    for (let i = 0; i < 10; i++) {
+      vehicles.push({
+        vin: `VIN-NEW-${i}`,
+        dateOfManufacture: faker.date.past(),
+        placeOfManufacture: "Hải Phòng",
+        vehicleModelId:
+          faker.helpers.arrayElement(createdModels).vehicleModelId,
+        isActivated: false,
+        ownerId: null,
+        purchaseDate: null,
+        licensePlate: null,
+      });
+    }
+    // 5 sold, activated vehicles
+    const customers = await Customer.bulkCreate(
+      Array.from({ length: 5 }, () => ({
+        fullName: faker.person.fullName(),
+        email: faker.internet.email(),
+        phone: faker.phone.number(),
+        address: faker.location.streetAddress(),
+      })),
+      { returning: true }
+    );
+
+    for (let i = 0; i < 5; i++) {
+      vehicles.push({
+        vin: `VIN-SOLD-${i}`,
+        dateOfManufacture: faker.date.past(),
+        placeOfManufacture: "Hải Phòng",
+        vehicleModelId:
+          faker.helpers.arrayElement(createdModels).vehicleModelId,
+        isActivated: true,
+        ownerId: customers[i].id,
+        purchaseDate: faker.date.recent({ days: 365 }),
+        licensePlate: `51K-${faker.number.int({
+          min: 100,
+          max: 999,
+        })}.${faker.number.int({ min: 10, max: 99 })}`,
+      });
+    }
+
     await Vehicle.bulkCreate(vehicles, { ignoreDuplicates: true });
-    console.log(`✅ Created ${vehicles.length} vehicles.`);
+    console.log(`✅ Seeded ${vehicles.length} vehicles.`);
+
+    // --- 5. (Tuỳ chọn) Thống kê số kho theo Service Center ---
+    const scIdToCount = createdSCWarehouses.reduce((acc, w) => {
+      acc[w.serviceCenterId] = (acc[w.serviceCenterId] || 0) + 1;
+      return acc;
+    }, {});
+    for (const sc of createdServiceCenters) {
+      console.log(
+        `- ${sc.name}: ${scIdToCount[sc.serviceCenterId] || 0} warehouses`
+      );
+    }
+    console.log(`- Central (company-wide): 1 warehouse`);
 
     console.log("\n🎉 Seeding finished successfully!");
   } catch (error) {
     console.error("❌ Unable to seed database:", error);
+    // Đảm bảo bật lại khóa ngoại ngay cả khi có lỗi
+    try {
+      await sequelize.query("SET FOREIGN_KEY_CHECKS = 1", { raw: true });
+    } catch (e) {}
   } finally {
     await sequelize.close();
   }

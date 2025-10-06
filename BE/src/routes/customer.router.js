@@ -47,7 +47,7 @@ const router = express.Router();
  *       400:
  *         description: Bad request - phone or email required
  */
-router.get("/find-customer-with-phone-or-email", async (req, res, next) => {
+router.get("/customers", async (req, res, next) => {
   const customerController = req.container.resolve("customerController");
 
   await customerController.findCustomerByPhoneOrEmail(req, res, next);

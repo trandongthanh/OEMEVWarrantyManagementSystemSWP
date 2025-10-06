@@ -96,6 +96,8 @@ class CustomerService {
     if (!existingCustomer) {
       throw new NotFoundError("Cannot find customer with this id");
     }
+
+    return existingCustomer;
   };
 }
 

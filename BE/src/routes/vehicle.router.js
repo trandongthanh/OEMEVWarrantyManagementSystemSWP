@@ -1,5 +1,9 @@
 import express from "express";
-import { authentication, authorizationByRole } from "../../middleware/index.js";
+import {
+  attachCompanyContext,
+  authentication,
+  authorizationByRole,
+} from "../../middleware/index.js";
 
 const router = express.Router();
 
@@ -129,9 +133,10 @@ const router = express.Router();
  *                   example: "Access denied. Required role: service_center_staff"
  */
 router.get(
-  "/find-vehicle-by-vin",
+  "/:vin",
   authentication,
   authorizationByRole(["service_center_staff"]),
+  attachCompanyContext,
 
   async (req, res, next) => {
     const vehicleController = req.container.resolve("vehicleController");
@@ -280,14 +285,27 @@ router.get(
  *                   example: "Access denied. Required role: service_center_staff"
  */
 router.patch(
-  "/:vin/update-owner",
+  "/:vin",
   authentication,
   authorizationByRole(["service_center_staff"]),
+  attachCompanyContext,
 
   async (req, res, next) => {
     const vehicleController = req.container.resolve("vehicleController");
 
     await vehicleController.registerCustomerForVehicle(req, res, next);
+  }
+);
+
+router.get(
+  "/:vin/warranty",
+  authentication,
+  authorizationByRole(["service_center_staff"]),
+  attachCompanyContext,
+  async (req, res, next) => {
+    const vehicleController = req.container.resolve("vehicleController");
+
+    await vehicleController.findVehicleByVinWithWarranty(req, res, next);
   }
 );
 
