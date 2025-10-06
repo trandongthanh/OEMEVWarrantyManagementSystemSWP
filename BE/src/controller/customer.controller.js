@@ -6,14 +6,6 @@ class CustomerController {
   findCustomerByPhoneOrEmail = async (req, res, next) => {
     let { phone, email } = req.query;
 
-    if (!email) {
-      email = null;
-    }
-
-    if (!phone) {
-      phone = null;
-    }
-
     const existingCustomer =
       await this.customerService.findCustomerByPhoneOrEmail({
         phone: phone,
@@ -21,7 +13,7 @@ class CustomerController {
       });
 
     res.status(200).json({
-      status: "success",
+      status: "sucess",
       data: {
         customer: existingCustomer,
       },

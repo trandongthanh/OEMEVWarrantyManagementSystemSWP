@@ -1,4 +1,8 @@
-import { BadRequestError, ConflictError } from "../error/index.js";
+import {
+  BadRequestError,
+  ConflictError,
+  ForbiddenError,
+} from "../error/index.js";
 import db from "../../models/index.cjs";
 import { checkWarrantyStatus } from "../util/checkWarrantyStatus.js";
 
@@ -30,6 +34,12 @@ class VehicleService {
       return null;
     }
 
+    if (!vehicle.model?.company) {
+      throw new ForbiddenError(
+        `You do not have permission to access vehicle with this VIN: ${vehicleVin}`
+      );
+    }
+
     const formatResult = {
       vin: vehicle.vin,
       dateOfManufacture: vehicle.dateOfManufacture,
@@ -37,8 +47,8 @@ class VehicleService {
       licensePlate: vehicle.licensePlate,
       purchaseDate: vehicle.purchaseDate,
       owner: vehicle.owner,
-      model: vehicle.model.modelName,
-      company: vehicle.model.company.name,
+      model: vehicle.model?.modelName,
+      company: vehicle.model?.company?.name,
     };
 
     return formatResult;
@@ -143,7 +153,7 @@ class VehicleService {
     });
   };
 
-  findVehicleByVinWithWarranty = async ({ vin, companyId, odermeter }) => {
+  findVehicleByVinWithWarranty = async ({ vin, companyId, odometer }) => {
     if (!vin || !companyId) {
       throw new BadRequestError("vin and companyId is required");
     }
@@ -169,7 +179,7 @@ class VehicleService {
         return {
           name: component.name,
           status:
-            component.WarrantyComponent.mileageLimit > odermeter &&
+            component.WarrantyComponent.mileageLimit > odometer &&
             checkWarrantyComponent.status,
           remainingDays: checkWarrantyComponent.remainingDays,
         };
@@ -183,7 +193,7 @@ class VehicleService {
       purchaseDate: existingVehicle.purchaseDate,
       generalWarrantyDuration: generalWarrantyDurationFormated,
       generalWarrantyMileage:
-        existingVehicle.model.generalWarrantyMileage > odermeter,
+        existingVehicle.model.generalWarrantyMileage > odometer,
       componetWarranty: typeComponentsWarrantyFormated,
     };
 

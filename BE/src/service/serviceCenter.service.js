@@ -11,7 +11,7 @@ class ServiceCenterService {
     }
 
     const serviceCenter =
-      await this.serviceCenterRepository.findCompanyWithServiceCenterId({
+      await this.serviceCenterRepository.findServiceCenterWithId({
         serviceCenterId: serviceCenterId,
       });
 

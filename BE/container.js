@@ -14,6 +14,12 @@ import CustomerRepository from "./src/repository/customer.repository.js";
 import CustomerService from "./src/service/customer.service.js";
 import { validateVehicleDatesWithDayjs } from "./src/util/validateVehicleDatesWithDayjs.js";
 import CustomerController from "./src/controller/customer.controller.js";
+import VehicleProcessingRecordRepository from "./src/repository/vehicleProcessingRecord.repository.js";
+import GuaranteeCaseRepository from "./src/repository/guaranteeCase.repository.js";
+import VehicleProcessingRecordController from "./src/controller/vehicleProcessingRecord.controller.js";
+import VehicleProcessingRecordService from "./src/service/vehicleProcessingRecord.service.js";
+import WareHouseRepository from "./src/repository/warehouse.repository.js";
+import WarehouseService from "./src/service/warehouse.service.js";
 
 const container = createContainer();
 
@@ -55,6 +61,36 @@ container.register({
   }),
 
   customerController: asClass(CustomerController, {
+    lifetime: Lifetime.SINGLETON,
+  }),
+
+  vehicleProcessingRecordRepository: asClass(
+    VehicleProcessingRecordRepository,
+    {
+      lifetime: Lifetime.SINGLETON,
+    }
+  ),
+
+  vehicleProcessingRecordController: asClass(
+    VehicleProcessingRecordController,
+    {
+      lifetime: Lifetime.SINGLETON,
+    }
+  ),
+
+  vehicleProcessingRecordService: asClass(VehicleProcessingRecordService, {
+    lifetime: Lifetime.SINGLETON,
+  }),
+
+  guaranteeCaseRepository: asClass(GuaranteeCaseRepository, {
+    lifetime: Lifetime.SINGLETON,
+  }),
+
+  warehouseRepository: asClass(WareHouseRepository, {
+    lifetime: Lifetime.SINGLETON,
+  }),
+
+  warehouseService: asClass(WarehouseService, {
     lifetime: Lifetime.SINGLETON,
   }),
 

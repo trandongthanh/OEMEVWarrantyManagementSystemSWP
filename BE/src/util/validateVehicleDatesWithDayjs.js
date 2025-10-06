@@ -7,12 +7,16 @@ export function validateVehicleDatesWithDayjs(
   const purchaseDate = dayjs(purchaseDateStr);
   const dateOfManufacture = dayjs(dateOfManufactureStr);
 
-  if (!purchaseDate.isValid || !dateOfManufacture.isValid) {
+  if (!purchaseDate.isValid() || !dateOfManufacture.isValid()) {
     return false;
   }
 
+  const today = dayjs();
+
   return (
     purchaseDate.isAfter(dateOfManufacture) ||
-    purchaseDate.isSame(dateOfManufacture)
+    purchaseDate.isAfter(today) ||
+    purchaseDate.isSame(dateOfManufacture) ||
+    purchaseDate.isSame(today)
   );
 }

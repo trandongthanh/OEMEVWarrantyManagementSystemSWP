@@ -1,4 +1,5 @@
 import { BadRequestError, NotFoundError } from "../error/index.js";
+import { formatUTCtzHCM } from "../util/formatUTCtzHCM.js";
 
 class AuthService {
   constructor({ userRepository, hashService, tokenService }) {
@@ -39,6 +40,30 @@ class AuthService {
     });
 
     return token;
+  };
+
+  register = async ({
+    username,
+    password,
+    phone,
+    email,
+    name,
+    address,
+    roleId,
+    serviceCenterId,
+  }) => {
+    const newUser = await this.userRepository.createUser({
+      username,
+      password,
+      phone,
+      email,
+      name,
+      address,
+      roleId,
+      serviceCenterId,
+    });
+
+    return newUser;
   };
 }
 

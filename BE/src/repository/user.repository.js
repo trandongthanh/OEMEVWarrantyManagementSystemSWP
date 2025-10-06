@@ -44,7 +44,7 @@ class UserRepository {
       vehicleCompanyId,
     });
 
-    return newUser;
+    return newUser.toJSON();
   }
 }
 

@@ -8,23 +8,9 @@ class VehicleController {
   }
 
   findVehicleByVin = async (req, res, next) => {
-    const { vin } = req.query;
+    const { vin } = req.params;
 
-    const { serviceCenterId, companyId: vehicleCompanyId } = req.user;
-
-    let companyId;
-    if (serviceCenterId) {
-      const vehicleCompany =
-        await this.serviceCenterService.findCompanyWithServiceCenterId({
-          serviceCenterId: serviceCenterId,
-        });
-
-      companyId = vehicleCompany.vehicle_company_id;
-    } else if (vehicleCompanyId) {
-      companyId = vehicleCompanyId;
-    } else {
-      throw new BadRequestError("Staff not belong to company");
-    }
+    const { companyId } = req;
 
     const vehicle = await this.vehicleService.findVehicleByVin({
       vehicleVin: vin,
@@ -57,19 +43,13 @@ class VehicleController {
 
     const { vin } = req.params;
 
-
-   const serviceCenterId = req.user.serviceCenterId;
-
-    const company =
-      await this.serviceCenterService.findCompanyWithServiceCenterId({
-        serviceCenterId: serviceCenterId,
-      });
+    const { companyId } = req;
 
     const updatedVehicle = await this.vehicleService.registerOwnerForVehicle({
       customer: customer,
       vin: vin,
       ownerId: ownerId,
-      companyId: company.vehicle_company_id,
+      companyId: companyId,
       dateOfManufacture: dateOfManufacture,
       licensePlate: licensePlate,
       purchaseDate: purchaseDate,
@@ -88,7 +68,7 @@ class VehicleController {
 
     const { serviceCenterId } = req.user;
 
-    const { odermeter } = req.body;
+    const { odometer } = req.body;
 
     const company =
       await this.serviceCenterService.findCompanyWithServiceCenterId({
@@ -101,7 +81,7 @@ class VehicleController {
       await this.vehicleService.findVehicleByVinWithWarranty({
         vin: vin,
         companyId: vehicleCompanyId,
-        odermeter: odermeter,
+        odermeodometerter: odometer,
       });
 
     if (!existingVehicle) {

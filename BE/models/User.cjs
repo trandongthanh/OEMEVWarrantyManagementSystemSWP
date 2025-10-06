@@ -111,9 +111,19 @@ module.exports = (sequelize, DataTypes) => {
       as: "vehicleCompany",
     });
 
-    // User.hasMany(models.VehicleProcessingRecord, {
-    //   foreignKey: "created_by_staff_id",
-    //   as: "createdRecordsAsStaff",
+    User.hasMany(models.VehicleProcessingRecord, {
+      foreignKey: "created_by_staff_id",
+      as: "createdRecordsAsStaff",
+    });
+
+    User.hasMany(models.GuaranteeCase, {
+      foreignKey: "lead_tech_id",
+      as: "leadTechnician",
+    });
+
+    // User.hasMany(models.CaseLine, {
+    //   foreignKey: "tech_id",
+    //   as: "diagnosedCaseLines",
     // });
 
     // User.hasMany(models.InstalledPart, {
