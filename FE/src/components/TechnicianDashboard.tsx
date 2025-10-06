@@ -89,7 +89,7 @@ const TechnicianDashboard = ({
   const [componentCategoryFilter, setComponentCategoryFilter] = useState<string>("all");
   const { user, logout } = useAuth();
 
-  // Mock data - thay thế bằng API calls trong thực tế
+  // Mock data - replace with API calls in production
   const availableComponents: Component[] = [
     {
       id: "comp-001",
@@ -100,11 +100,11 @@ const TechnicianDashboard = ({
       inStockManufacturer: 15,
       warrantyMonths: 96,
       requiresVehicleCheck: false,
-      description: "Pin chính cho VF8, bảo hành riêng 8 năm"
+      description: "Main battery for VF8, separate 8-year warranty"
     },
     {
       id: "comp-002",
-      name: "Motor điện trước",
+      name: "Front Electric Motor",
       partNumber: "MOT-VF8-FRT",
       category: "motor",
       inStockServiceCenter: 2,
@@ -112,22 +112,22 @@ const TechnicianDashboard = ({
       warrantyKm: 100000,
       warrantyMonths: 60,
       requiresVehicleCheck: true,
-      description: "Motor điện bánh trước, yêu cầu kiểm tra km và thời gian"
+      description: "Front wheel electric motor, requires km and time verification"
     },
     {
       id: "comp-003",
-      name: "Sơn ngoại thất",
+      name: "Exterior Paint",
       partNumber: "PAINT-001",
       category: "paint",
       inStockServiceCenter: 0,
       inStockManufacturer: 20,
       warrantyMonths: 24,
       requiresVehicleCheck: false,
-      description: "Sơn ngoại thất, bảo hành riêng 2 năm"
+      description: "Exterior paint, separate 2-year warranty"
     },
     {
       id: "comp-004",
-      name: "Cụm phanh trước",
+      name: "Front Brake Assembly",
       partNumber: "BRK-FRT-001",
       category: "general",
       inStockServiceCenter: 8,
@@ -135,7 +135,7 @@ const TechnicianDashboard = ({
       warrantyKm: 50000,
       warrantyMonths: 36,
       requiresVehicleCheck: true,
-      description: "Cụm phanh trước, yêu cầu kiểm tra km và thời gian xe"
+      description: "Front brake assembly, requires km and vehicle time verification"
     }
   ];
 
@@ -163,28 +163,28 @@ const TechnicianDashboard = ({
   const staffMembers: Staff[] = [
     {
       id: "staff-001",
-      name: "Nguyễn Văn An",
+      name: "John Anderson",
       specialty: "Battery Systems",
       currentWorkload: 2,
       isAvailable: true
     },
     {
       id: "staff-002",
-      name: "Trần Minh Bảo",
+      name: "Michael Brown",
       specialty: "Motor & Drivetrain",
       currentWorkload: 3,
       isAvailable: true
     },
     {
       id: "staff-003",
-      name: "Lê Thu Hương",
+      name: "Linda Wilson",
       specialty: "Body & Paint",
       currentWorkload: 1,
       isAvailable: true
     },
     {
       id: "staff-004",
-      name: "Phạm Đức Minh",
+      name: "David Miller",
       specialty: "General Maintenance",
       currentWorkload: 4,
       isAvailable: false
@@ -196,7 +196,7 @@ const TechnicianDashboard = ({
       id: "task-001",
       vehicleVin: "VF8ABC123456789",
       vehicleModel: "VF8 Plus",
-      customer: "Nguyễn Văn Hùng",
+      customer: "Robert Johnson",
       component: availableComponents[0],
       assignedStaff: [staffMembers[0]],
       status: "in-progress",
@@ -205,13 +205,13 @@ const TechnicianDashboard = ({
       dueDate: "2025-10-05",
       progress: 60,
       warrantyValid: true,
-      notes: "Pin suy giảm dung lượng"
+      notes: "Battery capacity degradation"
     },
     {
       id: "task-002",
       vehicleVin: "VF9DEF987654321",
       vehicleModel: "VF9 Premium",
-      customer: "Trần Quốc Bảo",
+      customer: "William Davis",
       component: availableComponents[1],
       assignedStaff: [staffMembers[1]],
       status: "pending",
@@ -220,7 +220,7 @@ const TechnicianDashboard = ({
       dueDate: "2025-10-07",
       progress: 0,
       warrantyValid: true,
-      notes: "Motor có tiếng động lạ"
+      notes: "Motor making abnormal noise"
     }
   ];
 
@@ -477,7 +477,7 @@ const TechnicianDashboard = ({
                 <Badge variant="outline" className="text-xs">Pin Lithium</Badge>
                 <Badge variant="outline" className="text-xs">BAT-VF8-2024</Badge>
                 <Badge variant="outline" className="text-xs">Motor</Badge>
-                <Badge variant="outline" className="text-xs">Sơn ngoại thất</Badge>
+                <Badge variant="outline" className="text-xs">Exterior Paint</Badge>
               </div>
               
               {(componentSearch || componentCategoryFilter !== "all") && (
