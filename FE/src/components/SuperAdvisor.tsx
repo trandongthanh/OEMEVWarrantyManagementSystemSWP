@@ -22,16 +22,23 @@ import {
   Wrench,
   CheckCircle,
   Users,
-  Car
+  Car,
+  Trash2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+interface CaseNote {
+  id: string;
+  text: string;
+  createdAt: string;
+}
 
 interface WarrantyRecord {
   id: string;
   vinNumber: string;
   customerName: string;
   mileage: number;
-  description: string;
+  cases?: CaseNote[];
   purchaseDate: string;
   status: 'pending' | 'in-progress' | 'completed';
   createdAt: string;
@@ -45,13 +52,16 @@ const SuperAdvisor = () => {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<WarrantyRecord | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
+  const [currentCaseText, setCurrentCaseText] = useState('');
+  const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
   
   // Form state for new record
   const [newRecord, setNewRecord] = useState({
     vinNumber: '',
     mileage: '',
     customerName: '',
-    description: '',
+    cases: [] as CaseNote[],
     purchaseDate: ''
   });
 
@@ -60,7 +70,7 @@ const SuperAdvisor = () => {
     vinNumber: '',
     mileage: '',
     customerName: '',
-    description: '',
+    cases: [] as CaseNote[],
     purchaseDate: '',
     status: 'pending' as 'pending' | 'in-progress' | 'completed'
   });
@@ -72,7 +82,10 @@ const SuperAdvisor = () => {
       vinNumber: '1HGCM82633A123456',
       customerName: 'Nguyễn Văn An',
       mileage: 15000,
-      description: 'Battery charging issue',
+      cases: [
+        { id: '1', text: 'Battery charging issue - intermittent charging reported', createdAt: '2024-10-01' },
+        { id: '2', text: 'Follow-up: Battery pack diagnostics completed', createdAt: '2024-10-02' }
+      ],
       purchaseDate: '2023-01-15',
       status: 'pending',
       createdAt: '2024-10-01'
@@ -82,7 +95,9 @@ const SuperAdvisor = () => {
       vinNumber: '2T1BURHE0JC234567',
       customerName: 'Trần Thị Bình',
       mileage: 8500,
-      description: 'Motor controller malfunction',
+      cases: [
+        { id: '1', text: 'Motor controller malfunction - error code P0420', createdAt: '2024-10-02' }
+      ],
       purchaseDate: '2023-06-20',
       status: 'in-progress',
       createdAt: '2024-10-02'
@@ -92,7 +107,9 @@ const SuperAdvisor = () => {
       vinNumber: '3VW2K7AJ9EM345678',
       customerName: 'Lê Minh Cường',
       mileage: 22000,
-      description: 'Display unit not working',
+      cases: [
+        { id: '1', text: 'Display unit not working - screen blank after firmware update', createdAt: '2024-10-03' }
+      ],
       purchaseDate: '2022-11-10',
       status: 'completed',
       createdAt: '2024-10-03'
@@ -101,10 +118,10 @@ const SuperAdvisor = () => {
 
   const handleAddRecord = () => {
     // Validation
-    if (!newRecord.vinNumber || !newRecord.customerName || !newRecord.mileage || !newRecord.description || !newRecord.purchaseDate) {
+    if (!newRecord.vinNumber || !newRecord.customerName || !newRecord.mileage || newRecord.cases.length === 0 || !newRecord.purchaseDate) {
       toast({
         title: 'Validation Error',
-        description: 'Please fill in all required fields',
+        description: 'Please fill in all required fields and add at least one case',
         variant: 'destructive'
       });
       return;
@@ -115,7 +132,7 @@ const SuperAdvisor = () => {
       vinNumber: newRecord.vinNumber.toUpperCase(),
       customerName: newRecord.customerName,
       mileage: parseInt(newRecord.mileage),
-      description: newRecord.description,
+      cases: newRecord.cases,
       purchaseDate: newRecord.purchaseDate,
       status: 'pending',
       createdAt: new Date().toISOString().split('T')[0]
@@ -123,6 +140,7 @@ const SuperAdvisor = () => {
 
     setRecords([...records, record]);
     setIsAddDialogOpen(false);
+    setNewRecord({ vinNumber: '', mileage: '', customerName: '', cases: [], purchaseDate: '' });
     
     
 
@@ -140,7 +158,7 @@ const SuperAdvisor = () => {
       vinNumber: record.vinNumber,
       mileage: record.mileage.toString(),
       customerName: record.customerName,
-      description: record.description,
+      cases: record.cases || [],
       purchaseDate: record.purchaseDate,
       status: record.status
     });
@@ -148,10 +166,10 @@ const SuperAdvisor = () => {
   };
 
   const handleSaveEdit = () => {
-    if (!editRecord.vinNumber || !editRecord.customerName || !editRecord.mileage || !editRecord.description || !editRecord.purchaseDate) {
+    if (!editRecord.vinNumber || !editRecord.customerName || !editRecord.mileage || editRecord.cases.length === 0 || !editRecord.purchaseDate) {
       toast({
         title: 'Validation Error',
-        description: 'Please fill in all required fields',
+        description: 'Please fill in all required fields and have at least one case',
         variant: 'destructive'
       });
       return;
@@ -165,7 +183,7 @@ const SuperAdvisor = () => {
           vinNumber: editRecord.vinNumber.toUpperCase(),
           customerName: editRecord.customerName,
           mileage: parseInt(editRecord.mileage),
-          description: editRecord.description,
+          cases: editRecord.cases,
           purchaseDate: editRecord.purchaseDate,
           status: editRecord.status
         };
@@ -278,7 +296,7 @@ const SuperAdvisor = () => {
                   <TableRow>
                     <TableHead>Record ID</TableHead>
                     <TableHead>VIN Number</TableHead>
-                    <TableHead>Description</TableHead>
+                    <TableHead>Case</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -295,7 +313,14 @@ const SuperAdvisor = () => {
                       <TableRow key={record.id} className="hover:bg-muted/50">
                         <TableCell className="font-medium">{record.id}</TableCell>
                         <TableCell className="font-mono text-sm">{record.vinNumber}</TableCell>
-                        <TableCell className="max-w-xs truncate">{record.description}</TableCell>
+                        <TableCell className="max-w-xs">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary">{record.cases?.length || 0} cases</Badge>
+                            {record.cases && record.cases.length > 0 && (
+                              <span className="text-sm truncate">{record.cases[0].text}</span>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>{getStatusBadge(record.status)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex gap-2 justify-end">
@@ -384,22 +409,187 @@ const SuperAdvisor = () => {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="description">Description *</Label>
+              <div className="flex items-center justify-between mb-2">
+                <Label>Cases * ({newRecord.cases.length})</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setCurrentCaseText('');
+                    setEditingCaseId(null);
+                    setIsAddNewcaseOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  New Case
+                </Button>
+              </div>
+              {newRecord.cases.length > 0 ? (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {newRecord.cases.map((caseNote, index) => (
+                    <div key={caseNote.id} className="p-3 bg-muted/50 rounded-md border flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant="outline" className="text-xs">Case {index + 1}</Badge>
+                          <span className="text-xs text-muted-foreground">{new Date(caseNote.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        <p className="text-sm break-words">{caseNote.text}</p>
+                      </div>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setCurrentCaseText(caseNote.text);
+                            setEditingCaseId(caseNote.id);
+                            setIsAddNewcaseOpen(true);
+                          }}
+                        >
+                          <Edit className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setNewRecord({
+                              ...newRecord,
+                              cases: newRecord.cases.filter(c => c.id !== caseNote.id)
+                            });
+                            toast({ title: 'Case deleted' });
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3 text-destructive" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-3 bg-muted/20 rounded-md border border-dashed">
+                  <p className="text-sm text-muted-foreground italic">No cases added yet. Click "New Case" to add one.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button onClick={handleAddRecord}>
+              <Plus className="h-4 w-4 mr-2" />
+              Save Record
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Nested New Case Dialog */}
+      <Dialog open={isAddNewcaseOpen} onOpenChange={(open) => {
+        setIsAddNewcaseOpen(open);
+        if (!open) {
+          setCurrentCaseText('');
+          setEditingCaseId(null);
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingCaseId ? 'Edit Case' : 'New Case'}</DialogTitle>
+            <DialogDescription>
+              {editingCaseId ? 'Update the case details' : 'Enter case details for this warranty record'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="caseText">Case Description *</Label>
               <Textarea
-                id="description"
-                placeholder="Describe the warranty issue..."
-                value={newRecord.description}
-                onChange={(e) => setNewRecord({ ...newRecord, description: e.target.value })}
-                rows={4}
+                id="caseText"
+                placeholder="Describe the case..."
+                value={currentCaseText}
+                onChange={(e) => setCurrentCaseText(e.target.value)}
+                rows={6}
               />
             </div>
           </div>
 
           <DialogFooter>
-            
-            <Button onClick={handleAddRecord}>
-              <Plus className="h-4 w-4 mr-2" />
-              Save Record
+            <Button variant="outline" onClick={() => {
+              setIsAddNewcaseOpen(false);
+              setCurrentCaseText('');
+              setEditingCaseId(null);
+            }}>
+              Cancel
+            </Button>
+            <Button onClick={() => {
+              if (!currentCaseText.trim()) {
+                toast({
+                  title: 'Validation Error',
+                  description: 'Please enter case description',
+                  variant: 'destructive'
+                });
+                return;
+              }
+
+              if (isEditMode) {
+                // Working with edit dialog
+                if (editingCaseId) {
+                  // Edit existing case in edit mode
+                  setEditRecord({
+                    ...editRecord,
+                    cases: editRecord.cases.map(c => 
+                      c.id === editingCaseId 
+                        ? { ...c, text: currentCaseText } 
+                        : c
+                    )
+                  });
+                  toast({ title: 'Case updated successfully' });
+                } else {
+                  // Add new case in edit mode
+                  const newCase: CaseNote = {
+                    id: Date.now().toString(),
+                    text: currentCaseText,
+                    createdAt: new Date().toISOString()
+                  };
+                  setEditRecord({
+                    ...editRecord,
+                    cases: [...editRecord.cases, newCase]
+                  });
+                  toast({ title: 'Case added successfully' });
+                }
+              } else {
+                // Working with add dialog
+                if (editingCaseId) {
+                  // Edit existing case
+                  setNewRecord({
+                    ...newRecord,
+                    cases: newRecord.cases.map(c => 
+                      c.id === editingCaseId 
+                        ? { ...c, text: currentCaseText } 
+                        : c
+                    )
+                  });
+                  toast({ title: 'Case updated successfully' });
+                } else {
+                  // Add new case
+                  const newCase: CaseNote = {
+                    id: Date.now().toString(),
+                    text: currentCaseText,
+                    createdAt: new Date().toISOString()
+                  };
+                  setNewRecord({
+                    ...newRecord,
+                    cases: [...newRecord.cases, newCase]
+                  });
+                  toast({ title: 'Case added successfully' });
+                }
+              }
+
+              setIsAddNewcaseOpen(false);
+              setCurrentCaseText('');
+              setEditingCaseId(null);
+            }}>
+              {editingCaseId ? 'Update Case' : 'Add Case'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -484,14 +674,69 @@ const SuperAdvisor = () => {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="edit-description">Description *</Label>
-                <Textarea
-                  id="edit-description"
-                  placeholder="Describe the warranty issue..."
-                  value={editRecord.description}
-                  onChange={(e) => setEditRecord({ ...editRecord, description: e.target.value })}
-                  rows={4}
-                />
+                <div className="flex items-center justify-between mb-2">
+                  <Label>Cases * ({editRecord.cases.length})</Label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setCurrentCaseText('');
+                      setEditingCaseId(null);
+                      setIsAddNewcaseOpen(true);
+                    }}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    New Case
+                  </Button>
+                </div>
+                {editRecord.cases.length > 0 ? (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {editRecord.cases.map((caseNote, index) => (
+                      <div key={caseNote.id} className="p-3 bg-muted/50 rounded-md border flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge variant="outline" className="text-xs">Case {index + 1}</Badge>
+                            <span className="text-xs text-muted-foreground">{new Date(caseNote.createdAt).toLocaleDateString()}</span>
+                          </div>
+                          <p className="text-sm break-words">{caseNote.text}</p>
+                        </div>
+                        <div className="flex gap-1 flex-shrink-0">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setCurrentCaseText(caseNote.text);
+                              setEditingCaseId(caseNote.id);
+                              setIsAddNewcaseOpen(true);
+                            }}
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setEditRecord({
+                                ...editRecord,
+                                cases: editRecord.cases.filter(c => c.id !== caseNote.id)
+                              });
+                              toast({ title: 'Case deleted' });
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3 text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-3 bg-muted/20 rounded-md border border-dashed">
+                    <p className="text-sm text-muted-foreground italic">No cases added yet. Click "New Case" to add one.</p>
+                  </div>
+                )}
               </div>
 
               <div className="grid gap-2">
