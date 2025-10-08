@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +25,8 @@ import {
   X,
   SearchIcon,
   Plus,
-  Car
+  Car,
+  Trash2
 } from "lucide-react";
 
 interface Component {
@@ -95,6 +96,19 @@ interface WarrantyCase {
   manufacturerResponse?: string;
 }
 
+interface CaseLine {
+  id: string;
+  caseId: string;
+  damageLevel: string;
+  repairPossibility: string;
+  warrantyDecision: string;
+  technicianNotes: string;
+  photos: string[];
+  photoFiles?: File[]; // Store actual File objects for blob URLs
+  createdDate: string;
+  status: 'draft' | 'submitted' | 'approved' | 'rejected';
+}
+
 interface TechnicianDashboardProps {
   onViewCase?: (caseId: string) => void;
   onAddReport?: (caseId: string) => void;
@@ -114,10 +128,59 @@ const TechnicianDashboard = ({
   const [componentCategoryFilter, setComponentCategoryFilter] = useState<string>("all");
   const [createCaseLineModalOpen, setCreateCaseLineModalOpen] = useState(false);
   const [viewCaseModalOpen, setViewCaseModalOpen] = useState(false);
+  const [viewCaseLineModalOpen, setViewCaseLineModalOpen] = useState(false);
+  const [selectedCaseLine, setSelectedCaseLine] = useState<CaseLine | null>(null);
+  const [imagePreviewModalOpen, setImagePreviewModalOpen] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string>("");
+  const [confirmRemoveModalOpen, setConfirmRemoveModalOpen] = useState(false);
+  const [caseLineToRemove, setCaseLineToRemove] = useState<string | null>(null);
 
   const [reportPreviewModalOpen, setReportPreviewModalOpen] = useState(false);
   const [updateDetailsModalOpen, setUpdateDetailsModalOpen] = useState(false);
   const [selectedWarrantyCase, setSelectedWarrantyCase] = useState<WarrantyCase | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [uploadedFileUrls, setUploadedFileUrls] = useState<string[]>([]);
+  const [caseLines, setCaseLines] = useState<CaseLine[]>([]);
+  const [caseLineForm, setCaseLineForm] = useState({
+    damageLevel: '',
+    repairPossibility: '',
+    warrantyDecision: '',
+    technicianNotes: ''
+  });
+
+  // Handle file upload
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    const imageFiles = files.filter(file => file.type.startsWith('image/'));
+    
+    if (imageFiles.length !== files.length) {
+      toast({
+        title: "Invalid File Type",
+        description: "Please select only image files (JPG, PNG, etc.)",
+        variant: "destructive"
+      });
+    }
+    
+    // Convert files to base64 data URLs for better persistence
+    imageFiles.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        setUploadedFiles(prev => [...prev, file]);
+        setUploadedFileUrls(prev => [...prev, dataUrl]);
+      };
+      reader.readAsDataURL(file);
+    });
+    
+    // Reset input value to allow selecting the same file again
+    event.target.value = '';
+  };
+
+  // Remove uploaded file
+  const removeFile = (index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+    setUploadedFileUrls(prev => prev.filter((_, i) => i !== index));
+  };
 
   // Form state for update details
   const [updateForm, setUpdateForm] = useState({
@@ -241,6 +304,31 @@ const TechnicianDashboard = ({
       additionalNotes: ""
     });
     setUpdateDetailsModalOpen(true);
+  };
+
+  // Handle view case line
+  const handleViewCaseLine = (caseLine: CaseLine) => {
+    setSelectedCaseLine(caseLine);
+    setViewCaseLineModalOpen(true);
+  };
+
+  // Handle remove case line
+  const handleRemoveCaseLine = (caseLineId: string) => {
+    setCaseLineToRemove(caseLineId);
+    setConfirmRemoveModalOpen(true);
+  };
+
+  // Confirm remove case line
+  const confirmRemoveCaseLine = () => {
+    if (caseLineToRemove) {
+      setCaseLines(prev => prev.filter(caseLine => caseLine.id !== caseLineToRemove));
+      toast({
+        title: "Case Line Removed",
+        description: "Case line has been removed successfully",
+      });
+    }
+    setConfirmRemoveModalOpen(false);
+    setCaseLineToRemove(null);
   };
 
   // Mock data - replace with API calls in production
@@ -458,8 +546,9 @@ const TechnicianDashboard = ({
 
       <div className="container mx-auto px-6 py-6">
         <Tabs defaultValue="warranty-reports" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="warranty-reports">Warranty Reports</TabsTrigger>
+            <TabsTrigger value="case-lines">Case Lines</TabsTrigger>
             <TabsTrigger value="components">Components</TabsTrigger>
             <TabsTrigger value="staff">Staff Management</TabsTrigger>
           </TabsList>
@@ -627,6 +716,125 @@ const TechnicianDashboard = ({
                     ))}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Case Lines Tab */}
+          <TabsContent value="case-lines" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>My Case Lines</CardTitle>
+                <CardDescription>
+                  View and manage case lines you've created for warranty cases
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {caseLines.length === 0 ? (
+                  <div className="text-center py-12">
+                    <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-foreground mb-2">No Case Lines Yet</h3>
+                    <p className="text-muted-foreground mb-6">
+                      Create case lines by clicking the green "+" button on warranty cases
+                    </p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Case Line ID</TableHead>
+                        <TableHead>Case ID</TableHead>
+                        <TableHead>Damage Level</TableHead>
+                        <TableHead>Repair Possibility</TableHead>
+                        <TableHead>Decision</TableHead>
+                        <TableHead>Photos</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Created</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {caseLines.map((caseLine) => (
+                        <TableRow key={caseLine.id}>
+                          <TableCell className="font-mono text-sm">
+                            {caseLine.id}
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {caseLine.caseId}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="capitalize">
+                              {caseLine.damageLevel}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={caseLine.repairPossibility === 'repairable' ? 'default' : 'destructive'}>
+                              {caseLine.repairPossibility}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={
+                              caseLine.warrantyDecision === 'approved' ? 'default' :
+                              caseLine.warrantyDecision === 'rejected' ? 'destructive' :
+                              'secondary'
+                            }>
+                              {caseLine.warrantyDecision}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Camera className="h-4 w-4 text-gray-500" />
+                              <span className="text-sm">{caseLine.photos.length}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={
+                              caseLine.status === 'submitted' ? 'default' :
+                              caseLine.status === 'approved' ? 'default' :
+                              caseLine.status === 'rejected' ? 'destructive' :
+                              'secondary'
+                            }>
+                              {caseLine.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {caseLine.createdDate}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-1">
+                              <Button 
+                                onClick={() => handleViewCaseLine(caseLine)}
+                                variant="outline" 
+                                size="sm"
+                                title="View Details"
+                              >
+                                <Eye className="h-3 w-3" />
+                              </Button>
+                              <Button 
+                                onClick={() => handleRemoveCaseLine(caseLine.id)}
+                                variant="outline" 
+                                size="sm"
+                                title="Remove Case Line"
+                                className="text-red-600 hover:text-red-700 hover:border-red-300"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                              {caseLine.status === 'draft' && (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  title="Edit"
+                                >
+                                  <Settings className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -1720,7 +1928,7 @@ const TechnicianDashboard = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Damage Level</Label>
-                  <Select>
+                  <Select value={caseLineForm.damageLevel} onValueChange={(value) => setCaseLineForm(prev => ({ ...prev, damageLevel: value }))}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select level..." />
                     </SelectTrigger>
@@ -1732,26 +1940,26 @@ const TechnicianDashboard = ({
                 </div>
                 <div className="space-y-2">
                   <Label>Repair Possibility</Label>
-                  <Select>
+                  <Select value={caseLineForm.repairPossibility} onValueChange={(value) => setCaseLineForm(prev => ({ ...prev, repairPossibility: value }))}>
                     <SelectTrigger>
                       <SelectValue placeholder="Can repair?" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="yes">✅ Yes - Repairable</SelectItem>
-                      <SelectItem value="no">❌ No - Replace only</SelectItem>
+                      <SelectItem value="repairable">✅ Yes - Repairable</SelectItem>
+                      <SelectItem value="replace-only">❌ No - Replace only</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Warranty Decision</Label>
-                  <Select>
+                  <Select value={caseLineForm.warrantyDecision} onValueChange={(value) => setCaseLineForm(prev => ({ ...prev, warrantyDecision: value }))}>
                     <SelectTrigger>
                       <SelectValue placeholder="Decision..." />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="warranty">🛡️ Warranty Coverage</SelectItem>
+                      <SelectItem value="approved">🛡️ Warranty Coverage</SelectItem>
                       <SelectItem value="customer-choice">🤔 Customer Choice</SelectItem>
-                      <SelectItem value="repair">🔧 Repair Only</SelectItem>
+                      <SelectItem value="repair-only">🔧 Repair Only</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1765,6 +1973,8 @@ const TechnicianDashboard = ({
                 <div className="space-y-2">
                   <Label>Technician Notes</Label>
                   <Textarea 
+                    value={caseLineForm.technicianNotes}
+                    onChange={(e) => setCaseLineForm(prev => ({ ...prev, technicianNotes: e.target.value }))}
                     placeholder="Enter detailed diagnosis notes, measurements, test results..."
                     className="min-h-20"
                   />
@@ -1776,11 +1986,67 @@ const TechnicianDashboard = ({
                     <p className="text-sm text-muted-foreground mb-2">
                       Upload photos of the issue, components, and diagnostic results
                     </p>
-                    <Button variant="outline" size="sm">
+                    <input
+                      type="file"
+                      id="photo-upload"
+                      multiple
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => document.getElementById('photo-upload')?.click()}
+                    >
                       <Camera className="h-4 w-4 mr-2" />
                       Choose Photos
                     </Button>
                   </div>
+                  
+                  {/* Display uploaded files */}
+                  {uploadedFiles.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <Label className="text-sm font-medium">Uploaded Photos ({uploadedFiles.length})</Label>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {uploadedFiles.map((file, index) => (
+                          <div key={index} className="relative group">
+                            <div className="bg-gray-100 rounded-lg p-2 border">
+                              <div className="aspect-square mb-2 overflow-hidden rounded">
+                                <img 
+                                  src={uploadedFileUrls[index]} 
+                                  alt={file.name}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    console.error('Image load error:', e);
+                                    // Fallback to recreate URL if it fails
+                                    const newUrl = URL.createObjectURL(file);
+                                    setUploadedFileUrls(prev => {
+                                      const newUrls = [...prev];
+                                      newUrls[index] = newUrl;
+                                      return newUrls;
+                                    });
+                                  }}
+                                />
+                              </div>
+                              <div className="text-xs">
+                                <div className="font-medium truncate" title={file.name}>{file.name}</div>
+                                <div className="text-gray-500 mt-1">
+                                  {(file.size / 1024 / 1024).toFixed(2)} MB
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => removeFile(index)}
+                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1791,11 +2057,48 @@ const TechnicianDashboard = ({
                 <Button 
                   className="flex-1"
                   onClick={() => {
+                    // Validate form
+                    if (!caseLineForm.damageLevel || !caseLineForm.repairPossibility || !caseLineForm.warrantyDecision) {
+                      toast({
+                        title: "Missing Information",
+                        description: "Please fill in all assessment fields",
+                        variant: "destructive"
+                      });
+                      return;
+                    }
+
+                    // Create new case line
+                    const newCaseLine: CaseLine = {
+                      id: `CL-${Date.now()}`,
+                      caseId: selectedWarrantyCase?.id || '',
+                      damageLevel: caseLineForm.damageLevel,
+                      repairPossibility: caseLineForm.repairPossibility,
+                      warrantyDecision: caseLineForm.warrantyDecision,
+                      technicianNotes: caseLineForm.technicianNotes,
+                      photos: [...uploadedFileUrls], // Use the pre-created URLs
+                      photoFiles: [...uploadedFiles], // Store actual File objects
+                      createdDate: new Date().toLocaleDateString('en-GB'),
+                      status: 'submitted'
+                    };
+
+                    // Add to case lines list
+                    setCaseLines(prev => [...prev, newCaseLine]);
+
+                    // Reset form and close modal
+                    setCaseLineForm({
+                      damageLevel: '',
+                      repairPossibility: '',
+                      warrantyDecision: '',
+                      technicianNotes: ''
+                    });
+                    setUploadedFiles([]);
+                    setUploadedFileUrls([]);
+                    setCreateCaseLineModalOpen(false);
+
                     toast({ 
                       title: "Case Line Created", 
-                      description: `New case line has been created for case ${selectedWarrantyCase?.id}` 
+                      description: `Case line ${newCaseLine.id} has been created successfully with ${uploadedFiles.length} photos. View it in the Case Lines tab.`
                     });
-                    setCreateCaseLineModalOpen(false);
                   }}
                 >
                   Create Case Line
@@ -1814,12 +2117,285 @@ const TechnicianDashboard = ({
                 </Button>
                 <Button 
                   variant="outline" 
-                  onClick={() => setCreateCaseLineModalOpen(false)}
+                  onClick={() => {
+                    setCreateCaseLineModalOpen(false);
+                    setUploadedFiles([]);
+                    setUploadedFileUrls([]);
+                    setCaseLineForm({
+                      damageLevel: '',
+                      repairPossibility: '',
+                      warrantyDecision: '',
+                      technicianNotes: ''
+                    });
+                  }}
                 >
                   Cancel
                 </Button>
               </div>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Case Line Modal */}
+      <Dialog open={viewCaseLineModalOpen} onOpenChange={setViewCaseLineModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="pb-6">
+            <DialogTitle className="text-xl font-semibold">Case Line Details</DialogTitle>
+            <DialogDescription className="text-base">
+              Detailed information for case line <span className="font-mono font-medium">{selectedCaseLine?.id}</span>
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            {/* Case Line Information */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Basic Information */}
+              <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                    <FileText className="h-4 w-4 text-white" />
+                  </div>
+                  <h4 className="font-semibold text-lg text-blue-900">Basic Information</h4>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex flex-col space-y-1">
+                    <span className="text-sm font-medium text-blue-700">Case Line ID</span>
+                    <span className="text-lg bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine?.id}</span>
+                  </div>
+                  <div className="flex flex-col space-y-1">
+                    <span className="text-sm font-medium text-blue-700">Case ID</span>
+                    <span className="text-lg bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine?.caseId}</span>
+                  </div>
+                  <div className="flex flex-col space-y-1">
+                    <span className="text-sm font-medium text-blue-700">Created Date</span>
+                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.createdDate}</span>
+                  </div>
+                  <div className="flex flex-col space-y-1">
+                    <span className="text-sm font-medium text-blue-700">Status</span>
+                    <div className="bg-white px-3 py-2 rounded border">
+                      <Badge 
+                        variant={
+                          selectedCaseLine?.status === 'approved' ? 'default' :
+                          selectedCaseLine?.status === 'rejected' ? 'destructive' :
+                          selectedCaseLine?.status === 'submitted' ? 'secondary' :
+                          'outline'
+                        }
+                        className="text-sm px-3 py-1"
+                      >
+                        {selectedCaseLine?.status}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Assessment Details */}
+              <div className="bg-yellow-50 p-6 rounded-lg border border-yellow-200">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
+                    <Wrench className="h-4 w-4 text-white" />
+                  </div>
+                  <h4 className="font-semibold text-lg text-yellow-900">Assessment Details</h4>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex flex-col space-y-1">
+                    <span className="text-sm font-medium text-yellow-700">Damage Level</span>
+                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.damageLevel}</span>
+                  </div>
+                  <div className="flex flex-col space-y-1">
+                    <span className="text-sm font-medium text-yellow-700">Repair Possibility</span>
+                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.repairPossibility}</span>
+                  </div>
+                  <div className="flex flex-col space-y-1">
+                    <span className="text-sm font-medium text-yellow-700">Warranty Decision</span>
+                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.warrantyDecision}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Technician Notes */}
+            {selectedCaseLine?.technicianNotes && (
+              <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center">
+                    <User className="h-4 w-4 text-white" />
+                  </div>
+                  <h4 className="font-semibold text-lg text-gray-900">Technician Notes</h4>
+                </div>
+                <div className="bg-white p-4 rounded-lg border">
+                  <p className="text-base leading-relaxed text-gray-800">{selectedCaseLine.technicianNotes}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Photos */}
+            {selectedCaseLine?.photos && selectedCaseLine.photos.length > 0 && (
+              <div className="bg-green-50 p-6 rounded-lg border border-green-200">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                    <Camera className="h-4 w-4 text-white" />
+                  </div>
+                  <h4 className="font-semibold text-lg text-green-900">Attached Photos ({selectedCaseLine.photos.length})</h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {selectedCaseLine.photos.map((photo, index) => (
+                    <div key={index} className="bg-white p-3 rounded-lg border border-green-300 hover:shadow-lg transition-shadow">
+                      <div className="aspect-square mb-3 overflow-hidden rounded">
+                        <img 
+                          src={photo} 
+                          alt={`Damage Photo ${index + 1}`}
+                          className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => {
+                            setPreviewImageUrl(photo);
+                            setImagePreviewModalOpen(true);
+                          }}
+                          title="Click to view full size"
+                          onError={(e) => {
+                            console.error('Image load error for photo:', photo);
+                            e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik04NyA3NEw5MCA3N0wxMTMgMTAwTDE0MyA3MEwxNTcgODRWMTI2SDQzVjc0SDg3WiIgZmlsbD0iI0Q1REREOCIvPgo8Y2lyY2xlIGN4PSI3NSIgY3k9IjkxIiByPSI5IiBmaWxsPSIjRDVEREQ4Ii8+Cjx0ZXh0IHg9IjEwMCIgeT0iMTUwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iLWFwcGxlLXN5c3RlbSwgQmxpbmtNYWNTeXN0ZW1Gb250LCBTZWdvZSBVSSwgUm9ib3RvLCBPeHlnZW4sIFVidW50dSwgQ2FudGFyZWxsLCBGaXJhIFNhbnMsIERyb2lkIFNhbnMsIEhlbHZldGljYSBOZXVlLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmaWxsPSIjOUI5QkE0Ij5JbWFnZSBub3QgYXZhaWxhYmxlPC90ZXh0Pgo8L3N2Zz4K';
+                            e.currentTarget.style.cursor = 'default';
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-sm text-center text-green-700 font-medium">Damage Photo {index + 1}</p>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setPreviewImageUrl(photo);
+                              setImagePreviewModalOpen(true);
+                            }}
+                            className="text-xs flex-1"
+                          >
+                            View Full Size
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              navigator.clipboard.writeText(photo);
+                              toast({
+                                title: "URL Copied",
+                                description: `Photo ${index + 1} URL copied to clipboard`,
+                              });
+                            }}
+                            className="text-xs"
+                          >
+                            Copy URL
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="flex justify-end gap-3 pt-6 border-t">
+            <Button variant="outline" onClick={() => setViewCaseLineModalOpen(false)} className="px-6">
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Preview Modal */}
+      <Dialog open={imagePreviewModalOpen} onOpenChange={setImagePreviewModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
+          <DialogHeader className="pb-4">
+            <DialogTitle className="text-xl font-semibold">Image Preview</DialogTitle>
+            <DialogDescription className="text-base">
+              Full size image preview
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex items-center justify-center bg-gray-50 rounded-lg p-4">
+            <img 
+              src={previewImageUrl} 
+              alt="Damage Photo Preview"
+              className="max-w-full max-h-[60vh] object-contain rounded"
+              onError={(e) => {
+                console.error('Preview image load error:', previewImageUrl);
+                e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgdmlld0JveD0iMCAwIDQwMCAzMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSI0MDAiIGhlaWdodD0iMzAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik0xNzQgMTQ4TDE4MCA0MEwyMjYgMjAwTDI4NiAxNDBMMzE0IDE2OFYyNTJIODZWMTQ4SDE3NFoiIGZpbGw9IiNENURERC4iLz4KPGNpcmNsZSBjeD0iMTUwIiBjeT0iMTgyIiByPSIxOCIgZmlsbD0iI0Q1REREOCIvPgo8dGV4dCB4PSIyMDAiIHk9IjIyMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZm9udC1mYW1pbHk9Ii1hcHBsZS1zeXN0ZW0sIEJsaW5rTWFjU3lzdGVtRm9udCwgU2Vnb2UgVUksIFJvYm90bywgT3h5Z2VuLCBVYnVudHUsIENhbnRhcmVsbCwgRmlyYSBTYW5zLCBEcm9pZCBTYW5zLCBIZWx2ZXRpY2EgTmV1ZSwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxNiIgZmlsbD0iIzlCOUJBNCI+SW1hZ2Ugbm90IGF2YWlsYWJsZTwvdGV4dD4KPHN2Zz4K';
+              }}
+            />
+          </div>
+          
+          <div className="flex justify-between items-center gap-3 pt-4 border-t">
+            <div className="text-sm text-gray-600 font-mono break-all flex-1">
+              {previewImageUrl}
+            </div>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(previewImageUrl);
+                  toast({
+                    title: "URL Copied",
+                    description: "Image URL copied to clipboard",
+                  });
+                }}
+              >
+                Copy URL
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setImagePreviewModalOpen(false);
+                  setPreviewImageUrl('');
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Remove Case Line Modal */}
+      <Dialog open={confirmRemoveModalOpen} onOpenChange={setConfirmRemoveModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader className="pb-4">
+            <DialogTitle className="text-xl font-semibold text-red-600">Remove Case Line</DialogTitle>
+            <DialogDescription className="text-base">
+              Are you sure you want to remove this case line? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="bg-red-50 p-4 rounded-lg border border-red-200 mb-4">
+            <div className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-red-500" />
+              <div>
+                <p className="font-medium text-red-800">Case Line ID:</p>
+                <p className="text-sm text-red-600 font-mono">{caseLineToRemove}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex justify-end gap-3">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setConfirmRemoveModalOpen(false);
+                setCaseLineToRemove(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={confirmRemoveCaseLine}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Remove Case Line
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
