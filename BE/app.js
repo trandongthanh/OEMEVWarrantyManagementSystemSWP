@@ -3,10 +3,12 @@ import { scopePerRequest } from "awilix-express";
 import container from "./container.js";
 import { hanldeError } from "./middleware/index.js";
 import { specs, swaggerUi } from "./config/swagger.js";
+import cors from "cors";
 
 const app = express();
 
 app.use(express.json());
+app.use(cors());
 app.use(scopePerRequest(container));
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
