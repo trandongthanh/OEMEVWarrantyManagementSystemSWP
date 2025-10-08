@@ -90,9 +90,9 @@ class VehicleRepository {
     const existingVehicle = await Vehicle.findOne({
       where: {
         vin: vin,
-        ownerId: {
-          [Op.not]: null,
-        },
+        // ownerId: {
+        //   [Op.not]: null,
+        // },
       },
 
       attributes: [

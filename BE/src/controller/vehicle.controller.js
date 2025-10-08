@@ -66,22 +66,15 @@ class VehicleController {
   findVehicleByVinWithWarranty = async (req, res, next) => {
     const { vin } = req.params;
 
-    const { serviceCenterId } = req.user;
+    const { companyId } = req;
 
-    const { odometer } = req.body;
-
-    const company =
-      await this.serviceCenterService.findCompanyWithServiceCenterId({
-        serviceCenterId: serviceCenterId,
-      });
-
-    const vehicleCompanyId = company.vehicle_company_id;
+    const { odometer } = req.query;
 
     const existingVehicle =
       await this.vehicleService.findVehicleByVinWithWarranty({
         vin: vin,
-        companyId: vehicleCompanyId,
-        odermeodometerter: odometer,
+        companyId: companyId,
+        odometer: odometer,
       });
 
     if (!existingVehicle) {
@@ -94,7 +87,7 @@ class VehicleController {
     res.status(200).json({
       status: "success",
       data: {
-        result: existingVehicle,
+        vehicle: existingVehicle,
       },
     });
   };

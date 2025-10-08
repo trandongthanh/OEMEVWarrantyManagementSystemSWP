@@ -18,9 +18,11 @@ module.exports = (sequelize, DataTypes) => {
       status: {
         type: DataTypes.ENUM(
           "pending_diagnosis",
+          "on_hold",
           "in_progress",
           "completed",
-          "closed"
+          "rejected",
+          "cancelled"
         ),
         allowNull: false,
         defaultValue: "pending_diagnosis",

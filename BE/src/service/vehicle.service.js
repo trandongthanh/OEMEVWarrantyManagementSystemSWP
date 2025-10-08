@@ -177,24 +177,58 @@ class VehicleService {
         );
 
         return {
-          name: component.name,
-          status:
-            component.WarrantyComponent.mileageLimit > odometer &&
-            checkWarrantyComponent.status,
-          remainingDays: checkWarrantyComponent.remainingDays,
+          componentName: component.name,
+          policy: {
+            durationMonths: component.WarrantyComponent.durationMonth,
+            mileageLimit: component.WarrantyComponent.mileageLimit,
+          },
+          duration: {
+            status: checkWarrantyComponent.status ? "ACTIVE" : "INACTIVE",
+
+            endDate: checkWarrantyComponent.endDate,
+            remainingDays: checkWarrantyComponent.remainingDays,
+          },
+          mileage: {
+            status:
+              component.WarrantyComponent.mileageLimit > odometer
+                ? "ACTIVE"
+                : "INACTIVE",
+            remainingMileage:
+              component.WarrantyComponent.mileageLimit - odometer,
+          },
         };
       });
 
     const formatVehicle = {
       vin: existingVehicle.vin,
-      dateOfManufacture: existingVehicle.dateOfManufacture,
-      placeOfManufacture: existingVehicle.placeOfManufacture,
-      licensePlate: existingVehicle.licensePlate,
       purchaseDate: existingVehicle.purchaseDate,
-      generalWarrantyDuration: generalWarrantyDurationFormated,
-      generalWarrantyMileage:
-        existingVehicle.model.generalWarrantyMileage > odometer,
-      componetWarranty: typeComponentsWarrantyFormated,
+      currentOdometer: odometer,
+      // dateOfManufacture: existingVehicle.dateOfManufacture,
+      // placeOfManufacture: existingVehicle.placeOfManufacture,
+      // licensePlate: existingVehicle.licensePlate,
+      generalWarranty: {
+        policy: {
+          durationMonths: existingVehicle.model.generalWarrantyDuration,
+          mileageLimit: existingVehicle.model.generalWarrantyMileage,
+        },
+        duration: {
+          status: generalWarrantyDurationFormated.status,
+          endDate: "2035-10-04",
+          remainingDays: 3648,
+        },
+        mileage: {
+          status:
+            existingVehicle.model.generalWarrantyMileage > odometer
+              ? "ACTIVE"
+              : "INACTIVE",
+          remainingMileage:
+            existingVehicle.model.generalWarrantyMileage - odometer,
+        },
+      },
+      // generalWarrantyDuration: generalWarrantyDurationFormated,
+      // generalWarrantyMileage:
+      //   existingVehicle.model.generalWarrantyMileage > odometer,
+      componentWarranties: typeComponentsWarrantyFormated,
     };
 
     return formatVehicle;

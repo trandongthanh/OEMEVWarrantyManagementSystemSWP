@@ -7,7 +7,7 @@ import TokenService from "../src/service/token.service.js";
 
 import db from "../models/index.cjs";
 
-const { VehicleProcessingRecord, User, Record } = db;
+const { VehicleProcessingRecord, User, Record, Role } = db;
 
 export function authentication(req, res, next) {
   const requestHeader = req.headers.authorization;
@@ -85,12 +85,14 @@ export async function canAssignTask(req, res, next) {
 
   const { id } = req.params;
 
-  const allowRoles = ["service_center_staff"];
+  const { technicianId } = req.body;
+
+  const allowRoles = ["service_center_manager"];
   if (!allowRoles.includes(roleName)) {
     throw new ForbiddenError("You do not have the role to assign tasks.");
   }
 
-  const record = await await VehicleProcessingRecord.findByPk(id, {
+  const record = await VehicleProcessingRecord.findByPk(id, {
     include: [
       {
         model: User,
@@ -100,17 +102,46 @@ export async function canAssignTask(req, res, next) {
     ],
   });
 
-  const recordJSON = record.toJSON();
-
-  if (!recordJSON) {
+  if (!record) {
     throw new NotFoundError("Record not found.");
   }
 
-  if (!recordJSON.createdByStaff?.serviceCenterId === managerServiceCenterId) {
+  const recordJSON = record.toJSON();
+
+  const technician = await User.findByPk(technicianId, {
+    attributes: ["serviceCenterId"],
+
+    include: [
+      {
+        model: Role,
+        as: "role",
+        attributes: ["roleName"],
+      },
+    ],
+  });
+
+  if (!technician) {
+    throw new NotFoundError(`Technician with ID: ${technicianId} not found.`);
+  }
+
+  const technicianJSON = technician.toJSON();
+
+  if (technicianJSON.role.roleName !== "service_center_technician") {
     throw new ForbiddenError(
-      "You can only assign tasks for records within your own service center"
+      "techId you assign has role is not service_center_technician"
     );
   }
 
+  if (!recordJSON.createdByStaff.serviceCenterId !== managerServiceCenterId) {
+    throw new ForbiddenError(
+      "You can only assign tasks for records in your own service center."
+    );
+  }
+
+  if (!technicianJSON.serviceCenterId !== managerServiceCenterId) {
+    throw new ForbiddenError(
+      "You can only assign technicians from your own service center."
+    );
+  }
   next();
 }

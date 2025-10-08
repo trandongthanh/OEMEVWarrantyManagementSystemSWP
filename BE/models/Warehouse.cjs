@@ -21,6 +21,13 @@ module.exports = (sequelize, DataTypes) => {
         field: "address",
       },
 
+      priority: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 99,
+        comment: "Thứ tự ưu tiên khi trừ kho (số nhỏ = ưu tiên cao).",
+      },
+
       vehicleCompanyId: {
         type: DataTypes.UUID,
         field: "vehicle_company_id",
