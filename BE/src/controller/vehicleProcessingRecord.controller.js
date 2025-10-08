@@ -68,7 +68,7 @@ class VehicleProcessingRecordController {
 
     const record =
       await this.vehicleProcessingRecordService.findByIdWithDetails({
-        // id: id,
+        id: id,
         userId: userId,
       });
 

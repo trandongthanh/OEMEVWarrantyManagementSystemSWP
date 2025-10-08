@@ -3,7 +3,7 @@ const router = express.Router();
 
 /**
  * @swagger
- * /customer/find-customer-with-phone-or-email:
+ * /customer:
  *   get:
  *     summary: Find customer by phone number or email
  *     tags: [Customer]
@@ -29,25 +29,65 @@ const router = express.Router();
  *             schema:
  *               type: object
  *               properties:
- *                 success:
- *                   type: boolean
+ *                 status:
+ *                   type: string
+ *                   example: "success"
  *                 data:
  *                   type: object
  *                   properties:
- *                     id:
- *                       type: string
- *                     fullName:
- *                       type: string
- *                     phone:
- *                       type: string
- *                     email:
- *                       type: string
+ *                     customer:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         fullName:
+ *                           type: string
+ *                           example: "Nguyễn Văn A"
+ *                         phone:
+ *                           type: string
+ *                           example: "+84123456789"
+ *                         email:
+ *                           type: string
+ *                           format: email
+ *                           example: "customer@example.com"
+ *                         address:
+ *                           type: string
+ *                           example: "123 Đường ABC, Quận 1, TP. HCM"
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
  *       404:
  *         description: Customer not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Customer not found"
  *       400:
  *         description: Bad request - phone or email required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Phone or email parameter is required"
  */
-router.get("/customers", async (req, res, next) => {
+router.get("/", async (req, res, next) => {
   const customerController = req.container.resolve("customerController");
 
   await customerController.findCustomerByPhoneOrEmail(req, res, next);

@@ -11,8 +11,13 @@ export function checkWarrantyStatus(purchase, duration) {
 
   const remainingDays = expiresDate.diff(today, "day");
 
+  // const endDate = today.add(remainingDays);
+
+  const endDate = expiresDate.format("YYYY-MM-DD");
+
   const result = {
-    status: isExpired,
+    status: isExpired ? "ACTIVE" : "INACTIVE",
+    endDate: endDate,
     remainingDays: remainingDays > 0 ? remainingDays : -remainingDays,
   };
 

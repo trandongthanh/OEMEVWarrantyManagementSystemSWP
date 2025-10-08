@@ -132,11 +132,11 @@ class VehicleProcessingRecordService {
     vehicleProcessingRecordId,
     technicianId,
   }) => {
-    if (!vehicleProcessingRecordId || !technicianId) {
-      throw new BadRequestError(
-        "vehicleProcessingRecordId, technicianId is required"
-      );
-    }
+    // if (!vehicleProcessingRecordId || !technicianId) {
+    //   throw new BadRequestError(
+    //     "vehicleProcessingRecordId, technicianId is required"
+    //   );
+    // }
 
     return await db.sequelize.transaction(async (t) => {
       const updatedRecord =
