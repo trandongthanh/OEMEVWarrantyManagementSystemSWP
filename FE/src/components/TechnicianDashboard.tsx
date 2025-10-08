@@ -1,24 +1,75 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "@/hooks/use-toast";
 import {
   Wrench,
-  Clock,
-  CheckCircle,
-  AlertCircle,
   FileText,
-  Package,
   User,
   Search,
   LogOut,
   Camera,
-  Plus,
   Eye,
-  PlayCircle
+  Settings,
+  Zap,
+  Palette,
+  X
 } from "lucide-react";
+
+interface Component {
+  id: string;
+  name: string;
+  partNumber: string;
+  category: 'battery' | 'motor' | 'paint' | 'general';
+  inStockServiceCenter: number;
+  inStockManufacturer: number;
+  warrantyKm?: number;
+  warrantyMonths?: number;
+  requiresVehicleCheck: boolean;
+  description: string;
+}
+
+interface Vehicle {
+  id: string;
+  vin: string;
+  model: string;
+  year: number;
+  currentKm: number;
+  purchaseDate: string;
+  hasActiveCase: boolean;
+}
+
+interface Staff {
+  id: string;
+  name: string;
+  specialty: string;
+  currentWorkload: number;
+  isAvailable: boolean;
+}
+
+interface Task {
+  id: string;
+  vehicleVin: string;
+  vehicleModel: string;
+  customer: string;
+  component: Component;
+  assignedStaff: Staff[];
+  status: 'pending' | 'in-progress' | 'completed' | 'blocked';
+  priority: 'high' | 'medium' | 'low';
+  createdDate: string;
+  dueDate: string;
+  progress: number;
+  warrantyValid: boolean;
+  notes: string;
+}
 
 interface TechnicianDashboardProps {
   onViewCase?: (caseId: string) => void;
@@ -34,183 +85,183 @@ const TechnicianDashboard = ({
   onRecordInstallation
 }: TechnicianDashboardProps) => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [viewMode, setViewMode] = useState<"list" | "kanban">("kanban");
+  const [componentSearch, setComponentSearch] = useState("");
+  const [componentCategoryFilter, setComponentCategoryFilter] = useState<string>("all");
   const { user, logout } = useAuth();
 
-  // In real app, data would be fetched from API
-  const myTasks: any[] = [];
-
-  const stats = [
+  // Mock data - replace with API calls in production
+  const availableComponents: Component[] = [
     {
-      title: "New Assignments",
-      value: myTasks.filter(t => t.status === "todo").length.toString(),
-      change: "+1 today",
-      icon: FileText,
-      color: "text-primary"
+      id: "comp-001",
+      name: "Pin Lithium-ion VF8",
+      partNumber: "BAT-VF8-2024",
+      category: "battery",
+      inStockServiceCenter: 5,
+      inStockManufacturer: 15,
+      warrantyMonths: 96,
+      requiresVehicleCheck: false,
+      description: "Main battery for VF8, separate 8-year warranty"
     },
     {
-      title: "In Progress",
-      value: myTasks.filter(t => t.status === "in-progress").length.toString(),
-      change: "Active work",
-      icon: Wrench,
-      color: "text-warning"
+      id: "comp-002",
+      name: "Front Electric Motor",
+      partNumber: "MOT-VF8-FRT",
+      category: "motor",
+      inStockServiceCenter: 2,
+      inStockManufacturer: 8,
+      warrantyKm: 100000,
+      warrantyMonths: 60,
+      requiresVehicleCheck: true,
+      description: "Front wheel electric motor, requires km and time verification"
     },
     {
-      title: "Awaiting Parts",
-      value: myTasks.filter(t => t.status === "blocked").length.toString(),
-      change: "Blocked tasks",
-      icon: Package,
-      color: "text-destructive"
+      id: "comp-003",
+      name: "Exterior Paint",
+      partNumber: "PAINT-001",
+      category: "paint",
+      inStockServiceCenter: 0,
+      inStockManufacturer: 20,
+      warrantyMonths: 24,
+      requiresVehicleCheck: false,
+      description: "Exterior paint, separate 2-year warranty"
     },
     {
-      title: "Ready for Handover",
-      value: myTasks.filter(t => t.status === "ready-for-handover").length.toString(),
-      change: "Completed",
-      icon: CheckCircle,
-      color: "text-success"
+      id: "comp-004",
+      name: "Front Brake Assembly",
+      partNumber: "BRK-FRT-001",
+      category: "general",
+      inStockServiceCenter: 8,
+      inStockManufacturer: 25,
+      warrantyKm: 50000,
+      warrantyMonths: 36,
+      requiresVehicleCheck: true,
+      description: "Front brake assembly, requires km and vehicle time verification"
     }
   ];
 
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      todo: { variant: "secondary" as const, text: "To Do", icon: Clock },
-      "in-progress": { variant: "warning" as const, text: "In Progress", icon: Wrench },
-      blocked: { variant: "destructive" as const, text: "Blocked", icon: AlertCircle },
-      "ready-for-handover": { variant: "success" as const, text: "Ready", icon: CheckCircle }
-    };
+  const vehicles: Vehicle[] = [
+    {
+      id: "veh-001",
+      vin: "VF8ABC123456789",
+      model: "VF8 Plus",
+      year: 2024,
+      currentKm: 15000,
+      purchaseDate: "2024-01-15",
+      hasActiveCase: false
+    },
+    {
+      id: "veh-002",
+      vin: "VF9DEF987654321",
+      model: "VF9 Premium",
+      year: 2024,
+      currentKm: 8500,
+      purchaseDate: "2024-03-10",
+      hasActiveCase: true
+    }
+  ];
 
-    const config = statusConfig[status as keyof typeof statusConfig];
-    if (!config) return null;
+  const staffMembers: Staff[] = [
+    {
+      id: "staff-001",
+      name: "John Anderson",
+      specialty: "Battery Systems",
+      currentWorkload: 2,
+      isAvailable: true
+    },
+    {
+      id: "staff-002",
+      name: "Michael Brown",
+      specialty: "Motor & Drivetrain",
+      currentWorkload: 3,
+      isAvailable: true
+    },
+    {
+      id: "staff-003",
+      name: "Linda Wilson",
+      specialty: "Body & Paint",
+      currentWorkload: 1,
+      isAvailable: true
+    },
+    {
+      id: "staff-004",
+      name: "David Miller",
+      specialty: "General Maintenance",
+      currentWorkload: 4,
+      isAvailable: false
+    }
+  ];
 
-    const Icon = config.icon;
-    return (
-      <Badge variant={config.variant}>
-        <Icon className="mr-1 h-3 w-3" />
-        {config.text}
-      </Badge>
-    );
+  const myTasks: Task[] = [
+    {
+      id: "task-001",
+      vehicleVin: "VF8ABC123456789",
+      vehicleModel: "VF8 Plus",
+      customer: "Robert Johnson",
+      component: availableComponents[0],
+      assignedStaff: [staffMembers[0]],
+      status: "in-progress",
+      priority: "high",
+      createdDate: "2025-09-28",
+      dueDate: "2025-10-05",
+      progress: 60,
+      warrantyValid: true,
+      notes: "Battery capacity degradation"
+    },
+    {
+      id: "task-002",
+      vehicleVin: "VF9DEF987654321",
+      vehicleModel: "VF9 Premium",
+      customer: "William Davis",
+      component: availableComponents[1],
+      assignedStaff: [staffMembers[1]],
+      status: "pending",
+      priority: "medium",
+      createdDate: "2025-09-30",
+      dueDate: "2025-10-07",
+      progress: 0,
+      warrantyValid: true,
+      notes: "Motor making abnormal noise"
+    }
+  ];
+
+  const filteredComponents = availableComponents.filter(comp => {
+    const matchesSearch = comp.name.toLowerCase().includes(componentSearch.toLowerCase()) ||
+                         comp.partNumber.toLowerCase().includes(componentSearch.toLowerCase());
+    
+    const matchesCategory = componentCategoryFilter === "all" || comp.category === componentCategoryFilter;
+    
+    return matchesSearch && matchesCategory;
+  });
+
+  const filteredTasks = myTasks.filter(task => {
+    const matchesSearch = task.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         task.vehicleVin.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         task.vehicleModel.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    return matchesSearch;
+  });
+
+  const getComponentIcon = (category: string) => {
+    switch (category) {
+      case 'battery': return Zap;
+      case 'motor': return Settings;
+      case 'paint': return Palette;
+      default: return Wrench;
+    }
   };
-
-  const getPriorityBadge = (priority: string) => {
-    const priorityConfig = {
-      high: { variant: "destructive" as const, text: "High" },
-      medium: { variant: "warning" as const, text: "Medium" },
-      low: { variant: "outline" as const, text: "Low" }
-    };
-
-    const config = priorityConfig[priority as keyof typeof priorityConfig];
-    if (!config) return null;
-
-    return <Badge variant={config.variant} className="text-xs">{config.text}</Badge>;
-  };
-
-  const getProgressColor = (progress: number) => {
-    if (progress >= 80) return "bg-success";
-    if (progress >= 50) return "bg-warning";
-    return "bg-primary";
-  };
-
-  const filteredTasks = myTasks.filter(task =>
-    task.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    task.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    task.vin.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  const groupedTasks = {
-    todo: filteredTasks.filter(t => t.status === "todo"),
-    "in-progress": filteredTasks.filter(t => t.status === "in-progress"),
-    blocked: filteredTasks.filter(t => t.status === "blocked"),
-    "ready-for-handover": filteredTasks.filter(t => t.status === "ready-for-handover")
-  };
-
-  const TaskCard = ({ task }: { task: typeof myTasks[0] }) => (
-    <Card className="shadow-elegant hover:shadow-glow transition-shadow cursor-pointer">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base">{task.id}</CardTitle>
-          <div className="flex items-center space-x-2">
-            {getStatusBadge(task.status)}
-            {getPriorityBadge(task.priority)}
-          </div>
-        </div>
-        <CardDescription className="text-sm">
-          <div className="space-y-1">
-            <p className="font-medium">{task.customer}</p>
-            <p>{task.vehicle}</p>
-            <p className="font-mono text-xs">{task.vin}</p>
-          </div>
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <div className="space-y-3">
-          <div>
-            <p className="text-sm font-medium mb-2">{task.issue}</p>
-
-            {/* Progress Bar */}
-            <div className="w-full bg-muted rounded-full h-2">
-              <div
-                className={`h-2 rounded-full transition-all ${getProgressColor(task.progress)}`}
-                style={{ width: `${task.progress}%` }}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">{task.progress}% Complete</p>
-          </div>
-
-          {/* Task Stats */}
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <div className="flex items-center space-x-3">
-              <span className="flex items-center">
-                <FileText className="h-3 w-3 mr-1" />
-                {task.reportsSubmitted} reports
-              </span>
-              {task.partsWaiting > 0 && (
-                <span className="flex items-center text-warning">
-                  <Package className="h-3 w-3 mr-1" />
-                  {task.partsWaiting} parts waiting
-                </span>
-              )}
-            </div>
-            <span>Due: {task.dueDate}</span>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="flex items-center space-x-2 pt-2 border-t">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onViewCase?.(task.id)}
-            >
-              <Eye className="h-3 w-3 mr-1" />
-              View
-            </Button>
-            {task.status === "in-progress" && (
-              <>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => onAddReport?.(task.id)}
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Report
-                </Button>
-                <Button
-                  variant="gradient"
-                  size="sm"
-                  onClick={() => onLogProgress?.(task.id)}
-                >
-                  <PlayCircle className="h-3 w-3 mr-1" />
-                  Update
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen w-full relative">
+      {/* Radial Gradient Background */}
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          background: "radial-gradient(125% 125% at 50% 10%, #fff 40%, #6366f1 100%)",
+        }}
+      />
+      
+      {/* Your Content/Components */}
+      <div className="min-h-screen bg-transparent relative z-10">
       {/* Header */}
       <header className="border-b bg-card shadow-elegant">
         <div className="container mx-auto px-6 py-4">
@@ -220,15 +271,15 @@ const TechnicianDashboard = ({
                 <Wrench className="h-6 w-6 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-foreground">My Tasks Dashboard</h1>
+                <h1 className="text-xl font-bold text-foreground">Technician Warranty Dashboard</h1>
                 <p className="text-sm text-muted-foreground">
-                  Welcome back, {user?.name} - Technician
+                  Welcome,Technician
                 </p>
               </div>
             </div>
             <div className="flex items-center space-x-3">
               <Badge variant="outline" className="text-xs">
-                Battery Systems Specialist
+                Technician
               </Badge>
               <Button variant="outline" onClick={logout}>
                 <LogOut className="mr-2 h-4 w-4" />
@@ -240,153 +291,332 @@ const TechnicianDashboard = ({
       </header>
 
       <div className="container mx-auto px-6 py-6">
-        {/* Quick Search */}
-        <div className="mb-6">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by Case ID, Customer, or VIN..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </div>
+        <Tabs defaultValue="warranty-reports" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="warranty-reports">Warranty Reports</TabsTrigger>
+            <TabsTrigger value="components">Components</TabsTrigger>
+            <TabsTrigger value="staff">Staff Management</TabsTrigger>
+          </TabsList>
 
-        {/* Statistics Cards */}
-        <div className="mb-6 grid gap-4 md:grid-cols-4">
-          {stats.map((stat) => {
-            const Icon = stat.icon;
-            return (
-              <Card key={stat.title} className="shadow-elegant">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        {stat.title}
-                      </p>
-                      <p className="text-2xl font-bold">{stat.value}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {stat.change}
-                      </p>
-                    </div>
-                    <Icon className={`h-8 w-8 ${stat.color}`} />
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-
-        {/* View Mode Toggle */}
-        <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">My Assigned Cases</h2>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant={viewMode === "kanban" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("kanban")}
-            >
-              Kanban View
-            </Button>
-            <Button
-              variant={viewMode === "list" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setViewMode("list")}
-            >
-              List View
-            </Button>
-          </div>
-        </div>
-
-        {/* Kanban Board */}
-        {viewMode === "kanban" && (
-          <div className="grid gap-6 md:grid-cols-4">
-            {Object.entries(groupedTasks).map(([status, tasks]) => (
-              <div key={status} className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-medium capitalize">
-                    {status.replace("-", " ")} ({tasks.length})
-                  </h3>
-                  {getStatusBadge(status)}
+          {/* Warranty Reports Tab */}
+          <TabsContent value="warranty-reports" className="space-y-6">
+            {/* Search and Filter */}
+            <div className="space-y-2">
+              <div className="flex gap-4 items-center">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search VIN or customer..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
                 </div>
-                <div className="space-y-3">
-                  {tasks.map((task) => (
-                    <TaskCard key={task.id} task={task} />
+                <Button variant="outline" onClick={() => setSearchTerm("")}>
+                  <X className="h-4 w-4 mr-1" />
+                  Clear
+                </Button>
+              </div>
+              
+              {/* Search hints */}
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <span>🔍 Search by:</span>
+                <Badge variant="outline" className="text-xs">VIN</Badge>
+                <Badge variant="outline" className="text-xs">Customer</Badge>
+                <Badge variant="outline" className="text-xs">Vehicle Model</Badge>
+              </div>
+            </div>
+
+            {/* Create New Warranty Report */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Create Warranty Report</CardTitle>
+                <CardDescription>
+                  Submit warranty claim with photos and component details
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Vehicle VIN</Label>
+                    <Input placeholder="Enter vehicle VIN..." />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Customer Name</Label>
+                    <Input placeholder="Enter customer name..." />
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Warranty Issue Description</Label>
+                  <Textarea 
+                    placeholder="Describe the warranty issue in detail..."
+                    className="min-h-20"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Upload Photos</Label>
+                  <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center">
+                    <Camera className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Upload photos of the warranty issue
+                    </p>
+                    <Button variant="outline" size="sm">
+                      <Camera className="h-4 w-4 mr-2" />
+                      Choose Photos
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button className="flex-1">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Submit to Manufacturer
+                  </Button>
+                  <Button variant="outline">
+                    Save Draft
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* My Warranty Reports */}
+            <Card>
+              <CardHeader>
+                <CardTitle>My Warranty Reports</CardTitle>
+                <CardDescription>
+                  Track your submitted warranty reports and their status
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Vehicle</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Submitted Date</TableHead>
+                      <TableHead>Manufacturer Response</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTasks.map((task) => (
+                      <TableRow key={task.id}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{task.vehicleModel}</p>
+                            <p className="text-xs text-muted-foreground font-mono">{task.vehicleVin}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <p className="font-medium">{task.customer}</p>
+                        </TableCell>
+                        <TableCell className="text-sm">{task.createdDate}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            Pending Review
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button variant="outline" size="sm">
+                              <Eye className="h-3 w-3" />
+                            </Button>
+                            <Button variant="outline" size="sm">
+                              <FileText className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Components Tab */}
+          <TabsContent value="components" className="space-y-6">
+            {/* Component Search */}
+            <div className="space-y-2">
+              <div className="flex gap-4 items-center">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search components by name or part number..."
+                    value={componentSearch}
+                    onChange={(e) => setComponentSearch(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                <Select value={componentCategoryFilter} onValueChange={setComponentCategoryFilter}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="Filter by category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    <SelectItem value="battery">🔋 Battery</SelectItem>
+                    <SelectItem value="motor">⚙️ Motor</SelectItem>
+                    <SelectItem value="paint">🎨 Paint</SelectItem>
+                    <SelectItem value="general">🔧 General</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" onClick={() => {
+                  setComponentSearch("");
+                  setComponentCategoryFilter("all");
+                }}>
+                  <X className="h-4 w-4 mr-1" />
+                  Clear All
+                </Button>
+              </div>
+              
+              {/* Component search hints */}
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <span>🔍 Search examples:</span>
+                <Badge variant="outline" className="text-xs">Pin Lithium</Badge>
+                <Badge variant="outline" className="text-xs">BAT-VF8-2024</Badge>
+                <Badge variant="outline" className="text-xs">Motor</Badge>
+                <Badge variant="outline" className="text-xs">Exterior Paint</Badge>
+              </div>
+              
+              {(componentSearch || componentCategoryFilter !== "all") && (
+                <div className="text-sm text-muted-foreground">
+                  Found {filteredComponents.length} component(s)
+                  {componentSearch && ` matching "${componentSearch}"`}
+                  {componentCategoryFilter !== "all" && ` in category "${componentCategoryFilter}"`}
+                </div>
+              )}
+            </div>
+            
+            <Card>
+              <CardHeader>
+                <CardTitle>Component Inventory & Warranty Info</CardTitle>
+                <CardDescription>
+                  View available components and their warranty policies
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Component</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Service Center Stock</TableHead>
+                      <TableHead>Manufacturer Stock</TableHead>
+                      <TableHead>Warranty Policy</TableHead>
+                      <TableHead>Requires Vehicle Check</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredComponents.map((component) => (
+                      <TableRow key={component.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {React.createElement(getComponentIcon(component.category), { className: "h-4 w-4" })}
+                            <div>
+                              <p className="font-medium">{component.name}</p>
+                              <p className="text-xs text-muted-foreground">{component.partNumber}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="capitalize">
+                            {component.category}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={component.inStockServiceCenter > 0 ? "default" : "destructive"}>
+                            {component.inStockServiceCenter} units
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={component.inStockManufacturer > 0 ? "default" : "destructive"}>
+                            {component.inStockManufacturer} units
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            {component.warrantyMonths && (
+                              <div>{component.warrantyMonths} months</div>
+                            )}
+                            {component.warrantyKm && (
+                              <div>{component.warrantyKm.toLocaleString()} km</div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {component.requiresVehicleCheck ? (
+                            <Badge variant="outline" className="text-red-600">Yes</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-green-600">No</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Staff Management Tab */}
+          <TabsContent value="staff" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Staff Workload & Availability</CardTitle>
+                <CardDescription>
+                  Monitor staff assignments and distribute workload efficiently
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {staffMembers.map((staff) => (
+                    <Card key={staff.id} className="border-2">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                            <User className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <p className="font-medium">{staff.name}</p>
+                            <p className="text-sm text-muted-foreground">{staff.specialty}</p>
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">Current Workload:</span>
+                            <Badge variant={staff.currentWorkload > 3 ? "destructive" : "default"}>
+                              {staff.currentWorkload} tasks
+                            </Badge>
+                          </div>
+                          
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm">Availability:</span>
+                            <Badge variant={staff.isAvailable ? "default" : "destructive"}>
+                              {staff.isAvailable ? "Available" : "Busy"}
+                            </Badge>
+                          </div>
+                          
+                          <div className="w-full bg-muted rounded-full h-2 mt-2">
+                            <div
+                              className={`h-2 rounded-full transition-all ${
+                                staff.currentWorkload > 3 ? 'bg-red-500' : 'bg-green-500'
+                              }`}
+                              style={{ width: `${Math.min(staff.currentWorkload * 25, 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
                   ))}
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* List View */}
-        {viewMode === "list" && (
-          <Card className="shadow-elegant">
-            <CardHeader>
-              <CardTitle>All My Cases</CardTitle>
-              <CardDescription>
-                List view of all assigned cases with detailed information
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {filteredTasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className="flex items-center justify-between rounded-lg border p-4 hover:bg-muted/50"
-                  >
-                    <div className="flex items-center space-x-4">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent">
-                        <FileText className="h-5 w-5 text-accent-foreground" />
-                      </div>
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <p className="font-semibold">{task.id}</p>
-                          {getStatusBadge(task.status)}
-                          {getPriorityBadge(task.priority)}
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          {task.customer} - {task.vehicle}
-                        </p>
-                        <p className="text-sm text-muted-foreground font-mono">
-                          VIN: {task.vin}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-medium">{task.issue}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Progress: {task.progress}%
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        Due: {task.dueDate}
-                      </p>
-                    </div>
-                    <div className="flex space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onViewCase?.(task.id)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      {task.status === "in-progress" && (
-                        <Button
-                          variant="gradient"
-                          size="sm"
-                          onClick={() => onLogProgress?.(task.id)}
-                        >
-                          <PlayCircle className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
       </div>
     </div>
   );
