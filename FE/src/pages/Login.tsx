@@ -30,6 +30,7 @@ const Login = () => {
 	const [password, setPassword] = useState("");
 	const [showPassword, setShowPassword] = useState(false);
 	const [error, setError] = useState("");
+	const [isCarRotating, setIsCarRotating] = useState(false);
 	const { login, isLoading, getToken } = useAuth();
 	const navigate = useNavigate();
 	const { toast } = useToast();
@@ -90,6 +91,13 @@ const Login = () => {
 	const quickLogin = (demoUsername: string, demoPassword: string) => {
 		setUsername(demoUsername);
 		setPassword(demoPassword);
+	};
+
+	const handleCarClick = () => {
+		setIsCarRotating(true);
+		setTimeout(() => {
+			setIsCarRotating(false);
+		}, 2000); // Animation lasts 2 seconds
 	};
 
 	return (
@@ -247,12 +255,22 @@ const Login = () => {
 								<img
 									src="/CAR2.png"
 									alt="Electric Vehicle"
-									className="w-[450px] xl:w-[600px] 2xl:w-[750px] h-auto object-contain transition-transform duration-700 hover:scale-105"
+									className={`w-[450px] xl:w-[600px] 2xl:w-[750px] h-auto object-contain cursor-pointer select-none ${
+										isCarRotating 
+											? 'animate-spin duration-2000' 
+											: 'transition-transform duration-700 hover:scale-105 hover:rotate-6'
+									}`}
+									onClick={handleCarClick}
 									style={{
-										transform: "rotateY(-15deg) rotateX(5deg)",
+										transform: isCarRotating 
+											? "rotateY(360deg) rotateX(360deg) rotateZ(360deg) scale(1.1)" 
+											: "rotateY(-15deg) rotateX(5deg)",
 										filter:
 											"drop-shadow(20px 20px 40px rgba(0,0,0,0.3)) drop-shadow(-5px -5px 20px rgba(255,255,255,0.1))",
 										background: "transparent",
+										transition: isCarRotating 
+											? "transform 2s cubic-bezier(0.4, 0.0, 0.2, 1)" 
+											: "transform 0.7s ease-in-out",
 									}}
 								/>
 
