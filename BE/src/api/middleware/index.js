@@ -2,10 +2,10 @@ import {
   BadRequestError,
   ForbiddenError,
   NotFoundError,
-} from "../src/error/index.js";
-import TokenService from "../src/service/token.service.js";
+} from "../../error/index.js";
+import TokenService from "../../service/token.service.js";
 
-import db from "../models/index.cjs";
+import db from "../../models/index.cjs";
 
 const { VehicleProcessingRecord, User, Record, Role } = db;
 
@@ -145,3 +145,14 @@ export async function canAssignTask(req, res, next) {
   }
   next();
 }
+
+export const validate = (schema) => (req, res, next) => {
+  const { error } = schema.validate(req.body);
+
+  if (error) {
+    const errorMessage = error.details[0].message;
+    throw new BadRequestError(errorMessage);
+  }
+
+  next();
+};

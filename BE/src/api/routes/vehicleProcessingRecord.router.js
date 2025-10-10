@@ -3,7 +3,7 @@ import {
   authentication,
   authorizationByRole,
   canAssignTask,
-} from "../../middleware/index.js";
+} from "../middleware/index.js";
 
 import express from "express";
 const router = express.Router();
@@ -96,94 +96,6 @@ router.post(
     );
 
     await vehicleProcessingRecordController.createRecord(req, res, next);
-  }
-);
-
-/**
- * @swagger
- * /vehicle-processing-record/{id}/compatible-components:
- *   get:
- *     summary: Search compatible components in stock for a processing record
- *     tags: [Vehicle Processing Record]
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: Vehicle processing record ID
- *         example: "550e8400-e29b-41d4-a716-446655440000"
- *       - in: query
- *         name: componentType
- *         schema:
- *           type: string
- *         description: Filter by component type
- *         example: "engine"
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 10
- *         description: Number of results to return
- *         example: 10
- *     responses:
- *       200:
- *         description: Compatible components found successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: "success"
- *                 data:
- *                   type: object
- *                   properties:
- *                     components:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           typeComponentId:
- *                             type: string
- *                             format: uuid
- *                           name:
- *                             type: string
- *                           price:
- *                             type: number
- *                           availableStock:
- *                             type: integer
- *                           warehouseLocation:
- *                             type: string
- *       404:
- *         description: Processing record not found
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden - insufficient permissions
- */
-router.get(
-  "/:id/compatible-components",
-  authentication,
-  authorizationByRole([
-    "service_center_technician",
-    "service_center_manager",
-    "service_center_staff",
-  ]),
-  async (req, res, next) => {
-    const vehicleProcessingRecordController = req.container.resolve(
-      "vehicleProcessingRecordController"
-    );
-
-    await vehicleProcessingRecordController.searchCompatibleComponentsInStock(
-      req,
-      res,
-      next
-    );
   }
 );
 
@@ -361,6 +273,96 @@ router.get(
     );
 
     await vehicleProcessingRecordController.findByIdWithDetails(req, res, next);
+  }
+);
+
+router.get("/processing-records");
+
+/**
+ * @swagger
+ * /vehicle-processing-record/{id}/compatible-components:
+ *   get:
+ *     summary: Search compatible components in stock for a processing record
+ *     tags: [Vehicle Processing Record]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Vehicle processing record ID
+ *         example: "550e8400-e29b-41d4-a716-446655440000"
+ *       - in: query
+ *         name: componentType
+ *         schema:
+ *           type: string
+ *         description: Filter by component type
+ *         example: "engine"
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of results to return
+ *         example: 10
+ *     responses:
+ *       200:
+ *         description: Compatible components found successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     components:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           typeComponentId:
+ *                             type: string
+ *                             format: uuid
+ *                           name:
+ *                             type: string
+ *                           price:
+ *                             type: number
+ *                           availableStock:
+ *                             type: integer
+ *                           warehouseLocation:
+ *                             type: string
+ *       404:
+ *         description: Processing record not found
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - insufficient permissions
+ */
+router.get(
+  "/:id/compatible-components",
+  authentication,
+  authorizationByRole([
+    "service_center_technician",
+    "service_center_manager",
+    "service_center_staff",
+  ]),
+  async (req, res, next) => {
+    const vehicleProcessingRecordController = req.container.resolve(
+      "vehicleProcessingRecordController"
+    );
+
+    await vehicleProcessingRecordController.searchCompatibleComponentsInStock(
+      req,
+      res,
+      next
+    );
   }
 );
 

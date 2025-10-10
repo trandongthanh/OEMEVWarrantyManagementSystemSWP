@@ -1,4 +1,4 @@
-import { formatUTCtzHCM } from "../util/formatUTCtzHCM.js";
+import { formatUTCtzHCM } from "../../util/formatUTCtzHCM.js";
 
 class AuthController {
   constructor({ authService }) {

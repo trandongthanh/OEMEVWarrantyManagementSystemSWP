@@ -1,5 +1,5 @@
-class TypeComponentRepository {
-  isCompatibleWithModel;
-}
+// class TypeComponentRepository {
+//   isCompatibleWithModel;
+// }
 
-export default TypeComponentRepository;
+// export default TypeComponentRepository;

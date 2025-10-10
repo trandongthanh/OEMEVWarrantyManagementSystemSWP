@@ -1,9 +1,9 @@
 import express from "express";
 import { scopePerRequest } from "awilix-express";
 import container from "./container.js";
-import { hanldeError } from "./middleware/index.js";
-import { specs, swaggerUi } from "./config/swagger.js";
 import cors from "cors";
+import { hanldeError } from "./src/api/middleware/index.js";
+import { specs, swaggerUi } from "./src/config/swagger.js";
 
 const app = express();
 
@@ -13,11 +13,11 @@ app.use(scopePerRequest(container));
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs));
 
-import authRouter from "./src/routes/auth.router.js";
-import userRouter from "./src/routes/user.router.js";
-import vehicleRouter from "./src/routes/vehicle.router.js";
-import customerRouter from "./src/routes/customer.router.js";
-import vehicleProcessingRecordRouter from "./src/routes/vehicleProcessingRecord.router.js";
+import authRouter from "./src/api/routes/auth.router.js";
+import userRouter from "./src/api/routes/user.router.js";
+import vehicleRouter from "./src/api/routes/vehicle.router.js";
+import customerRouter from "./src/api/routes/customer.router.js";
+import vehicleProcessingRecordRouter from "./src/api/routes/vehicleProcessingRecord.router.js";
 
 app.get("/", async (req, res) => {
   res.send("Hello world");

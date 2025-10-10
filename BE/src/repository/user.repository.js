@@ -1,6 +1,5 @@
-import db from "../../models/index.cjs";
-
-const { User, Role } = db;
+import db from "../models/index.cjs";
+const { User, Role, ServiceCenter } = db;
 
 class UserRepository {
   async findByUsername({ username }) {
@@ -46,6 +45,27 @@ class UserRepository {
 
     return newUser.toJSON();
   }
+
+  // getAllTech = async ({ serviceCenterId }) => {
+  //   const techList = await User.fineAll({
+  //     attributes: ["name"],
+
+  //     where: {
+  //       serviceCenterId: serviceCenterId,
+  //     },
+
+  //     include: [
+  //       {
+  //         model: ServiceCenter,
+  //         as: "serviceCenter",
+  //         attributes: ["name"],
+  //       },
+  //       {
+  //         model:
+  //       }
+  //     ],
+  //   });
+  // };
 }
 
 export default UserRepository;
