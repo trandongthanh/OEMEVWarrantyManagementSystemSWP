@@ -1,9 +1,8 @@
-import { Op } from "sequelize";
-import db from "../../models/index.cjs";
+import db from "../models/index.cjs";
 const { Vehicle, Customer, VehicleModel, VehicleCompany, TypeComponent } = db;
 
 class VehicleRepository {
-  findVehicleByVinWithOwner = async ({ vin, companyId }, option = null) => {
+  findByVinAndCompanyWithOwner = async ({ vin, companyId }, option = null) => {
     const existingVehicle = await Vehicle.findOne({
       where: {
         vin: vin,
@@ -53,7 +52,7 @@ class VehicleRepository {
     return existingVehicle.toJSON();
   };
 
-  registerOwnerForVehicle = async (
+  assignOwner = async (
     { companyId, vin, customerId, licensePlate, purchaseDate },
     option = null
   ) => {

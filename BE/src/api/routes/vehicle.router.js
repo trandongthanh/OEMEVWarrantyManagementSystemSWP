@@ -3,7 +3,7 @@ import {
   attachCompanyContext,
   authentication,
   authorizationByRole,
-} from "../../middleware/index.js";
+} from "../middleware/index.js";
 
 const router = express.Router();
 

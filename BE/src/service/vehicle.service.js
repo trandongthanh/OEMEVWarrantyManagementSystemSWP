@@ -3,7 +3,7 @@ import {
   ConflictError,
   ForbiddenError,
 } from "../error/index.js";
-import db from "../../models/index.cjs";
+import db from "../models/index.cjs";
 import { checkWarrantyStatus } from "../util/checkWarrantyStatus.js";
 
 class VehicleService {
@@ -22,7 +22,7 @@ class VehicleService {
       throw new BadRequestError("vin, companyId is required");
     }
 
-    const vehicle = await this.vehicleRepository.findVehicleByVinWithOwner(
+    const vehicle = await this.vehicleRepository.findByVinAndCompanyWithOwner(
       {
         vin: vehicleVin,
         companyId: companyId,
@@ -127,7 +127,7 @@ class VehicleService {
         throw new ConflictError("This vehicle has owner");
       }
 
-      const vehicle = await this.vehicleRepository.registerOwnerForVehicle(
+      const vehicle = await this.vehicleRepository.assignOwner(
         {
           companyId: companyId,
           vin: vin,

@@ -1,4 +1,4 @@
-import { BadRequestError } from "../error/index.js";
+import { BadRequestError } from "../../error/index.js";
 
 class VehicleController {
   constructor({ vehicleService, serviceCenterService, customerService }) {

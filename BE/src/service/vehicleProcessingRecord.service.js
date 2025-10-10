@@ -1,10 +1,11 @@
-import db from "../../models/index.cjs";
+import db from "../models/index.cjs";
 import {
   BadRequestError,
   ConflictError,
   ForbiddenError,
   NotFoundError,
 } from "../error/index.js";
+
 import { formatUTCtzHCM } from "../util/formatUTCtzHCM.js";
 
 class VehicleProcessingRecordService {

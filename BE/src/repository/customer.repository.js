@@ -1,5 +1,5 @@
 import { Op } from "sequelize";
-import db from "../../models/index.cjs";
+import db from "../models/index.cjs";
 const { Customer } = db;
 
 class CustomerRepository {

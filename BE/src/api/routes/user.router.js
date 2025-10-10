@@ -98,4 +98,8 @@ router.post("/", async (req, res, next) => {
   await authController.register(req, res, next);
 });
 
+// router.get("/technician", async (req, res, next) => {
+//   const
+// })
+
 export default router;
