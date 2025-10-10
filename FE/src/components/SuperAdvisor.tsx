@@ -27,6 +27,21 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+// Helper function to format date
+const formatDate = (dateString: string) => {
+  if (!dateString) return '';
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('vi-VN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+  } catch {
+    return dateString;
+  }
+};
+
 interface CaseNote {
   id: string;
   text: string;
@@ -398,7 +413,7 @@ const SuperAdvisor = () => {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="purchaseDate">Purchase Date *</Label>
+              <Label htmlFor="purchaseDate">Release Date *</Label>
               <Input
                 id="purchaseDate"
                 type="date"
@@ -432,7 +447,7 @@ const SuperAdvisor = () => {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <Badge variant="outline" className="text-xs">Case {index + 1}</Badge>
-                          <span className="text-xs text-muted-foreground">{new Date(caseNote.createdAt).toLocaleDateString()}</span>
+                          <span className="text-xs text-muted-foreground">{formatDate(caseNote.createdAt)}</span>
                         </div>
                         <p className="text-sm break-words">{caseNote.text}</p>
                       </div>
@@ -697,7 +712,7 @@ const SuperAdvisor = () => {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <Badge variant="outline" className="text-xs">Case {index + 1}</Badge>
-                            <span className="text-xs text-muted-foreground">{new Date(caseNote.createdAt).toLocaleDateString()}</span>
+                            <span className="text-xs text-muted-foreground">{formatDate(caseNote.createdAt)}</span>
                           </div>
                           <p className="text-sm break-words">{caseNote.text}</p>
                         </div>
@@ -741,7 +756,7 @@ const SuperAdvisor = () => {
 
               <div className="grid gap-2">
                 <Label className="text-muted-foreground">Created Date</Label>
-                <p className="text-sm">{selectedRecord && new Date(selectedRecord.createdAt).toLocaleDateString()}</p>
+                <p className="text-sm">{selectedRecord && formatDate(selectedRecord.createdAt)}</p>
               </div>
             </div>
           )}
