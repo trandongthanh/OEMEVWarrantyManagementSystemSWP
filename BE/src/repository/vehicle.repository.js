@@ -36,7 +36,7 @@ class VehicleRepository {
               as: "company",
               where: { vehicleCompanyId: companyId },
               attributes: ["name", "vehicleCompanyId"],
-              required: false,
+              required: true,
             },
           ],
         },
@@ -74,7 +74,7 @@ class VehicleRepository {
       return null;
     }
 
-    const updatedVehicle = await this.findVehicleByVinWithOwner(
+    const updatedVehicle = await this.findByVinAndCompanyWithOwner(
       {
         vin: vin,
         companyId: companyId,
@@ -89,24 +89,16 @@ class VehicleRepository {
     const existingVehicle = await Vehicle.findOne({
       where: {
         vin: vin,
-        // ownerId: {
-        //   [Op.not]: null,
-        // },
       },
 
-      attributes: [
-        "vin",
-        "dateOfManufacture",
-        "placeOfManufacture",
-        "licensePlate",
-        "purchaseDate",
-      ],
+      attributes: ["vin", "dateOfManufacture", "purchaseDate"],
 
       include: [
         {
           model: VehicleModel,
           as: "model",
           attributes: ["generalWarrantyDuration", "generalWarrantyMileage"],
+          required: true,
 
           include: [
             {
@@ -121,6 +113,8 @@ class VehicleRepository {
               as: "company",
               where: { vehicleCompanyId: companyId },
               attributes: ["name"],
+
+              required: true,
             },
           ],
         },

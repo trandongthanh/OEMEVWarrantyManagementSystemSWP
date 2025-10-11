@@ -91,6 +91,36 @@ class VehicleController {
       },
     });
   };
+
+  findVehicleByVinWithWarrantyPreview = async (req, res, next) => {
+    const { vin } = req.params;
+
+    const { companyId } = req;
+
+    const { odometer, purchaseDate } = req.body;
+
+    const vehicle =
+      await this.vehicleService.findVehicleByVinWithWarrantyPreview({
+        vin: vin,
+        companyId: companyId,
+        odometer: odometer,
+        purchaseDate: purchaseDate,
+      });
+
+    if (!vehicle) {
+      return res.status(404).json({
+        status: "success",
+        message: `Cannot find vehicle with this VIN: ${vin}`,
+      });
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        vehicle: vehicle,
+      },
+    });
+  };
 }
 
 export default VehicleController;

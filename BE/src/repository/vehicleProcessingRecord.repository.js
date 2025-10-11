@@ -16,6 +16,10 @@ class VehicleProcessingRecordRepository {
       { transaction: option }
     );
 
+    if (!newRecord) {
+      return null;
+    }
+
     return newRecord.toJSON();
   };
 
@@ -52,8 +56,20 @@ class VehicleProcessingRecordRepository {
         "createdByStaffId",
       ],
 
+      include: [
+        {
+          model: User,
+          as: "mainTechnician",
+          attributes: ["userId", "name"],
+        },
+      ],
+
       transaction: option,
     });
+
+    if (!updatedRecord) {
+      return null;
+    }
 
     return updatedRecord.toJSON();
   };
@@ -79,7 +95,7 @@ class VehicleProcessingRecordRepository {
     return record.toJSON();
   };
 
-  findByIdWithDetails = async ({ id }) => {
+  findById = async ({ id }) => {
     const record = await VehicleProcessingRecord.findByPk(id, {
       attributes: ["vin", "checkInDate", "odometer", "status"],
 
@@ -107,7 +123,7 @@ class VehicleProcessingRecordRepository {
         {
           model: GuaranteeCase,
           as: "guaranteeCases",
-          attributes: ["status", "contentGuarantee"],
+          attributes: ["guaranteeCaseId", "status", "contentGuarantee"],
         },
 
         {
@@ -117,6 +133,10 @@ class VehicleProcessingRecordRepository {
         },
       ],
     });
+
+    if (!record) {
+      return null;
+    }
 
     return record.toJSON();
   };

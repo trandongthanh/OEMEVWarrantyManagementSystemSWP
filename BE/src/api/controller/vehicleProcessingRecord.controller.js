@@ -12,11 +12,11 @@ class VehicleProcessingRecordController {
     const { companyId } = req;
 
     const newRecord = await this.vehicleProcessingRecordService.createRecord({
-      odometer,
-      createdByStaffId,
+      odometer: odometer,
+      createdByStaffId: createdByStaffId,
       vin: vin,
-      guaranteeCases,
-      companyId,
+      guaranteeCases: guaranteeCases,
+      companyId: companyId,
     });
 
     res.status(201).json({
@@ -37,20 +37,19 @@ class VehicleProcessingRecordController {
 
     res.status(200).json({
       status: "success",
-      data: { updatedRecord },
+      data: updatedRecord,
     });
   };
 
-  findByIdWithDetails = async (req, res, next) => {
+  findById = async (req, res, next) => {
     const { userId } = req.user;
 
     const { id } = req.params;
 
-    const record =
-      await this.vehicleProcessingRecordService.findByIdWithDetails({
-        id: id,
-        userId: userId,
-      });
+    const record = await this.vehicleProcessingRecordService.findById({
+      id: id,
+      userId: userId,
+    });
 
     res.status(200).json({
       status: "success",
@@ -66,11 +65,10 @@ class VehicleProcessingRecordController {
     const { userId, serviceCenterId } = req.user;
     const { searchName, category } = req.query;
 
-    const record =
-      await this.vehicleProcessingRecordService.findByIdWithDetails({
-        id: id,
-        userId: userId,
-      });
+    const record = await this.vehicleProcessingRecordService.findById({
+      id: id,
+      userId: userId,
+    });
 
     const modelId = record?.vehicle?.model?.vehicleModelId;
 
@@ -86,7 +84,7 @@ class VehicleProcessingRecordController {
       return {
         typeComponentId: component.typeComponentId,
         name: component.name,
-        price: component.price,
+        // price: component.price,
 
         // warehouse: component?.warehouses.map((warehouse) => {
         //   return {
@@ -96,17 +94,17 @@ class VehicleProcessingRecordController {
         //   };
         // }),
 
-        quantityInStock: component?.warehouses.reduce((total, warehouse) => {
-          return warehouse?.Stock.quantityInStock + total;
-        }, 0),
+        // quantityInStock: component?.warehouses.reduce((total, warehouse) => {
+        //   return warehouse?.Stock.quantityInStock + total;
+        // }, 0),
 
-        quantityReserved: component?.warehouses.reduce((total, warehouse) => {
-          return warehouse?.Stock.quantityReserved + total;
-        }, 0),
+        // quantityReserved: component?.warehouses.reduce((total, warehouse) => {
+        //   return warehouse?.Stock.quantityReserved + total;
+        // }, 0),
 
-        quantityAvailable: component?.warehouses.reduce((total, warehouse) => {
-          return warehouse?.Stock.quantityAvailable + total;
-        }, 0),
+        // quantityAvailable: component?.warehouses.reduce((total, warehouse) => {
+        //   return warehouse?.Stock.quantityAvailable + total;
+        // }, 0),
         // quantityReserved: component.warehouses.Stock.quantityReserved,
       };
     });

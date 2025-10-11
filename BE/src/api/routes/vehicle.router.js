@@ -450,4 +450,16 @@ router.get(
   }
 );
 
+router.post(
+  "/:vin/warranty/preview",
+  authentication,
+  authorizationByRole(["service_center_staff"]),
+  attachCompanyContext,
+  async (req, res, next) => {
+    const vehicleController = req.container.resolve("vehicleController");
+
+    await vehicleController.findVehicleByVinWithWarrantyPreview(req, res, next);
+  }
+);
+
 export default router;

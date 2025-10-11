@@ -13,10 +13,16 @@ export function validateVehicleDatesWithDayjs(
 
   const today = dayjs();
 
-  return (
-    purchaseDate.isAfter(dateOfManufacture) ||
-    purchaseDate.isAfter(today) ||
-    purchaseDate.isSame(dateOfManufacture) ||
-    purchaseDate.isSame(today)
-  );
+  if (purchaseDate.isBefore(dateOfManufacture)) {
+    return {
+      valid: false,
+      error: "Purchase date cannot be before manufacture date",
+    };
+  }
+
+  if (purchaseDate.isAfter(today)) {
+    return { valid: false, error: "Purchase date cannot be in the future" };
+  }
+
+  return { valid: true };
 }

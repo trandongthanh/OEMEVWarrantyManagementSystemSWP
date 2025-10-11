@@ -8,7 +8,7 @@ const options = {
       title: "OEM EV Warranty Management System API",
       version: "1.0.0",
       description:
-        "API documentation for OEM EV Warranty Management System - A comprehensive system for managing electric vehicle warranties, service records, and inventory",
+        "API documentation for OEM EV Warranty Management System - A comprehensive system for managing electric vehicle warranties, service records, and inventory. All endpoints are visible. Some endpoints require authentication (🔒 icon indicates authentication required).",
       contact: {
         name: "API Support",
         email: "support@oem-warranty.com",
@@ -31,29 +31,42 @@ const options = {
     tags: [
       {
         name: "Authentication",
-        description: "User authentication and authorization endpoints",
+        description:
+          "🔓 Public - User authentication and authorization endpoints (no token required)",
       },
       {
         name: "User",
-        description: "User management operations",
+        description:
+          "🔓 Public - User management operations (no token required for registration)",
       },
       {
         name: "Customer",
-        description: "Customer information and search operations",
+        description: "🔓 Public - Customer information and search operations",
       },
       {
         name: "Vehicle",
         description:
-          "Vehicle management, registration and warranty information",
+          "🔒 Protected - Vehicle management, registration and warranty information (authentication required)",
       },
       {
         name: "Vehicle Processing Record",
         description:
-          "Service records, technician assignments and component management",
+          "🔒 Protected - Service records, technician assignments and component management (authentication required)",
+      },
+      {
+        name: "Guarantee Case",
+        description:
+          "🔒 Protected - Warranty claim cases and issue tracking (authentication required)",
+      },
+      {
+        name: "Case Line",
+        description:
+          "🔒 Protected - Work items and component replacements within guarantee cases (authentication required)",
       },
       {
         name: "Warehouse",
-        description: "Inventory management and stock operations",
+        description:
+          "🔒 Protected - Inventory management and stock operations (authentication required)",
       },
     ],
     components: {
@@ -62,7 +75,8 @@ const options = {
           type: "http",
           scheme: "bearer",
           bearerFormat: "JWT",
-          description: "Enter JWT token obtained from login endpoint",
+          description:
+            "Enter JWT token obtained from /auth/login endpoint. Format: Bearer <your_token>",
         },
       },
       schemas: {
@@ -92,15 +106,165 @@ const options = {
             },
           },
         },
+        ValidationError: {
+          type: "object",
+          properties: {
+            status: {
+              type: "string",
+              example: "error",
+            },
+            message: {
+              type: "string",
+              example: "Validation failed",
+            },
+            errors: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  field: {
+                    type: "string",
+                    example: "email",
+                  },
+                  message: {
+                    type: "string",
+                    example: "Email is required",
+                  },
+                },
+              },
+            },
+          },
+        },
+        GuaranteeCase: {
+          type: "object",
+          properties: {
+            id: {
+              type: "string",
+              format: "uuid",
+            },
+            description: {
+              type: "string",
+            },
+            symptom: {
+              type: "string",
+            },
+            diagnosis: {
+              type: "string",
+            },
+            status: {
+              type: "string",
+              enum: ["pending", "in_progress", "completed", "cancelled"],
+            },
+            vehicleProcessingRecordId: {
+              type: "string",
+              format: "uuid",
+            },
+            createdAt: {
+              type: "string",
+              format: "date-time",
+            },
+            updatedAt: {
+              type: "string",
+              format: "date-time",
+            },
+          },
+        },
+        CaseLine: {
+          type: "object",
+          properties: {
+            id: {
+              type: "string",
+              format: "uuid",
+            },
+            guaranteeCaseId: {
+              type: "string",
+              format: "uuid",
+            },
+            typeComponentId: {
+              type: "string",
+              format: "uuid",
+            },
+            quantity: {
+              type: "integer",
+              minimum: 1,
+            },
+            description: {
+              type: "string",
+            },
+            laborHours: {
+              type: "number",
+              minimum: 0,
+            },
+            status: {
+              type: "string",
+              enum: ["pending", "in_progress", "completed", "cancelled"],
+            },
+            createdAt: {
+              type: "string",
+              format: "date-time",
+            },
+            updatedAt: {
+              type: "string",
+              format: "date-time",
+            },
+          },
+        },
+        Vehicle: {
+          type: "object",
+          properties: {
+            vin: {
+              type: "string",
+            },
+            dateOfManufacture: {
+              type: "string",
+              format: "date-time",
+            },
+            placeOfManufacture: {
+              type: "string",
+            },
+            licensePlate: {
+              type: "string",
+            },
+            purchaseDate: {
+              type: "string",
+              format: "date-time",
+            },
+            ownerId: {
+              type: "string",
+              format: "uuid",
+            },
+            vehicleModelId: {
+              type: "string",
+              format: "uuid",
+            },
+          },
+        },
+        Customer: {
+          type: "object",
+          properties: {
+            id: {
+              type: "string",
+              format: "uuid",
+            },
+            fullName: {
+              type: "string",
+            },
+            email: {
+              type: "string",
+              format: "email",
+            },
+            phone: {
+              type: "string",
+            },
+            address: {
+              type: "string",
+            },
+          },
+        },
       },
     },
-    security: [
-      {
-        BearerAuth: [],
-      },
-    ],
   },
-  apis: ["./src/routes/*.js", "./src/controller/*.js"],
+  apis: ["./src/api/routes/*.js", "./src/api/controller/*.js"],
 };
 
 const specs = swaggerJSDoc(options);

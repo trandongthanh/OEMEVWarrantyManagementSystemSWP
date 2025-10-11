@@ -1,6 +1,6 @@
 import { ConflictError, NotFoundError } from "../error/index.js";
 import db from "../models/index.cjs";
-import { allocateStock } from "../util/allocateStock";
+import { allocateStock } from "../util/allocateStock.js";
 
 class CaseLineService {
   constructor({
@@ -15,7 +15,7 @@ class CaseLineService {
     this.guaranteeCaseRepository = guaranteeCaseRepository;
   }
 
-  createCaseLine = async ({
+  createCaseLines = async ({
     guaranteeCaseId,
     caselines,
     serviceCenterId,
@@ -41,8 +41,8 @@ class CaseLineService {
         );
       }
 
-      const vehicleModelId =
-        guaranteeCase?.vehicleProcessingRecord?.vehicle?.vehicleModelId;
+      // const vehicleModelId =
+      //   guaranteeCase?.vehicleProcessingRecord?.vehicle?.vehicleModelId;
 
       const dataCaselines = caselines.map((caseline) => ({
         ...caseline,
@@ -60,103 +60,94 @@ class CaseLineService {
       }
 
       //--- validate stock and create component reservation
-      const typeComponentIds = [];
-      for (const caseline of newCaseLines) {
-        if (caseline.componentId) {
-          typeComponentIds.push(caseline.componentId);
-        }
-      }
+      // const typeComponentIds = [];
+      // for (const caseline of newCaseLines) {
+      //   if (caseline.componentId) {
+      //     typeComponentIds.push(caseline.componentId);
+      //   }
+      // }
 
-      const stocks =
-        await this.wareHouseRepository.findStocksByTypeComponentOrderByWarehousePriority(
-          { typeComponentIds, serviceCenterId, vehicleModelId }
-        );
+      // const stocks =
+      //   await this.wareHouseRepository.findStocksByTypeComponentOrderByWarehousePriority(
+      //     { typeComponentIds, serviceCenterId, vehicleModelId },
+      //     t
+      //   );
 
-      // const quantity = caselines.reduce(
-      //   (sum, caseline) => sum + caseline.quantity,
-      //   0
+      // const allReservationsToCreate = [];
+
+      // for (const caseline of newCaseLines) {
+      //   const quantityNeed = caseline.quantity;
+
+      //   const stocksFilter = stocks.filter(
+      //     (stock) =>
+      //       stock.typeComponent.typeComponentId === caseline.componentId
+      //   );
+
+      //   if (stocksFilter.length === 0) {
+      //     throw new ConflictError("No available stock for component");
+      //   }
+
+      //   const totalAvailable = stocksFilter.reduce(
+      //     (sum, stock) => sum + stock.quantityAvailable,
+      //     0
+      //   );
+
+      //   if (totalAvailable < quantityNeed) {
+      //     throw new ConflictError("Insufficient stock available for component");
+      //   }
+
+      //   const reservations = allocateStock({
+      //     stocks: stocksFilter,
+      //     quantity: quantityNeed,
+      //   });
+
+      //   for (const reservation of reservations) {
+      //     const stockToUpdate = stocks.find(
+      //       (stock) => stock.stockId === reservation.stockId
+      //     );
+
+      //     if (!stockToUpdate) {
+      //       throw new ConflictError("Stock not found for reservation");
+      //     }
+
+      //     stockToUpdate.quantityReserved += reservation.quantity;
+      //   }
+
+      //   const reservationsWithCaseLine = reservations.map((reservation) => ({
+      //     ...reservation,
+      //     caseLineId: caseline.caseLineId,
+      //   }));
+
+      //   allReservationsToCreate.push(...reservationsWithCaseLine);
+      // }
+
+      // const updatedStocks =
+      //   await this.wareHouseRepository.bulkUpdateStockQuantities(
+      //     { allReservationsToCreate },
+      //     t
+      //   );
+
+      // const componentReservations = allReservationsToCreate.map(
+      //   (reservation) => {
+      //     const componentReservation = {
+      //       caseLineId: reservation.caseLineId,
+      //       stockId: reservation.stockId,
+      //       quantity: reservation.quantity,
+      //     };
+
+      //     return componentReservation;
+      //   }
       // );
-      const ArrayOfArrayReservations = [];
-      for (const caseline of newCaseLines) {
-        const quantityNeed = caseline.quantity;
 
-        const stocksFilter = stocks.filter(
-          (stock) =>
-            stock.typeComponent.typeComponentId === caseline.componentId
-        );
+      // const newComponentReservations =
+      //   await this.componentReservationRepository.bulkCreate(
+      //     {
+      //       componentReservations,
+      //     },
+      //     t
+      //   );
 
-        if (stocksFilter.length === 0) {
-          throw new ConflictError("No available stock for component");
-        }
-
-        const totalAvailable = stocksFilter.reduce(
-          (sum, stock) => sum + stock.quantity,
-          0
-        );
-
-        if (totalAvailable < quantityNeed) {
-          throw new ConflictError("Insufficient stock available for component");
-        }
-
-        const reservations = allocateStock({
-          stocks: stocksFilter,
-          quantity: quantityNeed,
-        });
-
-        for (const reservation of reservations) {
-          const stockToUpdate = stocks.find(
-            (stock) => stock.stockId === reservation.stockId
-          );
-
-          if (!stockToUpdate) {
-            throw new ConflictError("Stock not found for reservation");
-          }
-        }
-
-        ArrayOfArrayReservations.push(reservations);
-      }
-
-      const reservationsMap = new Map();
-      for (const reservations of ArrayOfArrayReservations) {
-        for (const reservation of reservations) {
-          const existingQty = reservationsMap.get(reservation.stockId) || 0;
-
-          reservationsMap.set(
-            reservation.stockId,
-            existingQty + reservation.quantity
-          );
-        }
-      }
-
-      const reservations = Array.from(reservationsMap.entries()).map(
-        ([stockId, quantity]) => ({
-          stockId,
-          quantity,
-        })
-      );
-
-      const updatedStocks =
-        await this.wareHouseRepository.bulkUpdateStockQuantities(
-          { reservations },
-          t
-        );
-
-      const componentReservations = reservations.map((reservation) => {
-        const componentReservation = {
-          stockId: reservation.stockId,
-          quantity: reservation.quantity,
-        };
-
-        return componentReservation;
-      });
-
-      const newComponentReservations =
-        await this.componentReservationRepository.bulkCreate(
-          {
-            componentReservations,
-          },
-          t
-        );
+      return newCaseLines;
     });
   };
 }

@@ -79,10 +79,10 @@ class CustomerService {
     return newCustomer;
   };
 
-  checkCustomerById = async ({ id }, option = null) => {
+  checkExistCustomerById = async ({ id }, option = null) => {
     if (!id) {
       throw new BadRequestError(
-        "Client must provice customerId to find customer"
+        "Client must provide customerId to find customer"
       );
     }
 

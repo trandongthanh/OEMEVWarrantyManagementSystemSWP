@@ -1,8 +1,8 @@
 import { BadRequestError } from "../error/index.js";
 
 class WarehouseService {
-  constructor({ warehouseRepository }) {
-    this.warehouseRepository = warehouseRepository;
+  constructor({ wareHouseRepository }) {
+    this.wareHouseRepository = wareHouseRepository;
   }
 
   searchCompatibleComponentsInStock = async ({
@@ -22,7 +22,7 @@ class WarehouseService {
     }
 
     const components =
-      await this.warehouseRepository.searchCompatibleComponentsInStock({
+      await this.wareHouseRepository.searchCompatibleComponentsInStock({
         serviceCenterId: serviceCenterId,
         searchName: searchName,
         category: category,

@@ -5,7 +5,7 @@ class ServiceCenterService {
     this.serviceCenterRepository = serviceCenterRepository;
   }
 
-  findCompanyWithServiceCenterId = async ({ serviceCenterId }) => {
+  findCompanyByServiceCenterId = async ({ serviceCenterId }) => {
     if (!serviceCenterId) {
       throw new BadRequestError("ServiceCenterId is required");
     }

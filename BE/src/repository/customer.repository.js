@@ -41,6 +41,8 @@ class CustomerRepository {
         id: id,
       },
 
+      attributes: ["id"],
+
       transaction: option,
     });
 

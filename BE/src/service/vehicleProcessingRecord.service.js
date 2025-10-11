@@ -15,12 +15,14 @@ class VehicleProcessingRecordService {
     vehicleRepository,
     serviceCenterService,
     customerService,
+    taskAssignemntRepository,
   }) {
     this.vehicleProcessingRecordRepository = vehicleProcessingRecordRepository;
     this.guaranteeCaseRepository = guaranteeCaseRepository;
     this.vehicleRepository = vehicleRepository;
     this.serviceCenterService = serviceCenterService;
     this.customerService = customerService;
+    this.taskAssignemntRepository = taskAssignemntRepository;
   }
 
   createRecord = async ({
@@ -56,7 +58,7 @@ class VehicleProcessingRecordService {
 
     return await db.sequelize.transaction(async (t) => {
       const existingVehicle =
-        await this.vehicleRepository.findVehicleByVinWithOwner(
+        await this.vehicleRepository.findByVinAndCompanyWithOwner(
           {
             vin: vin,
             companyId: companyId,
@@ -149,7 +151,7 @@ class VehicleProcessingRecordService {
           t
         );
 
-      const updatedGuaranteeCase =
+      const updatedGuaranteeCases =
         await this.guaranteeCaseRepository.updateMainTechnician(
           {
             vehicleProcessingRecordId: vehicleProcessingRecordId,
@@ -157,23 +159,53 @@ class VehicleProcessingRecordService {
           },
           t
         );
+      const updatedGuaranteeCaseIds = updatedGuaranteeCases.map(
+        (item) => item.guaranteeCaseId
+      );
 
-      return { updatedRecord, updatedGuaranteeCase };
+      const newTaskAssignments =
+        await this.taskAssignemntRepository.bulkCreateTaskAssignments(
+          {
+            guaranteeCaseIds: updatedGuaranteeCaseIds,
+            technicianId: technicianId,
+          },
+          t
+        );
+
+      const formatUpdatedRecord = {
+        recordId: updatedRecord?.vehicleProcessingRecordId,
+        vin: updatedRecord?.vin,
+        status: updatedRecord?.status,
+        technician: updatedRecord?.mainTechnician,
+        updatedCases: updatedGuaranteeCases.map((guaranteeCase) => ({
+          caseId: guaranteeCase?.guaranteeCaseId,
+          status: guaranteeCase?.status,
+          leadTech: guaranteeCase?.leadTechnicianCases,
+        })),
+        assignments: newTaskAssignments.map((assignment) => ({
+          assignmentId: assignment?.taskAssignmentId,
+          guaranteeCaseId: assignment?.guaranteeCaseId,
+          technicianId: assignment?.technicianId,
+          taskType: assignment?.taskType,
+          assignedAt: formatUTCtzHCM(assignment?.assignedAt),
+        })),
+      };
+
+      return formatUpdatedRecord;
     });
   };
 
-  findByIdWithDetails = async ({ id, userId }) => {
+  findById = async ({ id, userId }) => {
     if (!id || !userId) {
       throw new BadRequestError("RecordId and userId is required");
     }
 
-    const record =
-      await this.vehicleProcessingRecordRepository.findByIdWithDetails({
-        id: id,
-      });
+    const record = await this.vehicleProcessingRecordRepository.findById({
+      id: id,
+    });
 
-    const isOwner = record.createdByStaff.userId === userId;
-    const isMainTechnician = record.mainTechnician?.userId === userId;
+    const isOwner = record?.createdByStaff?.userId === userId;
+    const isMainTechnician = record?.mainTechnician?.userId === userId;
 
     if (!isOwner && !isMainTechnician) {
       throw new ForbiddenError(
