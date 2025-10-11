@@ -14,18 +14,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   Search,
   LogOut,
-  Calendar,
   Plus,
   Edit,
-  Eye,
-  FileText,
   Wrench,
   CheckCircle,
-  Users,
   Car,
   Trash2
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 
 // Helper function to format date
 const formatDate = (dateString: string) => {
@@ -59,18 +54,24 @@ interface WarrantyRecord {
   createdAt: string;
 }
 
+interface VinDataState {
+  vinNumber: string;
+  purchaseDate: string;
+  warrantyStatus: string;
+}
+
 const SuperAdvisor = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, getToken } = useAuth();
   const { toast } = useToast();
   
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchVin, setSearchVin] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<WarrantyRecord | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
   const [currentCaseText, setCurrentCaseText] = useState('');
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
-  
+  const [isDialogSearch, setIsDialogSearch] = useState(false);
   // Form state for new record
   const [newRecord, setNewRecord] = useState({
     vinNumber: '',
@@ -78,6 +79,12 @@ const SuperAdvisor = () => {
     customerName: '',
     cases: [] as CaseNote[],
     purchaseDate: ''
+  });
+
+  const [vinData, setVinData] = useState<VinDataState>({
+    vinNumber: "",
+    purchaseDate: "",
+    warrantyStatus: ""
   });
 
   // Form state for editing record
@@ -90,50 +97,102 @@ const SuperAdvisor = () => {
     status: 'pending' as 'pending' | 'in-progress' | 'completed'
   });
 
-  // Mock data - replace with actual API call
-  const [records, setRecords] = useState<WarrantyRecord[]>([
-    {
-      id: 'CLM-001',
-      vinNumber: '1HGCM82633A123456',
-      customerName: 'Nguyễn Văn An',
-      mileage: 15000,
-      cases: [
-        { id: '1', text: 'Battery charging issue - intermittent charging reported', createdAt: '2024-10-01' },
-        { id: '2', text: 'Follow-up: Battery pack diagnostics completed', createdAt: '2024-10-02' }
-      ],
-      purchaseDate: '2023-01-15',
-      status: 'pending',
-      createdAt: '2024-10-01'
-    },
-    {
-      id: 'CLM-002',
-      vinNumber: '2T1BURHE0JC234567',
-      customerName: 'Trần Thị Bình',
-      mileage: 8500,
-      cases: [
-        { id: '1', text: 'Motor controller malfunction - error code P0420', createdAt: '2024-10-02' }
-      ],
-      purchaseDate: '2023-06-20',
-      status: 'in-progress',
-      createdAt: '2024-10-02'
-    },
-    {
-      id: 'CLM-003',
-      vinNumber: '3VW2K7AJ9EM345678',
-      customerName: 'Lê Minh Cường',
-      mileage: 22000,
-      cases: [
-        { id: '1', text: 'Display unit not working - screen blank after firmware update', createdAt: '2024-10-03' }
-      ],
-      purchaseDate: '2022-11-10',
-      status: 'completed',
-      createdAt: '2024-10-03'
+  const [records, setRecords] = useState<WarrantyRecord[]>([]);
+
+  // Helper: Validate record data
+  const validateRecord = (record: { vinNumber: string; customerName: string; mileage: string; cases: CaseNote[]; purchaseDate: string }) => {
+    return record.vinNumber && record.customerName && record.mileage && record.cases.length > 0 && record.purchaseDate;
+  };
+
+  // Helper: Calculate warranty status
+  const calculateWarrantyStatus = (durationStatus?: string, mileageStatus?: string) => {
+    if (durationStatus === 'ACTIVE' && mileageStatus === 'ACTIVE') return 'Active';
+    if (durationStatus === 'INACTIVE' && mileageStatus === 'INACTIVE') return 'Expired (Time & Mileage)';
+    if (durationStatus === 'INACTIVE') return 'Expired (Time)';
+    if (mileageStatus === 'INACTIVE') return 'Expired (Mileage)';
+    return 'N/A';
+  };
+
+  const handleSearchWarranty = async () => {
+  try {
+    if (!searchVin.trim()) {
+      toast({
+        title: 'Lỗi',
+        description: 'Vui lòng nhập VIN',
+        variant: 'destructive'
+      });
+      return;
     }
-  ]);
+
+    const vin = searchVin.trim();
+    const odometer = 0;
+
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      console.error("No token found (checked AuthContext.getToken and localStorage 'ev_warranty_token')");
+      toast({
+        title: 'Lỗi',
+        description: 'Không tìm thấy token đăng nhập',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const url = `http://localhost:3000/api/v1/vehicles/${vin}/warranty?odometer=${odometer}`;
+    
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok || data.status !== 'success') {
+      toast({
+        title: 'Unable to find warranty',
+        variant: 'destructive'
+      });
+      return;
+    }    if (data && data.status === 'success' && data.data && data.data.vehicle) {
+      const vehicle = data.data.vehicle;
+      const warrantyStatus = vehicle.generalWarranty && vehicle.purchaseDate
+        ? calculateWarrantyStatus(
+            vehicle.generalWarranty.duration?.status,
+            vehicle.generalWarranty.mileage?.status
+          )
+        : 'N/A';
+      
+      setVinData({
+        vinNumber: vehicle.vin || '',
+        purchaseDate: vehicle.purchaseDate ? new Date(vehicle.purchaseDate).toLocaleDateString('vi-VN') : '',
+        warrantyStatus
+      });
+
+      setIsDialogSearch(true);
+
+      toast({
+        title: 'Thành công',
+        description: 'Đã tải thông tin VIN',
+      });
+    } else {
+      toast({
+        title: 'Không có dữ liệu',
+        description: 'Không tìm thấy thông tin xe',
+        variant: 'destructive'
+      });
+    }
+
+  } catch (error) {
+    console.error("Failed to fetch VIN warranty info:", error);
+    
+  }
+};
 
   const handleAddRecord = () => {
-    // Validation
-    if (!newRecord.vinNumber || !newRecord.customerName || !newRecord.mileage || newRecord.cases.length === 0 || !newRecord.purchaseDate) {
+    if (!validateRecord(newRecord)) {
       toast({
         title: 'Validation Error',
         description: 'Please fill in all required fields and add at least one case',
@@ -156,16 +215,12 @@ const SuperAdvisor = () => {
     setRecords([...records, record]);
     setIsAddDialogOpen(false);
     setNewRecord({ vinNumber: '', mileage: '', customerName: '', cases: [], purchaseDate: '' });
-    
-    
 
     toast({
       title: 'Record Created Successfully',
       description: `New warranty claim ${record.id} has been created`,
     });
   };
-
-
 
   const handleEditRecord = (record: WarrantyRecord) => {
     setSelectedRecord(record);
@@ -181,7 +236,7 @@ const SuperAdvisor = () => {
   };
 
   const handleSaveEdit = () => {
-    if (!editRecord.vinNumber || !editRecord.customerName || !editRecord.mileage || editRecord.cases.length === 0 || !editRecord.purchaseDate) {
+    if (!validateRecord(editRecord)) {
       toast({
         title: 'Validation Error',
         description: 'Please fill in all required fields and have at least one case',
@@ -190,7 +245,6 @@ const SuperAdvisor = () => {
       return;
     }
 
-    //update record
     const updatedRecords = records.map(record => {
       if (record.id === selectedRecord?.id) {
         return {
@@ -232,13 +286,6 @@ const SuperAdvisor = () => {
     );
   };
 
-  //search bang filter
-  const filteredRecords = records.filter(record =>
-    record.vinNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    record.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    record.id.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       {/* Header */}
@@ -251,20 +298,15 @@ const SuperAdvisor = () => {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-foreground">Super Advisor Dashboard</h1>
-                <p className="text-sm text-muted-foreground">Welcome, {user?.name || 'Super Advisor '}</p>
+                <p className="text-sm text-muted-foreground">Welcome, Super Advisor </p>
               </div>
             </div>
 
             <div className="flex items-center space-x-4">
-             
-
-               <Button variant="outline" size="sm" onClick={logout}>
+              <Button variant="outline" size="sm" onClick={logout}>
                 <LogOut className="h-4 w-4 mr-2" />
                 Logout
               </Button>
-             
-
-          
 
               <Button 
                 size="sm" 
@@ -288,12 +330,19 @@ const SuperAdvisor = () => {
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
                 <Input
-                  placeholder="Search by VIN"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Enter VIN"
                   className="pl-10 h-11"
+                  value={searchVin}
+                  onChange={(e) => setSearchVin(e.target.value)}
                 />
               </div>
+              <Button 
+                size="sm" 
+                className="bg-primary hover:bg-primary/90"
+                onClick={handleSearchWarranty}
+              >
+                Search
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -317,14 +366,14 @@ const SuperAdvisor = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredRecords.length === 0 ? (
+                  {records.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                         No warranty records found
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredRecords.map((record) => (
+                    records.map((record) => (
                       <TableRow key={record.id} className="hover:bg-muted/50">
                         <TableCell className="font-medium">{record.id}</TableCell>
                         <TableCell className="font-mono text-sm">{record.vinNumber}</TableCell>
@@ -357,7 +406,7 @@ const SuperAdvisor = () => {
               </Table>
             </div>
 
-            {filteredRecords.length > 0 && (
+              {records.length > 0 && (
               <div className="mt-4 text-center">
                 <Button variant="outline">View All Records</Button>
               </div>
@@ -498,6 +547,54 @@ const SuperAdvisor = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* dialog search */}
+      <Dialog open={isDialogSearch} onOpenChange={setIsDialogSearch}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <Car className="h-5 w-5" />
+              <span>VIN Warranty</span>
+            </DialogTitle>
+            <DialogDescription>
+              Vehicle warranty information and coverage details
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4" >
+            <div className="grid gap-2">
+              <Label>VIN Number</Label>
+              <Input
+                id="vinNumber"
+                placeholder="VIN" 
+                value={vinData.vinNumber}
+                readOnly              
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Purchase Date</Label>
+              <Input
+                id="purchaseDate"
+                placeholder="Purchase Date" 
+                value={vinData.purchaseDate}
+                readOnly             
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Warranty Status</Label>
+              <Input
+                id="Status"
+                placeholder="Warranty status"
+                value={vinData.warrantyStatus}
+                readOnly
+              />
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      
 
       {/* Nested New Case Dialog */}
       <Dialog open={isAddNewcaseOpen} onOpenChange={(open) => {
