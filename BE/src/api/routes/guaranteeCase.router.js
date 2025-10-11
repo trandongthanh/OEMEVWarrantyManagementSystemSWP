@@ -1,8 +1,12 @@
 import express from "express";
-import caselineRouter from "./customer.router.js";
+import caselineRouter from "./caseLine.router.js";
 
 const router = express.Router();
 
-router.use("/guarantee-cases/:caseId/case-lines");
+// router.get("/:id", (req, res) => {
+//     const
+// });
+
+router.use("/:caseId/case-lines", caselineRouter);
 
 export default router;

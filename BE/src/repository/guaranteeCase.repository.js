@@ -1,7 +1,7 @@
 import { where } from "sequelize";
 import db from "../models/index.cjs";
 
-const { GuaranteeCase, VehicleProcessingRecord, Vehicle } = db;
+const { GuaranteeCase, VehicleProcessingRecord, Vehicle, User } = db;
 
 class GuaranteeCaseRepository {
   createGuaranteeCases = async ({ guaranteeCases }, option = null) => {
@@ -36,8 +36,21 @@ class GuaranteeCaseRepository {
       where: {
         vehicleProcessingRecordId: vehicleProcessingRecordId,
       },
+
+      include: [
+        {
+          model: User,
+          as: "leadTechnicianCases",
+          attributes: ["userId", "name"],
+        },
+      ],
+
       transaction: option,
     });
+
+    if (!updatedGuaranteeCases) {
+      return null;
+    }
 
     return updatedGuaranteeCases.map((updatedGuaranteeCase) =>
       updatedGuaranteeCase.toJSON()
@@ -54,7 +67,7 @@ class GuaranteeCaseRepository {
           {
             model: VehicleProcessingRecord,
             as: "vehicleProcessingRecord",
-            attributes: [],
+            attributes: ["vehicleProcessingRecordId"],
 
             include: [
               {

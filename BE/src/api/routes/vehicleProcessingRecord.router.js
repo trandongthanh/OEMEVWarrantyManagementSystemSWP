@@ -166,7 +166,7 @@ router.post(
  *         description: Record or technician not found
  */
 router.patch(
-  "/:id/assignmen",
+  "/:id/assignment",
   authentication,
   canAssignTask,
   async (req, res, next) => {
@@ -266,17 +266,21 @@ router.patch(
 router.get(
   "/:id",
   authentication,
-  authorizationByRole(["service_center_staff", "service_center_technician"]),
+  authorizationByRole([
+    "service_center_staff",
+    "service_center_technician",
+    "service_center_manager",
+  ]),
   async (req, res, next) => {
     const vehicleProcessingRecordController = req.container.resolve(
       "vehicleProcessingRecordController"
     );
 
-    await vehicleProcessingRecordController.findByIdWithDetails(req, res, next);
+    await vehicleProcessingRecordController.findById(req, res, next);
   }
 );
 
-router.get("/processing-records");
+// router.get("/processing-records");
 
 /**
  * @swagger

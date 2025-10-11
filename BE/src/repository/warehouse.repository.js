@@ -1,5 +1,6 @@
 import { Op } from "sequelize";
 import db from "../models/index.cjs";
+// import {  } from "joi";
 
 const { Warehouse, TypeComponent, VehicleModel, Stock } = db;
 
@@ -62,9 +63,9 @@ class WareHouseRepository {
           },
           through: {
             attributes: [
-              "quantityInStock",
-              "quantityReserved",
-              "quantityAvailable",
+              // "quantityInStock",
+              // "quantityReserved",
+              // "quantityAvailable",
             ],
           },
 
@@ -99,9 +100,8 @@ class WareHouseRepository {
         typeComponentId: {
           [Op.in]: typeComponentIds,
         },
-
-        transaction: option,
       },
+      transaction: option,
 
       attributes: [
         "stockId",
@@ -116,15 +116,16 @@ class WareHouseRepository {
           as: "typeComponent",
           attributes: ["typeComponentId"],
 
-          through: {
-            attributes: [],
-          },
+          // through: {
+          //   attributes: [],
+          // },
 
           include: [
             {
               model: VehicleModel,
               as: "vehicleModels",
               attributes: ["vehicleModelId"],
+              required: true,
               where: {
                 vehicleModelId: vehicleModelId,
               },

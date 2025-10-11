@@ -18,6 +18,7 @@ import userRouter from "./src/api/routes/user.router.js";
 import vehicleRouter from "./src/api/routes/vehicle.router.js";
 import customerRouter from "./src/api/routes/customer.router.js";
 import vehicleProcessingRecordRouter from "./src/api/routes/vehicleProcessingRecord.router.js";
+import guaranteeCaseRouter from "./src/api/routes/guaranteeCase.router.js";
 
 app.get("/", async (req, res) => {
   res.send("Hello world");
@@ -30,6 +31,7 @@ app.use(`${url}/vehicles`, vehicleRouter);
 app.use(`${url}/customers`, customerRouter);
 app.use(`${url}/processing-records`, vehicleProcessingRecordRouter);
 app.use(`${url}/users`, userRouter);
+app.use(`${url}/guarantee-cases`, guaranteeCaseRouter);
 
 app.use(hanldeError);
 

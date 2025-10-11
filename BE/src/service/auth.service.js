@@ -1,5 +1,4 @@
 import { BadRequestError, NotFoundError } from "../error/index.js";
-import { formatUTCtzHCM } from "../util/formatUTCtzHCM.js";
 
 class AuthService {
   constructor({ userRepository, hashService, tokenService }) {
@@ -8,27 +7,21 @@ class AuthService {
     this.tokenService = tokenService;
   }
 
-  login = async (userLoginData) => {
-    const { username, password } = userLoginData;
-
-    if (!username || !password) {
-      throw new BadRequestError("Username and password is requied");
-    }
-
+  login = async ({ username, password }) => {
     const existingUser = await this.userRepository.findByUsername({
       username: username,
     });
 
     if (!existingUser) {
-      throw new NotFoundError("Cannot find user with this username");
+      throw new NotFoundError("Can not find user");
     }
 
-    const isMatchedPasword = await this.hashService.compare({
+    const isMatchedPassword = await this.hashService.compare({
       string: password,
       hashed: existingUser.password,
     });
 
-    if (!isMatchedPasword) {
+    if (!isMatchedPassword) {
       throw new BadRequestError("Password is wrong");
     }
 
@@ -40,30 +33,6 @@ class AuthService {
     });
 
     return token;
-  };
-
-  register = async ({
-    username,
-    password,
-    phone,
-    email,
-    name,
-    address,
-    roleId,
-    serviceCenterId,
-  }) => {
-    const newUser = await this.userRepository.createUser({
-      username,
-      password,
-      phone,
-      email,
-      name,
-      address,
-      roleId,
-      serviceCenterId,
-    });
-
-    return newUser;
   };
 }
 

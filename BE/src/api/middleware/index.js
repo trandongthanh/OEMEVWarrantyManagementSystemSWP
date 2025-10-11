@@ -52,9 +52,9 @@ export async function attachCompanyContext(req, res, next) {
   if (companyId) {
     vehicleCompanyId = companyId;
   } else if (serviceCenterId) {
-    const serviceCenter = req.container.resolve("serviceCenterService");
+    const serviceCenterService = req.container.resolve("serviceCenterService");
 
-    const company = await serviceCenter.findCompanyWithServiceCenterId({
+    const company = await serviceCenterService.findCompanyByServiceCenterId({
       serviceCenterId: serviceCenterId,
     });
 
@@ -64,6 +64,7 @@ export async function attachCompanyContext(req, res, next) {
       "User is not associated with any company or service center"
     );
   }
+
   req.companyId = vehicleCompanyId;
 
   next();
@@ -132,13 +133,13 @@ export async function canAssignTask(req, res, next) {
     );
   }
 
-  if (!recordJSON.createdByStaff.serviceCenterId !== managerServiceCenterId) {
+  if (!(recordJSON.createdByStaff.serviceCenterId === managerServiceCenterId)) {
     throw new ForbiddenError(
       "You can only assign tasks for records in your own service center."
     );
   }
 
-  if (!technicianJSON.serviceCenterId !== managerServiceCenterId) {
+  if (!(technicianJSON.serviceCenterId === managerServiceCenterId)) {
     throw new ForbiddenError(
       "You can only assign technicians from your own service center."
     );
