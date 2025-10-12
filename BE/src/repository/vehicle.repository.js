@@ -1,16 +1,8 @@
-import { Op } from "sequelize";
-import db from "../../models/index.cjs";
-const {
-  Vehicle,
-  Customer,
-  VehicleModel,
-  VehicleCompany,
-  WarrantyComponent,
-  TypeComponent,
-} = db;
+import db from "../models/index.cjs";
+const { Vehicle, Customer, VehicleModel, VehicleCompany, TypeComponent } = db;
 
 class VehicleRepository {
-  findVehicleByVinWithOwner = async ({ vin, companyId }, option = null) => {
+  findByVinAndCompanyWithOwner = async ({ vin, companyId }, option = null) => {
     const existingVehicle = await Vehicle.findOne({
       where: {
         vin: vin,
@@ -28,24 +20,23 @@ class VehicleRepository {
         {
           model: Customer,
           as: "owner",
+
+          attributes: ["fullName", "email", "phone", "address"],
         },
 
         {
           model: VehicleModel,
           as: "model",
-          where: {
-            vehicleModelId: {
-              [Op.not]: null,
-            },
-          },
           attributes: [["vehicle_model_name", "modelName"]],
+          required: true,
 
           include: [
             {
               model: VehicleCompany,
               as: "company",
               where: { vehicleCompanyId: companyId },
-              attributes: ["name"],
+              attributes: ["name", "vehicleCompanyId"],
+              required: true,
             },
           ],
         },
@@ -61,7 +52,7 @@ class VehicleRepository {
     return existingVehicle.toJSON();
   };
 
-  registerOwnerForVehicle = async (
+  assignOwner = async (
     { companyId, vin, customerId, licensePlate, purchaseDate },
     option = null
   ) => {
@@ -83,7 +74,7 @@ class VehicleRepository {
       return null;
     }
 
-    const updatedVehicle = await this.findVehicleByVinWithOwner(
+    const updatedVehicle = await this.findByVinAndCompanyWithOwner(
       {
         vin: vin,
         companyId: companyId,
@@ -98,24 +89,16 @@ class VehicleRepository {
     const existingVehicle = await Vehicle.findOne({
       where: {
         vin: vin,
-        ownerId: {
-          [Op.not]: null,
-        },
       },
 
-      attributes: [
-        "vin",
-        "dateOfManufacture",
-        "placeOfManufacture",
-        "licensePlate",
-        "purchaseDate",
-      ],
+      attributes: ["vin", "dateOfManufacture", "purchaseDate"],
 
       include: [
         {
           model: VehicleModel,
           as: "model",
           attributes: ["generalWarrantyDuration", "generalWarrantyMileage"],
+          required: true,
 
           include: [
             {
@@ -130,6 +113,8 @@ class VehicleRepository {
               as: "company",
               where: { vehicleCompanyId: companyId },
               attributes: ["name"],
+
+              required: true,
             },
           ],
         },
@@ -141,6 +126,22 @@ class VehicleRepository {
     }
 
     return existingVehicle.toJSON();
+  };
+
+  findVehicleExist = async ({ vin }, option = null) => {
+    const existingVehicle = await Vehicle.findOne({
+      where: {
+        vin: vin,
+      },
+      transaction: option,
+      attributes: ["vin"],
+    });
+
+    if (!existingVehicle) {
+      return false;
+    }
+
+    return true;
   };
 }
 

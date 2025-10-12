@@ -1,8 +1,9 @@
-import { useAuth } from "@/contexts/AuthContext";
-import ServiceCenterDashboard from "@/components/ServiceCenterDashboard";
-import ManufacturerDashboard from "@/components/ManufacturerDashboard";
-import TechnicianDashboard from "@/components/TechnicianDashboard";
-import WarrantyDashboard from "@/components/WarrantyDashboard";
+import { useAuth } from '@/contexts/AuthContext';
+import ServiceCenterDashboard from '@/components/ServiceCenterDashboard';
+import ManufacturerDashboard from '@/components/ManufacturerDashboard';
+import TechnicianDashboard from '@/components/TechnicianDashboard';
+import WarrantyDashboard from '@/components/WarrantyDashboard';
+import SuperAdvisor from "@/components/SuperAdvisor";
 
 const Dashboard = () => {
 	const { user } = useAuth();
@@ -10,7 +11,7 @@ const Dashboard = () => {
 	if (!user) return null;
 
 	// Route to appropriate dashboard based on user role
-	if (user.role === "service_center_staff") {
+	if (user.role === "service_center_manager") {
 		return <ServiceCenterDashboard />;
 	}
 
@@ -24,6 +25,10 @@ const Dashboard = () => {
 
 	if (user.role === "emv_staff") {
 		return <WarrantyDashboard />;
+	}
+
+	if (user.role === "service_center_staff") {
+		return <SuperAdvisor />;
 	}
 
 	return (

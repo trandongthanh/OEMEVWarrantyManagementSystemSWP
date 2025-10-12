@@ -86,10 +86,10 @@ module.exports = (sequelize, DataTypes) => {
     //   as: "components",
     // });
 
-    // Vehicle.hasOne(models.VehicleProcessingRecord, {
-    //   foreignKey: "vehicle_id",
-    //   as: "vehicleRecord",
-    // });
+    Vehicle.hasOne(models.VehicleProcessingRecord, {
+      foreignKey: "vin",
+      as: "vehicleRecord",
+    });
   };
 
   return Vehicle;

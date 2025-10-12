@@ -1,6 +1,5 @@
-import db from "../../models/index.cjs";
-
-const { User, Role } = db;
+import db from "../models/index.cjs";
+const { User, Role, ServiceCenter } = db;
 
 class UserRepository {
   async findByUsername({ username }) {
@@ -18,33 +17,11 @@ class UserRepository {
       ],
     });
 
+    if (!existingUser) {
+      return null;
+    }
+
     return existingUser.toJSON();
-  }
-
-  async createUser({
-    username,
-    password,
-    phone,
-    email,
-    name,
-    address,
-    roleId,
-    serviceCenterId,
-    vehicleCompanyId,
-  }) {
-    const newUser = await User.create({
-      username,
-      password,
-      phone,
-      email,
-      name,
-      address,
-      roleId,
-      serviceCenterId,
-      vehicleCompanyId,
-    });
-
-    return newUser;
   }
 }
 

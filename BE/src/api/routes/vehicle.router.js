@@ -1,5 +1,9 @@
 import express from "express";
-import { authentication, authorizationByRole } from "../../middleware/index.js";
+import {
+  attachCompanyContext,
+  authentication,
+  authorizationByRole,
+} from "../middleware/index.js";
 
 const router = express.Router();
 
@@ -129,9 +133,10 @@ const router = express.Router();
  *                   example: "Access denied. Required role: service_center_staff"
  */
 router.get(
-  "/find-vehicle-by-vin",
+  "/:vin",
   authentication,
   authorizationByRole(["service_center_staff"]),
+  attachCompanyContext,
 
   async (req, res, next) => {
     const vehicleController = req.container.resolve("vehicleController");
@@ -280,14 +285,180 @@ router.get(
  *                   example: "Access denied. Required role: service_center_staff"
  */
 router.patch(
-  "/:vin/update-owner",
+  "/:vin",
   authentication,
   authorizationByRole(["service_center_staff"]),
+  attachCompanyContext,
 
   async (req, res, next) => {
     const vehicleController = req.container.resolve("vehicleController");
 
     await vehicleController.registerCustomerForVehicle(req, res, next);
+  }
+);
+
+/**
+ * @swagger
+ * /vehicles/{vin}/warranty:
+ *   get:
+ *     summary: Get vehicle warranty information
+ *     tags: [Vehicle]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: vin
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Vehicle Identification Number
+ *         example: "VIN-NEW-0"
+ *       - in: query
+ *         name: odometer
+ *         required: true
+ *         schema:
+ *           type: number
+ *         description: Current odometer reading of the vehicle
+ *         example: 123
+ *     responses:
+ *       200:
+ *         description: Vehicle warranty information retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vehicle:
+ *                       type: object
+ *                       properties:
+ *                         vin:
+ *                           type: string
+ *                           example: "VIN-NEW-0"
+ *                         dateOfManufacture:
+ *                           type: string
+ *                           format: date-time
+ *                         purchaseDate:
+ *                           type: string
+ *                           format: date-time
+ *                         model:
+ *                           type: object
+ *                           properties:
+ *                             vehicleModelName:
+ *                               type: string
+ *                               example: "Model X"
+ *                             generalWarrantyDuration:
+ *                               type: integer
+ *                               example: 36
+ *                             generalWarrantyMileage:
+ *                               type: integer
+ *                               example: 100000
+ *                             typeComponents:
+ *                               type: array
+ *                               items:
+ *                                 type: object
+ *                                 properties:
+ *                                   name:
+ *                                     type: string
+ *                                     example: "Battery Pack"
+ *                                   price:
+ *                                     type: number
+ *                                     example: 15000.50
+ *                                   WarrantyComponent:
+ *                                     type: object
+ *                                     properties:
+ *                                       quantity:
+ *                                         type: integer
+ *                                         example: 1
+ *                                       durationYear:
+ *                                         type: integer
+ *                                         example: 8
+ *                                       mileageLimit:
+ *                                         type: integer
+ *                                         example: 160000
+ *                                       warrantyStatus:
+ *                                         type: string
+ *                                         enum: [active, expired, void]
+ *                                         example: "active"
+ *       400:
+ *         description: Bad request - Missing odometer parameter
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Odometer reading is required"
+ *       404:
+ *         description: Vehicle not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Vehicle not found"
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Unauthorized"
+ *       403:
+ *         description: Forbidden - requires service_center_staff role
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Access denied. Required role: service_center_staff"
+ */
+router.get(
+  "/:vin/warranty",
+  authentication,
+  authorizationByRole(["service_center_staff"]),
+  attachCompanyContext,
+  async (req, res, next) => {
+    const vehicleController = req.container.resolve("vehicleController");
+
+    await vehicleController.findVehicleByVinWithWarranty(req, res, next);
+  }
+);
+
+router.post(
+  "/:vin/warranty/preview",
+  authentication,
+  authorizationByRole(["service_center_staff"]),
+  attachCompanyContext,
+  async (req, res, next) => {
+    const vehicleController = req.container.resolve("vehicleController");
+
+    await vehicleController.findVehicleByVinWithWarrantyPreview(req, res, next);
   }
 );
 

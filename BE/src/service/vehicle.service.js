@@ -1,5 +1,10 @@
-import { BadRequestError, ConflictError } from "../error/index.js";
-import db from "../../models/index.cjs";
+import dayjs from "dayjs";
+import {
+  BadRequestError,
+  ConflictError,
+  ForbiddenError,
+} from "../error/index.js";
+import db from "../models/index.cjs";
 import { checkWarrantyStatus } from "../util/checkWarrantyStatus.js";
 
 class VehicleService {
@@ -18,7 +23,7 @@ class VehicleService {
       throw new BadRequestError("vin, companyId is required");
     }
 
-    const vehicle = await this.vehicleRepository.findVehicleByVinWithOwner(
+    const vehicle = await this.vehicleRepository.findByVinAndCompanyWithOwner(
       {
         vin: vehicleVin,
         companyId: companyId,
@@ -30,6 +35,12 @@ class VehicleService {
       return null;
     }
 
+    // if (!vehicle.model?.company) {
+    //   throw new ForbiddenError(
+    //     `You do not have permission to access vehicle with this VIN: ${vehicleVin}`
+    //   );
+    // }
+
     const formatResult = {
       vin: vehicle.vin,
       dateOfManufacture: vehicle.dateOfManufacture,
@@ -37,8 +48,8 @@ class VehicleService {
       licensePlate: vehicle.licensePlate,
       purchaseDate: vehicle.purchaseDate,
       owner: vehicle.owner,
-      model: vehicle.model.modelName,
-      company: vehicle.model.company.name,
+      model: vehicle.model?.modelName,
+      company: vehicle.model?.company?.name,
     };
 
     return formatResult;
@@ -54,7 +65,7 @@ class VehicleService {
     purchaseDate,
   }) => {
     if (ownerId && customer) {
-      throw new BadRequestError("You just provice customerId or customer");
+      throw new BadRequestError("You just provide customerId or customer");
     }
 
     if (!vin || !licensePlate || !purchaseDate || !dateOfManufacture) {
@@ -68,15 +79,15 @@ class VehicleService {
       dateOfManufacture
     );
 
-    if (!isValidDate) {
-      throw new BadRequestError("Purchasedate or dateOfmanufacture is invalid");
+    if (!isValidDate.valid) {
+      throw new BadRequestError(isValidDate.error);
     }
 
     return await db.sequelize.transaction(async (t) => {
       let customerId;
 
       if (ownerId) {
-        await this.customerService.checkCustomerById(
+        await this.customerService.checkExistCustomerById(
           {
             id: ownerId,
           },
@@ -94,7 +105,12 @@ class VehicleService {
         );
 
         const newCustomer = await this.customerService.createCustomer(
-          customer,
+          {
+            fullName: customer.fullName,
+            email: customer.email,
+            phone: customer.phone,
+            address: customer.address,
+          },
           t
         );
 
@@ -117,7 +133,7 @@ class VehicleService {
         throw new ConflictError("This vehicle has owner");
       }
 
-      const vehicle = await this.vehicleRepository.registerOwnerForVehicle(
+      const vehicle = await this.vehicleRepository.assignOwner(
         {
           companyId: companyId,
           vin: vin,
@@ -143,7 +159,7 @@ class VehicleService {
     });
   };
 
-  findVehicleByVinWithWarranty = async ({ vin, companyId, odermeter }) => {
+  findVehicleByVinWithWarranty = async ({ vin, companyId, odometer }) => {
     if (!vin || !companyId) {
       throw new BadRequestError("vin and companyId is required");
     }
@@ -167,24 +183,155 @@ class VehicleService {
         );
 
         return {
-          name: component.name,
-          status:
-            component.WarrantyComponent.mileageLimit > odermeter &&
-            checkWarrantyComponent.status,
-          remainingDays: checkWarrantyComponent.remainingDays,
+          componentName: component.name,
+          policy: {
+            durationMonths: component.WarrantyComponent.durationMonth,
+            mileageLimit: component.WarrantyComponent.mileageLimit,
+          },
+          duration: {
+            status: checkWarrantyComponent.status ? "ACTIVE" : "INACTIVE",
+
+            endDate: checkWarrantyComponent.endDate,
+            remainingDays: checkWarrantyComponent.remainingDays,
+          },
+          mileage: {
+            status:
+              component.WarrantyComponent.mileageLimit > odometer
+                ? "ACTIVE"
+                : "INACTIVE",
+            remainingMileage:
+              component.WarrantyComponent.mileageLimit - odometer,
+          },
         };
       });
 
     const formatVehicle = {
       vin: existingVehicle.vin,
-      dateOfManufacture: existingVehicle.dateOfManufacture,
-      placeOfManufacture: existingVehicle.placeOfManufacture,
-      licensePlate: existingVehicle.licensePlate,
       purchaseDate: existingVehicle.purchaseDate,
-      generalWarrantyDuration: generalWarrantyDurationFormated,
-      generalWarrantyMileage:
-        existingVehicle.model.generalWarrantyMileage > odermeter,
-      componetWarranty: typeComponentsWarrantyFormated,
+      currentOdometer: odometer,
+      generalWarranty: {
+        policy: {
+          durationMonths: existingVehicle.model.generalWarrantyDuration,
+          mileageLimit: existingVehicle.model.generalWarrantyMileage,
+        },
+        duration: {
+          status: generalWarrantyDurationFormated.status,
+          endDate: generalWarrantyDurationFormated.endDate,
+          remainingDays: generalWarrantyDurationFormated.remainingDays,
+        },
+        mileage: {
+          status:
+            existingVehicle.model.generalWarrantyMileage > odometer
+              ? "ACTIVE"
+              : "INACTIVE",
+          remainingMileage:
+            existingVehicle.model.generalWarrantyMileage - odometer,
+        },
+      },
+      componentWarranties: typeComponentsWarrantyFormated,
+    };
+
+    return formatVehicle;
+  };
+
+  findVehicleByVinWithWarrantyPreview = async ({
+    vin,
+    companyId,
+    odometer,
+    purchaseDate,
+  }) => {
+    if (!vin || !companyId || !purchaseDate || !odometer) {
+      throw new BadRequestError(
+        "vin, companyId, purchaseDate and odometer are required"
+      );
+    }
+
+    if (dayjs(purchaseDate) > dayjs() || !dayjs(purchaseDate).isValid()) {
+      throw new BadRequestError("Valid purchase date is required");
+    }
+
+    if (odometer < 0) {
+      throw new BadRequestError("Odometer must be a positive number");
+    }
+
+    const existingVehicle =
+      await this.vehicleRepository.findVehicleByVinWithWarranty({
+        vin: vin,
+        companyId,
+      });
+
+    if (!existingVehicle) {
+      throw new BadRequestError("Vehicle not found");
+    }
+
+    if (
+      dayjs(purchaseDate).isBefore(dayjs(existingVehicle.dateOfManufacture))
+    ) {
+      throw new BadRequestError(
+        "Purchase date must be after date of manufacture"
+      );
+    }
+
+    const generalWarrantyDurationFormated = checkWarrantyStatus(
+      purchaseDate,
+      existingVehicle.model.generalWarrantyDuration
+    );
+
+    const typeComponentsWarrantyFormated =
+      existingVehicle.model.typeComponents.map((component) => {
+        const checkWarrantyComponent = checkWarrantyStatus(
+          purchaseDate,
+          component.WarrantyComponent.durationMonth
+        );
+
+        return {
+          componentName: component.name,
+          policy: {
+            durationMonths: component.WarrantyComponent.durationMonth,
+            mileageLimit: component.WarrantyComponent.mileageLimit,
+          },
+          duration: {
+            status: checkWarrantyComponent.status ? "ACTIVE" : "INACTIVE",
+            endDate: checkWarrantyComponent.endDate,
+            remainingDays: checkWarrantyComponent.remainingDays,
+          },
+          mileage: {
+            status:
+              component.WarrantyComponent.mileageLimit > odometer
+                ? "ACTIVE"
+                : "INACTIVE",
+            remainingMileage:
+              component.WarrantyComponent.mileageLimit - odometer,
+          },
+        };
+      });
+
+    const formatVehicle = {
+      vin: existingVehicle.vin,
+      purchaseDate: purchaseDate,
+      currentOdometer: odometer,
+
+      generalWarranty: {
+        policy: {
+          durationMonths: existingVehicle.model.generalWarrantyDuration,
+          mileageLimit: existingVehicle.model.generalWarrantyMileage,
+        },
+        duration: {
+          status: generalWarrantyDurationFormated.status,
+          endDate: generalWarrantyDurationFormated.endDate,
+          remainingDays: generalWarrantyDurationFormated.remainingDays,
+        },
+        mileage: {
+          status:
+            existingVehicle.model.generalWarrantyMileage > odometer
+              ? "ACTIVE"
+              : "INACTIVE",
+          remainingMileage:
+            existingVehicle.model.generalWarrantyMileage - odometer,
+        },
+      },
+
+      componentWarranties: typeComponentsWarrantyFormated,
     };
 
     return formatVehicle;

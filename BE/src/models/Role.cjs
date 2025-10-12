@@ -13,7 +13,8 @@ module.exports = (sequelize, DataTypes) => {
           "service_center_staff",
           "service_center_technician",
           "emv_staff",
-          "emv_admin"
+          "emv_admin",
+          "service_center_manager"
         ),
         allowNull: false,
         field: "role_name",
