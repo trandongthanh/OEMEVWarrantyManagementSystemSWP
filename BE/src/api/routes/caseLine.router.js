@@ -13,7 +13,7 @@ const router = express.Router({ mergeParams: true });
  * /guarantee-cases/{caseId}/case-lines:
  *   post:
  *     summary: Create case lines for a guarantee case
- *     description: Add one or more case lines (work items/components) to a guarantee case. Only technicians can create case lines.
+ *     description: Add one or more case lines (diagnosis and correction work items) to a guarantee case. Only the assigned lead technician can create case lines.
  *     tags: [Case Line]
  *     security:
  *       - BearerAuth: []
@@ -25,7 +25,7 @@ const router = express.Router({ mergeParams: true });
  *           type: string
  *           format: uuid
  *         description: Guarantee case ID
- *         example: "550e8400-e29b-41d4-a716-446655440000"
+ *         example: "110f907d-009d-441f-88ad-f9522ae44d0d"
  *     requestBody:
  *       required: true
  *       content:
@@ -33,58 +33,51 @@ const router = express.Router({ mergeParams: true });
  *           schema:
  *             type: object
  *             required:
- *               - caseLines
+ *               - caselines
  *             properties:
- *               caseLines:
+ *               caselines:
  *                 type: array
  *                 description: Array of case line items to create
  *                 minItems: 1
  *                 items:
  *                   type: object
  *                   required:
- *                     - typeComponentId
+ *                     - diagnosisText
+ *                     - correctionText
+ *                     - componentId
  *                     - quantity
  *                   properties:
- *                     typeComponentId:
+ *                     diagnosisText:
+ *                       type: string
+ *                       description: Diagnostic findings and problem description
+ *                       example: "Kiểm tra hệ thống điều khiển, phát hiện má phanh trước bị mòn dưới mức an toàn."
+ *                     correctionText:
+ *                       type: string
+ *                       description: Corrective action taken or planned
+ *                       example: "Thay thế bộ má phanh trước mới."
+ *                     componentId:
  *                       type: string
  *                       format: uuid
  *                       description: ID of the component type to use
- *                       example: "660e8400-e29b-41d4-a716-446655440001"
+ *                       example: "1096033d-f11f-4a49-a751-8be0cfb9d705"
  *                     quantity:
  *                       type: integer
  *                       minimum: 1
  *                       description: Quantity of components needed
- *                       example: 2
- *                     description:
- *                       type: string
- *                       description: Additional notes or description for this case line
- *                       example: "Replace worn brake pads"
- *                     laborHours:
- *                       type: number
- *                       minimum: 0
- *                       description: Estimated labor hours for this work
- *                       example: 1.5
+ *                       example: 1
  *           examples:
- *             singleComponent:
- *               summary: Single component replacement
+ *             brakeReplacement:
+ *               summary: Brake system repair
  *               value:
- *                 caseLines:
- *                   - typeComponentId: "660e8400-e29b-41d4-a716-446655440001"
+ *                 caselines:
+ *                   - diagnosisText: "Kiểm tra hệ thống điều khiển, phát hiện má phanh trước bị mòn dưới mức an toàn."
+ *                     correctionText: "Thay thế bộ má phanh trước mới."
+ *                     componentId: "1096033d-f11f-4a49-a751-8be0cfb9d705"
  *                     quantity: 1
- *                     description: "Replace battery pack"
- *                     laborHours: 3
- *             multipleComponents:
- *               summary: Multiple components
- *               value:
- *                 caseLines:
- *                   - typeComponentId: "660e8400-e29b-41d4-a716-446655440001"
- *                     quantity: 4
- *                     description: "Replace brake pads"
- *                     laborHours: 1.5
- *                   - typeComponentId: "660e8400-e29b-41d4-a716-446655440002"
- *                     quantity: 2
- *                     description: "Replace brake discs"
- *                     laborHours: 2
+ *                   - diagnosisText: "Kiểm tra hệ thống phanh, phát hiện má phanh trước bị mòn dưới mức an toàn."
+ *                     correctionText: "Thay thế bộ má phanh trước mới."
+ *                     componentId: "cce9b4f8-bfd3-45d9-b650-8773383c90eb"
+ *                     quantity: 5
  *     responses:
  *       201:
  *         description: Case lines created successfully
@@ -96,63 +89,59 @@ const router = express.Router({ mergeParams: true });
  *                 status:
  *                   type: string
  *                   example: "success"
- *                 message:
- *                   type: string
- *                   example: "Case lines created successfully"
  *                 data:
  *                   type: object
  *                   properties:
  *                     caseLines:
  *                       type: array
+ *                       description: Array of created case lines
  *                       items:
  *                         type: object
  *                         properties:
- *                           id:
+ *                           caseLineId:
  *                             type: string
  *                             format: uuid
+ *                             description: Unique identifier for the case line
  *                             example: "770e8400-e29b-41d4-a716-446655440003"
  *                           guaranteeCaseId:
  *                             type: string
  *                             format: uuid
- *                           typeComponentId:
+ *                             description: Associated guarantee case ID
+ *                             example: "110f907d-009d-441f-88ad-f9522ae44d0d"
+ *                           diagnosisText:
+ *                             type: string
+ *                             description: Diagnostic findings
+ *                             example: "Kiểm tra hệ thống điều khiển, phát hiện má phanh trước bị mòn dưới mức an toàn."
+ *                           correctionText:
+ *                             type: string
+ *                             description: Corrective action taken
+ *                             example: "Thay thế bộ má phanh trước mới."
+ *                           componentId:
  *                             type: string
  *                             format: uuid
+ *                             description: Component type ID
+ *                             example: "1096033d-f11f-4a49-a751-8be0cfb9d705"
  *                           quantity:
  *                             type: integer
- *                             example: 2
- *                           description:
+ *                             description: Quantity of components
+ *                             example: 1
+ *                           techId:
  *                             type: string
- *                           laborHours:
- *                             type: number
+ *                             format: uuid
+ *                             description: Technician who created the case line
+ *                             example: "725d1073-9660-48ae-b970-7c8db76f676d"
  *                           status:
  *                             type: string
- *                             enum: [pending, in_progress, completed, cancelled]
+ *                             description: Current status of the case line
  *                             example: "pending"
- *                           componentInfo:
- *                             type: object
- *                             properties:
- *                               name:
- *                                 type: string
- *                               price:
- *                                 type: number
- *                           stockAllocations:
- *                             type: array
- *                             description: Stock allocation details if components were reserved
- *                             items:
- *                               type: object
- *                               properties:
- *                                 stockId:
- *                                   type: string
- *                                 warehouseId:
- *                                   type: string
- *                                 quantity:
- *                                   type: integer
  *                           createdAt:
  *                             type: string
  *                             format: date-time
+ *                             example: "2025-10-12T10:30:00.000Z"
  *                           updatedAt:
  *                             type: string
  *                             format: date-time
+ *                             example: "2025-10-12T10:30:00.000Z"
  *       400:
  *         description: Bad request - Invalid input data or validation error
  *         content:
@@ -173,12 +162,12 @@ const router = express.Router({ mergeParams: true });
  *                     properties:
  *                       field:
  *                         type: string
- *                         example: "caseLines[0].quantity"
+ *                         example: "caselines[0].quantity"
  *                       message:
  *                         type: string
  *                         example: "Quantity must be at least 1"
- *       404:
- *         description: Guarantee case not found or component not found
+ *       401:
+ *         description: Unauthorized - Invalid or missing token
  *         content:
  *           application/json:
  *             schema:
@@ -189,9 +178,7 @@ const router = express.Router({ mergeParams: true });
  *                   example: "error"
  *                 message:
  *                   type: string
- *                   example: "Guarantee case not found"
- *       401:
- *         description: Unauthorized - Invalid or missing token
+ *                   example: "Unauthorized"
  *       403:
  *         description: Forbidden - Requires service_center_technician role
  *         content:
@@ -205,8 +192,8 @@ const router = express.Router({ mergeParams: true });
  *                 message:
  *                   type: string
  *                   example: "Access denied. Required role: service_center_technician"
- *       409:
- *         description: Conflict - Insufficient stock or component already assigned
+ *       404:
+ *         description: Guarantee case not found
  *         content:
  *           application/json:
  *             schema:
@@ -217,16 +204,33 @@ const router = express.Router({ mergeParams: true });
  *                   example: "error"
  *                 message:
  *                   type: string
- *                   example: "Insufficient stock available"
- *                 details:
- *                   type: object
- *                   properties:
- *                     requested:
- *                       type: integer
- *                     available:
- *                       type: integer
+ *                   example: "Guarantee case not found"
+ *       409:
+ *         description: Conflict - Technician is not the lead technician for this case
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Technician is not the main technician for caselines"
  *       500:
  *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Internal server error"
  */
 router.post(
   "/",
