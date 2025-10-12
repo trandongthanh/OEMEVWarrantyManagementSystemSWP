@@ -145,8 +145,12 @@ const TechnicianDashboard = ({
     damageLevel: '',
     repairPossibility: '',
     warrantyDecision: '',
+    affectedComponent: '',
     technicianNotes: ''
   });
+
+  // Component search state (for Affected Components field)
+  const [componentQuery, setComponentQuery] = useState<string>("");
 
   // Handle file upload
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -323,8 +327,8 @@ const TechnicianDashboard = ({
     if (caseLineToRemove) {
       setCaseLines(prev => prev.filter(caseLine => caseLine.id !== caseLineToRemove));
       toast({
-        title: "Case Line Removed",
-        description: "Case line has been removed successfully",
+        title: "Issue Diagnosis Removed",
+        description: "Issue diagnosis has been removed successfully",
       });
     }
     setConfirmRemoveModalOpen(false);
@@ -335,7 +339,7 @@ const TechnicianDashboard = ({
   const availableComponents: Component[] = [
     {
       id: "comp-001",
-      name: "Pin Lithium-ion VF8",
+      name: "Battery Lithium-ion VF8",
       partNumber: "BAT-VF8-2024",
       category: "battery",
       inStockServiceCenter: 5,
@@ -548,7 +552,7 @@ const TechnicianDashboard = ({
         <Tabs defaultValue="warranty-reports" className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="warranty-reports">Warranty Reports</TabsTrigger>
-            <TabsTrigger value="case-lines">Case Lines</TabsTrigger>
+            <TabsTrigger value="case-lines">Issue Diagnosis</TabsTrigger>
             <TabsTrigger value="components">Components</TabsTrigger>
             <TabsTrigger value="staff">Staff Management</TabsTrigger>
           </TabsList>
@@ -598,7 +602,7 @@ const TechnicianDashboard = ({
               <CardHeader>
                 <CardTitle>My Warranty Cases</CardTitle>
                 <CardDescription>
-                  View and manage your created warranty cases and case lines
+                  View and manage your created warranty cases and issue diagnoses
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -706,7 +710,7 @@ const TechnicianDashboard = ({
                                 setCreateCaseLineModalOpen(true);
                               }}
                               className="bg-green-600 hover:bg-green-700"
-                              title="Create Case Line"
+                              title="Create Issue Diagnosis"
                             >
                               <Plus className="h-3 w-3" />
                             </Button>
@@ -720,29 +724,29 @@ const TechnicianDashboard = ({
             </Card>
           </TabsContent>
 
-          {/* Case Lines Tab */}
+          {/* Issue Diagnosis Tab */}
           <TabsContent value="case-lines" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>My Case Lines</CardTitle>
+                <CardTitle>My Issue Diagnoses</CardTitle>
                 <CardDescription>
-                  View and manage case lines you've created for warranty cases
+                  View and manage issue diagnoses you've created for warranty cases
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {caseLines.length === 0 ? (
                   <div className="text-center py-12">
                     <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-foreground mb-2">No Case Lines Yet</h3>
+                    <h3 className="text-lg font-medium text-foreground mb-2">No Issue Diagnoses Yet</h3>
                     <p className="text-muted-foreground mb-6">
-                      Create case lines by clicking the green "+" button on warranty cases
+                      Create issue diagnoses by clicking the green "+" button on warranty cases
                     </p>
                   </div>
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Case Line ID</TableHead>
+                        <TableHead>Diagnosis ID</TableHead>
                         <TableHead>Case ID</TableHead>
                         <TableHead>Damage Level</TableHead>
                         <TableHead>Repair Possibility</TableHead>
@@ -814,7 +818,7 @@ const TechnicianDashboard = ({
                                 onClick={() => handleRemoveCaseLine(caseLine.id)}
                                 variant="outline" 
                                 size="sm"
-                                title="Remove Case Line"
+                                title="Remove Issue Diagnosis"
                                 className="text-red-600 hover:text-red-700 hover:border-red-300"
                               >
                                 <Trash2 className="h-3 w-3" />
@@ -875,9 +879,9 @@ const TechnicianDashboard = ({
               </div>
               
               {/* Component search hints */}
-              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
                 <span>🔍 Search examples:</span>
-                <Badge variant="outline" className="text-xs">Pin Lithium</Badge>
+                <Badge variant="outline" className="text-xs">Battery Lithium</Badge>
                 <Badge variant="outline" className="text-xs">BAT-VF8-2024</Badge>
                 <Badge variant="outline" className="text-xs">Motor</Badge>
                 <Badge variant="outline" className="text-xs">Exterior Paint</Badge>
@@ -1860,18 +1864,18 @@ const TechnicianDashboard = ({
       <Dialog open={createCaseLineModalOpen} onOpenChange={setCreateCaseLineModalOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create New Case Line</DialogTitle>
+            <DialogTitle>Create Issue Diagnosis</DialogTitle>
             <DialogDescription>
-              Create a new case line for warranty case {selectedWarrantyCase?.id}
+              Create a new issue diagnosis for warranty case {selectedWarrantyCase?.id}
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-6">
-            {/* Vehicle & Customer Information */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Vehicle & Customer Information and Diagnosis */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
               <div className="space-y-4">
                 <h4 className="font-medium text-base">🚗 Vehicle & Customer Information</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div className="space-y-2">
                     <Label>Vehicle VIN</Label>
                     <Input 
@@ -1887,7 +1891,7 @@ const TechnicianDashboard = ({
                     />
                   </div>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 -mt-2">
                   <Label>Customer Phone</Label>
                   <Input 
                     placeholder="Enter phone number..." 
@@ -1897,27 +1901,62 @@ const TechnicianDashboard = ({
               </div>
               
               <div className="space-y-4">
-                <h4 className="font-medium text-base">🔍 Diagnosis & Assessment</h4>
+                <h4 className="font-medium text-base">🔍 Diagnosis</h4>
+                <div className="space-y-2 mb-4">
+                  <Label>Affected Components</Label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      className="w-full border rounded px-3 py-2"
+                      placeholder="Search components..."
+                      value={componentQuery}
+                      onChange={(e) => setComponentQuery(e.target.value)}
+                    />
+                    {/* results dropdown */}
+                    {componentQuery.trim().length > 0 && (
+                      <div className="absolute z-30 bg-white border rounded mt-1 w-full max-h-40 overflow-auto shadow">
+                        {availableComponents
+                          .filter(c => c.name.toLowerCase().includes(componentQuery.toLowerCase()))
+                          .map((c) => (
+                            <div
+                              key={c.id}
+                              className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between"
+                              onClick={() => {
+                                setCaseLineForm(prev => ({ ...prev, affectedComponent: c.name }));
+                                setComponentQuery('');
+                              }}
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm">{c.name}</span>
+                                <span className="text-xs text-gray-400">{c.partNumber}</span>
+                              </div>
+                              <div className="text-xs text-gray-500">{c.category}</div>
+                            </div>
+                          ))}
+                        {availableComponents.filter(c => c.name.toLowerCase().includes(componentQuery.toLowerCase())).length === 0 && (
+                          <div className="px-3 py-2 text-sm text-gray-500">No components found</div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* show selected */}
+                    {caseLineForm.affectedComponent && (
+                      <div className="mt-2 text-sm text-green-700">Selected: <span className="font-medium">{caseLineForm.affectedComponent}</span></div>
+                    )}
+
+                    {/* show count of matches when typing */}
+                    {componentQuery.trim().length > 0 && (
+                      <div className="mt-1 text-xs text-gray-500">Matches: {availableComponents.filter(c => c.name.toLowerCase().includes(componentQuery.toLowerCase())).length}</div>
+                    )}
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <Label>Issue Description</Label>
                   <Textarea 
                     placeholder="Describe the warranty issue in detail..."
                     className="min-h-20"
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label>Affected Components</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select component..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="battery">🔋 Lithium-ion Battery VF8</SelectItem>
-                      <SelectItem value="motor">⚙️ Front Electric Motor</SelectItem>
-                      <SelectItem value="brake">🛠️ Front Brake Assembly</SelectItem>
-                      <SelectItem value="paint">🎨 Exterior Paint</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
               </div>
             </div>
@@ -2089,6 +2128,7 @@ const TechnicianDashboard = ({
                       damageLevel: '',
                       repairPossibility: '',
                       warrantyDecision: '',
+                      affectedComponent: '',
                       technicianNotes: ''
                     });
                     setUploadedFiles([]);
@@ -2096,12 +2136,12 @@ const TechnicianDashboard = ({
                     setCreateCaseLineModalOpen(false);
 
                     toast({ 
-                      title: "Case Line Created", 
-                      description: `Case line ${newCaseLine.id} has been created successfully with ${uploadedFiles.length} photos. View it in the Case Lines tab.`
+                      title: "Issue Diagnosis Created", 
+                      description: `Issue diagnosis ${newCaseLine.id} has been created successfully with ${uploadedFiles.length} photos. View it in the Issue Diagnosis tab.`
                     });
                   }}
                 >
-                  Create Case Line
+                  Create Issue Diagnosis
                 </Button>
                 <Button 
                   variant="outline" 
@@ -2109,7 +2149,7 @@ const TechnicianDashboard = ({
                   onClick={() => {
                     toast({ 
                       title: "Draft Saved", 
-                      description: "Case line draft has been saved" 
+                      description: "Issue diagnosis draft has been saved" 
                     });
                   }}
                 >
@@ -2125,6 +2165,7 @@ const TechnicianDashboard = ({
                       damageLevel: '',
                       repairPossibility: '',
                       warrantyDecision: '',
+                      affectedComponent: '',
                       technicianNotes: ''
                     });
                   }}
@@ -2137,13 +2178,13 @@ const TechnicianDashboard = ({
         </DialogContent>
       </Dialog>
 
-      {/* View Case Line Modal */}
+      {/* View Issue Diagnosis Modal */}
       <Dialog open={viewCaseLineModalOpen} onOpenChange={setViewCaseLineModalOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader className="pb-6">
-            <DialogTitle className="text-xl font-semibold">Case Line Details</DialogTitle>
+            <DialogTitle className="text-xl font-semibold">Issue Diagnosis Details</DialogTitle>
             <DialogDescription className="text-base">
-              Detailed information for case line <span className="font-mono font-medium">{selectedCaseLine?.id}</span>
+              Detailed information for issue diagnosis <span className="font-mono font-medium">{selectedCaseLine?.id}</span>
             </DialogDescription>
           </DialogHeader>
           
@@ -2160,7 +2201,7 @@ const TechnicianDashboard = ({
                 </div>
                 <div className="space-y-3">
                   <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-blue-700">Case Line ID</span>
+                    <span className="text-sm font-medium text-blue-700">Diagnosis ID</span>
                     <span className="text-lg bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine?.id}</span>
                   </div>
                   <div className="flex flex-col space-y-1">
@@ -2362,9 +2403,9 @@ const TechnicianDashboard = ({
       <Dialog open={confirmRemoveModalOpen} onOpenChange={setConfirmRemoveModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader className="pb-4">
-            <DialogTitle className="text-xl font-semibold text-red-600">Remove Case Line</DialogTitle>
+            <DialogTitle className="text-xl font-semibold text-red-600">Remove Issue Diagnosis</DialogTitle>
             <DialogDescription className="text-base">
-              Are you sure you want to remove this case line? This action cannot be undone.
+              Are you sure you want to remove this issue diagnosis? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           
@@ -2372,7 +2413,7 @@ const TechnicianDashboard = ({
             <div className="flex items-center gap-2">
               <Trash2 className="h-5 w-5 text-red-500" />
               <div>
-                <p className="font-medium text-red-800">Case Line ID:</p>
+                <p className="font-medium text-red-800">Diagnosis ID:</p>
                 <p className="text-sm text-red-600 font-mono">{caseLineToRemove}</p>
               </div>
             </div>
@@ -2394,7 +2435,7 @@ const TechnicianDashboard = ({
               className="bg-red-600 hover:bg-red-700"
             >
               <Trash2 className="h-4 w-4 mr-2" />
-              Remove Case Line
+              Remove Issue Diagnosis
             </Button>
           </div>
         </DialogContent>
