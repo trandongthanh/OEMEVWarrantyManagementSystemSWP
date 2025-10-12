@@ -165,7 +165,6 @@ const Login = () => {
 									Access to EV Warranty Management Platform
 								</CardDescription>
 							</CardHeader>
-
 							<CardContent>
 								<form onSubmit={handleLogin} className="space-y-6">
 									{error && (
@@ -251,7 +250,6 @@ const Login = () => {
 									transformStyle: "preserve-3d",
 								}}
 							>
-								{/* Car Image with 3D Effects */}
 								<img
 									src="/CAR2.png"
 									alt="Electric Vehicle"

@@ -1,6 +1,7 @@
 
 
 import { useState } from 'react';
+import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +20,8 @@ import {
   Wrench,
   CheckCircle,
   Car,
-  Trash2
+  Trash2,
+  User
 } from 'lucide-react';
 
 // Helper function to format date
@@ -60,11 +62,34 @@ interface VinDataState {
   warrantyStatus: string;
 }
 
+interface VehicleSearchResult {
+  vin: string;
+  dateOfManufacture: string;
+  placeOfManufacture?: string;
+  licensePlate?: string;
+  purchaseDate?: string;
+  owner?: {
+    id: string;
+    fullName: string;
+    phone: string;
+    email: string;
+    address: string;
+  };
+}
+
+interface OwnerForm {
+  fullName: string;
+  phone: string;
+  email: string;
+  address: string;
+}
+
 const SuperAdvisor = () => {
   const { user, logout, getToken } = useAuth();
   const { toast } = useToast();
   
   const [searchVin, setSearchVin] = useState('');
+  const [searchMode, setSearchMode] = useState<'warranty' | 'customer'>('warranty');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<WarrantyRecord | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -85,6 +110,16 @@ const SuperAdvisor = () => {
     vinNumber: "",
     purchaseDate: "",
     warrantyStatus: ""
+  });
+
+  // Vehicle registration states
+  const [vehicleSearchResult, setVehicleSearchResult] = useState<VehicleSearchResult | null>(null);
+  const [showRegisterDialog, setShowRegisterDialog] = useState(false);
+  const [ownerForm, setOwnerForm] = useState<OwnerForm>({
+    fullName: '',
+    phone: '',
+    email: '',
+    address: ''
   });
 
   // Form state for editing record
@@ -117,8 +152,8 @@ const SuperAdvisor = () => {
   try {
     if (!searchVin.trim()) {
       toast({
-        title: 'Lỗi',
-        description: 'Vui lòng nhập VIN',
+        title: 'Error',
+        description: 'Please enter VIN',
         variant: 'destructive'
       });
       return;
@@ -131,7 +166,7 @@ const SuperAdvisor = () => {
     if (!token) {
       console.error("No token found (checked AuthContext.getToken and localStorage 'ev_warranty_token')");
       toast({
-        title: 'Lỗi',
+        title: 'Error',
         description: 'Không tìm thấy token đăng nhập',
         variant: 'destructive'
       });
@@ -190,6 +225,201 @@ const SuperAdvisor = () => {
     
   }
 };
+
+  const handleSearchCustomer = async () => {
+    try {
+      if (!searchVin.trim()) {
+        toast({
+          title: 'Error',
+          description: 'Please enter VIN to search vehicle',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'Authentication token not found',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Search vehicle by VIN
+      const response = await axios.get(`http://localhost:3000/api/v1/vehicle/${searchVin.trim()}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.data && response.data.status === 'success' && response.data.data) {
+        const vehicle = response.data.data;
+        
+        setVehicleSearchResult({
+          vin: vehicle.vin,
+          dateOfManufacture: vehicle.dateOfManufacture || vehicle.dateofmanufacture,
+          placeOfManufacture: vehicle.placeOfManufacture || vehicle.placeofmanufacture,
+          licensePlate: vehicle.licensePlate || vehicle.licenseplate,
+          purchaseDate: vehicle.purchaseDate || vehicle.purchasedate,
+          owner: vehicle.owner
+        });
+
+        if (vehicle.owner) {
+          toast({
+            title: 'Customer Found',
+            description: `Vehicle is registered to ${vehicle.owner.fullName || vehicle.owner.fullname}`,
+          });
+        } else {
+          toast({
+            title: 'Vehicle Found - No Owner',
+            description: 'Vehicle exists but no owner is registered. You can register an owner.',
+          });
+          setShowRegisterDialog(true);
+        }
+      } else {
+        toast({
+          title: 'Vehicle Not Found',
+          description: 'No vehicle found with this VIN',
+          variant: 'destructive'
+        });
+        setVehicleSearchResult(null);
+      }
+
+    } catch (error) {
+      console.error("Failed to search vehicle:", error);
+      toast({
+        title: 'Error',
+        description: 'An error occurred while searching for vehicle',
+        variant: 'destructive'
+      });
+      setVehicleSearchResult(null);
+    }
+  };
+
+  const handleRegisterOwner = async () => {
+    if (!ownerForm.fullName?.trim() || !ownerForm.phone?.trim() || !ownerForm.email?.trim() || !ownerForm.address?.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please fill in all owner information (Full Name, Phone, Email, Address)',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!vehicleSearchResult) {
+      toast({
+        title: 'Error',
+        description: 'No vehicle selected for registration',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'Please login first',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // First, find or create customer
+      let customerData = null;
+
+      const searchResponse = await axios.get(`http://localhost:3000/api/v1/customer/find-customer-with-phone-or-email`, {
+        params: {
+          phone: ownerForm.phone.trim()
+        },
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (searchResponse.data?.data?.customer) {
+        customerData = searchResponse.data.data.customer;
+      } else {
+        // Create new customer
+        const createResponse = await axios.post(`http://localhost:3000/api/v1/customer`, {
+          fullName: ownerForm.fullName.trim(),
+          email: ownerForm.email.trim(),
+          phone: ownerForm.phone.trim(),
+          address: ownerForm.address.trim()
+        }, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (createResponse.data?.status === 'success') {
+          customerData = createResponse.data.data.customer;
+        } else {
+          throw new Error('Failed to create customer');
+        }
+      }
+
+      // Prepare request body with 8 fields
+      const requestBody = {
+        customerId: customerData.id,
+        licensePlate: vehicleSearchResult.licensePlate || '',
+        purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString(),
+        dateOfManufacture: vehicleSearchResult.dateOfManufacture,
+        placeOfManufacture: vehicleSearchResult.placeOfManufacture || '',
+        fullName: customerData.fullName || customerData.fullname,
+        phone: customerData.phone,
+        email: customerData.email,
+        address: customerData.address
+      };
+
+      // Register owner to vehicle
+      const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.data && response.data.status === 'success') {
+        toast({
+          title: 'Success',
+          description: 'Vehicle owner registered successfully!',
+        });
+
+        // Update vehicle search result with owner info
+        setVehicleSearchResult(prev => ({
+          ...prev!,
+          owner: {
+            id: customerData.id,
+            fullName: customerData.fullName || customerData.fullname,
+            phone: customerData.phone,
+            email: customerData.email,
+            address: customerData.address
+          }
+        }));
+
+        // Reset form and close dialog
+        setOwnerForm({ fullName: '', phone: '', email: '', address: '' });
+        setShowRegisterDialog(false);
+      } else {
+        throw new Error('Failed to register owner');
+      }
+
+    } catch (error) {
+      console.error('Error registering owner:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to register owner. Please try again.',
+        variant: 'destructive'
+      });
+    }
+  };
 
   const handleAddRecord = () => {
     if (!validateRecord(newRecord)) {
@@ -323,14 +553,48 @@ const SuperAdvisor = () => {
 
       {/* Main Content */}
       <main className="container mx-auto px-6 py-8">
-        {/* Search Box */}
+        {/* Search Section */}
         <Card className="mb-6 shadow-lg">
-          <CardContent className="pt-6">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-xl">Search</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {/* Search Mode Buttons */}
+            <div className="flex gap-2 mb-4">
+              <Button
+                variant={searchMode === 'warranty' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setSearchMode('warranty')}
+                className={searchMode === 'warranty' ? 'bg-blue-600 hover:bg-blue-700' : ''}
+              >
+                <Search className="h-4 w-4 mr-2" />
+                Check Warranty by VIN
+              </Button>
+              <Button
+                variant={searchMode === 'customer' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setSearchMode('customer')}
+                className={searchMode === 'customer' ? 'bg-green-600 hover:bg-green-700' : ''}
+              >
+                <Car className="h-4 w-4 mr-2" />
+                Find Customer by VIN
+              </Button>
+            </div>
+
+            {/* Dynamic Search Bar */}
             <div className="flex gap-3">
               <div className="flex-1 relative">
-                <Search className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
+                {searchMode === 'warranty' ? (
+                  <Search className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
+                ) : (
+                  <Car className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
+                )}
                 <Input
-                  placeholder="Enter VIN"
+                  placeholder={
+                    searchMode === 'warranty' 
+                      ? "Enter VIN to check warranty information" 
+                      : "Enter VIN to find customer records"
+                  }
                   className="pl-10 h-11"
                   value={searchVin}
                   onChange={(e) => setSearchVin(e.target.value)}
@@ -338,21 +602,26 @@ const SuperAdvisor = () => {
               </div>
               <Button 
                 size="sm" 
-                className="bg-primary hover:bg-primary/90"
-                onClick={handleSearchWarranty}
+                className={
+                  searchMode === 'warranty' 
+                    ? "bg-blue-600 hover:bg-blue-700" 
+                    : "bg-green-600 hover:bg-green-700"
+                }
+                onClick={searchMode === 'warranty' ? handleSearchWarranty : handleSearchCustomer}
               >
-                Search
+                {searchMode === 'warranty' ? 'Check Warranty' : 'Find Customer'}
               </Button>
             </div>
           </CardContent>
         </Card>
 
-        {/* Warranty Records Section */}
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="text-xl">Recent Warranty Records</CardTitle>
-            <CardDescription>Manage warranty records and track their progress</CardDescription>
-          </CardHeader>
+        {/* Warranty Records Section - Only show in warranty mode */}
+        {searchMode === 'warranty' && (
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="text-xl">Recent Warranty Records</CardTitle>
+              <CardDescription>Manage warranty records and track their progress</CardDescription>
+            </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
@@ -413,6 +682,100 @@ const SuperAdvisor = () => {
             )}
           </CardContent>
         </Card>
+        )}
+
+        {/* Customer Search Results Section - Only show in customer mode */}
+        {searchMode === 'customer' && (
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="text-xl">Vehicle Search Results</CardTitle>
+              <CardDescription>Search for vehicles and register owners if needed</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {vehicleSearchResult ? (
+                <div className="space-y-6">
+                  {/* Vehicle Information */}
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h3 className="text-lg font-semibold text-blue-800 mb-2">
+                      🚗 Vehicle Found
+                    </h3>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">VIN Number</label>
+                        <p className="font-mono text-sm bg-white p-2 rounded border">{vehicleSearchResult.vin}</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Date of Manufacture</label>
+                        <p className="text-sm bg-white p-2 rounded border">{formatDate(vehicleSearchResult.dateOfManufacture)}</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Place of Manufacture</label>
+                        <p className="text-sm bg-white p-2 rounded border">{vehicleSearchResult.placeOfManufacture || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">License Plate</label>
+                        <p className="text-sm bg-white p-2 rounded border">{vehicleSearchResult.licensePlate || 'Not set'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Owner Information */}
+                  {vehicleSearchResult.owner ? (
+                    <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                      <h3 className="text-lg font-semibold text-green-800 mb-2">
+                        ✅ Owner Registered
+                      </h3>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">Full Name</label>
+                          <p className="text-sm bg-white p-2 rounded border">{vehicleSearchResult.owner.fullName}</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">Phone</label>
+                          <p className="text-sm bg-white p-2 rounded border">{vehicleSearchResult.owner.phone}</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">Email</label>
+                          <p className="text-sm bg-white p-2 rounded border">{vehicleSearchResult.owner.email}</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">Address</label>
+                          <p className="text-sm bg-white p-2 rounded border">{vehicleSearchResult.owner.address}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <h3 className="text-lg font-semibold text-yellow-800 mb-2">
+                        ⚠️ No Owner Registered
+                      </h3>
+                      <p className="text-yellow-700 mb-3">
+                        This vehicle exists but no owner is registered. You can register an owner for this vehicle.
+                      </p>
+                      <Button 
+                        onClick={() => setShowRegisterDialog(true)}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Register Owner
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <Car className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium text-muted-foreground mb-2">
+                    No Vehicle Search Performed
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Enter a VIN above and click "Find Customer" to search for vehicle and owner information.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </main>
 
       {/* Add Record Dialog */}
@@ -868,6 +1231,77 @@ const SuperAdvisor = () => {
                   Save Changes
                 </Button>
               </>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Register Owner Dialog */}
+      <Dialog open={showRegisterDialog} onOpenChange={setShowRegisterDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <User className="h-5 w-5" />
+              <span>Register Vehicle Owner</span>
+            </DialogTitle>
+            <DialogDescription>
+              Enter owner information to register this vehicle
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="fullName">Full Name *</Label>
+              <Input
+                id="fullName"
+                placeholder="Enter full name"
+                value={ownerForm.fullName}
+                onChange={(e) => setOwnerForm({ ...ownerForm, fullName: e.target.value })}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="phone">Phone Number *</Label>
+              <Input
+                id="phone"
+                placeholder="Enter phone number"
+                value={ownerForm.phone}
+                onChange={(e) => setOwnerForm({ ...ownerForm, phone: e.target.value })}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="email">Email *</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="Enter email address"
+                value={ownerForm.email}
+                onChange={(e) => setOwnerForm({ ...ownerForm, email: e.target.value })}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="address">Address *</Label>
+              <Input
+                id="address"
+                placeholder="Enter address"
+                value={ownerForm.address}
+                onChange={(e) => setOwnerForm({ ...ownerForm, address: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowRegisterDialog(false);
+              setOwnerForm({ fullName: '', phone: '', email: '', address: '' });
+            }}>
+              Cancel
+            </Button>
+            <Button onClick={handleRegisterOwner} className="bg-green-600 hover:bg-green-700">
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Register Owner
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
