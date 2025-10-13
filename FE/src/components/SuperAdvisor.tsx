@@ -135,7 +135,6 @@ const SuperAdvisor = () => {
   const [isCheckingWarranty, setIsCheckingWarranty] = useState(false);
   const [warrantyStatus, setWarrantyStatus] = useState<'valid' | 'expired' | null>(null);
   const [warrantyDetails, setWarrantyDetails] = useState<any>(null);
-  const [showCustomerSearch, setShowCustomerSearch] = useState(false);
 
   // Form state for editing record
   const [editRecord, setEditRecord] = useState({
@@ -245,11 +244,11 @@ const SuperAdvisor = () => {
     try {
       console.log('🔍 Starting vehicle search...');
       
-      // Reset customer search state
-      setShowCustomerSearch(false);
+      // Reset customer search state and warranty info
       setHasSearchedCustomer(false);
       setFoundCustomer(null);
       setWarrantyStatus(null);
+      setWarrantyDetails(null);
       setOdometer('');
       
       if (!searchVin.trim()) {
@@ -395,7 +394,7 @@ const SuperAdvisor = () => {
 
       console.log('🔍 Searching customer by phone:', customerSearchPhone.trim());
 
-      const response = await axios.get(`http://localhost:3000/api/v1/customer/find-customer-with-phone-or-email`, {
+      const response = await axios.get(`http://localhost:3000/api/v1/customers/`, {
         params: {
           phone: customerSearchPhone.trim()
         },
@@ -520,54 +519,44 @@ const SuperAdvisor = () => {
       }
 
       console.log('💾 Saving vehicle and owner changes...');
+      console.log('🔍 Debug - foundCustomer:', foundCustomer);
+      console.log('🔍 Debug - vehicleSearchResult.owner:', vehicleSearchResult.owner);
 
-      // First, find or create customer
-      let customerData = null;
+      // Prepare request body based on customer status
+      let requestBody;
 
-      if (foundCustomer) {
-        // Use existing customer
-        customerData = foundCustomer;
-        console.log('📋 Using existing customer:', customerData);
+      // Check if customer exists (either from search or from vehicle's existing owner)
+      const existingCustomer = foundCustomer || vehicleSearchResult.owner;
+
+      if (existingCustomer && existingCustomer.id) {
+        // Existing customer - send customerId only
+        console.log('📋 Using existing customer ID:', existingCustomer.id);
+        requestBody = {
+          customerId: existingCustomer.id,
+          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
+          licensePlate: vehicleSearchResult.licensePlate.trim(),
+          purchaseDate: vehicleSearchResult.purchaseDate
+        };
       } else {
-        // Create new customer
-        console.log('👤 Creating new customer...');
-        const createResponse = await axios.post(`http://localhost:3000/api/v1/customer`, {
-          fullName: ownerForm.fullName.trim(),
-          email: ownerForm.email.trim(),
-          phone: ownerForm.phone.trim(),
-          address: ownerForm.address.trim()
-        }, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (createResponse.data?.status === 'success') {
-          customerData = createResponse.data.data.customer;
-          console.log('✅ New customer created:', customerData);
-        } else {
-          throw new Error('Failed to create customer');
-        }
+        // New customer - send full customer object (backend will create customer)
+        console.log('👤 Sending new customer object for registration');
+        requestBody = {
+          customer: {
+            fullName: ownerForm.fullName.trim(),
+            email: ownerForm.email.trim(),
+            phone: ownerForm.phone.trim(),
+            address: ownerForm.address.trim()
+          },
+          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
+          licensePlate: vehicleSearchResult.licensePlate.trim(),
+          purchaseDate: vehicleSearchResult.purchaseDate
+        };
       }
 
-      // Prepare 8-field request body for vehicle update
-      const requestBody = {
-        customerId: customerData.id,
-        licensePlate: vehicleSearchResult.licensePlate.trim(),
-        purchaseDate: vehicleSearchResult.purchaseDate,
-        dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-        placeOfManufacture: vehicleSearchResult.placeOfManufacture || '',
-        fullName: ownerForm.fullName.trim(),
-        phone: ownerForm.phone.trim(),
-        email: ownerForm.email.trim(),
-        address: ownerForm.address.trim()
-      };
+      console.log('📤 Sending request body:', requestBody);
 
-      console.log('📤 Sending 8-field request body:', requestBody);
-
-      // Update vehicle owner using PATCH endpoint
-      const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
+      // Update vehicle owner using PATCH endpoint: /api/v1/vehicles/{vin}
+      const response = await axios.patch(`http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}`, requestBody, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -577,16 +566,15 @@ const SuperAdvisor = () => {
       if (response.data && response.data.status === 'success') {
         console.log('✅ Vehicle and owner updated successfully:', response.data);
         
-        // Update local state with new owner info
+        // Update local state with owner info from response
+        const updatedVehicle = response.data.data.vehicle;
         setVehicleSearchResult(prev => ({
           ...prev!,
-          owner: {
-            id: customerData.id,
-            fullName: ownerForm.fullName.trim(),
-            phone: ownerForm.phone.trim(),
-            email: ownerForm.email.trim(),
-            address: ownerForm.address.trim()
-          }
+          owner: updatedVehicle.owner,
+          licensePlate: updatedVehicle.licensePlate,
+          purchaseDate: updatedVehicle.purchaseDate,
+          dateOfManufacture: updatedVehicle.dateOfManufacture,
+          placeOfManufacture: updatedVehicle.placeOfManufacture
         }));
 
         toast({
@@ -715,6 +703,13 @@ const SuperAdvisor = () => {
               title: 'Warranty Active',
               description: `Warranty valid for ${generalWarranty.duration.remainingDays} more days and ${generalWarranty.mileage.remainingMileage} km`,
             });
+
+            // If vehicle already has owner, set foundCustomer but don't auto-show the form
+            // User will need to search or the form will appear after they interact
+            if (vehicleSearchResult.owner) {
+              console.log('✅ Vehicle has existing owner:', vehicleSearchResult.owner);
+              setFoundCustomer(vehicleSearchResult.owner);
+            }
           } else {
             const reasons = [];
             if (!isDurationValid) reasons.push('time limit exceeded');
@@ -781,7 +776,7 @@ const SuperAdvisor = () => {
       // First, find or create customer
       let customerData = null;
 
-      const searchResponse = await axios.get(`http://localhost:3000/api/v1/customer/find-customer-with-phone-or-email`, {
+      const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers/`, {
         params: {
           phone: ownerForm.phone.trim()
         },
@@ -795,7 +790,7 @@ const SuperAdvisor = () => {
         customerData = searchResponse.data.data.customer;
       } else {
         // Create new customer
-        const createResponse = await axios.post(`http://localhost:3000/api/v1/customer`, {
+        const createResponse = await axios.post(`http://localhost:3000/api/v1/customers/`, {
           fullName: ownerForm.fullName.trim(),
           email: ownerForm.email.trim(),
           phone: ownerForm.phone.trim(),
@@ -1443,22 +1438,8 @@ const SuperAdvisor = () => {
                     </div>
                   )}
 
-                  {/* Show Customer Search Button - Only show if warranty is valid and customer search is not shown */}
-                  {warrantyStatus === 'valid' && !showCustomerSearch && (
-                    <div className="text-center py-4">
-                      <Button 
-                        onClick={() => setShowCustomerSearch(true)}
-                        className="bg-blue-600 hover:bg-blue-700"
-                        size="lg"
-                      >
-                        <User className="h-4 w-4 mr-2" />
-                        Find Customer by Phone
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* Customer Search Section - Only show if warranty is valid and button clicked */}
-                  {warrantyStatus === 'valid' && showCustomerSearch && (
+                  {/* Customer Search Section - Only show if warranty is valid AND vehicle has no owner */}
+                  {warrantyStatus === 'valid' && !vehicleSearchResult.owner && (
                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                       <h4 className="font-semibold text-gray-800 mb-4 flex items-center">
                         <Search className="mr-2 h-4 w-4" />
@@ -1523,8 +1504,8 @@ const SuperAdvisor = () => {
                   </div>
                   )}
 
-                  {/* Owner Information Section - Only show after customer search and warranty is valid */}
-                  {warrantyStatus === 'valid' && showCustomerSearch && hasSearchedCustomer && (
+                  {/* Owner Information Section - Show when: 1) Vehicle has owner OR 2) After customer search */}
+                  {warrantyStatus === 'valid' && warrantyDetails && (vehicleSearchResult.owner || hasSearchedCustomer) && (
                     <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                       <h4 className="font-semibold text-green-800 mb-4 flex items-center">
                         <User className="mr-2 h-4 w-4" />
