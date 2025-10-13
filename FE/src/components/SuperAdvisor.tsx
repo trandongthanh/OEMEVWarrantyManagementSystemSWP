@@ -134,6 +134,7 @@ const SuperAdvisor = () => {
   const [odometer, setOdometer] = useState('');
   const [isCheckingWarranty, setIsCheckingWarranty] = useState(false);
   const [warrantyStatus, setWarrantyStatus] = useState<'valid' | 'expired' | null>(null);
+  const [warrantyDetails, setWarrantyDetails] = useState<any>(null);
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
 
   // Form state for editing record
@@ -653,13 +654,13 @@ const SuperAdvisor = () => {
       console.log('Odometer:', odometer);
       console.log('Purchase Date:', vehicleSearchResult.purchaseDate);
 
-      const response = await axios.get(
+      const response = await axios.post(
         `http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}/warranty/preview`,
         {
-          params: {
-            odometer: parseInt(odometer),
-            purchaseDate: vehicleSearchResult.purchaseDate
-          },
+          odometer: parseInt(odometer),
+          purchaseDate: vehicleSearchResult.purchaseDate
+        },
+        {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -670,25 +671,63 @@ const SuperAdvisor = () => {
       console.log('📨 Warranty check response:', response.data);
 
       if (response.data && response.data.status === 'success') {
-        const warrantyData = response.data.data;
+        const warrantyData = response.data.data?.vehicle;
         
-        // Check if warranty is still valid
-        // Assuming the API returns warranty status information
-        const isWarrantyValid = warrantyData.isValid || warrantyData.status === 'ACTIVE';
-        
-        setWarrantyStatus(isWarrantyValid ? 'valid' : 'expired');
+        if (warrantyData) {
+          // Save warranty details
+          setWarrantyDetails(warrantyData);
+          
+          console.log('🔍 Full Warranty Data:', JSON.stringify(warrantyData, null, 2));
+          console.log('🔍 General Warranty:', warrantyData.generalWarranty);
+          
+          // Check if general warranty is still active
+          // Both duration and mileage must be valid
+          const generalWarranty = warrantyData.generalWarranty;
+          
+          // Debug duration status
+          console.log('🔍 Duration Status Type:', typeof generalWarranty?.duration?.status);
+          console.log('🔍 Duration Status Value:', generalWarranty?.duration?.status);
+          console.log('🔍 Duration Status === true:', generalWarranty?.duration?.status === true);
+          console.log('🔍 Duration Status === "ACTIVE":', generalWarranty?.duration?.status === 'ACTIVE');
+          
+          // Debug mileage status
+          console.log('🔍 Mileage Status Type:', typeof generalWarranty?.mileage?.status);
+          console.log('🔍 Mileage Status Value:', generalWarranty?.mileage?.status);
+          console.log('🔍 Mileage Status === "ACTIVE":', generalWarranty?.mileage?.status === 'ACTIVE');
+          
+          const isDurationValid = 
+            generalWarranty?.duration?.status === true || 
+            generalWarranty?.duration?.status === 'ACTIVE';
+          const isMileageValid = 
+            generalWarranty?.mileage?.status === 'ACTIVE';
+          
+          // Warranty is valid if BOTH duration and mileage are valid
+          const isWarrantyValid = isDurationValid && isMileageValid;
+          
+          console.log('✅ Duration Valid:', isDurationValid);
+          console.log('✅ Mileage Valid:', isMileageValid);
+          console.log('✅ Overall Warranty Valid:', isWarrantyValid);
+          
+          setWarrantyStatus(isWarrantyValid ? 'valid' : 'expired');
 
-        if (isWarrantyValid) {
-          toast({
-            title: 'Warranty Valid',
-            description: 'Vehicle is still under warranty. You can proceed with customer registration.',
-          });
+          if (isWarrantyValid) {
+            toast({
+              title: 'Warranty Active',
+              description: `Warranty valid for ${generalWarranty.duration.remainingDays} more days and ${generalWarranty.mileage.remainingMileage} km`,
+            });
+          } else {
+            const reasons = [];
+            if (!isDurationValid) reasons.push('time limit exceeded');
+            if (!isMileageValid) reasons.push('mileage limit exceeded');
+            
+            toast({
+              title: 'Warranty Expired',
+              description: `Vehicle warranty has expired: ${reasons.join(' and ')}`,
+              variant: 'destructive'
+            });
+          }
         } else {
-          toast({
-            title: 'Warranty Expired',
-            description: 'Vehicle warranty has expired. Customer registration is not available.',
-            variant: 'destructive'
-          });
+          throw new Error('Invalid warranty data structure');
         }
       } else {
         throw new Error('Invalid response from warranty check');
@@ -1268,6 +1307,100 @@ const SuperAdvisor = () => {
                                   <p className="text-sm mt-1">
                                     This vehicle is no longer covered under warranty policy.
                                   </p>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Warranty Details Display */}
+                            {warrantyDetails && (
+                              <div className="mt-4 space-y-4">
+                                {/* General Warranty - Main Info */}
+                                <div className="bg-white border-2 border-blue-300 rounded-lg p-4">
+                                  <h4 className="font-semibold text-blue-900 mb-3 flex items-center">
+                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                    General Warranty Coverage
+                                  </h4>
+                                  
+                                  <div className="grid md:grid-cols-2 gap-4">
+                                    {/* Duration Status */}
+                                    <div className="bg-blue-50 rounded p-3">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium text-gray-600">Time Coverage</span>
+                                        <Badge variant={(warrantyDetails.generalWarranty?.duration?.status === 'ACTIVE' || warrantyDetails.generalWarranty?.duration?.status === true) ? 'default' : 'destructive'} className="text-xs">
+                                          {(warrantyDetails.generalWarranty?.duration?.status === 'ACTIVE' || warrantyDetails.generalWarranty?.duration?.status === true) ? 'ACTIVE' : 'EXPIRED'}
+                                        </Badge>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <p className="text-2xl font-bold text-blue-900">
+                                          {warrantyDetails.generalWarranty?.duration?.remainingDays || 0} days
+                                        </p>
+                                        <p className="text-xs text-gray-600">
+                                          Until: {warrantyDetails.generalWarranty?.duration?.endDate ? 
+                                            new Date(warrantyDetails.generalWarranty.duration.endDate).toLocaleDateString() : 'N/A'}
+                                        </p>
+                                        <p className="text-xs text-gray-500">
+                                          Policy: {warrantyDetails.generalWarranty?.policy?.durationMonths || 0} months
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    {/* Mileage Status */}
+                                    <div className="bg-green-50 rounded p-3">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium text-gray-600">Mileage Coverage</span>
+                                        <Badge variant={warrantyDetails.generalWarranty?.mileage?.status === 'ACTIVE' ? 'default' : 'destructive'} className="text-xs">
+                                          {warrantyDetails.generalWarranty?.mileage?.status || 'N/A'}
+                                        </Badge>
+                                      </div>
+                                      <div className="space-y-1">
+                                        <p className="text-2xl font-bold text-green-900">
+                                          {warrantyDetails.generalWarranty?.mileage?.remainingMileage?.toLocaleString() || 0} km
+                                        </p>
+                                        <p className="text-xs text-gray-600">
+                                          Remaining mileage
+                                        </p>
+                                        <p className="text-xs text-gray-500">
+                                          Limit: {warrantyDetails.generalWarranty?.policy?.mileageLimit?.toLocaleString() || 0} km
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Component Warranties - Secondary Info */}
+                                {warrantyDetails.componentWarranties && warrantyDetails.componentWarranties.length > 0 && (
+                                  <div className="bg-gray-50 border border-gray-300 rounded-lg p-4">
+                                    <h4 className="font-semibold text-gray-800 mb-3 text-sm flex items-center">
+                                      <span className="mr-2">🔧</span>
+                                      Component Warranties (Additional Coverage)
+                                    </h4>
+                                    <div className="space-y-2">
+                                      {warrantyDetails.componentWarranties.map((component: any, index: number) => (
+                                        <div key={index} className="bg-white border border-gray-200 rounded p-3">
+                                          <div className="flex items-center justify-between mb-2">
+                                            <span className="font-medium text-sm text-gray-800">{component.componentName}</span>
+                                            <Badge variant="outline" className="text-xs">
+                                              {(component.duration?.status === 'ACTIVE' || component.duration?.status === true) ? '✓ Active' : '✗ Expired'}
+                                            </Badge>
+                                          </div>
+                                          <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                                            <div>
+                                              <span className="text-gray-500">Duration:</span> {component.duration?.remainingDays || 0} days left
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-500">Mileage:</span> {component.mileage?.remainingMileage?.toLocaleString() || 0} km left
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-500">Policy Duration:</span> {component.policy?.durationMonths || 0} months
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-500">Mileage Limit:</span> {component.policy?.mileageLimit?.toLocaleString() || 0} km
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
                                 )}
                               </div>
                             )}
