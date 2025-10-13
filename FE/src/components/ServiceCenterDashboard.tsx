@@ -45,11 +45,21 @@ import {
 interface Technician {
   id: string;
   name: string;
-  specialty: string;
-  experience: number;
-  rating: number;
-  workload: number;
+  workload?: number; // maps to activeTaskCount
   isAvailable: boolean;
+  status?: string; // WORKING | DAY_OFF | LEAVE_REQUESTED | LEAVE_APPROVED
+}
+
+interface AssignedComponent {
+  id: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  type_component_id: string;
+  component_name: string;
+  component_sku: string;
+  quantity: number;
+  assigned_at: string;
+  status: 'pending' | 'reserved' | 'dispatched' | 'delivered';
 }
 
 interface WarrantyClaim {
@@ -58,11 +68,13 @@ interface WarrantyClaim {
   checkInDate: string;
   caseDescription: string;
   assignedTechnicians: Technician[];
+  assignedComponents: AssignedComponent[];
   model: string;
   serviceCenter: string;
   submissionDate: string;
   estimatedCost: number;
-  priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+  status?: string;
+  priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
   issueType: string;
 }
 
@@ -121,13 +133,35 @@ const ServiceCenterDashboard = () => {
   });
   const [warrantyClaims, setWarrantyClaims] = useState<WarrantyClaim[]>([]);
   const [availableTechnicians, setAvailableTechnicians] = useState<Technician[]>([]);
+  const [isLoadingClaims, setIsLoadingClaims] = useState<boolean>(false);
+  const [techFilterStatus, setTechFilterStatus] = useState<string>('WORKING');
+  // Status tabs
+  const STATUSES = [
+    'CHECKED_IN',
+    'IN_DIAGNOSIS',
+    'WAITING_FOR_PARTS',
+    'IN_REPAIR',
+    'COMPLETED',
+    'PAID',
+    'CANCELLED'
+  ];
+  const [claimsByStatus, setClaimsByStatus] = useState<Record<string, WarrantyClaim[]>>({});
+  const [activeStatus, setActiveStatus] = useState<string>('CHECKED_IN');
   const [showTechnicianModal, setShowTechnicianModal] = useState(false);
+  const [isLoadingTechnicians, setIsLoadingTechnicians] = useState(false);
   const [selectedCaseForAssignment, setSelectedCaseForAssignment] = useState<string>('');
   const [showClaimDetailModal, setShowClaimDetailModal] = useState(false);
   const [selectedClaimForDetail, setSelectedClaimForDetail] = useState<WarrantyClaim | null>(null);
   const [customerSearchPhone, setCustomerSearchPhone] = useState('');
   const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
   const [hasSearchedCustomer, setHasSearchedCustomer] = useState(false);
+
+  // Component Assignment Modal States
+  const [showComponentAssignmentModal, setShowComponentAssignmentModal] = useState(false);
+  const [selectedClaimForComponents, setSelectedClaimForComponents] = useState<string>('');
+  const [selectedWarehouseForAssignment, setSelectedWarehouseForAssignment] = useState<string>('');
+  const [selectedComponentForAssignment, setSelectedComponentForAssignment] = useState<string>('');
+  const [componentQuantity, setComponentQuantity] = useState<number>(1);
 
   // Inventory Management States
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -146,95 +180,100 @@ const ServiceCenterDashboard = () => {
   const [editingStock, setEditingStock] = useState<Stock | null>(null);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
 
-  const { user, logout } = useAuth();
+  const { user, logout, getToken } = useAuth();
 
   // Load warranty claims and technicians data
   useEffect(() => {
-    // Mock technicians data
-    const mockTechnicians: Technician[] = [
-      { id: 'tech-001', name: 'Trần Minh Quân', specialty: 'Battery Systems', experience: 8, rating: 4.8, workload: 3, isAvailable: true },
-      { id: 'tech-002', name: 'Nguyễn Thị Bảo An', specialty: 'Battery Systems', experience: 6, rating: 4.7, workload: 2, isAvailable: true },
-      { id: 'tech-003', name: 'Lê Thị Hoa', specialty: 'Motor & Drivetrain', experience: 10, rating: 4.9, workload: 2, isAvailable: true },
-      { id: 'tech-004', name: 'Phạm Văn Thành', specialty: 'Motor & Drivetrain', experience: 7, rating: 4.6, workload: 4, isAvailable: true },
-      { id: 'tech-005', name: 'Võ Minh Tuấn', specialty: 'Electronics & Software', experience: 5, rating: 4.8, workload: 1, isAvailable: true },
-      { id: 'tech-006', name: 'Đỗ Thị Kim Loan', specialty: 'Electronics & Software', experience: 4, rating: 4.5, workload: 3, isAvailable: true },
-      { id: 'tech-007', name: 'Nguyễn Văn Đức', specialty: 'Charging Systems', experience: 6, rating: 4.7, workload: 1, isAvailable: true },
-      { id: 'tech-008', name: 'Lý Thị Phương', specialty: 'Charging Systems', experience: 3, rating: 4.4, workload: 2, isAvailable: true },
-      { id: 'tech-009', name: 'Võ Thị Mai', specialty: 'General Diagnostics', experience: 12, rating: 4.9, workload: 2, isAvailable: true },
-      { id: 'tech-010', name: 'Hoàng Văn Long', specialty: 'General Diagnostics', experience: 8, rating: 4.6, workload: 3, isAvailable: true }
-    ];
+    let cancelled = false;
 
-    const mockClaims: WarrantyClaim[] = [
-      {
-        vin: '1HGBH41JXMN109186',
-        mileage: 15000,
-        checkInDate: '2025-10-05',
-        caseDescription: 'Pin EV bị suy giảm hiệu suất, không sạc được đầy',
-        assignedTechnicians: [mockTechnicians[0]], // Trần Minh Quân
-        model: 'VinFast VF8 Plus',
-        serviceCenter: 'SC Hà Nội',
-        submissionDate: '2025-09-25',
-        estimatedCost: 15000000,
-        priority: 'High',
-        issueType: 'Pin EV'
-      },
-      {
-        vin: '2HGBH41JXMN109187',
-        mileage: 8500,
-        checkInDate: '2025-10-04',
-        caseDescription: 'Hệ thống điện bị lỗi, đèn cảnh báo liên tục sáng',
-        assignedTechnicians: [mockTechnicians[4]], // Võ Minh Tuấn
-        model: 'VinFast VF9 Premium',
-        serviceCenter: 'SC TP.HCM',
-        submissionDate: '2025-09-24',
-        estimatedCost: 8500000,
-        priority: 'Medium',
-        issueType: 'Hệ thống điện'
-      },
-      {
-        vin: 'JH4KA7532MC123456',
-        mileage: 95000,
-        checkInDate: '2025-10-03',
-        caseDescription: 'Cảm biến áp suất lốp không hoạt động, hiển thị sai thông tin',
-        assignedTechnicians: [], // Chưa assign
-        model: 'VinFast VF5 Basic',
-        serviceCenter: 'SC Đà Nẵng',
-        submissionDate: '2025-09-23',
-        estimatedCost: 12000000,
-        priority: 'Low',
-        issueType: 'Cảm biến'
-      },
-      {
-        vin: '4HGBH41JXMN109189',
-        mileage: 42000,
-        checkInDate: '2025-10-06',
-        caseDescription: 'Hệ thống phanh bị rung lắc, tiếng kêu bất thường khi phanh',
-        assignedTechnicians: [mockTechnicians[8], mockTechnicians[9]], // Võ Thị Mai + Hoàng Văn Long
-        model: 'VinFast VF8 City',
-        serviceCenter: 'SC Hà Nội',
-        submissionDate: '2025-09-26',
-        estimatedCost: 6000000,
-        priority: 'Urgent',
-        issueType: 'Phanh'
-      },
-      {
-        vin: 'KMHGH4JH3EA123789',
-        mileage: 165000,
-        checkInDate: '2025-10-02',
-        caseDescription: 'Động cơ điện phát ra tiếng ồn bất thường, giảm công suất',
-        assignedTechnicians: [mockTechnicians[2]], // Lê Thị Hoa
-        model: 'VinFast VF9 Luxury',
-        serviceCenter: 'SC TP.HCM',
-        submissionDate: '2025-09-27',
-        estimatedCost: 9200000,
-        priority: 'High',
-        issueType: 'Động cơ'
+    // Fetch technicians from backend instead of using mock data
+    const fetchTechnicians = async (status = 'WORKING') => {
+      setIsLoadingTechnicians(true);
+      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        setIsLoadingTechnicians(false);
+        return [] as Technician[];
       }
-    ];
-    setWarrantyClaims(mockClaims);
-    setAvailableTechnicians(mockTechnicians);
+      try {
+        const res = await axios.get(`http://localhost:3000/api/v1/users/technicians?status=${status}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const records = res.data?.data || [];
+        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        // Map backend technician shape to local Technician interface
+        const mapped: Technician[] = records.map((t: any) => {
+          const schedule = Array.isArray(t.workSchedule) ? t.workSchedule : [];
+          const todayEntry = schedule.find((ws: any) => ws.workDate === today) || schedule[schedule.length - 1];
+          const statusToday = todayEntry?.status || (t.status || undefined);
+          const normalizedStatus = String(statusToday || '').trim().toUpperCase().replace(/\s+/g, '_') || undefined;
+          const tech: Technician = {
+            id: t.userId || t.id || String(t.techId || ''),
+            name: t.name || t.fullName || t.username || '',
+            workload: typeof t.activeTaskCount === 'number' ? t.activeTaskCount : (typeof t.workload === 'number' ? t.workload : undefined),
+            isAvailable: (normalizedStatus || '') === 'WORKING',
+            status: normalizedStatus
+          } as Technician;
+          return tech;
+        });
+        setIsLoadingTechnicians(false);
+        return mapped;
+      } catch (err) {
+        console.error('Failed to fetch technicians', err);
+        setIsLoadingTechnicians(false);
+        return [] as Technician[];
+      }
+    };
 
-    // Mock inventory data
+    // no local mockClaims; we'll use API as source of truth
+
+    const fetchForStatus = async (status: string) => {
+      const url = `http://localhost:3000/api/v1/processing-records?status=${status}`;
+      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+      if (!token) return [] as WarrantyClaim[];
+      try {
+        const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+        const apiRecords = res.data?.data?.records?.records || [];
+        const mapped: WarrantyClaim[] = apiRecords.map((r: any) => {
+          const mainTech = r.mainTechnician ? [{ id: r.mainTechnician.userId, name: r.mainTechnician.name, isAvailable: false, workload: typeof r.mainTechnician.activeTaskCount === 'number' ? r.mainTechnician.activeTaskCount : undefined, status: r.mainTechnician.status }] : [];
+          const primaryCase = Array.isArray(r.guaranteeCases) && r.guaranteeCases.length > 0 ? r.guaranteeCases[0] : null;
+          return {
+            vin: r.vin || r.vehicle?.vin || '',
+            mileage: r.odometer || 0,
+            checkInDate: r.checkInDate || r.check_in_date || new Date().toISOString(),
+            caseDescription: primaryCase?.contentGuarantee || '',
+            assignedTechnicians: mainTech,
+            assignedComponents: [],
+            model: r.vehicle?.model?.name || r.model || '',
+            serviceCenter: r.createdByStaff?.name || r.serviceCenter || '',
+            submissionDate: r.createdAt || new Date().toISOString(),
+            estimatedCost: 0,
+            priority: r.priority || undefined,
+            issueType: primaryCase ? primaryCase.contentGuarantee : '',
+            status: r.status || (primaryCase?.status) || status
+          } as WarrantyClaim;
+        });
+        return mapped;
+      } catch (err) {
+        console.error(`Failed to fetch status ${status}`, err);
+        return [] as WarrantyClaim[];
+      }
+    };
+
+    const fetchAllStatuses = async () => {
+      setIsLoadingClaims(true);
+      const results = await Promise.all(STATUSES.map(s => fetchForStatus(s)));
+      const byStatus: Record<string, WarrantyClaim[]> = {};
+      STATUSES.forEach((s, idx) => { byStatus[s] = results[idx] || []; });
+      setClaimsByStatus(byStatus);
+      setWarrantyClaims(byStatus[activeStatus] || []);
+      setIsLoadingClaims(false);
+    };
+
+    fetchAllStatuses();
+
+    // Load technicians from API (fetch all statuses on mount so DAY_OFF entries are included)
+    refreshTechnicians('').then(() => { });
+
     const mockWarehouses: Warehouse[] = [
       {
         warehouse_id: '1',
@@ -327,6 +366,8 @@ const ServiceCenterDashboard = () => {
     setWarehouses(mockWarehouses);
     setTypeComponents(mockTypeComponents);
     setStocks(mockStocks);
+
+    return () => { cancelled = true; };
   }, []);
 
   // Inventory Management Helper Functions
@@ -592,17 +633,13 @@ const ServiceCenterDashboard = () => {
       'Phanh': ['General Diagnostics']
     };
 
-    const requiredSpecialties = specialtyMapping[issueType] || ['General Diagnostics'];
-
+    // Without specialty information, recommend by availability and workload (less loaded first)
     return availableTechnicians
-      .filter(tech =>
-        tech.isAvailable &&
-        requiredSpecialties.includes(tech.specialty)
-      )
+      .filter(tech => tech.isAvailable)
       .sort((a, b) => {
-        if (b.rating !== a.rating) return b.rating - a.rating;
-        if (a.workload !== b.workload) return a.workload - b.workload;
-        return b.experience - a.experience;
+        const aw = a.workload || 0;
+        const bw = b.workload || 0;
+        return aw - bw;
       });
   };
 
@@ -619,6 +656,65 @@ const ServiceCenterDashboard = () => {
       default:
         return 'outline';
     }
+  };
+
+  const getStatusBadgeVariant = (status?: string) => {
+    switch ((status || '').toUpperCase()) {
+      case 'CHECKED_IN':
+      case 'PENDING_DIAGNOSIS':
+        return 'secondary';
+      case 'IN_PROGRESS':
+        return 'default';
+      case 'COMPLETED':
+      case 'DELIVERED':
+        return 'success';
+      case 'REJECTED':
+      case 'CANCELLED':
+        return 'destructive';
+      default:
+        return 'outline';
+    }
+  };
+
+  // Friendly display labels for various status codes (claims, technicians, components)
+  const STATUS_LABELS: Record<string, string> = {
+    // Claim statuses
+    CHECKED_IN: 'Checked In',
+    IN_DIAGNOSIS: 'In Diagnosis',
+    WAITING_FOR_PARTS: 'Waiting for Parts',
+    IN_REPAIR: 'In Repair',
+    COMPLETED: 'Completed',
+    PAID: 'Paid',
+    CANCELLED: 'Cancelled',
+
+    // Technician statuses
+    WORKING: 'Working',
+    LEAVE_REQUESTED: 'Leave Requested',
+    LEAVE_APPROVED: 'Leave Approved',
+    DAY_OFF: 'Day Off',
+
+    // Component assignment statuses (uppercase keys)
+    PENDING: 'Pending',
+    RESERVED: 'Reserved',
+    DISPATCHED: 'Dispatched',
+    DELIVERED: 'Delivered',
+
+    // Generic
+    UNKNOWN: 'Unknown'
+  };
+
+  const getDisplayStatus = (status?: string) => {
+    if (!status) return STATUS_LABELS.UNKNOWN;
+    const key = String(status).trim().toUpperCase().replace(/\s+/g, '_');
+    if (STATUS_LABELS[key]) return STATUS_LABELS[key];
+    // Fallback: convert underscored or dashed words to Title Case
+    return String(status)
+      .replace(/_/g, ' ')
+      .replace(/-/g, ' ')
+      .toLowerCase()
+      .split(' ')
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
   };
 
   const handleViewClaimDetail = (vin: string) => {
@@ -640,6 +736,248 @@ const ServiceCenterDashboard = () => {
   const closeTechnicianModal = () => {
     setShowTechnicianModal(false);
     setSelectedCaseForAssignment('');
+  };
+
+  // Refresh technicians (callable from UI)
+  const refreshTechnicians = async (status = 'WORKING') => {
+    setIsLoadingTechnicians(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingTechnicians(false);
+      return;
+    }
+    try {
+      const url = status ? `http://localhost:3000/api/v1/users/technicians?status=${status}` : `http://localhost:3000/api/v1/users/technicians`;
+      const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+      const records = res.data?.data || [];
+      const today = new Date().toISOString().slice(0, 10);
+      const mapped: Technician[] = records.map((t: any) => {
+        const schedule = Array.isArray(t.workSchedule) ? t.workSchedule : [];
+        const todayEntry = schedule.find((ws: any) => ws.workDate === today) || schedule[schedule.length - 1];
+        const statusToday = todayEntry?.status || (t.status || undefined);
+        const normalizedStatus = String(statusToday || '').trim().toUpperCase().replace(/\s+/g, '_') || undefined;
+        return {
+          id: t.userId || t.id || String(t.techId || ''),
+          name: t.name || t.fullName || t.username || '',
+          specialty: t.specialty || t.department || undefined,
+          experience: t.experience || t.yearsOfExperience || undefined,
+          rating: t.rating || undefined,
+          workload: t.activeTaskCount || t.workload || t.currentLoad || undefined,
+          isAvailable: (normalizedStatus || '') === 'WORKING',
+          status: normalizedStatus
+        } as Technician;
+      });
+      setAvailableTechnicians(mapped);
+    } catch (err) {
+      console.error('Failed to refresh technicians', err);
+    } finally {
+      setIsLoadingTechnicians(false);
+    }
+  };
+
+  // Change technician status (optimistic UI + persist)
+  const changeTechnicianStatus = async (techId: string, newStatus: string) => {
+    // update local list optimistically
+    setAvailableTechnicians(prev => prev.map(t => t.id === techId ? { ...t, status: newStatus, isAvailable: newStatus === 'WORKING' } : t));
+
+    try {
+      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+      if (!token) return;
+      // assuming backend supports PATCH /users/technicians/:id/status
+      await axios.patch(`http://localhost:3000/api/v1/users/technicians/${techId}/status`, { status: newStatus }, { headers: { Authorization: `Bearer ${token}` } });
+    } catch (err) {
+      console.error('Failed to change technician status', err);
+      alert('Failed to change technician status on server.');
+      // optional: revert by reloading
+      refreshTechnicians();
+    }
+  };
+
+  const getTechBadgeVariant = (status?: string) => {
+    switch ((status || '').toUpperCase()) {
+      case 'WORKING':
+        return 'success';
+      case 'LEAVE_REQUESTED':
+        return 'secondary';
+      case 'LEAVE_APPROVED':
+        return 'default';
+      case 'DAY_OFF':
+        return 'destructive';
+      default:
+        return 'outline';
+    }
+  };
+
+  // Update claim status locally (and persist to backend if possible)
+  const updateClaimStatus = async (vin: string, newStatus: string) => {
+    // find the claim across claimsByStatus or warrantyClaims
+    let currentClaim: WarrantyClaim | undefined;
+    for (const k of Object.keys(claimsByStatus)) {
+      const found = claimsByStatus[k]?.find(c => c.vin === vin);
+      if (found) {
+        currentClaim = found;
+        break;
+      }
+    }
+    if (!currentClaim) {
+      currentClaim = warrantyClaims.find(c => c.vin === vin);
+    }
+    if (!currentClaim) return;
+
+    const prevStatus = currentClaim.status || activeStatus;
+
+    // Optimistically update UI: remove from old status and add to new status
+    setClaimsByStatus(prev => {
+      const next: Record<string, WarrantyClaim[]> = {};
+      Object.keys(prev).forEach(k => {
+        next[k] = prev[k].filter(c => c.vin !== vin);
+      });
+      const updated: WarrantyClaim = { ...currentClaim!, status: newStatus };
+      next[newStatus] = [updated, ...(next[newStatus] || [])];
+      return next;
+    });
+
+    setWarrantyClaims(prev => {
+      // if active tab was the previous status, remove it
+      if (activeStatus === prevStatus) {
+        return prev.filter(c => c.vin !== vin);
+      }
+      // if active tab is the new status, prepend it
+      if (activeStatus === newStatus) {
+        return [{ ...currentClaim!, status: newStatus }, ...prev];
+      }
+      return prev;
+    });
+
+    setSelectedClaimForDetail(prev => prev && prev.vin === vin ? { ...prev, status: newStatus } : prev);
+
+    // Persist change to backend if possible
+    try {
+      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+      if (token) {
+        // Assuming backend supports PATCH /processing-records/:vin/status
+        await axios.patch(
+          `http://localhost:3000/api/v1/processing-records/${vin}/status`,
+          { status: newStatus },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      }
+    } catch (err) {
+      console.error('Failed to persist status update', err);
+      // Optionally show error to user
+      // For now, keep optimistic UI but inform
+      alert('Status updated locally but failed to persist to server.');
+    }
+  };
+
+  // Component Assignment Handlers
+  const openComponentAssignmentModal = (vin: string) => {
+    setSelectedClaimForComponents(vin);
+    setShowComponentAssignmentModal(true);
+    setSelectedWarehouseForAssignment('');
+    setSelectedComponentForAssignment('');
+    setComponentQuantity(1);
+  };
+
+  const closeComponentAssignmentModal = () => {
+    setShowComponentAssignmentModal(false);
+    setSelectedClaimForComponents('');
+    setSelectedWarehouseForAssignment('');
+    setSelectedComponentForAssignment('');
+    setComponentQuantity(1);
+  };
+
+  const getAvailableStock = (warehouseId: string, componentId: string): number => {
+    const stock = stocks.find(
+      s => s.warehouse_id === warehouseId && s.type_component_id === componentId
+    );
+    if (!stock) return 0;
+    return stock.quantity_in_stock - stock.quantity_reserved;
+  };
+
+  const handleAssignComponent = () => {
+    if (!selectedWarehouseForAssignment || !selectedComponentForAssignment || componentQuantity <= 0) {
+      return;
+    }
+
+    const availableStock = getAvailableStock(selectedWarehouseForAssignment, selectedComponentForAssignment);
+    if (componentQuantity > availableStock) {
+      alert(`Insufficient stock! Only ${availableStock} units available.`);
+      return;
+    }
+
+    const warehouse = warehouses.find(w => w.warehouse_id === selectedWarehouseForAssignment);
+    const component = typeComponents.find(c => c.type_component_id === selectedComponentForAssignment);
+
+    if (!warehouse || !component) return;
+
+    const newAssignment: AssignedComponent = {
+      id: `assign-${Date.now()}`,
+      warehouse_id: warehouse.warehouse_id,
+      warehouse_name: warehouse.name,
+      type_component_id: component.type_component_id,
+      component_name: component.name,
+      component_sku: component.sku,
+      quantity: componentQuantity,
+      assigned_at: new Date().toISOString(),
+      status: 'pending'
+    };
+
+    setWarrantyClaims(prev => prev.map(claim => {
+      if (claim.vin === selectedClaimForComponents) {
+        return {
+          ...claim,
+          assignedComponents: [...claim.assignedComponents, newAssignment]
+        };
+      }
+      return claim;
+    }));
+
+    // Update stock - reserve the quantity
+    setStocks(prev => prev.map(stock => {
+      if (stock.warehouse_id === selectedWarehouseForAssignment &&
+        stock.type_component_id === selectedComponentForAssignment) {
+        return {
+          ...stock,
+          quantity_reserved: stock.quantity_reserved + componentQuantity
+        };
+      }
+      return stock;
+    }));
+
+    setSelectedComponentForAssignment('');
+    setComponentQuantity(1);
+  };
+
+  const handleRemoveAssignedComponent = (vin: string, assignmentId: string) => {
+    const claim = warrantyClaims.find(c => c.vin === vin);
+    if (!claim) return;
+
+    const assignment = claim.assignedComponents.find(a => a.id === assignmentId);
+    if (!assignment) return;
+
+    // Remove the assignment
+    setWarrantyClaims(prev => prev.map(c => {
+      if (c.vin === vin) {
+        return {
+          ...c,
+          assignedComponents: c.assignedComponents.filter(a => a.id !== assignmentId)
+        };
+      }
+      return c;
+    }));
+
+    // Return stock to available
+    setStocks(prev => prev.map(stock => {
+      if (stock.warehouse_id === assignment.warehouse_id &&
+        stock.type_component_id === assignment.type_component_id) {
+        return {
+          ...stock,
+          quantity_reserved: Math.max(0, stock.quantity_reserved - assignment.quantity)
+        };
+      }
+      return stock;
+    }));
   };
 
   // Helper function to format date
@@ -1262,7 +1600,7 @@ const ServiceCenterDashboard = () => {
               {hasPermission(user, 'register_vehicle') && (
                 <TabsTrigger value="vehicles">Inventory Management</TabsTrigger>
               )}
-              <TabsTrigger value="repairs">Active Repairs</TabsTrigger>
+              <TabsTrigger value="repairs">Technician Management</TabsTrigger>
               {hasPermission(user, 'manage_campaigns') && (
                 <TabsTrigger value="campaigns">Service Campaigns</TabsTrigger>
               )}
@@ -1280,20 +1618,22 @@ const ServiceCenterDashboard = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {/* Test Button */}
-                  <div className="mb-4">
-                    <Button
-                      onClick={() => {
-                        console.log('Test button clicked');
-                        if (warrantyClaims.length > 0) {
-                          handleViewClaimDetail(warrantyClaims[0].vin);
-                        }
-                      }}
-                      variant="outline"
-                      size="sm"
-                    >
-                      Test Modal (First Claim)
-                    </Button>
+                  {/* Status Tabs */}
+                  <div className="mb-4 flex items-center gap-2 flex-wrap">
+                    {STATUSES.map(s => (
+                      <Button
+                        key={s}
+                        variant={s === activeStatus ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => {
+                          setActiveStatus(s);
+                          setWarrantyClaims(claimsByStatus[s] || []);
+                        }}
+                        className="border-dashed"
+                      >
+                        {getDisplayStatus(s)} ({(claimsByStatus[s] || []).length})
+                      </Button>
+                    ))}
                   </div>
                   <div className="rounded-lg border">
                     <Table>
@@ -1302,6 +1642,7 @@ const ServiceCenterDashboard = () => {
                           <TableHead>VIN</TableHead>
                           <TableHead>Mileage</TableHead>
                           <TableHead>Check-in Date</TableHead>
+                          <TableHead>Status</TableHead>
                           <TableHead>Case</TableHead>
                           <TableHead>Technician Assignment</TableHead>
                           <TableHead>Actions</TableHead>
@@ -1321,19 +1662,28 @@ const ServiceCenterDashboard = () => {
                             <TableCell>
                               {new Date(claim.checkInDate).toLocaleDateString('en-US')}
                             </TableCell>
+                            <TableCell>
+                              <Badge variant={getStatusBadgeVariant(claim.status)} className="text-xs">
+                                {getDisplayStatus(claim.status)}
+                              </Badge>
+                            </TableCell>
                             <TableCell className="max-w-xs">
                               <div className="space-y-1">
                                 <div className="font-medium text-sm">{claim.issueType}</div>
-                                <div className="text-xs text-muted-foreground line-clamp-2">
-                                  {claim.caseDescription}
-                                </div>
-                                <Badge variant={getPriorityBadgeVariant(claim.priority)} className="text-xs">
-                                  {claim.priority === 'Urgent' && '🚨 '}
-                                  {claim.priority === 'High' && '🔥 '}
-                                  {claim.priority === 'Medium' && '📋 '}
-                                  {claim.priority === 'Low' && '📝 '}
-                                  {claim.priority}
-                                </Badge>
+                                {claim.caseDescription && claim.caseDescription.trim() !== (claim.issueType || '').trim() && (
+                                  <div className="text-xs text-muted-foreground line-clamp-2">
+                                    {claim.caseDescription}
+                                  </div>
+                                )}
+                                {claim.priority && (
+                                  <Badge variant={getPriorityBadgeVariant(claim.priority)} className="text-xs">
+                                    {claim.priority === 'Urgent' && '🚨 '}
+                                    {claim.priority === 'High' && '🔥 '}
+                                    {claim.priority === 'Medium' && '📋 '}
+                                    {claim.priority === 'Low' && '📝 '}
+                                    {claim.priority}
+                                  </Badge>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell className="max-w-xs">
@@ -1373,10 +1723,24 @@ const ServiceCenterDashboard = () => {
                                     Assign Technician
                                   </Button>
                                 )}
+
+                                {/* Assign Components Button */}
+                                {hasPermission(user, 'assign_technicians') && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full mt-2 border-dashed border-green-300 text-green-600 hover:bg-green-50"
+                                    onClick={() => openComponentAssignmentModal(claim.vin)}
+                                  >
+                                    <Package className="h-4 w-4 mr-2" />
+                                    Assign Components ({claim.assignedComponents.length})
+                                  </Button>
+                                )}
+
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className="flex space-x-2">
+                              <div className="flex items-center space-x-2">
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -1384,6 +1748,27 @@ const ServiceCenterDashboard = () => {
                                 >
                                   View
                                 </Button>
+
+                                {/* Status update select - moves record between status groups */}
+                                <Select
+                                  onValueChange={(value) => {
+                                    if (!value) return;
+                                    if (value === claim.status) return;
+                                    updateClaimStatus(claim.vin, value);
+                                  }}
+                                  value={undefined}
+                                >
+                                  <SelectTrigger className="min-w-[160px]">
+                                    <SelectValue placeholder="Update Status" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {STATUSES.map(s => (
+                                      <SelectItem key={s} value={s}>
+                                        {getDisplayStatus(s)}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -1725,37 +2110,77 @@ const ServiceCenterDashboard = () => {
             <TabsContent value="repairs" className="space-y-6">
               <Card className="shadow-elegant">
                 <CardHeader>
-                  <CardTitle>Active Repairs</CardTitle>
-                  <CardDescription>
-                    Track repair progress and technician assignments
-                  </CardDescription>
+                  <div className="flex items-center justify-between w-full">
+                    <div>
+                      <CardTitle>Technician Management</CardTitle>
+                      <CardDescription>View and manage technicians' statuses and assignments</CardDescription>
+                    </div>
+                    {/* actions removed: refresh buttons omitted per UX request */}
+                  </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <Card className="border-warning">
-                      <CardHeader>
-                        <CardTitle className="text-base text-warning">Pending Parts</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-sm">5 repairs waiting for parts delivery</p>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-primary">
-                      <CardHeader>
-                        <CardTitle className="text-base text-primary">In Progress</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-sm">7 vehicles currently being repaired</p>
-                      </CardContent>
-                    </Card>
-                    <Card className="border-success">
-                      <CardHeader>
-                        <CardTitle className="text-base text-success">Ready for Handover</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-sm">3 repairs completed and ready</p>
-                      </CardContent>
-                    </Card>
+                  {/* Status tabs for technicians */}
+                  <div className="mb-4 flex items-center gap-2 flex-wrap">
+                    {['WORKING', 'LEAVE_REQUESTED', 'LEAVE_APPROVED', 'DAY_OFF', 'ALL'].map(s => {
+                      const count = s === 'ALL' ? availableTechnicians.length : availableTechnicians.filter(t => (t.status || (t.isAvailable ? 'WORKING' : 'OFF')) === s).length;
+                      return (
+                        <Button
+                          key={s}
+                          size="sm"
+                          variant={s === (typeof techFilterStatus !== 'undefined' ? techFilterStatus : 'WORKING') ? 'default' : 'outline'}
+                          onClick={() => setTechFilterStatus(s)}
+                        >
+                          {getDisplayStatus(s)} ({count})
+                        </Button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Tasks</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(techFilterStatus && techFilterStatus !== 'ALL' ? availableTechnicians.filter(t => (t.status || (t.isAvailable ? 'WORKING' : 'OFF')) === techFilterStatus) : availableTechnicians).map(tech => (
+                          <TableRow key={tech.id}>
+                            <TableCell>{tech.name}</TableCell>
+                            <TableCell>{typeof tech.workload === 'number' ? tech.workload : '-'}</TableCell>
+                            <TableCell>
+                              <Badge variant={tech.isAvailable ? 'success' : 'outline'} className="text-xs">
+                                {getDisplayStatus(tech.status || (tech.isAvailable ? 'WORKING' : 'OFF'))}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center">
+                                <Select onValueChange={(val) => {
+                                  if (!val) return;
+                                  if (val === 'DAY_OFF') {
+                                    if (!confirm('Mark technician as DAY_OFF?')) return;
+                                  }
+                                  changeTechnicianStatus(tech.id, val);
+                                }} value={undefined}>
+                                  <SelectTrigger className="min-w-[140px]">
+                                    <SelectValue placeholder="Change status" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="WORKING">{getDisplayStatus('WORKING')}</SelectItem>
+                                    <SelectItem value="LEAVE_REQUESTED">{getDisplayStatus('LEAVE_REQUESTED')}</SelectItem>
+                                    <SelectItem value="LEAVE_APPROVED">{getDisplayStatus('LEAVE_APPROVED')}</SelectItem>
+                                    <SelectItem value="DAY_OFF">{getDisplayStatus('DAY_OFF')}</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 </CardContent>
               </Card>
@@ -2146,6 +2571,11 @@ const ServiceCenterDashboard = () => {
 
             {selectedClaimForDetail && (
               <div className="space-y-6 mt-6">
+                <div className="flex items-center gap-3">
+                  <Badge variant={getStatusBadgeVariant(selectedClaimForDetail.status)} className="text-sm">
+                    {selectedClaimForDetail.status || 'UNKNOWN'}
+                  </Badge>
+                </div>
                 {/* Basic Information */}
                 <Card>
                   <CardHeader>
@@ -2222,21 +2652,25 @@ const ServiceCenterDashboard = () => {
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Priority Level</label>
                         <div className="mt-1">
-                          <Badge variant={getPriorityBadgeVariant(selectedClaimForDetail.priority)} className="text-sm">
-                            {selectedClaimForDetail.priority === 'Urgent' && '🚨 '}
-                            {selectedClaimForDetail.priority === 'High' && '🔥 '}
-                            {selectedClaimForDetail.priority === 'Medium' && '📋 '}
-                            {selectedClaimForDetail.priority === 'Low' && '📝 '}
-                            {selectedClaimForDetail.priority}
-                          </Badge>
+                          {selectedClaimForDetail.priority && (
+                            <Badge variant={getPriorityBadgeVariant(selectedClaimForDetail.priority)} className="text-sm">
+                              {selectedClaimForDetail.priority === 'Urgent' && '🚨 '}
+                              {selectedClaimForDetail.priority === 'High' && '🔥 '}
+                              {selectedClaimForDetail.priority === 'Medium' && '📋 '}
+                              {selectedClaimForDetail.priority === 'Low' && '📝 '}
+                              {selectedClaimForDetail.priority}
+                            </Badge>
+                          )}
                         </div>
                       </div>
-                      <div>
-                        <label className="text-sm font-medium text-muted-foreground">Case Description</label>
-                        <div className="mt-2 p-4 bg-muted rounded-lg">
-                          <p className="text-base leading-relaxed">{selectedClaimForDetail.caseDescription}</p>
+                      {selectedClaimForDetail.caseDescription && selectedClaimForDetail.caseDescription.trim() !== (selectedClaimForDetail.issueType || '').trim() && (
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Case Description</label>
+                          <div className="mt-2 p-4 bg-muted rounded-lg">
+                            <p className="text-base leading-relaxed">{selectedClaimForDetail.caseDescription}</p>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -2244,10 +2678,26 @@ const ServiceCenterDashboard = () => {
                 {/* Assigned Technicians */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <Users className="h-5 w-5" />
-                      Assigned Technicians ({selectedClaimForDetail.assignedTechnicians.length})
-                    </CardTitle>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <Users className="h-5 w-5" />
+                        Assigned Technicians ({selectedClaimForDetail.assignedTechnicians.length})
+                      </CardTitle>
+                      {hasPermission(user, 'assign_technicians') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setShowClaimDetailModal(false);
+                            openTechnicianAssignmentModal(selectedClaimForDetail.vin);
+                          }}
+                          className="border-dashed border-blue-300 text-blue-600 hover:bg-blue-50"
+                        >
+                          <Users className="h-4 w-4 mr-2" />
+                          Assign Technician
+                        </Button>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent>
                     {selectedClaimForDetail.assignedTechnicians.length > 0 ? (
@@ -2261,14 +2711,13 @@ const ServiceCenterDashboard = () => {
                                 </div>
                                 <div className="flex-1">
                                   <p className="font-semibold">{tech.name}</p>
-                                  <p className="text-sm text-muted-foreground">{tech.specialty}</p>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <Badge variant="outline" className="text-xs">
-                                      {tech.experience} years exp.
-                                    </Badge>
-                                    <Badge variant="outline" className="text-xs">
-                                      ⭐ {tech.rating}/5
-                                    </Badge>
+                                  <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                                    {typeof tech.workload === 'number' && (
+                                      <Badge variant="outline" className="text-xs">Tasks: {tech.workload}</Badge>
+                                    )}
+                                    {tech.status && (
+                                      <span className="text-xs">{getDisplayStatus(tech.status)}</span>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -2280,6 +2729,93 @@ const ServiceCenterDashboard = () => {
                       <div className="text-center py-8">
                         <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                         <p className="text-muted-foreground">No technicians assigned yet</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Assigned Components */}
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <Package className="h-5 w-5" />
+                        Assigned Components ({selectedClaimForDetail.assignedComponents.length})
+                      </CardTitle>
+                      {hasPermission(user, 'assign_technicians') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setShowClaimDetailModal(false);
+                            openComponentAssignmentModal(selectedClaimForDetail.vin);
+                          }}
+                          className="border-dashed border-green-300 text-green-600 hover:bg-green-50"
+                        >
+                          <Package className="h-4 w-4 mr-2" />
+                          Assign Components
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {selectedClaimForDetail.assignedComponents.length > 0 ? (
+                      <div className="space-y-3">
+                        {selectedClaimForDetail.assignedComponents.map((comp) => (
+                          <Card key={comp.id} className="border-dashed border-green-200">
+                            <CardContent className="p-4">
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <Box className="h-4 w-4 text-green-600" />
+                                    <span className="font-semibold">{comp.component_name}</span>
+                                    <Badge variant="outline" className="text-xs">
+                                      {comp.component_sku}
+                                    </Badge>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                      <p className="text-muted-foreground flex items-center gap-1">
+                                        <Warehouse className="h-3 w-3" />
+                                        Warehouse
+                                      </p>
+                                      <p className="font-medium">{comp.warehouse_name}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground">Quantity</p>
+                                      <p className="font-medium">{comp.quantity} units</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground">Status</p>
+                                      <Badge
+                                        variant={
+                                          comp.status === 'pending' ? 'secondary' :
+                                            comp.status === 'reserved' ? 'default' :
+                                              comp.status === 'dispatched' ? 'outline' : 'default'
+                                        }
+                                        className="text-xs"
+                                      >
+                                        {comp.status}
+                                      </Badge>
+                                    </div>
+                                    <div>
+                                      <p className="text-muted-foreground">Assigned At</p>
+                                      <p className="text-xs">{new Date(comp.assigned_at).toLocaleString()}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <p className="text-muted-foreground">No components assigned yet</p>
+                        <p className="text-sm text-muted-foreground mt-2">
+                          Click "Assign Components" to allocate parts from inventory
+                        </p>
                       </div>
                     )}
                   </CardContent>
@@ -2328,21 +2864,31 @@ const ServiceCenterDashboard = () => {
         {/* Technician Assignment Modal */}
         <Dialog open={showTechnicianModal} onOpenChange={closeTechnicianModal}>
           <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-blue-600" />
-                Assign Technician to Case
-              </DialogTitle>
-              <DialogDescription>
-                {selectedCaseForAssignment && (
-                  <span>
-                    VIN: <span className="font-mono font-medium">{selectedCaseForAssignment}</span> -
-                    Issue: <span className="font-medium">
-                      {warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.issueType}
+            <DialogHeader className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-blue-600" />
+                  Assign Technician to Case
+                </DialogTitle>
+                <DialogDescription>
+                  {selectedCaseForAssignment && (
+                    <span>
+                      VIN: <span className="font-mono font-medium">{selectedCaseForAssignment}</span> -
+                      Issue: <span className="font-medium">
+                        {warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.issueType}
+                      </span>
                     </span>
-                  </span>
+                  )}
+                </DialogDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => refreshTechnicians('WORKING')}>
+                  Refresh
+                </Button>
+                {isLoadingTechnicians && (
+                  <div className="text-sm text-muted-foreground">Loading...</div>
                 )}
-              </DialogDescription>
+              </div>
             </DialogHeader>
 
             <div className="space-y-4">
@@ -2353,15 +2899,23 @@ const ServiceCenterDashboard = () => {
                   <div className="flex flex-wrap gap-2">
                     {warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.assignedTechnicians.map((tech) => (
                       <Badge key={tech.id} variant="default" className="text-sm p-2">
-                        {tech.name} ({tech.specialty})
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="ml-2 h-4 w-4 p-0 hover:bg-red-100"
-                          onClick={() => removeTechnicianFromCase(selectedCaseForAssignment, tech.id)}
-                        >
-                          ×
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{tech.name}</span>
+                          {typeof tech.workload === 'number' && (
+                            <span className="text-xs">Tasks: {tech.workload}</span>
+                          )}
+                          {tech.status && (
+                            <span className="text-xs text-muted-foreground">{getDisplayStatus(tech.status)}</span>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="ml-2 h-4 w-4 p-0 hover:bg-red-100"
+                            onClick={() => removeTechnicianFromCase(selectedCaseForAssignment, tech.id)}
+                          >
+                            ×
+                          </Button>
+                        </div>
                       </Badge>
                     )) || []}
                     {(!warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.assignedTechnicians.length ||
@@ -2386,19 +2940,19 @@ const ServiceCenterDashboard = () => {
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
                               <h5 className="font-medium">{tech.name}</h5>
-                              <Badge variant="outline" className="text-xs">
-                                {tech.specialty}
-                              </Badge>
-                              <Badge variant={tech.workload <= 2 ? "default" : tech.workload <= 4 ? "secondary" : "destructive"} className="text-xs">
-                                Workload: {tech.workload}/5
-                              </Badge>
+                              {typeof tech.workload === 'number' && (
+                                <Badge variant={tech.workload <= 2 ? "default" : tech.workload <= 4 ? "secondary" : "destructive"} className="text-xs">
+                                  Tasks: {tech.workload}
+                                </Badge>
+                              )}
                             </div>
                             <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                              <span>⭐ {tech.rating} rating</span>
-                              <span>📅 {tech.experience} years experience</span>
                               <span className={`${tech.isAvailable ? 'text-green-600' : 'text-red-600'}`}>
                                 {tech.isAvailable ? '✅ Available' : '❌ Busy'}
                               </span>
+                              {tech.status && (
+                                <span className="text-xs text-muted-foreground">{tech.status}</span>
+                              )}
                             </div>
                           </div>
                           <Button
@@ -2415,6 +2969,191 @@ const ServiceCenterDashboard = () => {
                   })}
                 </div>
               </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Component Assignment Modal */}
+        <Dialog open={showComponentAssignmentModal} onOpenChange={closeComponentAssignmentModal}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-green-600" />
+                Assign Components to Claim
+              </DialogTitle>
+              <DialogDescription>
+                {selectedClaimForComponents && (
+                  <span>
+                    VIN: <span className="font-mono font-medium">{selectedClaimForComponents}</span> -
+                    Issue: <span className="font-medium">
+                      {warrantyClaims.find(c => c.vin === selectedClaimForComponents)?.issueType}
+                    </span>
+                  </span>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6">
+              {/* Currently Assigned Components */}
+              {selectedClaimForComponents && (
+                <Card className="border-green-200 bg-green-50">
+                  <CardHeader>
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Package className="h-4 w-4" />
+                      Currently Assigned Components ({warrantyClaims.find(c => c.vin === selectedClaimForComponents)?.assignedComponents.length || 0})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {warrantyClaims.find(c => c.vin === selectedClaimForComponents)?.assignedComponents.length ? (
+                      <div className="space-y-2">
+                        {warrantyClaims.find(c => c.vin === selectedClaimForComponents)?.assignedComponents.map((comp) => (
+                          <div key={comp.id} className="flex items-center justify-between p-3 bg-white rounded-lg border">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-medium">{comp.component_name}</span>
+                                <Badge variant="outline" className="text-xs">
+                                  {comp.component_sku}
+                                </Badge>
+                                <Badge
+                                  variant={
+                                    comp.status === 'pending' ? 'secondary' :
+                                      comp.status === 'reserved' ? 'default' :
+                                        comp.status === 'dispatched' ? 'outline' : 'default'
+                                  }
+                                  className="text-xs"
+                                >
+                                  {getDisplayStatus(comp.status)}
+                                </Badge>
+                              </div>
+                              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                                <span className="flex items-center gap-1">
+                                  <Warehouse className="h-3 w-3" />
+                                  {comp.warehouse_name}
+                                </span>
+                                <span>Qty: {comp.quantity}</span>
+                                <span className="text-xs">{new Date(comp.assigned_at).toLocaleString()}</span>
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-600 hover:bg-red-50"
+                              onClick={() => handleRemoveAssignedComponent(selectedClaimForComponents, comp.id)}
+                            >
+                              <Trash className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No components assigned yet</p>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Assign New Component */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Assign New Component</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Warehouse Selection */}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Select Warehouse</label>
+                    <Select value={selectedWarehouseForAssignment} onValueChange={setSelectedWarehouseForAssignment}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose a warehouse" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {warehouses.map(warehouse => (
+                          <SelectItem key={warehouse.warehouse_id} value={warehouse.warehouse_id}>
+                            <div className="flex items-center gap-2">
+                              <Warehouse className="h-4 w-4" />
+                              {warehouse.name}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Component Selection (filtered by warehouse) */}
+                  {selectedWarehouseForAssignment && (
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">Select Component</label>
+                      <Select
+                        value={selectedComponentForAssignment}
+                        onValueChange={setSelectedComponentForAssignment}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose a component" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {stocks
+                            .filter(s => s.warehouse_id === selectedWarehouseForAssignment)
+                            .map(stock => {
+                              const component = typeComponents.find(c => c.type_component_id === stock.type_component_id);
+                              const availableStock = stock.quantity_in_stock - stock.quantity_reserved;
+                              if (!component) return null;
+                              return (
+                                <SelectItem
+                                  key={stock.stock_id}
+                                  value={component.type_component_id}
+                                  disabled={availableStock <= 0}
+                                >
+                                  <div className="flex items-center justify-between w-full gap-4">
+                                    <span>{component.name}</span>
+                                    <span className="text-xs">
+                                      <Badge variant={availableStock > 5 ? 'default' : availableStock > 0 ? 'secondary' : 'destructive'}>
+                                        Stock: {availableStock}
+                                      </Badge>
+                                    </span>
+                                  </div>
+                                </SelectItem>
+                              );
+                            })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Quantity Input with Stock Info */}
+                  {selectedComponentForAssignment && selectedWarehouseForAssignment && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-medium">Quantity</label>
+                        <span className="text-xs text-muted-foreground">
+                          Available: {getAvailableStock(selectedWarehouseForAssignment, selectedComponentForAssignment)} units
+                        </span>
+                      </div>
+                      <Input
+                        type="number"
+                        min="1"
+                        max={getAvailableStock(selectedWarehouseForAssignment, selectedComponentForAssignment)}
+                        value={componentQuantity}
+                        onChange={(e) => setComponentQuantity(parseInt(e.target.value) || 1)}
+                        className="w-full"
+                      />
+                      {componentQuantity > getAvailableStock(selectedWarehouseForAssignment, selectedComponentForAssignment) && (
+                        <p className="text-xs text-red-600 mt-1">
+                          ⚠️ Insufficient stock! Only {getAvailableStock(selectedWarehouseForAssignment, selectedComponentForAssignment)} units available.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Assign Button */}
+                  <Button
+                    onClick={handleAssignComponent}
+                    disabled={!selectedWarehouseForAssignment || !selectedComponentForAssignment || componentQuantity <= 0}
+                    className="w-full"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Assign Component
+                  </Button>
+                </CardContent>
+              </Card>
             </div>
           </DialogContent>
         </Dialog>
