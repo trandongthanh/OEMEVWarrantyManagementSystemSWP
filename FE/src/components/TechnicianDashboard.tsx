@@ -597,10 +597,10 @@ const TechnicianDashboard = ({
               </div>
             </div>
 
-            {/* My Warranty Cases */}
+            {/* Warranty Cases */}
             <Card>
               <CardHeader>
-                <CardTitle>My Warranty Cases</CardTitle>
+                <CardTitle>Warranty Cases</CardTitle>
                 <CardDescription>
                   View and manage your created warranty cases and issue diagnoses
                 </CardDescription>
@@ -1873,30 +1873,34 @@ const TechnicianDashboard = ({
           <div className="space-y-6">
             {/* Vehicle & Customer Information and Diagnosis */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-              <div className="space-y-4">
-                <h4 className="font-medium text-base">🚗 Vehicle & Customer Information</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div className="space-y-2">
-                    <Label>Vehicle VIN</Label>
-                    <Input 
-                      placeholder="Enter vehicle VIN..." 
-                      defaultValue={selectedWarrantyCase?.vehicleVin}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Customer Name</Label>
-                    <Input 
-                      placeholder="Enter customer name..." 
-                      defaultValue={selectedWarrantyCase?.customerName}
-                    />
+              <div>
+                <div className="space-y-4">
+                  <h4 className="font-medium text-base">🚗 Vehicle & Customer Information</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Vehicle VIN</Label>
+                      <Input 
+                        placeholder="Enter vehicle VIN..." 
+                        defaultValue={selectedWarrantyCase?.vehicleVin}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Customer Name</Label>
+                      <Input 
+                        placeholder="Enter customer name..." 
+                        defaultValue={selectedWarrantyCase?.customerName}
+                      />
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-2 -mt-2">
-                  <Label>Customer Phone</Label>
-                  <Input 
-                    placeholder="Enter phone number..." 
-                    defaultValue={selectedWarrantyCase?.customerPhone}
-                  />
+                <div style={{ marginTop: '1.1rem' }}>
+                  <div className="space-y-2">
+                    <Label>Customer Phone</Label>
+                    <Input 
+                      placeholder="Enter phone number..." 
+                      defaultValue={selectedWarrantyCase?.customerPhone}
+                    />
+                  </div>
                 </div>
               </div>
               
