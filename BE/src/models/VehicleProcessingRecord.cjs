@@ -29,14 +29,17 @@ module.exports = (sequelize, DataTypes) => {
 
       status: {
         type: DataTypes.ENUM(
-          "processing",
-          "waiting_customer_approval",
-          "ready_for_pickup",
-          "completed",
-          "cancelled"
+          "CHECKED_IN",
+          "IN_DIAGNOSIS",
+          "WAITING_CUSTOMER_APPROVAL",
+          "PAID",
+          "IN_REPAIR",
+          "READY_FOR_PICKUP",
+          "COMPLETED",
+          "CANCELLED"
         ),
         allowNull: false,
-        defaultValue: "processing",
+        defaultValue: "CHECKED_IN",
         field: "status",
       },
 
@@ -56,13 +59,6 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.FLOAT,
         allowNull: true,
         field: "diagnostic_fee",
-      },
-
-      isDiagnosticFeeApproved: {
-        type: DataTypes.BOOLEAN,
-        allowNull: false,
-        defaultValue: false,
-        field: "is_diagnostic_fee_approved",
       },
     },
     {

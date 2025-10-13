@@ -10,7 +10,7 @@ const router = express.Router();
 
 /**
  * @swagger
- * /vehicle-processing-record:
+ * /processing-records:
  *   post:
  *     summary: Create a new vehicle processing record
  *     description: Create a new vehicle processing record with one or more guarantee cases
@@ -223,7 +223,7 @@ router.post(
 
 /**
  * @swagger
- * /vehicle-processing-record/{id}/assignmen:
+ * /processing-records/{id}/assignment:
  *   patch:
  *     summary: Assign a technician to a vehicle processing record
  *     tags: [Vehicle Processing Record]
@@ -306,7 +306,7 @@ router.patch(
 
 /**
  * @swagger
- * /vehicle-processing-record/{id}:
+ * /processing-records/{id}:
  *   get:
  *     summary: Get vehicle processing record details by ID
  *     description: Retrieve detailed information about a vehicle processing record including vehicle, technician, and guarantee cases
@@ -488,7 +488,7 @@ router.get(
 
 /**
  * @swagger
- * /vehicle-processing-record/{id}/compatible-components:
+ * /processing-records/{id}/compatible-components:
  *   get:
  *     summary: Search compatible components in stock for a processing record
  *     description: Search for compatible vehicle components available in warehouse stock based on the vehicle model in the processing record
@@ -608,6 +608,7 @@ router.get(
     "service_center_manager",
     "service_center_staff",
   ]),
+  attachCompanyContext,
   async (req, res, next) => {
     const vehicleProcessingRecordController = req.container.resolve(
       "vehicleProcessingRecordController"
@@ -618,6 +619,23 @@ router.get(
       res,
       next
     );
+  }
+);
+
+router.get(
+  "/",
+  authentication,
+  authorizationByRole([
+    "service_center_staff",
+    "service_center_manager",
+    "service_center_technician",
+  ]),
+  async (req, res, next) => {
+    const vehicleProcessingRecordController = req.container.resolve(
+      "vehicleProcessingRecordController"
+    );
+
+    await vehicleProcessingRecordController.getAllRecords(req, res, next);
   }
 );
 

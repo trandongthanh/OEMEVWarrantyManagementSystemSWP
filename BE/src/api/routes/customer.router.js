@@ -3,7 +3,7 @@ const router = express.Router();
 
 /**
  * @swagger
- * /customer:
+ * /customers:
  *   get:
  *     summary: Find customer by phone number or email
  *     tags: [Customer]

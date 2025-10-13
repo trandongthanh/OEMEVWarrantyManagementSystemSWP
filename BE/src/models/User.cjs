@@ -121,20 +121,25 @@ module.exports = (sequelize, DataTypes) => {
       as: "leadTechnician",
     });
 
-    // User.hasMany(models.CaseLine, {
-    //   foreignKey: "tech_id",
-    //   as: "diagnosedCaseLines",
-    // });
+    User.hasMany(models.WorkSchedule, {
+      foreignKey: "technician_id",
+      as: "workSchedule",
+    });
+
+    User.hasMany(models.CaseLine, {
+      foreignKey: "tech_id",
+      as: "diagnosedCaseLines",
+    });
 
     // User.hasMany(models.InstalledPart, {
     //   foreignKey: "technician_id",
     //   as: "installedParts",
     // });
 
-    // User.hasMany(models.TaskAssignment, {
-    //   foreignKey: "technician_id",
-    //   as: "tasks",
-    // });
+    User.hasMany(models.TaskAssignment, {
+      foreignKey: "technician_id",
+      as: "tasks",
+    });
 
     // User.hasMany(models.Report, {
     //   foreignKey: "technician_id",

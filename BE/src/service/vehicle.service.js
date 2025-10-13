@@ -183,6 +183,7 @@ class VehicleService {
         );
 
         return {
+          typeComponentId: component.typeComponentId,
           componentName: component.name,
           policy: {
             durationMonths: component.WarrantyComponent.durationMonth,
@@ -285,6 +286,7 @@ class VehicleService {
         );
 
         return {
+          typeComponentId: component.typeComponentId,
           componentName: component.name,
           policy: {
             durationMonths: component.WarrantyComponent.durationMonth,

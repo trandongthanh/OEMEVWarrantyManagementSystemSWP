@@ -5,6 +5,7 @@ const caseLineSchema = Joi.object({
   correctionText: Joi.string().required(),
   componentId: Joi.string().uuid().allow(null),
   quantity: Joi.number().integer().min(0).required(),
+  warrantyStatus: Joi.string().valid("ELIGIBLE", "INELIGIBLE").required(),
 });
 
 export const createCaseLinesSchema = Joi.object({
