@@ -1,5 +1,4 @@
 
-
 import { useState } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -51,7 +50,7 @@ interface WarrantyRecord {
   id: string;
   vinNumber: string;
   customerName: string;
-  mileage: number;
+  odometer: number;
   cases?: CaseNote[];
   purchaseDate: string;
   status: 'pending' | 'in-progress' | 'completed';
@@ -87,7 +86,7 @@ interface OwnerForm {
 }
 
 const SuperAdvisor = () => {
-  const { user, logout, getToken } = useAuth();
+  const { logout, getToken } = useAuth();
   const { toast } = useToast();
   
   const [searchVin, setSearchVin] = useState('');
@@ -102,7 +101,7 @@ const SuperAdvisor = () => {
   // Form state for new record
   const [newRecord, setNewRecord] = useState({
     vinNumber: '',
-    mileage: '',
+    odometer: '',
     customerName: '',
     cases: [] as CaseNote[],
     purchaseDate: ''
@@ -139,7 +138,7 @@ const SuperAdvisor = () => {
   // Form state for editing record
   const [editRecord, setEditRecord] = useState({
     vinNumber: '',
-    mileage: '',
+    odometer: '',
     customerName: '',
     cases: [] as CaseNote[],
     purchaseDate: '',
@@ -149,17 +148,8 @@ const SuperAdvisor = () => {
   const [records, setRecords] = useState<WarrantyRecord[]>([]);
 
   // Helper: Validate record data
-  const validateRecord = (record: { vinNumber: string; customerName: string; mileage: string; cases: CaseNote[]; purchaseDate: string }) => {
-    return record.vinNumber && record.customerName && record.mileage && record.cases.length > 0 && record.purchaseDate;
-  };
-
-  // Helper: Calculate warranty status
-  const calculateWarrantyStatus = (durationStatus?: string, mileageStatus?: string) => {
-    if (durationStatus === 'ACTIVE' && mileageStatus === 'ACTIVE') return 'Active';
-    if (durationStatus === 'INACTIVE' && mileageStatus === 'INACTIVE') return 'Expired (Time & Mileage)';
-    if (durationStatus === 'INACTIVE') return 'Expired (Time)';
-    if (mileageStatus === 'INACTIVE') return 'Expired (Mileage)';
-    return 'N/A';
+  const validateRecord = (record: { vinNumber: string; customerName: string; odometer: string; cases: CaseNote[]; purchaseDate: string }) => {
+    return record.vinNumber && record.customerName && record.odometer && record.cases.length > 0 && record.purchaseDate;
   };
 
   const handleSearchWarranty = async () => {
@@ -207,12 +197,26 @@ const SuperAdvisor = () => {
       return;
     }    if (data && data.status === 'success' && data.data && data.data.vehicle) {
       const vehicle = data.data.vehicle;
-      const warrantyStatus = vehicle.generalWarranty && vehicle.purchaseDate
-        ? calculateWarrantyStatus(
-            vehicle.generalWarranty.duration?.status,
-            vehicle.generalWarranty.mileage?.status
-          )
-        : 'N/A';
+      
+      // Lấy warranty status từ response hoặc từ generalWarranty
+      let warrantyStatus = 'N/A';
+      if (vehicle.warrantyStatus) {
+        warrantyStatus = vehicle.warrantyStatus;
+      } else if (vehicle.generalWarranty) {
+        // Nếu không có warrantyStatus trực tiếp, lấy từ generalWarranty
+        const durationStatus = vehicle.generalWarranty.duration?.status;
+        const mileageStatus = vehicle.generalWarranty.mileage?.status;
+        
+        if (durationStatus === 'ACTIVE' && mileageStatus === 'ACTIVE') {
+          warrantyStatus = 'Active';
+        } else if (durationStatus === 'INACTIVE' && mileageStatus === 'INACTIVE') {
+          warrantyStatus = 'Expired (Time & Odometer)';
+        } else if (durationStatus === 'INACTIVE') {
+          warrantyStatus = 'Expired (Time)';
+        } else if (mileageStatus === 'INACTIVE') {
+          warrantyStatus = 'Expired (Odometer)';
+        }
+      }
       
       setVinData({
         vinNumber: vehicle.vin || '',
@@ -242,8 +246,6 @@ const SuperAdvisor = () => {
 
   const handleSearchCustomer = async () => {
     try {
-      console.log('🔍 Starting vehicle search...');
-      
       // Reset customer search state and warranty info
       setHasSearchedCustomer(false);
       setFoundCustomer(null);
@@ -252,7 +254,6 @@ const SuperAdvisor = () => {
       setOdometer('');
       
       if (!searchVin.trim()) {
-        console.log('❌ Empty VIN provided');
         toast({
           title: 'Error',
           description: 'Please enter VIN to search vehicle',
@@ -261,13 +262,9 @@ const SuperAdvisor = () => {
         return;
       }
 
-      console.log('🚗 Searching for VIN:', searchVin.trim());
-
       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-      console.log('🔑 Token check:', token ? 'Token found' : 'No token');
       
       if (!token) {
-        console.log('❌ No authentication token found');
         toast({
           title: 'Error',
           description: 'Authentication token not found',
@@ -277,7 +274,6 @@ const SuperAdvisor = () => {
       }
 
       const apiUrl = `http://localhost:3000/api/v1/vehicles/${searchVin.trim()}`;
-      console.log('🌐 Making API call to:', apiUrl);
 
       // Search vehicle by VIN
       const response = await axios.get(apiUrl, {
@@ -287,12 +283,8 @@ const SuperAdvisor = () => {
         }
       });
 
-      console.log('📨 API Response status:', response.status);
-      console.log('📄 API Response data:', response.data);
-
       if (response.data && response.data.status === 'success' && response.data.data && response.data.data.vehicle) {
         const vehicle = response.data.data.vehicle;
-        console.log('✅ Vehicle found:', vehicle);
         
         setVehicleSearchResult({
           vin: vehicle.vin,
@@ -326,20 +318,17 @@ const SuperAdvisor = () => {
         }
 
         if (vehicle.owner) {
-          console.log('👤 Owner found:', vehicle.owner);
           toast({
             title: 'Vehicle Found',
             description: `Vehicle is registered to ${vehicle.owner.fullName}`,
           });
         } else {
-          console.log('⚠️ No owner registered for this vehicle');
           toast({
             title: 'Vehicle Found - No Owner',
             description: 'Vehicle exists but no owner is registered. You can search for existing customer or register a new one.',
           });
         }
       } else {
-        console.log('❌ No vehicle data in response or unsuccessful status');
         toast({
           title: 'Vehicle Not Found',
           description: 'No vehicle found with this VIN',
@@ -392,8 +381,6 @@ const SuperAdvisor = () => {
         return;
       }
 
-      console.log('🔍 Searching customer by phone:', customerSearchPhone.trim());
-
       const response = await axios.get(`http://localhost:3000/api/v1/customers/`, {
         params: {
           phone: customerSearchPhone.trim()
@@ -404,11 +391,8 @@ const SuperAdvisor = () => {
         }
       });
 
-      console.log('📨 Customer search response:', response.data);
-
       if (response.data && response.data.status === 'success' && response.data.data && response.data.data.customer) {
         const customer = response.data.data.customer;
-        console.log('✅ Customer found:', customer);
         
         setFoundCustomer(customer);
         
@@ -425,7 +409,6 @@ const SuperAdvisor = () => {
           description: `Found existing customer: ${customer.fullName}`,
         });
       } else {
-        console.log('❌ Customer not found');
         setFoundCustomer(null);
         
         // Fill only phone number, clear other fields
@@ -518,10 +501,6 @@ const SuperAdvisor = () => {
         return;
       }
 
-      console.log('💾 Saving vehicle and owner changes...');
-      console.log('🔍 Debug - foundCustomer:', foundCustomer);
-      console.log('🔍 Debug - vehicleSearchResult.owner:', vehicleSearchResult.owner);
-
       // Prepare request body based on customer status
       let requestBody;
 
@@ -530,7 +509,6 @@ const SuperAdvisor = () => {
 
       if (existingCustomer && existingCustomer.id) {
         // Existing customer - send customerId only
-        console.log('📋 Using existing customer ID:', existingCustomer.id);
         requestBody = {
           customerId: existingCustomer.id,
           dateOfManufacture: vehicleSearchResult.dateOfManufacture,
@@ -539,7 +517,6 @@ const SuperAdvisor = () => {
         };
       } else {
         // New customer - send full customer object (backend will create customer)
-        console.log('👤 Sending new customer object for registration');
         requestBody = {
           customer: {
             fullName: ownerForm.fullName.trim(),
@@ -553,8 +530,6 @@ const SuperAdvisor = () => {
         };
       }
 
-      console.log('📤 Sending request body:', requestBody);
-
       // Update vehicle owner using PATCH endpoint: /api/v1/vehicles/{vin}
       const response = await axios.patch(`http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}`, requestBody, {
         headers: {
@@ -564,8 +539,6 @@ const SuperAdvisor = () => {
       });
 
       if (response.data && response.data.status === 'success') {
-        console.log('✅ Vehicle and owner updated successfully:', response.data);
-        
         // Update local state with owner info from response
         const updatedVehicle = response.data.data.vehicle;
         setVehicleSearchResult(prev => ({
@@ -637,11 +610,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      console.log('🔍 Checking warranty policy...');
-      console.log('VIN:', vehicleSearchResult.vin);
-      console.log('Odometer:', odometer);
-      console.log('Purchase Date:', vehicleSearchResult.purchaseDate);
-
+   
       const response = await axios.post(
         `http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}/warranty/preview`,
         {
@@ -656,7 +625,6 @@ const SuperAdvisor = () => {
         }
       );
 
-      console.log('📨 Warranty check response:', response.data);
 
       if (response.data && response.data.status === 'success') {
         const warrantyData = response.data.data?.vehicle;
@@ -664,37 +632,22 @@ const SuperAdvisor = () => {
         if (warrantyData) {
           // Save warranty details
           setWarrantyDetails(warrantyData);
-          
-          console.log('🔍 Full Warranty Data:', JSON.stringify(warrantyData, null, 2));
-          console.log('🔍 General Warranty:', warrantyData.generalWarranty);
-          
+        
           // Check if general warranty is still active
-          // Both duration and mileage must be valid
+          // Both duration and odometer must be valid
           const generalWarranty = warrantyData.generalWarranty;
           
-          // Debug duration status
-          console.log('🔍 Duration Status Type:', typeof generalWarranty?.duration?.status);
-          console.log('🔍 Duration Status Value:', generalWarranty?.duration?.status);
-          console.log('🔍 Duration Status === true:', generalWarranty?.duration?.status === true);
-          console.log('🔍 Duration Status === "ACTIVE":', generalWarranty?.duration?.status === 'ACTIVE');
-          
-          // Debug mileage status
-          console.log('🔍 Mileage Status Type:', typeof generalWarranty?.mileage?.status);
-          console.log('🔍 Mileage Status Value:', generalWarranty?.mileage?.status);
-          console.log('🔍 Mileage Status === "ACTIVE":', generalWarranty?.mileage?.status === 'ACTIVE');
-          
+        
           const isDurationValid = 
             generalWarranty?.duration?.status === true || 
             generalWarranty?.duration?.status === 'ACTIVE';
           const isMileageValid = 
             generalWarranty?.mileage?.status === 'ACTIVE';
           
-          // Warranty is valid if BOTH duration and mileage are valid
+          // Warranty is valid if BOTH duration and odometer are valid
           const isWarrantyValid = isDurationValid && isMileageValid;
           
-          console.log('✅ Duration Valid:', isDurationValid);
-          console.log('✅ Mileage Valid:', isMileageValid);
-          console.log('✅ Overall Warranty Valid:', isWarrantyValid);
+        
           
           setWarrantyStatus(isWarrantyValid ? 'valid' : 'expired');
 
@@ -704,16 +657,13 @@ const SuperAdvisor = () => {
               description: `Warranty valid for ${generalWarranty.duration.remainingDays} more days and ${generalWarranty.mileage.remainingMileage} km`,
             });
 
-            // If vehicle already has owner, set foundCustomer but don't auto-show the form
-            // User will need to search or the form will appear after they interact
             if (vehicleSearchResult.owner) {
-              console.log('✅ Vehicle has existing owner:', vehicleSearchResult.owner);
               setFoundCustomer(vehicleSearchResult.owner);
             }
           } else {
             const reasons = [];
             if (!isDurationValid) reasons.push('time limit exceeded');
-            if (!isMileageValid) reasons.push('mileage limit exceeded');
+            if (!isMileageValid) reasons.push('odometer limit exceeded');
             
             toast({
               title: 'Warranty Expired',
@@ -879,7 +829,7 @@ const SuperAdvisor = () => {
       id: `CLM-${String(records.length + 1).padStart(3, '0')}`,
       vinNumber: newRecord.vinNumber.toUpperCase(),
       customerName: newRecord.customerName,
-      mileage: parseInt(newRecord.mileage),
+      odometer: parseInt(newRecord.odometer),
       cases: newRecord.cases,
       purchaseDate: newRecord.purchaseDate,
       status: 'pending',
@@ -888,7 +838,7 @@ const SuperAdvisor = () => {
 
     setRecords([...records, record]);
     setIsAddDialogOpen(false);
-    setNewRecord({ vinNumber: '', mileage: '', customerName: '', cases: [], purchaseDate: '' });
+    setNewRecord({ vinNumber: '', odometer: '', customerName: '', cases: [], purchaseDate: '' });
 
     toast({
       title: 'Record Created Successfully',
@@ -900,7 +850,7 @@ const SuperAdvisor = () => {
     setSelectedRecord(record);
     setEditRecord({
       vinNumber: record.vinNumber,
-      mileage: record.mileage.toString(),
+      odometer: record.odometer.toString(),
       customerName: record.customerName,
       cases: record.cases || [],
       purchaseDate: record.purchaseDate,
@@ -925,7 +875,7 @@ const SuperAdvisor = () => {
           ...record,
           vinNumber: editRecord.vinNumber.toUpperCase(),
           customerName: editRecord.customerName,
-          mileage: parseInt(editRecord.mileage),
+          odometer: parseInt(editRecord.odometer),
           cases: editRecord.cases,
           purchaseDate: editRecord.purchaseDate,
           status: editRecord.status
@@ -1100,7 +1050,7 @@ const SuperAdvisor = () => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Record ID</TableHead>
-                    <TableHead>VIN Number</TableHead>
+                    <TableHead>Vin</TableHead>
                     <TableHead>Case</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -1339,10 +1289,10 @@ const SuperAdvisor = () => {
                                       </div>
                                     </div>
 
-                                    {/* Mileage Status */}
+                                    {/* Odometer Status */}
                                     <div className="bg-green-50 rounded p-3">
                                       <div className="flex items-center justify-between mb-2">
-                                        <span className="text-sm font-medium text-gray-600">Mileage Coverage</span>
+                                        <span className="text-sm font-medium text-gray-600">Odometer Coverage</span>
                                         <Badge variant={warrantyDetails.generalWarranty?.mileage?.status === 'ACTIVE' ? 'default' : 'destructive'} className="text-xs">
                                           {warrantyDetails.generalWarranty?.mileage?.status || 'N/A'}
                                         </Badge>
@@ -1352,7 +1302,7 @@ const SuperAdvisor = () => {
                                           {warrantyDetails.generalWarranty?.mileage?.remainingMileage?.toLocaleString() || 0} km
                                         </p>
                                         <p className="text-xs text-gray-600">
-                                          Remaining mileage
+                                          Remaining odometer
                                         </p>
                                         <p className="text-xs text-gray-500">
                                           Limit: {warrantyDetails.generalWarranty?.policy?.mileageLimit?.toLocaleString() || 0} km
@@ -1383,13 +1333,13 @@ const SuperAdvisor = () => {
                                               <span className="text-gray-500">Duration:</span> {component.duration?.remainingDays || 0} days left
                                             </div>
                                             <div>
-                                              <span className="text-gray-500">Mileage:</span> {component.mileage?.remainingMileage?.toLocaleString() || 0} km left
+                                              <span className="text-gray-500">Odometer:</span> {component.mileage?.remainingMileage?.toLocaleString() || 0} km left
                                             </div>
                                             <div>
                                               <span className="text-gray-500">Policy Duration:</span> {component.policy?.durationMonths || 0} months
                                             </div>
                                             <div>
-                                              <span className="text-gray-500">Mileage Limit:</span> {component.policy?.mileageLimit?.toLocaleString() || 0} km
+                                              <span className="text-gray-500">Odometer Limit:</span> {component.policy?.mileageLimit?.toLocaleString() || 0} km
                                             </div>
                                           </div>
                                         </div>
@@ -1759,13 +1709,13 @@ const SuperAdvisor = () => {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="mileage">Mileage (km) *</Label>
+              <Label htmlFor="odometer">Odometer (km) *</Label>
               <Input
-                id="mileage"
+                id="odometer"
                 type="number"
-                placeholder="Enter current mileage"
-                value={newRecord.mileage}
-                onChange={(e) => setNewRecord({ ...newRecord, mileage: e.target.value })}
+                placeholder="Enter current odometer reading"
+                value={newRecord.odometer}
+                onChange={(e) => setNewRecord({ ...newRecord, odometer: e.target.value })}
               />
             </div>
 
@@ -2058,13 +2008,13 @@ const SuperAdvisor = () => {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="edit-mileage">Mileage (km) *</Label>
+                <Label htmlFor="edit-odometer">Odometer (km) *</Label>
                 <Input
-                  id="edit-mileage"
+                  id="edit-odometer"
                   type="number"
-                  placeholder="Enter current mileage"
-                  value={editRecord.mileage}
-                  onChange={(e) => setEditRecord({ ...editRecord, mileage: e.target.value })}
+                  placeholder="Enter current odometer reading"
+                  value={editRecord.odometer}
+                  onChange={(e) => setEditRecord({ ...editRecord, odometer: e.target.value })}
                 />
               </div>
 
