@@ -2,7 +2,7 @@ import app from "./app.js";
 import db from "./src/models/index.cjs";
 import http from "http";
 import { configDotenv } from "dotenv";
-import { initializeScheduleGeneration } from "./src/scheduler/scheduleGenerator.js";
+// import { initializeScheduleGeneration } from "./src/scheduler/scheduleGenerator.js";
 configDotenv();
 
 const PORT = process.env.PORT;
@@ -16,7 +16,7 @@ db.sequelize
   .then(() => {
     console.log("Connect DB succesfull");
     server.listen(PORT, () => {
-      initializeScheduleGeneration();
+      // initializeScheduleGeneration();
       console.log(`Server is running on ${PORT}`);
     });
   })

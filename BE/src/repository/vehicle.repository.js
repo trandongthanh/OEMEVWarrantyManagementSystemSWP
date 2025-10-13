@@ -104,7 +104,7 @@ class VehicleRepository {
             {
               model: TypeComponent,
               as: "typeComponents",
-              attributes: ["name"],
+              attributes: ["typeComponentId", "name"],
               through: { attributes: ["durationMonth", "mileageLimit"] },
             },
 

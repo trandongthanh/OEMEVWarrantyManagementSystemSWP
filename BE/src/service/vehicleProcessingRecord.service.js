@@ -7,6 +7,7 @@ import {
 } from "../error/index.js";
 
 import { formatUTCtzHCM } from "../util/formatUTCtzHCM.js";
+import { ro } from "@faker-js/faker";
 
 class VehicleProcessingRecordService {
   constructor({
@@ -195,25 +196,104 @@ class VehicleProcessingRecordService {
     });
   };
 
-  findById = async ({ id, userId }) => {
-    if (!id || !userId) {
-      throw new BadRequestError("RecordId and userId is required");
+  findById = async ({ id, userId, roleName, serviceCenterId }) => {
+    if (!id || !userId || !roleName) {
+      throw new BadRequestError("RecordId, userId, and roleName are required");
     }
 
     const record = await this.vehicleProcessingRecordRepository.findById({
       id: id,
     });
 
-    const isOwner = record?.createdByStaff?.userId === userId;
-    const isMainTechnician = record?.mainTechnician?.userId === userId;
+    if (!record) {
+      throw new NotFoundError(`Record with id ${id} not found`);
+    }
 
-    if (!isOwner && !isMainTechnician) {
+    const isOwner = record.createdByStaff?.userId === userId;
+    const isMainTechnician = record.mainTechnician?.userId === userId;
+    const isManager =
+      roleName === "service_center_manager" &&
+      record.createdByStaff?.serviceCenterId === serviceCenterId;
+
+    if (!isOwner && !isMainTechnician && !isManager) {
       throw new ForbiddenError(
         "You do not have permission to view this record"
       );
     }
 
     return record;
+  };
+
+  getAllRecords = async ({
+    serviceCenterId,
+    userId,
+    roleName,
+    page,
+    limit,
+    status,
+  }) => {
+    if (!serviceCenterId) {
+      throw new BadRequestError("serviceCenterId is required");
+    }
+
+    const offset = (page - 1) * limit;
+
+    const records = await this.vehicleProcessingRecordRepository.findAll({
+      serviceCenterId: serviceCenterId,
+      limit: limit,
+      offset: offset,
+      status: status,
+      userId: userId,
+      roleName: roleName,
+    });
+
+    if (!records || records.length === 0) {
+      return [];
+    }
+
+    return records;
+  };
+
+  bulkUpdateStockQuantities = async ({
+    caseId,
+    caselines,
+    serviceCenterId,
+    userId,
+  }) => {
+    if (!caseId || !caselines || !serviceCenterId || !userId) {
+      throw new BadRequestError(
+        "caseId, caselines, serviceCenterId, userId are required"
+      );
+    }
+
+    const existingGuaranteeCase =
+      await this.guaranteeCaseRepository.validateGuaranteeCase({
+        caseId: caseId,
+      });
+
+    const vehicleModelId =
+      existingGuaranteeCase?.vehicleProcessingRecord?.vehicle?.vehicleModelId;
+
+    if (!existingGuaranteeCase) {
+      throw new NotFoundError(`Guarantee case with id ${caseId} not found`);
+    }
+
+    return await db.sequelize.transaction(async (t) => {
+      const typeComponentIds = [];
+      for (const caseline of caselines) {
+        if (caseline.componentId) {
+          typeComponentIds.push(caseline.componentId);
+        }
+      }
+
+      const stocks =
+        await this.wareHouseRepository.findStocksByTypeComponentOrderByWarehousePriority(
+          { typeComponentIds, serviceCenterId, vehicleModelId },
+          t
+        );
+
+      return updatedStocks;
+    });
   };
 }
 

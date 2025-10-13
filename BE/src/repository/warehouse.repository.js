@@ -27,7 +27,7 @@ class WareHouseRepository {
 
     const components = await TypeComponent.findAll({
       where: {
-        category: category,
+        category: category ? category : { [Op.ne]: null },
         name: {
           [Op.like]: `%${searchName}%`,
         },

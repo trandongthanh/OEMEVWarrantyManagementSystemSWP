@@ -59,6 +59,18 @@ class CaseLineService {
         return;
       }
 
+      const updatedGuaranteeCase =
+        await this.guaranteeCaseRepository.updateStatus(
+          {
+            guaranteeCaseId: guaranteeCaseId,
+            status: "DIAGNOSED",
+          },
+          t
+        );
+      if (!updatedGuaranteeCase) {
+        throw new ConflictError("Failed to update guarantee case status");
+      }
+
       //--- validate stock and create component reservation
       // const typeComponentIds = [];
       // for (const caseline of newCaseLines) {

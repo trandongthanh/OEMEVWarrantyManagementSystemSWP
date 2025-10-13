@@ -29,6 +29,8 @@ import CaseLineRepository from "./src/repository/caseline.repository.js";
 import { validateVehicleDatesWithDayjs } from "./src/util/validateVehicleDatesWithDayjs.js";
 import TaskAssignment from "./src/models/TaskAssignment.cjs";
 import TaskAssignmentRepository from "./src/repository/taskAssignment.repository.js";
+import UserController from "./src/api/controller/user.controller.js";
+import UserService from "./src/service/user.service.js";
 
 const container = createContainer();
 
@@ -46,6 +48,7 @@ container.register({
   caseLineController: asClass(CaseLineController, {
     lifetime: Lifetime.SCOPED,
   }),
+  userController: asClass(UserController, { lifetime: Lifetime.SCOPED }),
 
   // Services
   authService: asClass(AuthService, { lifetime: Lifetime.SCOPED }),
@@ -61,6 +64,7 @@ container.register({
   }),
   warehouseService: asClass(WarehouseService, { lifetime: Lifetime.SCOPED }),
   caseLineService: asClass(CaseLineService, { lifetime: Lifetime.SCOPED }),
+  userService: asClass(UserService, { lifetime: Lifetime.SCOPED }),
 
   // Repositories
   userRepository: asClass(UserRepository, { lifetime: Lifetime.SCOPED }),

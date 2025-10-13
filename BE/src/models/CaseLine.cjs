@@ -28,9 +28,8 @@ module.exports = (sequelize, DataTypes) => {
     },
 
     warrantyStatus: {
-      type: DataTypes.ENUM("PENDING_APPROVAL", "ELIGIBLE", "INELIGIBLE"),
-      allowNull: false,
-      defaultValue: "PENDING_APPROVAL",
+      type: DataTypes.ENUM("ELIGIBLE", "INELIGIBLE"),
+      // defaultValue: "ELIGIBLE",
       field: "warranty_status",
     },
 
@@ -49,14 +48,18 @@ module.exports = (sequelize, DataTypes) => {
 
     status: {
       type: DataTypes.ENUM(
-        "pending_approval",
-        "waiting_for_parts",
-        "in_progress",
-        "completed",
-        "cancelled"
+        "PENDING_MANAGER_APPROVAL",
+        "PENDING_CUSTOMER_APPROVAL",
+        "CUSTOMER_APPROVED",
+        "CUSTOMER_REJECTED",
+        "WAITING_FOR_PARTS",
+        "READY_FOR_REPAIR",
+        "IN_REPAIR",
+        "COMPLETED",
+        "CANCELLED"
       ),
       allowNull: false,
-      defaultValue: "pending_approval",
+      defaultValue: "PENDING_MANAGER_APPROVAL",
       field: "status",
     },
   });

@@ -546,7 +546,7 @@ router.get(
 
 /**
  * @swagger
- * /vehicle/{vin}/warranty/preview:
+ * /vehicles/{vin}/warranty/preview:
  *   post:
  *     summary: Preview vehicle warranty information with custom purchase date
  *     description: Get warranty information preview for a vehicle with a specified purchase date and odometer reading

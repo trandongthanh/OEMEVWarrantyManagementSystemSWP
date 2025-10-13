@@ -46,6 +46,7 @@ const router = express.Router({ mergeParams: true });
  *                     - correctionText
  *                     - componentId
  *                     - quantity
+ *                     - warrantyStatus
  *                   properties:
  *                     diagnosisText:
  *                       type: string
@@ -58,26 +59,48 @@ const router = express.Router({ mergeParams: true });
  *                     componentId:
  *                       type: string
  *                       format: uuid
- *                       description: ID of the component type to use
+ *                       nullable: true
+ *                       description: ID of the component type to use (can be null if no component replacement needed)
  *                       example: "1096033d-f11f-4a49-a751-8be0cfb9d705"
  *                     quantity:
  *                       type: integer
- *                       minimum: 1
+ *                       minimum: 0
  *                       description: Quantity of components needed
  *                       example: 1
+ *                     warrantyStatus:
+ *                       type: string
+ *                       enum: [ELIGIBLE, INELIGIBLE]
+ *                       description: Warranty eligibility status for this case line
+ *                       example: "ELIGIBLE"
  *           examples:
  *             brakeReplacement:
- *               summary: Brake system repair
+ *               summary: Brake system repair with warranty
  *               value:
  *                 caselines:
  *                   - diagnosisText: "Kiểm tra hệ thống điều khiển, phát hiện má phanh trước bị mòn dưới mức an toàn."
  *                     correctionText: "Thay thế bộ má phanh trước mới."
  *                     componentId: "1096033d-f11f-4a49-a751-8be0cfb9d705"
  *                     quantity: 1
+ *                     warrantyStatus: "ELIGIBLE"
  *                   - diagnosisText: "Kiểm tra hệ thống phanh, phát hiện má phanh trước bị mòn dưới mức an toàn."
  *                     correctionText: "Thay thế bộ má phanh trước mới."
  *                     componentId: "cce9b4f8-bfd3-45d9-b650-8773383c90eb"
  *                     quantity: 5
+ *                     warrantyStatus: "ELIGIBLE"
+ *             mixedWarranty:
+ *               summary: Mixed warranty status cases
+ *               value:
+ *                 caselines:
+ *                   - diagnosisText: "Pin cao áp bị suy giảm dung lượng sau 2 năm sử dụng."
+ *                     correctionText: "Thay thế pin cao áp mới theo bảo hành."
+ *                     componentId: "abc123-def4-5678-90ab-cdef12345678"
+ *                     quantity: 1
+ *                     warrantyStatus: "ELIGIBLE"
+ *                   - diagnosisText: "Trầy xước ở cản trước do va chạm nhẹ."
+ *                     correctionText: "Sơn lại cản trước."
+ *                     componentId: null
+ *                     quantity: 0
+ *                     warrantyStatus: "INELIGIBLE"
  *     responses:
  *       201:
  *         description: Case lines created successfully
@@ -119,12 +142,18 @@ const router = express.Router({ mergeParams: true });
  *                           componentId:
  *                             type: string
  *                             format: uuid
+ *                             nullable: true
  *                             description: Component type ID
  *                             example: "1096033d-f11f-4a49-a751-8be0cfb9d705"
  *                           quantity:
  *                             type: integer
  *                             description: Quantity of components
  *                             example: 1
+ *                           warrantyStatus:
+ *                             type: string
+ *                             enum: [ELIGIBLE, INELIGIBLE]
+ *                             description: Warranty eligibility status
+ *                             example: "ELIGIBLE"
  *                           techId:
  *                             type: string
  *                             format: uuid
@@ -162,10 +191,10 @@ const router = express.Router({ mergeParams: true });
  *                     properties:
  *                       field:
  *                         type: string
- *                         example: "caselines[0].quantity"
+ *                         example: "caselines[0].warrantyStatus"
  *                       message:
  *                         type: string
- *                         example: "Quantity must be at least 1"
+ *                         example: "warrantyStatus must be one of [ELIGIBLE, INELIGIBLE]"
  *       401:
  *         description: Unauthorized - Invalid or missing token
  *         content:

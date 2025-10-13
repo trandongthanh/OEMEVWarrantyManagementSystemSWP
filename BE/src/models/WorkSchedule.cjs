@@ -31,6 +31,13 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: "WORKING",
       },
+
+      requestReason: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        field: "request_reason",
+      },
+
       notes: {
         type: DataTypes.STRING,
         allowNull: true,

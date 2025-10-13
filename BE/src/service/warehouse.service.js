@@ -11,9 +11,13 @@ class WarehouseService {
     category,
     modelId,
   }) => {
-    if (!serviceCenterId || !category || !modelId) {
+    if (!serviceCenterId || !modelId) {
+      throw new BadRequestError("serviceCenterId, modelId is required");
+    }
+
+    if (!searchName && !category) {
       throw new BadRequestError(
-        "serviceCenterId, category, vehicleProcessingRecordId, modelId is required"
+        "At least one of searchName or category is required"
       );
     }
 
