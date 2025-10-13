@@ -621,7 +621,254 @@ router.get(
     );
   }
 );
-
+/**
+ * @swagger
+ * /processing-records:
+ *   get:
+ *     summary: Get all vehicle processing records with pagination
+ *     description: Retrieve a paginated list of vehicle processing records. Access is role-based - staff see their own records, technicians see assigned records, managers see all records in their service center.
+ *     tags: [Vehicle Processing Record]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number for pagination
+ *         example: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Number of records per page
+ *         example: 10
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [CHECKED_IN, IN_DIAGNOSIS, WAITING_FOR_PARTS, PAID, IN_REPAIR, COMPLETED, CANCELLED]
+ *         description: Filter records by status (optional)
+ *         example: "IN_DIAGNOSIS"
+ *     responses:
+ *       200:
+ *         description: List of vehicle processing records retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     records:
+ *                       type: object
+ *                       properties:
+ *                         records:
+ *                           type: array
+ *                           description: Array of vehicle processing records
+ *                           items:
+ *                             type: object
+ *                             properties:
+ *                               vin:
+ *                                 type: string
+ *                                 description: Vehicle Identification Number
+ *                                 example: "VIN-NEW-0"
+ *                               checkInDate:
+ *                                 type: string
+ *                                 format: date-time
+ *                                 description: Date and time when vehicle checked in
+ *                                 example: "2025-10-11T15:36:25.000Z"
+ *                               odometer:
+ *                                 type: number
+ *                                 description: Vehicle odometer reading at check-in
+ *                                 example: 52340
+ *                               status:
+ *                                 type: string
+ *                                 description: Current status of the processing record
+ *                                 example: "IN_DIAGNOSIS"
+ *                               mainTechnician:
+ *                                 type: object
+ *                                 nullable: true
+ *                                 description: Main technician assigned to this record
+ *                                 properties:
+ *                                   userId:
+ *                                     type: string
+ *                                     format: uuid
+ *                                     example: "725d1073-9660-48ae-b970-7c8db76f676d"
+ *                                   name:
+ *                                     type: string
+ *                                     example: "KTV Dương Giao Linh"
+ *                               vehicle:
+ *                                 type: object
+ *                                 description: Vehicle information
+ *                                 properties:
+ *                                   vin:
+ *                                     type: string
+ *                                     example: "VIN-NEW-0"
+ *                                   model:
+ *                                     type: object
+ *                                     properties:
+ *                                       name:
+ *                                         type: string
+ *                                         example: "VF 9 Plus"
+ *                                       vehicleModelId:
+ *                                         type: string
+ *                                         format: uuid
+ *                                         example: "74b79531-887e-4cb6-a4c8-e2e36fce4b2b"
+ *                               guaranteeCases:
+ *                                 type: array
+ *                                 description: List of guarantee cases for this record
+ *                                 items:
+ *                                   type: object
+ *                                   properties:
+ *                                     guaranteeCaseId:
+ *                                       type: string
+ *                                       format: uuid
+ *                                       example: "110f907d-009d-441f-88ad-f9522ae44d0d"
+ *                                     status:
+ *                                       type: string
+ *                                       example: "pending_diagnosis"
+ *                                     contentGuarantee:
+ *                                       type: string
+ *                                       example: "Đèn pha bên trái sáng yếu, cần kiểm tra hệ thống điện."
+ *                               createdByStaff:
+ *                                 type: object
+ *                                 description: Staff member who created this record
+ *                                 properties:
+ *                                   userId:
+ *                                     type: string
+ *                                     format: uuid
+ *                                     example: "82af4858-9298-489f-9f97-9af0cbab68e4"
+ *                                   name:
+ *                                     type: string
+ *                                     example: "SA Tô Mỹ Lệ"
+ *                         recordsCount:
+ *                           type: integer
+ *                           description: Total number of records returned in current page
+ *                           example: 10
+ *             examples:
+ *               managerView:
+ *                 summary: Manager viewing all records
+ *                 value:
+ *                   status: "success"
+ *                   data:
+ *                     records:
+ *                       records:
+ *                         - vin: "VIN-NEW-0"
+ *                           checkInDate: "2025-10-11T15:36:25.000Z"
+ *                           odometer: 52340
+ *                           status: "IN_DIAGNOSIS"
+ *                           mainTechnician:
+ *                             userId: "725d1073-9660-48ae-b970-7c8db76f676d"
+ *                             name: "KTV Dương Giao Linh"
+ *                           vehicle:
+ *                             vin: "VIN-NEW-0"
+ *                             model:
+ *                               name: "VF 9 Plus"
+ *                               vehicleModelId: "74b79531-887e-4cb6-a4c8-e2e36fce4b2b"
+ *                           guaranteeCases:
+ *                             - guaranteeCaseId: "110f907d-009d-441f-88ad-f9522ae44d0d"
+ *                               status: "pending_diagnosis"
+ *                               contentGuarantee: "Đèn pha bên trái sáng yếu"
+ *                           createdByStaff:
+ *                             userId: "82af4858-9298-489f-9f97-9af0cbab68e4"
+ *                             name: "SA Tô Mỹ Lệ"
+ *                       recordsCount: 1
+ *               technicianView:
+ *                 summary: Technician viewing assigned records
+ *                 value:
+ *                   status: "success"
+ *                   data:
+ *                     records:
+ *                       records:
+ *                         - vin: "VIN-NEW-1"
+ *                           checkInDate: "2025-10-12T09:20:00.000Z"
+ *                           odometer: 45000
+ *                           status: "IN_REPAIR"
+ *                           mainTechnician:
+ *                             userId: "725d1073-9660-48ae-b970-7c8db76f676d"
+ *                             name: "KTV Dương Giao Linh"
+ *                           vehicle:
+ *                             vin: "VIN-NEW-1"
+ *                             model:
+ *                               name: "VF 8 Plus"
+ *                               vehicleModelId: "84b79531-887e-4cb6-a4c8-e2e36fce4b3c"
+ *                           guaranteeCases:
+ *                             - guaranteeCaseId: "220f907d-009d-441f-88ad-f9522ae44d1e"
+ *                               status: "in_progress"
+ *                               contentGuarantee: "Thay thế pin cao áp"
+ *                           createdByStaff:
+ *                             userId: "92af4858-9298-489f-9f97-9af0cbab68f5"
+ *                             name: "SA Nguyễn Văn B"
+ *                       recordsCount: 1
+ *               emptyResult:
+ *                 summary: No records found
+ *                 value:
+ *                   status: "success"
+ *                   data:
+ *                     records: []
+ *       400:
+ *         description: Bad request - Invalid query parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "serviceCenterId is required"
+ *       401:
+ *         description: Unauthorized - Invalid or missing token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Unauthorized"
+ *       403:
+ *         description: Forbidden - Insufficient permissions
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Access denied. Required role: service_center_staff, service_center_manager, or service_center_technician"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Internal server error"
+ */
 router.get(
   "/",
   authentication,
