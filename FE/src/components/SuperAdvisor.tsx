@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,19 +11,56 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import {
-  Search,
-  LogOut,
-  Plus,
-  Edit,
-  Wrench,
-  CheckCircle,
-  Car,
-  Trash2,
-  User,
-  XCircle,
-  Save
-} from 'lucide-react';
+import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCircle, Save } from 'lucide-react';
+
+// API service function for creating processing record
+const createProcessingRecord = async (recordData: {
+  vin: string;
+  odometer: number;
+  guaranteeCases: { contentGuarantee: string }[];
+}) => {
+  const token = localStorage.getItem("ev_warranty_token");
+  
+  const response = await fetch('http://localhost:3000/api/v1/processing-records', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify(recordData)
+  });
+  
+  const result = await response.json();
+  
+  // Check for API errors
+  if (!response.ok || result.status === 'error') {
+    throw new Error(result.message || 'API call failed');
+  }
+  
+  return result;
+};
+
+// API service function for fetching processing records
+const fetchProcessingRecords = async () => {
+  const token = localStorage.getItem("ev_warranty_token");
+  
+  const response = await fetch('http://localhost:3000/api/v1/processing-records', {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  
+  const result = await response.json();
+  
+  // Check for API errors
+  if (!response.ok || result.status === 'error') {
+    throw new Error(result.message || 'Failed to fetch processing records');
+  }
+  
+  return result;
+};
 
 // Helper function to format date
 const formatDate = (dateString: string) => {
@@ -52,14 +89,12 @@ interface WarrantyRecord {
   customerName: string;
   odometer: number;
   cases?: CaseNote[];
-  purchaseDate: string;
   status: 'pending' | 'in-progress' | 'completed';
   createdAt: string;
 }
 
 interface VinDataState {
   vinNumber: string;
-  purchaseDate: string;
   warrantyStatus: string;
 }
 
@@ -68,7 +103,6 @@ interface VehicleSearchResult {
   dateOfManufacture: string;
   placeOfManufacture?: string;
   licensePlate?: string;
-  purchaseDate?: string;
   owner?: {
     id: string;
     fullName: string;
@@ -89,31 +123,30 @@ const SuperAdvisor = () => {
   const { logout, getToken } = useAuth();
   const { toast } = useToast();
   
+  // UI State
   const [searchVin, setSearchVin] = useState('');
   const [searchMode, setSearchMode] = useState<'warranty' | 'customer' | 'phone'>('phone');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedRecord, setSelectedRecord] = useState<WarrantyRecord | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
+  const [isDialogSearch, setIsDialogSearch] = useState(false);
+  
+  // Record State
+  const [selectedRecord, setSelectedRecord] = useState<WarrantyRecord | null>(null);
   const [currentCaseText, setCurrentCaseText] = useState('');
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
-  const [isDialogSearch, setIsDialogSearch] = useState(false);
-  // Form state for new record
+  
+  // Form States
   const [newRecord, setNewRecord] = useState({
     vinNumber: '',
     odometer: '',
     customerName: '',
-    cases: [] as CaseNote[],
-    purchaseDate: ''
+    cases: [] as CaseNote[]
   });
-
   const [vinData, setVinData] = useState<VinDataState>({
     vinNumber: "",
-    purchaseDate: "",
     warrantyStatus: ""
   });
-
-  // Vehicle registration states
   const [vehicleSearchResult, setVehicleSearchResult] = useState<VehicleSearchResult | null>(null);
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
   const [ownerForm, setOwnerForm] = useState<OwnerForm>({
@@ -126,14 +159,14 @@ const SuperAdvisor = () => {
   // Customer search states
   const [customerSearchPhone, setCustomerSearchPhone] = useState('');
   const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
-  const [foundCustomer, setFoundCustomer] = useState<any>(null);
+  const [foundCustomer, setFoundCustomer] = useState(null);
   const [hasSearchedCustomer, setHasSearchedCustomer] = useState(false);
 
   // Warranty check states
   const [odometer, setOdometer] = useState('');
   const [isCheckingWarranty, setIsCheckingWarranty] = useState(false);
   const [warrantyStatus, setWarrantyStatus] = useState<'valid' | 'expired' | null>(null);
-  const [warrantyDetails, setWarrantyDetails] = useState<any>(null);
+  const [warrantyDetails, setWarrantyDetails] = useState(null);
 
   // Form state for editing record
   const [editRecord, setEditRecord] = useState({
@@ -141,16 +174,113 @@ const SuperAdvisor = () => {
     odometer: '',
     customerName: '',
     cases: [] as CaseNote[],
-    purchaseDate: '',
     status: 'pending' as 'pending' | 'in-progress' | 'completed'
   });
 
+  // Transform form data to API format
+  const transformToApiFormat = (formData: typeof newRecord) => {
+    return {
+      vin: formData.vinNumber,
+      odometer: parseInt(formData.odometer),
+      guaranteeCases: formData.cases.map(caseItem => ({
+        contentGuarantee: caseItem.text
+      }))
+    };
+  };
+
   const [records, setRecords] = useState<WarrantyRecord[]>([]);
 
-  // Helper: Validate record data
-  const validateRecord = (record: { vinNumber: string; customerName: string; odometer: string; cases: CaseNote[]; purchaseDate: string }) => {
-    return record.vinNumber && record.customerName && record.odometer && record.cases.length > 0 && record.purchaseDate;
+  // Helper Functions
+  const validateRecord = (record: { vinNumber: string; customerName: string; odometer: string; cases: CaseNote[] }) => 
+    record.vinNumber && record.customerName && record.odometer && record.cases.length > 0;
+
+  const mapApiStatus = (apiStatus: string): 'pending' | 'in-progress' | 'completed' => {
+    if (['IN_DIAGNOSIS', 'PENDING'].includes(apiStatus)) return 'pending';
+    if (['IN_PROGRESS', 'ASSIGNED'].includes(apiStatus)) return 'in-progress';
+    if (['COMPLETED', 'RESOLVED'].includes(apiStatus)) return 'completed';
+    return 'pending';
   };
+
+  // Transform API processing records to WarrantyRecord format
+  const transformProcessingRecords = (apiRecords: any[]): WarrantyRecord[] => {
+    return apiRecords.map((record, index) => ({
+      id: record.id || `record-${index}`,
+      vinNumber: record.vin || '',
+      customerName: record.customerName || 
+                   record.vehicle?.owner?.fullName || 
+                   record.mainTechnician?.name || 
+                   record.owner?.fullName ||
+                   record.customer?.fullName ||
+                   record.vehicle?.customer?.fullName ||
+                   'Unknown Customer',
+      odometer: record.odometer || 0,
+      cases: record.guaranteeCases?.map((gCase: any, idx: number) => ({
+        id: gCase.guaranteeCaseId || `case-${idx}`,
+        text: gCase.contentGuarantee || '',
+        createdAt: gCase.createdAt || new Date().toISOString()
+      })) || [],
+      status: mapApiStatus(record.status || 'IN_DIAGNOSIS'),
+      createdAt: record.createdAt || new Date().toISOString()
+    }));
+  };
+
+  // Load processing records from API
+  const loadProcessingRecords = async () => {
+    try {
+      const response = await fetchProcessingRecords();
+      
+      if (response.status === 'success' && response.data?.records?.records) {
+        // API returns nested structure: data.records.records
+        const apiRecords = transformProcessingRecords(response.data.records.records);
+        
+        // Merge with existing records, keeping local records that might have better data
+        setRecords(prevRecords => {
+          const mergedRecords = [...apiRecords];
+          
+          // Add any local records that aren't in the API response
+          prevRecords.forEach(localRecord => {
+            if (!mergedRecords.some(apiRecord => apiRecord.id === localRecord.id)) {
+              mergedRecords.unshift(localRecord); // Add to beginning
+            }
+          });
+          
+          // Sort by creation date (newest first)
+          return mergedRecords.sort((a, b) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        });
+      } else if (response.data && Array.isArray(response.data)) {
+        // Maybe API returns data directly
+        const apiRecords = transformProcessingRecords(response.data);
+        setRecords(prevRecords => {
+          const mergedRecords = [...apiRecords];
+          prevRecords.forEach(localRecord => {
+            if (!mergedRecords.some(apiRecord => apiRecord.id === localRecord.id)) {
+              mergedRecords.unshift(localRecord);
+            }
+          });
+          return mergedRecords.sort((a, b) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        });
+      } else {
+       
+        // Don't clear existing records if API has no data
+      }
+    } catch (error) {
+      console.error('Error loading processing records:', error);
+      // Keep existing records if API fails
+      toast({
+        title: 'Warning',
+        description: 'Could not load latest records',
+        variant: 'default'
+      });
+    }
+  };
+
+  useEffect(() => {
+    loadProcessingRecords();
+  }, []);
 
   const handleSearchWarranty = async () => {
   try {
@@ -220,7 +350,6 @@ const SuperAdvisor = () => {
       
       setVinData({
         vinNumber: vehicle.vin || '',
-        purchaseDate: vehicle.purchaseDate ? new Date(vehicle.purchaseDate).toLocaleDateString('vi-VN') : '',
         warrantyStatus
       });
 
@@ -291,7 +420,6 @@ const SuperAdvisor = () => {
           dateOfManufacture: vehicle.dateOfManufacture,
           placeOfManufacture: vehicle.placeOfManufacture,
           licensePlate: vehicle.licensePlate,
-          purchaseDate: vehicle.purchaseDate,
           owner: vehicle.owner
         });
 
@@ -480,14 +608,7 @@ const SuperAdvisor = () => {
       return;
     }
 
-    if (!vehicleSearchResult.purchaseDate) {
-      toast({
-        title: 'Validation Error',
-        description: 'Please select purchase date',
-        variant: 'destructive'
-      });
-      return;
-    }
+
 
     try {
       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
@@ -512,8 +633,7 @@ const SuperAdvisor = () => {
         requestBody = {
           customerId: existingCustomer.id,
           dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-          licensePlate: vehicleSearchResult.licensePlate.trim(),
-          purchaseDate: vehicleSearchResult.purchaseDate
+          licensePlate: vehicleSearchResult.licensePlate.trim()
         };
       } else {
         // New customer - send full customer object (backend will create customer)
@@ -585,10 +705,10 @@ const SuperAdvisor = () => {
   };
 
   const handleCheckWarranty = async () => {
-    if (!vehicleSearchResult || !odometer || !vehicleSearchResult.purchaseDate) {
+    if (!vehicleSearchResult || !odometer) {
       toast({
         title: 'Error',
-        description: 'Please enter odometer reading and ensure purchase date is set',
+        description: 'Please enter odometer reading',
         variant: 'destructive'
       });
       return;
@@ -815,7 +935,7 @@ const SuperAdvisor = () => {
     }
   };
 
-  const handleAddRecord = () => {
+  const handleAddRecord = async () => {
     if (!validateRecord(newRecord)) {
       toast({
         title: 'Validation Error',
@@ -825,25 +945,60 @@ const SuperAdvisor = () => {
       return;
     }
 
-    const record: WarrantyRecord = {
-      id: `CLM-${String(records.length + 1).padStart(3, '0')}`,
-      vinNumber: newRecord.vinNumber.toUpperCase(),
-      customerName: newRecord.customerName,
-      odometer: parseInt(newRecord.odometer),
-      cases: newRecord.cases,
-      purchaseDate: newRecord.purchaseDate,
-      status: 'pending',
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-
-    setRecords([...records, record]);
-    setIsAddDialogOpen(false);
-    setNewRecord({ vinNumber: '', odometer: '', customerName: '', cases: [], purchaseDate: '' });
-
-    toast({
-      title: 'Record Created Successfully',
-      description: `New warranty claim ${record.id} has been created`,
-    });
+    try {
+      // Transform data to API format
+      const apiData = transformToApiFormat(newRecord);
+     
+      // Call API to create processing record
+      const response = await createProcessingRecord(apiData);
+    
+      // Create new record object for local state
+      const newRecordForState: WarrantyRecord = {
+        id: response.data?.id || `temp-${Date.now()}`,
+        vinNumber: newRecord.vinNumber,
+        customerName: newRecord.customerName,
+        odometer: parseInt(newRecord.odometer),
+        cases: newRecord.cases,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+      
+      // Add to local state immediately for better UX
+      setRecords(prev => [newRecordForState, ...prev]);
+      
+      // Success - reset form and close dialog
+      setNewRecord({ vinNumber: '', odometer: '', customerName: '', cases: [] });
+      setIsAddDialogOpen(false);
+      
+      toast({
+        title: 'Success',
+        description: 'Processing record created successfully',
+      });
+      
+    } catch (error: unknown) {
+      // Parse specific error messages
+      let errorMessage = 'Failed to create record';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('At least one guarantee case')) {
+          errorMessage = 'Please add at least one guarantee case';
+        } else if (error.message.includes('Unauthorized')) {
+          errorMessage = 'Please login again';
+        } else if (error.message.includes('Required role')) {
+          errorMessage = 'You do not have permission to create records';
+        } else if (error.message.includes('does not have an owner')) {
+          errorMessage = 'Vehicle must have an owner before creating a processing record';
+        } else if (error.message.includes('already has an active record')) {
+          errorMessage = 'This vehicle already has an active processing record';
+        }
+      }
+      
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive'
+      });
+    }
   };
 
   const handleEditRecord = (record: WarrantyRecord) => {
@@ -853,10 +1008,22 @@ const SuperAdvisor = () => {
       odometer: record.odometer.toString(),
       customerName: record.customerName,
       cases: record.cases || [],
-      purchaseDate: record.purchaseDate,
       status: record.status
     });
     setIsEditMode(true);
+  };
+
+  const handleDeleteRecord = (record: WarrantyRecord) => {
+    if (window.confirm(`Are you sure you want to delete this warranty record for VIN: ${record.vinNumber}?`)) {
+      // Remove from local state only
+      const updatedRecords = records.filter(r => r.id !== record.id);
+      setRecords(updatedRecords);
+      
+      toast({
+        title: 'Record Deleted',
+        description: `Warranty record for VIN ${record.vinNumber} has been deleted`,
+      });
+    }
   };
 
   const handleSaveEdit = () => {
@@ -1049,7 +1216,6 @@ const SuperAdvisor = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Record ID</TableHead>
                     <TableHead>Vin</TableHead>
                     <TableHead>Case</TableHead>
                     <TableHead>Status</TableHead>
@@ -1059,14 +1225,13 @@ const SuperAdvisor = () => {
                 <TableBody>
                   {records.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                         No warranty records found
                       </TableCell>
                     </TableRow>
                   ) : (
-                    records.map((record) => (
+                    records.map((record, index) => (
                       <TableRow key={record.id} className="hover:bg-muted/50">
-                        <TableCell className="font-medium">{record.id}</TableCell>
                         <TableCell className="font-mono text-sm">{record.vinNumber}</TableCell>
                         <TableCell className="max-w-xs">
                           <div className="flex items-center gap-2">
@@ -1087,6 +1252,15 @@ const SuperAdvisor = () => {
                             >
                               <Edit className="h-4 w-4 mr-1" />
                               Edit
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-red-600 hover:bg-red-50"
+                              onClick={() => handleDeleteRecord(record)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Delete
                             </Button>
                           </div>
                         </TableCell>
@@ -1175,23 +1349,6 @@ const SuperAdvisor = () => {
                         </div>
                       </div>
 
-                      {/* Purchase Date - Editable */}
-                      <div className="grid md:grid-cols-3 gap-2 items-center">
-                        <Label className="font-medium text-gray-700">Purchase Date:</Label>
-                        <div className="md:col-span-2">
-                          <Input
-                            type="date"
-                            value={vehicleSearchResult.purchaseDate ? 
-                              new Date(vehicleSearchResult.purchaseDate).toISOString().split('T')[0] : ''}
-                            onChange={(e) => setVehicleSearchResult(prev => ({
-                              ...prev!,
-                              purchaseDate: e.target.value ? new Date(e.target.value).toISOString() : ''
-                            }))}
-                            className="bg-white border-green-300 focus:border-green-500"
-                          />
-                        </div>
-                      </div>
-
                       {/* Odometer - Editable */}
                       <div className="grid md:grid-cols-3 gap-2 items-center">
                         <Label className="font-medium text-gray-700">Odometer (km):</Label>
@@ -1213,7 +1370,7 @@ const SuperAdvisor = () => {
                           <div className="space-y-2">
                             <Button
                               onClick={handleCheckWarranty}
-                              disabled={isCheckingWarranty || !odometer || !vehicleSearchResult.purchaseDate}
+                              disabled={isCheckingWarranty || !odometer}
                               className="w-full bg-purple-600 hover:bg-purple-700"
                             >
                               {isCheckingWarranty ? (
@@ -1699,16 +1856,6 @@ const SuperAdvisor = () => {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="customerName">Customer Name *</Label>
-              <Input
-                id="customerName"
-                placeholder="Enter customer full name"
-                value={newRecord.customerName}
-                onChange={(e) => setNewRecord({ ...newRecord, customerName: e.target.value })}
-              />
-            </div>
-
-            <div className="grid gap-2">
               <Label htmlFor="odometer">Odometer (km) *</Label>
               <Input
                 id="odometer"
@@ -1716,17 +1863,6 @@ const SuperAdvisor = () => {
                 placeholder="Enter current odometer reading"
                 value={newRecord.odometer}
                 onChange={(e) => setNewRecord({ ...newRecord, odometer: e.target.value })}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="purchaseDate">Release Date *</Label>
-              <Input
-                id="purchaseDate"
-                type="date"
-                value={newRecord.purchaseDate}
-                onChange={(e) => setNewRecord({ ...newRecord, purchaseDate: e.target.value })}
-                max={new Date().toISOString().split('T')[0]}
               />
             </div>
 
@@ -1827,16 +1963,6 @@ const SuperAdvisor = () => {
                 placeholder="VIN" 
                 value={vinData.vinNumber}
                 readOnly              
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Purchase Date</Label>
-              <Input
-                id="purchaseDate"
-                placeholder="Purchase Date" 
-                value={vinData.purchaseDate}
-                readOnly             
               />
             </div>
 
@@ -1972,60 +2098,45 @@ const SuperAdvisor = () => {
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
-              <span>Edit Warranty</span>
+              <span>View Warranty Record</span>
             </DialogTitle>
             <DialogDescription>
-              Update warranty claim information
+              View warranty details and update status
             </DialogDescription>
           </DialogHeader>
 
           {isEditMode && (
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label className="text-muted-foreground">Record ID</Label>
-                <p className="font-medium">{selectedRecord?.id}</p>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-vinNumber">VIN Number *</Label>
+                <Label htmlFor="edit-vinNumber">VIN Number</Label>
                 <Input
                   id="edit-vinNumber"
-                  placeholder="Enter VIN (17 characters)"
                   value={editRecord.vinNumber}
-                  onChange={(e) => setEditRecord({ ...editRecord, vinNumber: e.target.value })}
-                  maxLength={17}
+                  readOnly
+                  className="bg-muted/50 cursor-default"
                 />
               </div>
 
+              
               <div className="grid gap-2">
-                <Label htmlFor="edit-customerName">Customer Name *</Label>
+                <Label htmlFor="edit-customerName">Customer Name</Label>
                 <Input
                   id="edit-customerName"
-                  placeholder="Enter customer full name"
                   value={editRecord.customerName}
-                  onChange={(e) => setEditRecord({ ...editRecord, customerName: e.target.value })}
+                  readOnly
+                  className="bg-muted/50 cursor-default"
                 />
               </div>
 
+
               <div className="grid gap-2">
-                <Label htmlFor="edit-odometer">Odometer (km) *</Label>
+                <Label htmlFor="edit-odometer">Odometer (km)</Label>
                 <Input
                   id="edit-odometer"
                   type="number"
-                  placeholder="Enter current odometer reading"
                   value={editRecord.odometer}
-                  onChange={(e) => setEditRecord({ ...editRecord, odometer: e.target.value })}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-purchaseDate">Purchase Date *</Label>
-                <Input
-                  id="edit-purchaseDate"
-                  type="date"
-                  value={editRecord.purchaseDate}
-                  onChange={(e) => setEditRecord({ ...editRecord, purchaseDate: e.target.value })}
-                  max={new Date().toISOString().split('T')[0]}
+                  readOnly
+                  className="bg-muted/50 cursor-default"
                 />
               </div>
 
@@ -2045,25 +2156,12 @@ const SuperAdvisor = () => {
 
               <div className="grid gap-2">
                 <div className="flex items-center justify-between mb-2">
-                  <Label>Cases * ({editRecord.cases.length})</Label>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setCurrentCaseText('');
-                      setEditingCaseId(null);
-                      setIsAddNewcaseOpen(true);
-                    }}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    New Case
-                  </Button>
+                  <Label>Cases ({editRecord.cases.length})</Label>
                 </div>
                 {editRecord.cases.length > 0 ? (
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {editRecord.cases.map((caseNote, index) => (
-                      <div key={caseNote.id} className="p-3 bg-muted/50 rounded-md border flex items-start justify-between gap-2">
+                      <div key={caseNote.id} className="p-3 bg-muted/50 rounded-md border">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <Badge variant="outline" className="text-xs">Case {index + 1}</Badge>
@@ -2071,40 +2169,12 @@ const SuperAdvisor = () => {
                           </div>
                           <p className="text-sm break-words">{caseNote.text}</p>
                         </div>
-                        <div className="flex gap-1 flex-shrink-0">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setCurrentCaseText(caseNote.text);
-                              setEditingCaseId(caseNote.id);
-                              setIsAddNewcaseOpen(true);
-                            }}
-                          >
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setEditRecord({
-                                ...editRecord,
-                                cases: editRecord.cases.filter(c => c.id !== caseNote.id)
-                              });
-                              toast({ title: 'Case deleted' });
-                            }}
-                          >
-                            <Trash2 className="h-3 w-3 text-destructive" />
-                          </Button>
-                        </div>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="p-3 bg-muted/20 rounded-md border border-dashed">
-                    <p className="text-sm text-muted-foreground italic">No cases added yet. Click "New Case" to add one.</p>
+                    <p className="text-sm text-muted-foreground italic">No cases available.</p>
                   </div>
                 )}
               </div>
