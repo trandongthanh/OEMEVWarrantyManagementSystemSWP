@@ -3,7 +3,7 @@ import db from "../models/index.cjs";
 const { ComponentReservation } = db;
 
 class ComponentReservationRepository {
-  bulkCreate = async (componentReservations, option = t) => {
+  bulkCreate = async ({ componentReservations }, option = null) => {
     const newComponentReservations = await ComponentReservation.bulkCreate(
       componentReservations,
       {

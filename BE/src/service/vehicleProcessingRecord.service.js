@@ -8,6 +8,9 @@ import {
 
 import { formatUTCtzHCM } from "../util/formatUTCtzHCM.js";
 import { ro } from "@faker-js/faker";
+import { allocateStock } from "../util/allocateStock.js";
+import { validate } from "../api/middleware/index.js";
+import guaranteeCaseToCreateStockValidator from "../validators/guaranteeCaseToCreateStock.validator.js";
 
 class VehicleProcessingRecordService {
   constructor({
@@ -17,6 +20,8 @@ class VehicleProcessingRecordService {
     serviceCenterService,
     customerService,
     taskAssignemntRepository,
+    componentReservationRepository,
+    wareHouseRepository,
   }) {
     this.vehicleProcessingRecordRepository = vehicleProcessingRecordRepository;
     this.guaranteeCaseRepository = guaranteeCaseRepository;
@@ -24,6 +29,8 @@ class VehicleProcessingRecordService {
     this.serviceCenterService = serviceCenterService;
     this.customerService = customerService;
     this.taskAssignemntRepository = taskAssignemntRepository;
+    this.componentReservationRepository = componentReservationRepository;
+    this.wareHouseRepository = wareHouseRepository;
   }
 
   createRecord = async ({
@@ -268,8 +275,13 @@ class VehicleProcessingRecordService {
 
     const existingGuaranteeCase =
       await this.guaranteeCaseRepository.validateGuaranteeCase({
-        caseId: caseId,
+        guaranteeCaseId: caseId,
       });
+
+    const guaranteeCaseStatus = existingGuaranteeCase?.status;
+    guaranteeCaseToCreateStockValidator.validateAsync({
+      guaranteeCaseStatus: guaranteeCaseStatus,
+    });
 
     const vehicleModelId =
       existingGuaranteeCase?.vehicleProcessingRecord?.vehicle?.vehicleModelId;
@@ -286,13 +298,129 @@ class VehicleProcessingRecordService {
         }
       }
 
+      const requiredQuantitiesMap = new Map();
+      for (const caseline of caselines) {
+        const componentId = caseline.componentId;
+        const quantity = caseline.quantity;
+
+        const currentQuantity = requiredQuantitiesMap.get(componentId) || 0;
+        requiredQuantitiesMap.set(componentId, currentQuantity + quantity);
+      }
+
       const stocks =
         await this.wareHouseRepository.findStocksByTypeComponentOrderByWarehousePriority(
           { typeComponentIds, serviceCenterId, vehicleModelId },
+          t,
+          t.LOCK.UPDATE
+        );
+
+      for (const [companyId, quantityNeeded] of requiredQuantitiesMap) {
+        const stocksForComponent = stocks.filter(
+          (stock) => stock.typeComponent.typeComponentId === companyId
+        );
+
+        const availableQuantity = stocksForComponent.reduce(
+          (sum, stock) => sum + stock.quantityAvailable,
+          0
+        );
+
+        if (availableQuantity < quantityNeeded) {
+          throw new BadRequestError(
+            `Insufficient stock for component ${companyId}. Available: ${availableQuantity}, Requested: ${quantityNeeded}`
+          );
+        }
+      }
+
+      const arrayStocksToUpdate = [];
+      for (const caseline of caselines) {
+        const stocksForComponent = stocks.filter(
+          (stock) =>
+            // console.log(
+            //   "stock",
+            //   stock.typeComponent.typeComponentId,
+            //   caseline.componentId
+            // ),
+            stock.typeComponent.typeComponentId === caseline.componentId
+        );
+
+        const availableQuantity = stocksForComponent.reduce(
+          (sum, stock) => sum + stock.quantityAvailable,
+          0
+        );
+
+        // const quantityNeedForComponents = requiredQuantitiesMap.get(
+        //   caseline.componentId
+        // );
+
+        // if (quantityNeedForComponents > availableQuantity) {
+        //   throw new BadRequestError(
+        //     `Insufficient stock for component ${caseline.componentId}. Available: ${availableQuantity}, Requested: ${quantityNeedForComponents}`
+        //   );
+        // }
+
+        if (availableQuantity < caseline.quantity) {
+          throw new BadRequestError(
+            `Insufficient stock for component ${caseline.componentId}. Available: ${availableQuantity}, Requested: ${caseline.quantity}`
+          );
+        }
+
+        const reservations = allocateStock({
+          stocks: stocksForComponent,
+          quantity: caseline.quantity,
+        });
+
+        const stocksForCaseLine = [];
+        for (const reservation of reservations) {
+          const stocksToUpdate = stocks.find(
+            (stock) => stock.stockId === reservation.stockId
+          );
+
+          if (!stocksToUpdate) {
+            throw new NotFoundError(
+              `Stock with id ${reservation.stockId} not found`
+            );
+          }
+
+          stocksToUpdate.quantityReserved += reservation.quantity;
+
+          stocksForCaseLine.push({
+            stockId: stocksToUpdate.stockId,
+            quantityReserved: stocksToUpdate.quantityReserved,
+            caseLineId: caseline.id,
+          });
+        }
+
+        arrayStocksToUpdate.push(...stocksForCaseLine);
+      }
+
+      const updatedStocks =
+        await this.wareHouseRepository.bulkUpdateStockQuantities(
+          {
+            reservations: arrayStocksToUpdate,
+          },
           t
         );
 
-      return updatedStocks;
+      const componentReservationsToCreate = arrayStocksToUpdate.map(
+        (stock) => ({
+          caseLineId: stock.caseLineId,
+          stockId: stock.stockId,
+          quantity: stock.quantityReserved,
+        })
+      );
+
+      const newComponentReservations =
+        await this.componentReservationRepository.bulkCreate(
+          {
+            componentReservations: componentReservationsToCreate,
+          },
+          t
+        );
+
+      return {
+        updatedStocks,
+        newComponentReservations,
+      };
     });
   };
 }

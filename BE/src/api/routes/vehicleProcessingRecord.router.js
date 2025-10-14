@@ -621,6 +621,7 @@ router.get(
     );
   }
 );
+
 /**
  * @swagger
  * /processing-records:

@@ -79,7 +79,8 @@ class WareHouseRepository {
 
   findStocksByTypeComponentOrderByWarehousePriority = async (
     { typeComponentIds, serviceCenterId, vehicleModelId },
-    option = null
+    option = null,
+    lock = null
   ) => {
     const warehouses = await Warehouse.findAll({
       where: {
@@ -102,6 +103,7 @@ class WareHouseRepository {
         },
       },
       transaction: option,
+      lock: lock,
 
       attributes: [
         "stockId",
@@ -163,25 +165,33 @@ class WareHouseRepository {
 
     const reservedCase = reservations
       .map((reservation) => {
-        `WHEN stockId = '${reservation.stockId}' THEN quantityReserved = ${reservation.quantity}`;
+        return `WHEN stock_id = '${reservation.stockId}' THEN quantity_reserved = ${reservation.quantityReserved}`;
       })
       .join(" ");
 
-    const [rowEffect] = await Stock.update(
-      {
-        quantityReserved: db.sequelize.literal(
-          `quantity_reserved + (CASE ${reservedCase}) ELSE 0 END`
-        ),
-      },
-      {
-        where: {
-          stockId: {
-            [Op.in]: stockIds,
-          },
-        },
-        transaction: option,
-      }
-    );
+    // const [rowEffect] = await Stock.update(
+    //   {
+    //     quantityReserved: db.sequelize.literal(
+    //       `quantity_reserved + (CASE ${reservedCase}) ELSE 0 END`
+    //     ),
+    //   },
+    //   {
+    //     where: {
+    //       stockId: {
+    //         [Op.in]: stockIds,
+    //       },
+    //     },
+    //     transaction: option,
+    //   }
+    // );
+
+    const sqlStr = `UPDATE stock SET quantity_reserved = quantity_reserved + (CASE ${reservedCase} ELSE 0 END) WHERE stock_id IN ('${stockIds.join(
+      "','"
+    )}')`;
+
+    const [rowEffect] = await db.sequelize.query(sqlStr, {
+      transaction: option,
+    });
 
     if (rowEffect <= 0) {
       return null;
@@ -189,9 +199,11 @@ class WareHouseRepository {
 
     const updatedStocks = await Stock.findAll({
       where: {
-        [Op.in]: stockIds,
-        transaction: option,
+        stockId: {
+          [Op.in]: stockIds,
+        },
       },
+      transaction: option,
     });
 
     return updatedStocks.map((updatedStock) => updatedStock.toJSON());
