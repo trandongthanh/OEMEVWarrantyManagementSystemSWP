@@ -178,10 +178,10 @@ const ServiceCenterDashboard = () => {
       setShowVehicleForm(false);
       setShowNotFoundToast(true);
       
-      // Tự động ẩn toast sau 3 giây
+      // ẩn toast sau 5 giây
       setTimeout(() => {
         setShowNotFoundToast(false);
-      }, 3000);
+      }, 5000);
     }
   };
 
