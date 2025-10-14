@@ -169,7 +169,13 @@ class VehicleProcessingRecordRepository {
       offset,
       subQuery: false,
       order: [["checkInDate", "DESC"]],
-      attributes: ["vin", "checkInDate", "odometer", "status"],
+      attributes: [
+        "vehicleProcessingRecordId",
+        "vin",
+        "checkInDate",
+        "odometer",
+        "status",
+      ],
 
       include: [
         {
