@@ -88,6 +88,7 @@ interface WarrantyRecord {
   vinNumber: string;
   customerName: string;
   odometer: number;
+  purchaseDate?: string;
   cases?: CaseNote[];
   status: 'pending' | 'in-progress' | 'completed';
   createdAt: string;
@@ -103,6 +104,7 @@ interface VehicleSearchResult {
   dateOfManufacture: string;
   placeOfManufacture?: string;
   licensePlate?: string;
+  purchaseDate?: string;
   owner?: {
     id: string;
     fullName: string;
@@ -174,6 +176,7 @@ const SuperAdvisor = () => {
     odometer: '',
     customerName: '',
     cases: [] as CaseNote[],
+    purchaseDate: '',
     status: 'pending' as 'pending' | 'in-progress' | 'completed'
   });
 
@@ -1008,6 +1011,7 @@ const SuperAdvisor = () => {
       odometer: record.odometer.toString(),
       customerName: record.customerName,
       cases: record.cases || [],
+      purchaseDate: record.purchaseDate || '',
       status: record.status
     });
     setIsEditMode(true);
