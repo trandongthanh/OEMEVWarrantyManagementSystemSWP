@@ -69,13 +69,15 @@ class VehicleProcessingRecordController {
   searchCompatibleComponentsInStock = async (req, res, next) => {
     // try {
     const { id } = req.params;
-    const { userId, serviceCenterId } = req.user;
+    const { userId, serviceCenterId, roleName } = req.user;
     const { searchName, category } = req.query;
     const { companyId } = req;
 
     const record = await this.vehicleProcessingRecordService.findById({
       id: id,
       userId: userId,
+      roleName: roleName,
+      serviceCenterId: serviceCenterId,
     });
 
     const modelId = record?.vehicle?.model?.vehicleModelId;

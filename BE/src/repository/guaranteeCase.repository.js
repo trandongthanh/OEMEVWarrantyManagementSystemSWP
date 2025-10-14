@@ -62,7 +62,7 @@ class GuaranteeCaseRepository {
       guaranteeCaseId,
       {
         transaction: option,
-        attributes: ["leadTechId"],
+        attributes: ["leadTechId", "status"],
         include: [
           {
             model: VehicleProcessingRecord,
