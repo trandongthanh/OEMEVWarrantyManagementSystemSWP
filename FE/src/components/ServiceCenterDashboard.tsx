@@ -10,12 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasPermission } from "@/utils/permissions";
-import NewClaim from "./NewClaim";
-import RegisterVehicle from "./RegisterVehicle";
-import AddCustomer from "./AddCustomer";
-import AttachParts from "./AttachParts";
-import ClaimDetails from "./ClaimDetails";
-import UpdateClaimStatus from "./UpdateClaimStatus";
 import {
   Car,
   User,
@@ -63,6 +57,7 @@ interface AssignedComponent {
 }
 
 interface WarrantyClaim {
+  recordId?: string; // Processing record ID from backend
   vin: string;
   mileage: number;
   checkInDate: string;
@@ -117,14 +112,6 @@ const ServiceCenterDashboard = () => {
   const [searchResult, setSearchResult] = useState<any>(null);
   const [showVehicleForm, setShowVehicleForm] = useState(false);
   const [showNotFoundToast, setShowNotFoundToast] = useState(false);
-  const [showNewClaim, setShowNewClaim] = useState(false);
-  const [showRegisterVehicle, setShowRegisterVehicle] = useState(false);
-  const [showAddCustomer, setShowAddCustomer] = useState(false);
-  const [showAttachParts, setShowAttachParts] = useState(false);
-  const [showClaimDetails, setShowClaimDetails] = useState(false);
-  const [showUpdateStatus, setShowUpdateStatus] = useState(false);
-  const [selectedClaimId, setSelectedClaimId] = useState<string>('');
-  const [selectedClaimStatus, setSelectedClaimStatus] = useState<string>('');
   const [ownerForm, setOwnerForm] = useState({
     fullName: '',
     phone: '',
@@ -237,6 +224,7 @@ const ServiceCenterDashboard = () => {
           const mainTech = r.mainTechnician ? [{ id: r.mainTechnician.userId, name: r.mainTechnician.name, isAvailable: false, workload: typeof r.mainTechnician.activeTaskCount === 'number' ? r.mainTechnician.activeTaskCount : undefined, status: r.mainTechnician.status }] : [];
           const primaryCase = Array.isArray(r.guaranteeCases) && r.guaranteeCases.length > 0 ? r.guaranteeCases[0] : null;
           return {
+            recordId: r.vehicleProcessingRecordId || r.recordId || r.processing_record_id || r.id || '',
             vin: r.vin || r.vehicle?.vin || '',
             mileage: r.odometer || 0,
             checkInDate: r.checkInDate || r.check_in_date || new Date().toISOString(),
@@ -599,18 +587,86 @@ const ServiceCenterDashboard = () => {
     return `${mileage.toLocaleString('vi-VN')} km`;
   };
 
-  const assignTechnicianToCase = (vin: string, technicianId: string) => {
+  const assignTechnicianToCase = async (vin: string, technicianId: string) => {
     const technician = availableTechnicians.find(t => t.id === technicianId);
     if (!technician) return;
 
-    setWarrantyClaims(prev => prev.map(claim =>
-      claim.vin === vin
-        ? {
-          ...claim,
-          assignedTechnicians: [...claim.assignedTechnicians, technician]
-        }
-        : claim
-    ));
+    // Find the record ID from the current claims
+    let claim: WarrantyClaim | undefined;
+    for (const status of Object.keys(claimsByStatus)) {
+      const found = claimsByStatus[status]?.find(c => c.vin === vin);
+      if (found) {
+        claim = found;
+        break;
+      }
+    }
+
+    if (!claim || !claim.recordId) {
+      alert('Record ID not found');
+      return;
+    }
+
+    try {
+      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        alert('Authentication required');
+        return;
+      }
+
+      // Call backend API to assign technician
+      const response = await axios.patch(
+        `http://localhost:3000/api/v1/processing-records/${claim.recordId}/assignment`,
+        { technicianId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (response.data?.status === 'success') {
+        // Update local state with the assigned technician
+        setWarrantyClaims(prev => prev.map(c =>
+          c.vin === vin
+            ? {
+              ...c,
+              assignedTechnicians: [...c.assignedTechnicians, technician]
+            }
+            : c
+        ));
+
+        // Also update claimsByStatus
+        setClaimsByStatus(prev => {
+          const updated = { ...prev };
+          Object.keys(updated).forEach(status => {
+            updated[status] = updated[status].map(c =>
+              c.vin === vin
+                ? {
+                  ...c,
+                  assignedTechnicians: [...c.assignedTechnicians, technician]
+                }
+                : c
+            );
+          });
+          return updated;
+        });
+
+        // Update selected claim for detail if open
+        setSelectedClaimForDetail(prev =>
+          prev && prev.vin === vin
+            ? { ...prev, assignedTechnicians: [...prev.assignedTechnicians, technician] }
+            : prev
+        );
+
+        // Refresh technicians list to update workload
+        await refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
+
+        alert(`Technician ${technician.name} assigned successfully!`);
+      }
+    } catch (error: any) {
+      console.error('Failed to assign technician:', error);
+      if (error.response?.data?.message) {
+        alert(`Failed to assign technician: ${error.response.data.message}`);
+      } else {
+        alert('Failed to assign technician. Please try again.');
+      }
+    }
   };
 
   const removeTechnicianFromCase = (vin: string, technicianId: string) => {
@@ -994,61 +1050,6 @@ const ServiceCenterDashboard = () => {
   // Helper function to display value or "None" for null
   const displayValue = (value: string | null) => {
     return value || "None";
-  };
-
-
-
-
-
-  const stats = [
-    {
-      title: "Active Claims",
-      value: "24",
-      change: "+3 from yesterday",
-      icon: FileText,
-      color: "text-primary"
-    },
-    {
-      title: "Pending Repairs",
-      value: "12",
-      change: "5 awaiting parts",
-      icon: Wrench,
-      color: "text-warning"
-    },
-    {
-      title: "Completed Today",
-      value: "8",
-      change: "+2 from yesterday",
-      icon: CheckCircle,
-      color: "text-success"
-    },
-    {
-      title: "Technicians",
-      value: "6",
-      change: "2 available",
-      icon: Users,
-      color: "text-automotive-steel"
-    }
-  ];
-
-  // In real app, data would be fetched from API
-  const recentClaims: any[] = [];
-
-  const handleViewDetails = (claimId: string) => {
-    setSelectedClaimId(claimId);
-    setShowClaimDetails(true);
-  };
-
-  const handleUpdateStatus = (claimId: string, currentStatus: string) => {
-    setSelectedClaimId(claimId);
-    setSelectedClaimStatus(currentStatus);
-    setShowUpdateStatus(true);
-  };
-
-  const handleStatusUpdated = () => {
-    // In real app, would refresh the claims list
-    setShowUpdateStatus(false);
-    setShowClaimDetails(false);
   };
 
   const handleVinSearch = async () => {
@@ -1566,33 +1567,6 @@ const ServiceCenterDashboard = () => {
             </div>
           </div>
 
-
-
-          {/* Statistics Cards */}
-          <div className="mb-6 grid gap-4 md:grid-cols-4">
-            {stats.map((stat) => {
-              const Icon = stat.icon;
-              return (
-                <Card key={stat.title} className="shadow-elegant">
-                  <CardContent className="p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">
-                          {stat.title}
-                        </p>
-                        <p className="text-2xl font-bold">{stat.value}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {stat.change}
-                        </p>
-                      </div>
-                      <Icon className={`h-8 w-8 ${stat.color}`} />
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-
           {/* Main Content */}
           <Tabs defaultValue="claims" className="space-y-6">
             <TabsList className={`grid w-full ${hasPermission(user, 'manage_campaigns') ? 'grid-cols-4' : 'grid-cols-3'}`}>
@@ -1639,6 +1613,7 @@ const ServiceCenterDashboard = () => {
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          <TableHead className="w-[140px]">Record ID</TableHead>
                           <TableHead>VIN</TableHead>
                           <TableHead>Mileage</TableHead>
                           <TableHead>Check-in Date</TableHead>
@@ -1650,7 +1625,10 @@ const ServiceCenterDashboard = () => {
                       </TableHeader>
                       <TableBody>
                         {warrantyClaims.map((claim, index) => (
-                          <TableRow key={claim.vin}>
+                          <TableRow key={claim.recordId || claim.vin}>
+                            <TableCell className="font-mono text-xs" title={claim.recordId}>
+                              {claim.recordId || 'N/A'}
+                            </TableCell>
                             <TableCell className="font-mono text-sm font-medium">
                               {claim.vin}
                             </TableCell>
@@ -2217,38 +2195,6 @@ const ServiceCenterDashboard = () => {
           </Tabs>
         </div>
 
-        {/* Modals */}
-        {showNewClaim && (
-          <NewClaim onClose={() => setShowNewClaim(false)} />
-        )}
-        {showRegisterVehicle && (
-          <RegisterVehicle onClose={() => setShowRegisterVehicle(false)} />
-        )}
-        {showAddCustomer && (
-          <AddCustomer onClose={() => setShowAddCustomer(false)} />
-        )}
-        {showAttachParts && (
-          <AttachParts onClose={() => setShowAttachParts(false)} />
-        )}
-        {showClaimDetails && (
-          <ClaimDetails
-            claimId={selectedClaimId}
-            onClose={() => setShowClaimDetails(false)}
-            onUpdateStatus={() => {
-              setShowClaimDetails(false);
-              setShowUpdateStatus(true);
-            }}
-          />
-        )}
-        {showUpdateStatus && (
-          <UpdateClaimStatus
-            claimId={selectedClaimId}
-            currentStatus={selectedClaimStatus}
-            onClose={() => setShowUpdateStatus(false)}
-            onStatusUpdated={handleStatusUpdated}
-          />
-        )}
-
         {/* Vehicle Information Modal */}
         {showVehicleForm && searchResult && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -2588,6 +2534,22 @@ const ServiceCenterDashboard = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-4">
                         <div>
+                          <label className="text-sm font-medium text-muted-foreground flex items-center gap-1.5 mb-2">
+                            <FileText className="h-4 w-4" />
+                            Record ID
+                          </label>
+                          <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                            <div className="p-1.5 bg-blue-100 dark:bg-blue-900/40 rounded">
+                              <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-mono text-xs text-blue-900 dark:text-blue-100 break-all leading-relaxed">
+                                {selectedClaimForDetail.recordId || 'N/A'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div>
                           <label className="text-sm font-medium text-muted-foreground">VIN</label>
                           <p className="font-mono text-base font-semibold">{selectedClaimForDetail.vin}</p>
                         </div>
@@ -2871,14 +2833,34 @@ const ServiceCenterDashboard = () => {
                   Assign Technician to Case
                 </DialogTitle>
                 <DialogDescription>
-                  {selectedCaseForAssignment && (
-                    <span>
-                      VIN: <span className="font-mono font-medium">{selectedCaseForAssignment}</span> -
-                      Issue: <span className="font-medium">
-                        {warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.issueType}
-                      </span>
-                    </span>
-                  )}
+                  {selectedCaseForAssignment && (() => {
+                    const claim = warrantyClaims.find(c => c.vin === selectedCaseForAssignment);
+                    return (
+                      <div className="mt-2 p-3 bg-muted/50 rounded-lg border space-y-2">
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-blue-600" />
+                          <div className="flex-1">
+                            <span className="text-xs text-muted-foreground mr-2">Record ID:</span>
+                            <span className="font-mono text-xs font-medium">{claim?.recordId || 'N/A'}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Car className="h-4 w-4 text-primary" />
+                          <div className="flex-1">
+                            <span className="text-xs text-muted-foreground mr-2">VIN:</span>
+                            <span className="font-mono font-medium text-sm">{selectedCaseForAssignment}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4 text-amber-600" />
+                          <div className="flex-1">
+                            <span className="text-xs text-muted-foreground mr-2">Issue:</span>
+                            <span className="font-medium text-sm">{claim?.issueType}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </DialogDescription>
               </div>
               <div className="flex items-center gap-2">
@@ -2982,14 +2964,34 @@ const ServiceCenterDashboard = () => {
                 Assign Components to Claim
               </DialogTitle>
               <DialogDescription>
-                {selectedClaimForComponents && (
-                  <span>
-                    VIN: <span className="font-mono font-medium">{selectedClaimForComponents}</span> -
-                    Issue: <span className="font-medium">
-                      {warrantyClaims.find(c => c.vin === selectedClaimForComponents)?.issueType}
-                    </span>
-                  </span>
-                )}
+                {selectedClaimForComponents && (() => {
+                  const claim = warrantyClaims.find(c => c.vin === selectedClaimForComponents);
+                  return (
+                    <div className="mt-2 p-3 bg-muted/50 rounded-lg border space-y-2">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-blue-600" />
+                        <div className="flex-1">
+                          <span className="text-xs text-muted-foreground mr-2">Record ID:</span>
+                          <span className="font-mono text-xs font-medium">{claim?.recordId || 'N/A'}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Car className="h-4 w-4 text-primary" />
+                        <div className="flex-1">
+                          <span className="text-xs text-muted-foreground mr-2">VIN:</span>
+                          <span className="font-mono font-medium text-sm">{selectedClaimForComponents}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="h-4 w-4 text-amber-600" />
+                        <div className="flex-1">
+                          <span className="text-xs text-muted-foreground mr-2">Issue:</span>
+                          <span className="font-medium text-sm">{claim?.issueType}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </DialogDescription>
             </DialogHeader>
 
