@@ -80,7 +80,6 @@ const ServiceCenterDashboard = () => {
 
 
 
-
   const stats = [
     {
       title: "Active Claims",
@@ -162,7 +161,7 @@ const ServiceCenterDashboard = () => {
         setShowVehicleForm(true);
         setShowNotFoundToast(false);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error searching vehicle:', error);
       
       if (error.response) {
@@ -227,7 +226,7 @@ const ServiceCenterDashboard = () => {
       
       setIsSearchingCustomer(false);
       setHasSearchedCustomer(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error searching customer:', error);
       
       if (error.response) {
@@ -428,16 +427,16 @@ const ServiceCenterDashboard = () => {
         alert('Unexpected response from server. Please try again.');
       }
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error registering owner:', error);
-      if (error.response?.data?.message) {
+      if (error.response?.data) {
         const errorMessage = error.response.data.message;
-        if (errorMessage.includes('This vehicle has owner')) {
+        if (errorMessage && errorMessage.includes('This vehicle has owner')) {
           alert('This vehicle already has an owner registered.');
-        } else if (errorMessage.includes('duplicate')) {
+        } else if (errorMessage && errorMessage.includes('duplicate')) {
           alert('A customer with this phone number or email already exists. Please use different contact information.');
         } else {
-          alert(`Failed to register owner: ${errorMessage}`);
+          alert(`Failed to register owner: ${errorMessage || 'Server error'}`);
         }
       } else {
         alert('Failed to register owner. Please try again.');
@@ -545,7 +544,7 @@ const ServiceCenterDashboard = () => {
         alert('Unexpected response from server. Please try again.');
       }
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating vehicle owner:', error);
       if (error.response) {
         console.error('Backend error:', error.response.data);

@@ -1,6 +1,6 @@
-import db from "../../models/index.cjs";
-
-const { User, Role } = db;
+import dayjs from "dayjs";
+import db from "../models/index.cjs";
+const { User, Role, ServiceCenter, WorkSchedule, TaskAssignment } = db;
 
 class UserRepository {
   async findByUsername({ username }) {
@@ -18,33 +18,63 @@ class UserRepository {
       ],
     });
 
+    if (!existingUser) {
+      return null;
+    }
+
     return existingUser.toJSON();
   }
 
-  async createUser({
-    username,
-    password,
-    phone,
-    email,
-    name,
-    address,
-    roleId,
-    serviceCenterId,
-    vehicleCompanyId,
-  }) {
-    const newUser = await User.create({
-      username,
-      password,
-      phone,
-      email,
-      name,
-      address,
-      roleId,
-      serviceCenterId,
-      vehicleCompanyId,
+  async getAllTechnicians({ status, serviceCenterId }) {
+    const today = dayjs().format("YYYY-MM-DD");
+
+    const whereCondition = {
+      workDate: today,
+    };
+
+    if (status) {
+      whereCondition.status = status;
+    }
+
+    const userCondition = {};
+    if (serviceCenterId) {
+      userCondition.serviceCenterId = serviceCenterId;
+    }
+
+    const technicians = await User.findAll({
+      where: userCondition,
+      attributes: [
+        "userId",
+        "name",
+        [
+          db.sequelize.fn(
+            "COUNT",
+            db.sequelize.col("tasks.task_assignment_id")
+          ),
+          "activeTaskCount",
+        ],
+      ],
+
+      include: [
+        {
+          model: WorkSchedule,
+          as: "workSchedule",
+          where: whereCondition,
+          attributes: ["workDate", "status"],
+        },
+        {
+          model: TaskAssignment,
+          as: "tasks",
+          where: { isActive: true },
+          required: false,
+          attributes: [],
+        },
+      ],
+
+      group: ["userId"],
     });
 
-    return newUser;
+    return technicians.map((technician) => technician.toJSON());
   }
 }
 

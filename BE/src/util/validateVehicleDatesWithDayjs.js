@@ -7,12 +7,22 @@ export function validateVehicleDatesWithDayjs(
   const purchaseDate = dayjs(purchaseDateStr);
   const dateOfManufacture = dayjs(dateOfManufactureStr);
 
-  if (!purchaseDate.isValid || !dateOfManufacture.isValid) {
+  if (!purchaseDate.isValid() || !dateOfManufacture.isValid()) {
     return false;
   }
 
-  return (
-    purchaseDate.isAfter(dateOfManufacture) ||
-    purchaseDate.isSame(dateOfManufacture)
-  );
+  const today = dayjs();
+
+  if (purchaseDate.isBefore(dateOfManufacture)) {
+    return {
+      valid: false,
+      error: "Purchase date cannot be before manufacture date",
+    };
+  }
+
+  if (purchaseDate.isAfter(today)) {
+    return { valid: false, error: "Purchase date cannot be in the future" };
+  }
+
+  return { valid: true };
 }

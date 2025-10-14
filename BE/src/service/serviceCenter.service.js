@@ -5,13 +5,13 @@ class ServiceCenterService {
     this.serviceCenterRepository = serviceCenterRepository;
   }
 
-  findCompanyWithServiceCenterId = async ({ serviceCenterId }) => {
+  findCompanyByServiceCenterId = async ({ serviceCenterId }) => {
     if (!serviceCenterId) {
       throw new BadRequestError("ServiceCenterId is required");
     }
 
     const serviceCenter =
-      await this.serviceCenterRepository.findCompanyWithServiceCenterId({
+      await this.serviceCenterRepository.findServiceCenterWithId({
         serviceCenterId: serviceCenterId,
       });
 
