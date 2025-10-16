@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
+import { processingRecordsService, ProcessingRecord, ProcessingRecordsByStatus } from "@/services/processingRecordsService";
+import ProcessingRecordsView from "./ProcessingRecordsView";
 import {
   Wrench,
   FileText,
@@ -109,6 +111,37 @@ interface CaseLine {
   status: 'draft' | 'submitted' | 'approved' | 'rejected';
 }
 
+// API Interface cho Guarantee Cases
+
+interface GuaranteeCase {
+  guaranteeCaseId: string;
+  contentGuarantee: string;
+  status: string;
+  recordId: string;
+  createdAt: string;
+}
+
+interface CaseLineRequest {
+  diagnosisText: string;
+  correctionText: string;
+  componentId: string | null;
+  quantity: number;
+  warrantyStatus: 'ELIGIBLE' | 'INELIGIBLE';
+}
+
+interface CaseLineResponse {
+  caseLineId: string;
+  guaranteeCaseId: string;
+  diagnosisText: string;
+  correctionText: string;
+  componentId: string | null;
+  quantity: number;
+  warrantyStatus: string;
+  techId: string;
+  status: string;
+  createdAt: string;
+}
+
 interface TechnicianDashboardProps {
   onViewCase?: (caseId: string) => void;
   onAddReport?: (caseId: string) => void;
@@ -141,6 +174,20 @@ const TechnicianDashboard = ({
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [uploadedFileUrls, setUploadedFileUrls] = useState<string[]>([]);
   const [caseLines, setCaseLines] = useState<CaseLine[]>([]);
+  // Processing Records state
+  const [processingRecords, setProcessingRecords] = useState<ProcessingRecord[]>([]);
+  const [recordsByStatus, setRecordsByStatus] = useState<ProcessingRecordsByStatus>({
+    CHECKED_IN: [],
+    IN_DIAGNOSIS: [],
+    WAITING_FOR_PARTS: [],
+    IN_REPAIR: [],
+    COMPLETED: [],
+    PAID: [],
+    CANCELLED: [],
+  });
+  const [isLoadingRecords, setIsLoadingRecords] = useState(false);
+  const [recordsError, setRecordsError] = useState<string | null>(null);
+
   const [caseLineForm, setCaseLineForm] = useState({
     damageLevel: '',
     repairPossibility: '',
@@ -197,7 +244,306 @@ const TechnicianDashboard = ({
     additionalNotes: ""
   });
 
+  // State cho API data
+  const [selectedRecord, setSelectedRecord] = useState<ProcessingRecord | null>(null);
+  const [selectedGuaranteeCase, setSelectedGuaranteeCase] = useState<GuaranteeCase | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [newCaseLineForm, setNewCaseLineForm] = useState<CaseLineRequest>({
+    diagnosisText: '',
+    correctionText: '',
+    componentId: null,
+    quantity: 1,
+    warrantyStatus: 'ELIGIBLE'
+  });
+  const [createdCaseLines, setCreatedCaseLines] = useState<CaseLineResponse[]>([]);
+
   const { user, logout } = useAuth();
+
+  // API Functions
+  const API_BASE_URL = 'http://localhost:3000/api/v1';
+
+  // Helper function để lấy token
+  const getAuthToken = () => {
+    const token = localStorage.getItem('ev_warranty_token');
+    console.log('🔑 Checking token:', token ? `${token.substring(0, 20)}...` : 'No token found');
+    
+    if (!token) {
+      console.error('❌ No authentication token in localStorage');
+      toast({
+        title: "Authentication Error",
+        description: "No authentication token found. Please login again.",
+        variant: "destructive"
+      });
+      return null;
+    }
+    return token;
+  };
+
+  // Generic API call function với error handling
+  const apiCall = useCallback(async (endpoint: string, options: RequestInit = {}) => {
+    const token = getAuthToken();
+    if (!token) throw new Error('No authentication token');
+
+    const defaultHeaders = {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+
+    const config: RequestInit = {
+      ...options,
+      headers: {
+        ...defaultHeaders,
+        ...options.headers
+      }
+    };
+
+    console.log(`API Call: ${options.method || 'GET'} ${API_BASE_URL}${endpoint}`);
+    
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+    
+    console.log(`Response: ${response.status} ${response.statusText}`);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return response.json();
+  }, []);
+
+  // Fetch all processing records using axios service
+  const fetchAllProcessingRecords = useCallback(async () => {
+    try {
+      setIsLoadingRecords(true);
+      setRecordsError(null);
+      
+      console.log('Fetching all processing records...');
+      
+      // Get all records
+      const allRecords = await processingRecordsService.getAllProcessingRecords();
+      setProcessingRecords(allRecords);
+      
+      // Group records by status
+      const groupedRecords = await processingRecordsService.getProcessingRecordsGroupedByStatus();
+      setRecordsByStatus(groupedRecords);
+      
+      console.log('Fetched processing records:', allRecords);
+      console.log('Grouped by status:', groupedRecords);
+      
+      toast({
+        title: "Success",
+        description: `Loaded ${allRecords.length} processing records`,
+      });
+    } catch (error) {
+      console.error('Error fetching processing records:', error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to fetch processing records";
+      setRecordsError(errorMessage);
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoadingRecords(false);
+    }
+  }, []);
+
+  // Legacy fetch function for backwards compatibility
+  const fetchProcessingRecords = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      
+      const data = await apiCall('/processing-records');
+      console.log('Fetched processing records:', data);
+      
+      // For backwards compatibility with existing code
+      const records = data.data?.records?.records || data.data?.records || data.data || data || [];
+      setProcessingRecords(Array.isArray(records) ? records : []);
+      
+      toast({
+        title: "Success",
+        description: `Loaded ${records.length} processing records`,
+      });
+    } catch (error) {
+      console.error('Error fetching processing records:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to fetch processing records",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [apiCall]);
+
+  // Create case lines for a guarantee case
+  const createCaseLines = useCallback(async (guaranteeCaseId: string, caseLines: CaseLineRequest[]) => {
+    try {
+      setIsLoading(true);
+      
+      console.log('Creating case lines for case:', guaranteeCaseId);
+      console.log('Case lines data:', caseLines);
+
+      const data = await apiCall(`/guarantee-cases/${guaranteeCaseId}/case-lines`, {
+        method: 'POST',
+        body: JSON.stringify({
+          caselines: caseLines
+        })
+      });
+
+      console.log('Created case lines response:', data);
+      
+      const newCaseLines = data.data?.caseLines || [];
+      setCreatedCaseLines(prev => [...prev, ...newCaseLines]);
+      
+      toast({
+        title: "Success",
+        description: `Created ${newCaseLines.length} case line(s) successfully`,
+      });
+      
+      // Reset form
+      setNewCaseLineForm({
+        diagnosisText: '',
+        correctionText: '',
+        componentId: null,
+        quantity: 1,
+        warrantyStatus: 'ELIGIBLE'
+      });
+      
+      return newCaseLines;
+    } catch (error) {
+      console.error('Error creating case lines:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create case lines",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fetch components để hiển thị trong dropdown
+  const fetchComponents = useCallback(async () => {
+    try {
+      const data = await apiCall('/components');
+      console.log('Fetched components:', data);
+      // Có thể lưu vào state nếu cần hiển thị dropdown components
+    } catch (error) {
+      console.error('Error fetching components:', error);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fetch case lines đã tạo cho guarantee case
+  const fetchCaseLinesForCase = useCallback(async (guaranteeCaseId: string) => {
+    try {
+      const data = await apiCall(`/guarantee-cases/${guaranteeCaseId}/case-lines`);
+      console.log('Fetched case lines for case:', data);
+      return data.data?.caseLines || [];
+    } catch (error) {
+      console.error('Error fetching case lines:', error);
+      return [];
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Handle submit new case line
+  const handleSubmitCaseLine = async () => {
+    if (!selectedGuaranteeCase) {
+      toast({
+        title: "Error",
+        description: "Please select a guarantee case first",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!newCaseLineForm.diagnosisText || !newCaseLineForm.correctionText) {
+      toast({
+        title: "Error", 
+        description: "Please fill in diagnosis and correction text",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    await createCaseLines(selectedGuaranteeCase.guaranteeCaseId, [newCaseLineForm]);
+  };
+
+  // useEffect hooks để call API
+
+  // Load data on component mount
+  useEffect(() => {
+    const initializeData = async () => {
+      console.log('🚀 TechnicianDashboard useEffect triggered');
+      console.log('👤 User state:', user);
+      console.log('🔍 LocalStorage token:', localStorage.getItem('ev_warranty_token') ? 'Present' : 'Missing');
+      
+      if (user) {
+        console.log('✅ User authenticated, fetching data...');
+        console.log('🔄 User details:', {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role
+        });
+        
+        await fetchProcessingRecords();
+        await fetchComponents(); // Fetch components if needed
+      } else {
+        console.log('❌ No user found, cannot fetch data');
+        toast({
+          title: "Authentication Required",
+          description: "Please login to view processing records",
+          variant: "destructive"
+        });
+      }
+    };
+
+    initializeData();
+  }, [user, fetchProcessingRecords, fetchComponents]);
+
+  // Auto refresh data every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (user && !isLoading) {
+        console.log('Auto refreshing processing records...');
+        fetchProcessingRecords();
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(interval);
+  }, [user, isLoading, fetchProcessingRecords]);
+
+  // Fetch case lines when guarantee case is selected
+  useEffect(() => {
+    const loadCaseLines = async () => {
+      if (selectedGuaranteeCase) {
+        console.log('Loading case lines for selected guarantee case...');
+        const caseLines = await fetchCaseLinesForCase(selectedGuaranteeCase.guaranteeCaseId);
+        if (caseLines.length > 0) {
+          setCreatedCaseLines(prev => {
+            // Merge và deduplicate case lines
+            const existing = prev.filter(cl => cl.guaranteeCaseId !== selectedGuaranteeCase.guaranteeCaseId);
+            return [...existing, ...caseLines];
+          });
+        }
+      }
+    };
+
+    loadCaseLines();
+  }, [selectedGuaranteeCase, fetchCaseLinesForCase]);
+
+  // Log state changes for debugging
+  useEffect(() => {
+    console.log('Processing records updated:', processingRecords.length, 'records');
+  }, [processingRecords]);
+
+  useEffect(() => {
+    console.log('Created case lines updated:', createdCaseLines.length, 'case lines');
+  }, [createdCaseLines]);
 
   // Warranty cases state with mock data
   const [warrantyDiagnosisCases, setWarrantyDiagnosisCases] = useState<WarrantyCase[]>([
@@ -549,179 +895,21 @@ const TechnicianDashboard = ({
       </header>
 
       <div className="container mx-auto px-6 py-6">
-        <Tabs defaultValue="warranty-reports" className="space-y-6">
+        <Tabs defaultValue="processing-records" className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="warranty-reports">Warranty Reports</TabsTrigger>
+            <TabsTrigger value="processing-records">Processing Records</TabsTrigger>
             <TabsTrigger value="case-lines">Issue Diagnosis</TabsTrigger>
             <TabsTrigger value="components">Components</TabsTrigger>
             <TabsTrigger value="staff">Staff Management</TabsTrigger>
           </TabsList>
 
-          {/* Warranty Reports Tab */}
-          <TabsContent value="warranty-reports" className="space-y-6">
-            {/* Search and Filter */}
-            <div className="space-y-2">
-              <div className="flex gap-2 items-center">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search VIN or customer..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <Button onClick={handleSearch}>
-                  <SearchIcon className="h-4 w-4 mr-1" />
-                  Search
-                </Button>
-                <Button variant="outline" onClick={() => {
-                  setSearchTerm("");
-                  setAppliedSearchTerm("");
-                  toast({ 
-                    title: "Search Cleared", 
-                    description: `Showing all ${warrantyDiagnosisCases.length} warranty cases` 
-                  });
-                }}>
-                  <X className="h-4 w-4 mr-1" />
-                  Clear
-                </Button>
-              </div>
-              
-              {/* Search hints */}
-              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <span>🔍 Search by:</span>
-                <Badge variant="outline" className="text-xs">VIN</Badge>
-                <Badge variant="outline" className="text-xs">Customer</Badge>
-                <Badge variant="outline" className="text-xs">Vehicle Model</Badge>
-              </div>
-            </div>
-
-            {/* Warranty Cases */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Warranty Cases</CardTitle>
-                <CardDescription>
-                  View and manage your created warranty cases and issue diagnoses
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Case ID</TableHead>
-                      <TableHead>Vehicle & Customer</TableHead>
-                      <TableHead>Diagnosis</TableHead>
-                      <TableHead>Components</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Created</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredWarrantyCases.map((warrantyCase) => (
-                      <TableRow key={warrantyCase.id}>
-                        <TableCell className="font-mono text-sm">
-                          {warrantyCase.id}
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{warrantyCase.customerName}</p>
-                            <p className="text-xs text-muted-foreground font-mono">
-                              {warrantyCase.vehicleVin}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {warrantyCase.vehicleModel}
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell className="max-w-sm">
-                          <p className="text-sm whitespace-normal break-words">
-                            {warrantyCase.diagnosis}
-                          </p>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            {warrantyCase.components.map((component, index) => (
-                              <div key={component.id} className="flex items-center gap-2">
-                                <span className="text-sm">{component.name}</span>
-                                <Badge 
-                                  variant="outline" 
-                                  className="text-xs"
-                                >
-                                  ×{component.quantity}
-                                </Badge>
-                              </div>
-                            ))}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge 
-                            variant={
-                              warrantyCase.status === 'submitted' ? 'outline' :
-                              warrantyCase.status === 'approved' ? 'default' :
-                              warrantyCase.status === 'rejected' ? 'destructive' :
-                              warrantyCase.status === 'in-progress' ? 'secondary' :
-                              'default'
-                            }
-                            className={
-                              warrantyCase.status === 'approved' ? 'bg-blue-500 text-white' : ''
-                            }
-                          >
-                            {warrantyCase.status === 'submitted' ? 'Submitted' :
-                             warrantyCase.status === 'approved' ? 'Approved' :
-                             warrantyCase.status === 'rejected' ? 'Rejected' :
-                             warrantyCase.status === 'in-progress' ? 'In Progress' :
-                             'Completed'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {warrantyCase.createdDate}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => {
-                                setSelectedWarrantyCase(warrantyCase);
-                                setViewCaseModalOpen(true);
-                              }}
-                              title="View Case"
-                            >
-                              <Eye className="h-3 w-3" />
-                            </Button>
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => {
-                                setSelectedWarrantyCase(warrantyCase);
-                                setReportPreviewModalOpen(true);
-                              }}
-                              title="View Report"
-                            >
-                              <FileText className="h-3 w-3" />
-                            </Button>
-                            <Button 
-                              variant="default" 
-                              size="sm"
-                              onClick={() => {
-                                setSelectedWarrantyCase(warrantyCase);
-                                setCreateCaseLineModalOpen(true);
-                              }}
-                              className="bg-green-600 hover:bg-green-700"
-                              title="Create Issue Diagnosis"
-                            >
-                              <Plus className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
+          {/* Processing Records Tab */}
+          <TabsContent value="processing-records">
+            <ProcessingRecordsView 
+              onCaseLineCreated={(caseLine) => {
+                setCaseLines(prev => [...prev, caseLine]);
+              }}
+            />
           </TabsContent>
 
           {/* Issue Diagnosis Tab */}
