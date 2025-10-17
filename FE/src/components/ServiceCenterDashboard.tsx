@@ -136,6 +136,11 @@ const ServiceCenterDashboard = () => {
   const [showClaimDetailModal, setShowClaimDetailModal] = useState(false);
   const [selectedClaimForDetail, setSelectedClaimForDetail] = useState<WarrantyClaim | null>(null);
 
+  // Technician Records Modal States
+  const [showTechnicianRecordsModal, setShowTechnicianRecordsModal] = useState(false);
+  const [selectedTechnicianForRecords, setSelectedTechnicianForRecords] = useState<Technician | null>(null);
+  const [technicianRecords, setTechnicianRecords] = useState<WarrantyClaim[]>([]);
+
   // Component Assignment Modal States
   const [showComponentAssignmentModal, setShowComponentAssignmentModal] = useState(false);
   const [selectedClaimForComponents, setSelectedClaimForComponents] = useState<string>('');
@@ -182,18 +187,16 @@ const ServiceCenterDashboard = () => {
         const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
         // Map backend technician shape to local Technician interface
         const mapped: Technician[] = records.map((t: any) => {
-          const schedule = Array.isArray(t.workSchedule) ? t.workSchedule : [];
-          const todayEntry = schedule.find((ws: any) => ws.workDate === today) || schedule[schedule.length - 1];
-          const statusToday = todayEntry?.status || (t.status || undefined);
-          const normalizedStatus = String(statusToday || '').trim().toUpperCase().replace(/\s+/g, '_') || undefined;
-          const tech: Technician = {
-            id: t.userId || t.id || String(t.techId || ''),
-            name: t.name || t.fullName || t.username || '',
-            workload: typeof t.activeTaskCount === 'number' ? t.activeTaskCount : (typeof t.workload === 'number' ? t.workload : undefined),
-            isAvailable: (normalizedStatus || '') === 'WORKING',
-            status: normalizedStatus
+          const todaySchedule = t.workSchedule?.find((ws: any) => ws.workDate === today);
+          const techStatus = todaySchedule?.status;
+
+          return {
+            id: t.userId,
+            name: t.name,
+            workload: t.activeTaskCount,
+            isAvailable: techStatus === 'WORKING',
+            status: techStatus
           } as Technician;
-          return tech;
         });
         setIsLoadingTechnicians(false);
         return mapped;
@@ -783,6 +786,29 @@ const ServiceCenterDashboard = () => {
   const closeTechnicianModal = () => {
     setShowTechnicianModal(false);
     setSelectedCaseForAssignment('');
+  };
+
+  // View technician's assigned records
+  const viewTechnicianRecords = (technician: Technician) => {
+    // Filter all records to find ones assigned to this technician
+    const allRecords: WarrantyClaim[] = [];
+    Object.values(claimsByStatus).forEach(claims => {
+      allRecords.push(...claims);
+    });
+
+    const techRecords = allRecords.filter(claim =>
+      (claim.assignedTechnicians || []).some(tech => tech.id === technician.id)
+    );
+
+    setSelectedTechnicianForRecords(technician);
+    setTechnicianRecords(techRecords);
+    setShowTechnicianRecordsModal(true);
+  };
+
+  const closeTechnicianRecordsModal = () => {
+    setShowTechnicianRecordsModal(false);
+    setSelectedTechnicianForRecords(null);
+    setTechnicianRecords([]);
   };
 
   // Refresh technicians (callable from UI)
@@ -1675,7 +1701,14 @@ const ServiceCenterDashboard = () => {
                               </Badge>
                             </TableCell>
                             <TableCell>
-                              <div className="flex items-center">
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => viewTechnicianRecords(tech)}
+                                >
+                                  View
+                                </Button>
                                 <Select onValueChange={(val) => {
                                   if (!val) return;
                                   if (val === 'DAY_OFF') {
@@ -2446,6 +2479,96 @@ const ServiceCenterDashboard = () => {
               onSave={handleSaveStock}
               onCancel={() => setShowStockModal(false)}
             />
+          </DialogContent>
+        </Dialog>
+
+        {/* Technician Records Modal */}
+        <Dialog open={showTechnicianRecordsModal} onOpenChange={setShowTechnicianRecordsModal}>
+          <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                Records Assigned to {selectedTechnicianForRecords?.name || 'Technician'}
+              </DialogTitle>
+              <DialogDescription>
+                Viewing all warranty claims currently assigned to this technician
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {technicianRecords.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No records assigned to this technician
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Users className="w-4 h-4" />
+                    <span>Total: {technicianRecords.length} record(s)</span>
+                  </div>
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>VIN</TableHead>
+                        <TableHead>Model</TableHead>
+                        <TableHead>Issue</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Check-in Date</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {technicianRecords.map((record) => (
+                        <TableRow key={record.recordId}>
+                          <TableCell className="font-mono text-xs">{record.vin}</TableCell>
+                          <TableCell>{displayValue(record.model)}</TableCell>
+                          <TableCell>
+                            {record.guaranteeCases && record.guaranteeCases.length > 0 ? (
+                              <div className="space-y-1">
+                                {record.guaranteeCases.map((gCase, idx) => (
+                                  <div key={gCase.guaranteeCaseId} className="text-xs">
+                                    <Badge variant="outline" className="mr-1">#{idx + 1}</Badge>
+                                    {gCase.contentGuarantee}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              displayValue(record.issueType)
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={getStatusBadgeVariant(record.status)}>
+                              {getDisplayStatus(record.status)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {new Date(record.checkInDate).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedClaimForDetail(record);
+                                setShowClaimDetailModal(true);
+                              }}
+                            >
+                              View Details
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={closeTechnicianRecordsModal}>
+                Close
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
