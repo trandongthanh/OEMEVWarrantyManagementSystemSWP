@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,19 +11,56 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import {
-  Search,
-  LogOut,
-  Plus,
-  Edit,
-  Wrench,
-  CheckCircle,
-  Car,
-  Trash2,
-  User,
-  XCircle,
-  Save
-} from 'lucide-react';
+import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCircle, Save, Clock } from 'lucide-react';
+
+// API service function for creating processing record
+const createProcessingRecord = async (recordData: {
+  vin: string;
+  odometer: number;
+  guaranteeCases: { contentGuarantee: string }[];
+}) => {
+  const token = localStorage.getItem("ev_warranty_token");
+  
+  const response = await fetch('http://localhost:3000/api/v1/processing-records', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify(recordData)
+  });
+  
+  const result = await response.json();
+  
+  // Check for API errors
+  if (!response.ok || result.status === 'error') {
+    throw new Error(result.message || 'API call failed');
+  }
+  
+  return result;
+};
+
+// API service function for fetching processing records
+const fetchProcessingRecords = async () => {
+  const token = localStorage.getItem("ev_warranty_token");
+  
+  const response = await fetch('http://localhost:3000/api/v1/processing-records', {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  
+  const result = await response.json();
+  
+  // Check for API errors
+  if (!response.ok || result.status === 'error') {
+    throw new Error(result.message || 'Failed to fetch processing records');
+  }
+  
+  return result;
+};
 
 // Helper function to format date
 const formatDate = (dateString: string) => {
@@ -51,15 +88,14 @@ interface WarrantyRecord {
   vinNumber: string;
   customerName: string;
   odometer: number;
+  purchaseDate?: string;
   cases?: CaseNote[];
-  purchaseDate: string;
   status: 'pending' | 'in-progress' | 'completed';
   createdAt: string;
 }
 
 interface VinDataState {
   vinNumber: string;
-  purchaseDate: string;
   warrantyStatus: string;
 }
 
@@ -89,31 +125,30 @@ const SuperAdvisor = () => {
   const { logout, getToken } = useAuth();
   const { toast } = useToast();
   
+  // UI State
   const [searchVin, setSearchVin] = useState('');
   const [searchMode, setSearchMode] = useState<'warranty' | 'customer' | 'phone'>('phone');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedRecord, setSelectedRecord] = useState<WarrantyRecord | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
+  const [isDialogSearch, setIsDialogSearch] = useState(false);
+  
+  // Record State
+  const [selectedRecord, setSelectedRecord] = useState<WarrantyRecord | null>(null);
   const [currentCaseText, setCurrentCaseText] = useState('');
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
-  const [isDialogSearch, setIsDialogSearch] = useState(false);
-  // Form state for new record
+  
+  // Form States
   const [newRecord, setNewRecord] = useState({
     vinNumber: '',
     odometer: '',
     customerName: '',
-    cases: [] as CaseNote[],
-    purchaseDate: ''
+    cases: [] as CaseNote[]
   });
-
   const [vinData, setVinData] = useState<VinDataState>({
     vinNumber: "",
-    purchaseDate: "",
     warrantyStatus: ""
   });
-
-  // Vehicle registration states
   const [vehicleSearchResult, setVehicleSearchResult] = useState<VehicleSearchResult | null>(null);
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
   const [ownerForm, setOwnerForm] = useState<OwnerForm>({
@@ -126,14 +161,38 @@ const SuperAdvisor = () => {
   // Customer search states
   const [customerSearchPhone, setCustomerSearchPhone] = useState('');
   const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
-  const [foundCustomer, setFoundCustomer] = useState<any>(null);
+  const [foundCustomer, setFoundCustomer] = useState(null);
   const [hasSearchedCustomer, setHasSearchedCustomer] = useState(false);
+
+  // Warranty dialog states
+  const [showWarrantyDialog, setShowWarrantyDialog] = useState(false);
+  const [warrantyDialogData, setWarrantyDialogData] = useState(null);
+  const [currentVehicleForWarranty, setCurrentVehicleForWarranty] = useState(null);
+
+  // Create warranty record dialog states
+  const [showCreateWarrantyDialog, setShowCreateWarrantyDialog] = useState(false);
+  const [warrantyRecordForm, setWarrantyRecordForm] = useState({
+    vin: '',
+    odometer: '',
+    purchaseDate: '',
+    customerName: '',
+    cases: []
+  });
+  const [warrantyRecordCaseText, setWarrantyRecordCaseText] = useState('');
+  const [isCreatingRecord, setIsCreatingRecord] = useState(false);
 
   // Warranty check states
   const [odometer, setOdometer] = useState('');
   const [isCheckingWarranty, setIsCheckingWarranty] = useState(false);
   const [warrantyStatus, setWarrantyStatus] = useState<'valid' | 'expired' | null>(null);
-  const [warrantyDetails, setWarrantyDetails] = useState<any>(null);
+  const [warrantyDetails, setWarrantyDetails] = useState(null);
+
+  // States for customer vehicle warranty check in phone mode
+  const [selectedVehicleForWarranty, setSelectedVehicleForWarranty] = useState<any>(null);
+  const [vehicleOdometer, setVehicleOdometer] = useState('');
+  const [isCheckingVehicleWarranty, setIsCheckingVehicleWarranty] = useState(false);
+  const [vehicleWarrantyStatus, setVehicleWarrantyStatus] = useState<'valid' | 'expired' | null>(null);
+  const [newVehicleVin, setNewVehicleVin] = useState('');
 
   // Form state for editing record
   const [editRecord, setEditRecord] = useState({
@@ -145,12 +204,110 @@ const SuperAdvisor = () => {
     status: 'pending' as 'pending' | 'in-progress' | 'completed'
   });
 
+  // Transform form data to API format
+  const transformToApiFormat = (formData: typeof newRecord) => {
+    return {
+      vin: formData.vinNumber,
+      odometer: parseInt(formData.odometer),
+      guaranteeCases: formData.cases.map(caseItem => ({
+        contentGuarantee: caseItem.text
+      }))
+    };
+  };
+
   const [records, setRecords] = useState<WarrantyRecord[]>([]);
 
-  // Helper: Validate record data
-  const validateRecord = (record: { vinNumber: string; customerName: string; odometer: string; cases: CaseNote[]; purchaseDate: string }) => {
-    return record.vinNumber && record.customerName && record.odometer && record.cases.length > 0 && record.purchaseDate;
+  // Helper Functions
+  const validateRecord = (record: { vinNumber: string; customerName: string; odometer: string; cases: CaseNote[] }) => 
+    record.vinNumber && record.customerName && record.odometer && record.cases.length > 0;
+
+  const mapApiStatus = (apiStatus: string): 'pending' | 'in-progress' | 'completed' => {
+    if (['IN_DIAGNOSIS', 'PENDING'].includes(apiStatus)) return 'pending';
+    if (['IN_PROGRESS', 'ASSIGNED'].includes(apiStatus)) return 'in-progress';
+    if (['COMPLETED', 'RESOLVED'].includes(apiStatus)) return 'completed';
+    return 'pending';
   };
+
+  // Transform API processing records to WarrantyRecord format
+  const transformProcessingRecords = (apiRecords: any[]): WarrantyRecord[] => {
+    return apiRecords.map((record, index) => ({
+      id: record.id || `record-${index}`,
+      vinNumber: record.vin || '',
+      customerName: record.customerName || 
+                   record.vehicle?.owner?.fullName || 
+                   record.mainTechnician?.name || 
+                   record.owner?.fullName ||
+                   record.customer?.fullName ||
+                   record.vehicle?.customer?.fullName ||
+                   'Unknown Customer',
+      odometer: record.odometer || 0,
+      cases: record.guaranteeCases?.map((gCase: any, idx: number) => ({
+        id: gCase.guaranteeCaseId || `case-${idx}`,
+        text: gCase.contentGuarantee || '',
+        createdAt: gCase.createdAt || new Date().toISOString()
+      })) || [],
+      status: mapApiStatus(record.status || 'IN_DIAGNOSIS'),
+      createdAt: record.createdAt || new Date().toISOString()
+    }));
+  };
+
+  // Load processing records from API
+  const loadProcessingRecords = async () => {
+    try {
+      const response = await fetchProcessingRecords();
+      
+      if (response.status === 'success' && response.data?.records?.records) {
+        // API returns nested structure: data.records.records
+        const apiRecords = transformProcessingRecords(response.data.records.records);
+        
+        // Merge with existing records, keeping local records that might have better data
+        setRecords(prevRecords => {
+          const mergedRecords = [...apiRecords];
+          
+          // Add any local records that aren't in the API response
+          prevRecords.forEach(localRecord => {
+            if (!mergedRecords.some(apiRecord => apiRecord.id === localRecord.id)) {
+              mergedRecords.unshift(localRecord); // Add to beginning
+            }
+          });
+          
+          // Sort by creation date (newest first)
+          return mergedRecords.sort((a, b) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        });
+      } else if (response.data && Array.isArray(response.data)) {
+        // Maybe API returns data directly
+        const apiRecords = transformProcessingRecords(response.data);
+        setRecords(prevRecords => {
+          const mergedRecords = [...apiRecords];
+          prevRecords.forEach(localRecord => {
+            if (!mergedRecords.some(apiRecord => apiRecord.id === localRecord.id)) {
+              mergedRecords.unshift(localRecord);
+            }
+          });
+          return mergedRecords.sort((a, b) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+        });
+      } else {
+       
+        // Don't clear existing records if API has no data
+      }
+    } catch (error) {
+      console.error('Error loading processing records:', error);
+      // Keep existing records if API fails
+      toast({
+        title: 'Warning',
+        description: 'Could not load latest records',
+        variant: 'default'
+      });
+    }
+  };
+
+  useEffect(() => {
+    loadProcessingRecords();
+  }, []);
 
   const handleSearchWarranty = async () => {
   try {
@@ -220,7 +377,6 @@ const SuperAdvisor = () => {
       
       setVinData({
         vinNumber: vehicle.vin || '',
-        purchaseDate: vehicle.purchaseDate ? new Date(vehicle.purchaseDate).toLocaleDateString('vi-VN') : '',
         warrantyStatus
       });
 
@@ -244,7 +400,7 @@ const SuperAdvisor = () => {
   }
 };
 
-  const handleSearchCustomer = async () => {
+  const handleSearchCustomer = async (vinToSearch?: string) => {
     try {
       // Reset customer search state and warranty info
       setHasSearchedCustomer(false);
@@ -253,7 +409,9 @@ const SuperAdvisor = () => {
       setWarrantyDetails(null);
       setOdometer('');
       
-      if (!searchVin.trim()) {
+      const vin = vinToSearch || searchVin.trim();
+      
+      if (!vin) {
         toast({
           title: 'Error',
           description: 'Please enter VIN to search vehicle',
@@ -273,7 +431,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      const apiUrl = `http://localhost:3000/api/v1/vehicles/${searchVin.trim()}`;
+      const apiUrl = `http://localhost:3000/api/v1/vehicles/${vin}`;
 
       // Search vehicle by VIN
       const response = await axios.get(apiUrl, {
@@ -285,7 +443,6 @@ const SuperAdvisor = () => {
 
       if (response.data && response.data.status === 'success' && response.data.data && response.data.data.vehicle) {
         const vehicle = response.data.data.vehicle;
-        
         setVehicleSearchResult({
           vin: vehicle.vin,
           dateOfManufacture: vehicle.dateOfManufacture,
@@ -391,23 +548,46 @@ const SuperAdvisor = () => {
         }
       });
 
-      if (response.data && response.data.status === 'success' && response.data.data && response.data.data.customer) {
-        const customer = response.data.data.customer;
+      if (response.data && response.data.status === 'sucess') {
+        // Try to get customer from different possible paths
+        const customer = response.data.data?.customer || response.data.customer;
         
-        setFoundCustomer(customer);
-        
-        // Fill all 4 fields with found customer data
-        setOwnerForm({
-          fullName: customer.fullName || '',
-          phone: customer.phone || '',
-          email: customer.email || '',
-          address: customer.address || ''
-        });
+        if (customer) {
+          setFoundCustomer(customer);
+          
+          // Fill all 4 fields with found customer data
+          setOwnerForm({
+            fullName: customer.fullName || '',
+            phone: customer.phone || '',
+            email: customer.email || '',
+            address: customer.address || ''
+          });
 
-        toast({
-          title: 'Customer Found',
-          description: `Found existing customer: ${customer.fullName}`,
-        });
+          toast({
+            title: 'Customer Found',
+            description: `Found existing customer: ${customer.fullName}`,
+          });
+          
+          setHasSearchedCustomer(true);
+        } else {
+          setFoundCustomer(null);
+          
+          // Fill only phone number, clear other fields
+          setOwnerForm({
+            fullName: '',
+            phone: customerSearchPhone.trim(),
+            email: '',
+            address: ''
+          });
+
+          toast({
+            title: 'Customer Not Found',
+            description: 'No customer found with this phone number. You can enter new customer information.',
+            variant: 'default'
+          });
+          
+          setHasSearchedCustomer(true);
+        }
       } else {
         setFoundCustomer(null);
         
@@ -424,6 +604,8 @@ const SuperAdvisor = () => {
           description: 'No customer found with this phone number. You can enter new customer information.',
           variant: 'default'
         });
+        
+        setHasSearchedCustomer(true);
       }
 
       setHasSearchedCustomer(true);
@@ -448,6 +630,244 @@ const SuperAdvisor = () => {
         description: 'An error occurred while searching for customer. You can enter new customer information.',
         variant: 'default'
       });
+    }
+  };
+
+  // Handle warranty check for customer's existing vehicle
+  const handleCheckVehicleWarranty = async (vehicle: any) => {
+    if (!vehicleOdometer) {
+      toast({
+        title: 'Error',
+        description: 'Please enter odometer reading',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsCheckingVehicleWarranty(true);
+    setVehicleWarrantyStatus(null);
+
+    try {
+      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+      
+      const response = await axios.post(
+        `http://localhost:3000/api/v1/vehicles/${vehicle.vin}/warranty/preview`,
+        {
+          odometer: parseInt(vehicleOdometer),
+          purchaseDate: vehicle.purchaseDate
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.data && response.data.status === 'success') {
+        const warrantyData = response.data.data?.vehicle;
+        
+        const generalWarranty = warrantyData?.generalWarranty;
+        
+        // Check if warranty is valid (both duration and mileage must be ACTIVE)
+        const isDurationValid = generalWarranty?.duration?.status === 'ACTIVE';
+        const isMileageValid = generalWarranty?.mileage?.status === 'ACTIVE';
+        const isValid = isDurationValid && isMileageValid;
+        
+        // Set warranty data for dialog
+        setWarrantyDialogData(warrantyData);
+        setCurrentVehicleForWarranty(vehicle);
+        setVehicleWarrantyStatus(isValid ? 'valid' : 'expired');
+        setShowWarrantyDialog(true);
+      } else {
+        toast({
+          title: 'Error',
+          description: 'Failed to check warranty',
+          variant: 'destructive'
+        });
+      }
+
+      setIsCheckingVehicleWarranty(false);
+    } catch (error) {
+      console.error('Warranty check error:', error);
+      setIsCheckingVehicleWarranty(false);
+      toast({
+        title: 'Error',
+        description: 'Failed to check warranty',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Handle register new vehicle
+  const handleRegisterNewVehicle = async () => {
+    if (!newVehicleVin.trim()) {
+      toast({
+        title: 'Error', 
+        description: 'Please enter VIN number',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const vinToSearch = newVehicleVin.trim();
+
+    // Switch to customer mode (Find Vehicle by VIN) and auto search
+    setSearchMode('customer');
+    setSearchVin(vinToSearch);
+    
+    toast({
+      title: 'Switching Mode',
+      description: 'Switched to Find Vehicle by VIN mode and searching...',
+    });
+
+    // Auto search after a brief delay to allow state to update
+    setTimeout(async () => {
+      try {
+        await handleSearchCustomer(vinToSearch);
+      } catch (error) {
+        console.error('Auto search failed:', error);
+      }
+    }, 300); // Increase delay to ensure state is updated
+  };
+
+  // Handle create record for warranty-valid vehicle
+  const handleCreateRecord = async (vehicle: any) => {
+    if (!foundCustomer || !vehicle) {
+      toast({
+        title: 'Error',
+        description: 'Missing customer or vehicle information',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!vehicleOdometer) {
+      toast({
+        title: 'Error',
+        description: 'Please enter odometer reading first',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Prepare form data and open create warranty dialog
+    setWarrantyRecordForm({
+      vin: vehicle.vin,
+      odometer: vehicleOdometer,
+      purchaseDate: vehicle.purchaseDate,
+      customerName: foundCustomer.fullName || foundCustomer.name,
+      cases: []
+    });
+    
+    // Close warranty dialog and open create dialog
+    setShowWarrantyDialog(false);
+    setShowCreateWarrantyDialog(true);
+  };
+
+  // Handle add case to warranty record form
+  const handleAddWarrantyCase = () => {
+    if (!warrantyRecordCaseText.trim()) {
+      toast({
+        title: 'Error',
+        description: 'Please enter case description',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const newCase = {
+      id: `case-${Date.now()}`,
+      text: warrantyRecordCaseText.trim(),
+      createdAt: new Date().toISOString()
+    };
+
+    setWarrantyRecordForm(prev => ({
+      ...prev,
+      cases: [...prev.cases, newCase]
+    }));
+
+    setWarrantyRecordCaseText('');
+  };
+
+  // Handle remove case from warranty record form
+  const handleRemoveWarrantyCase = (caseId: string) => {
+    setWarrantyRecordForm(prev => ({
+      ...prev,
+      cases: prev.cases.filter(c => c.id !== caseId)
+    }));
+  };
+
+  // Handle submit warranty record
+  const handleSubmitWarrantyRecord = async () => {
+    if (warrantyRecordForm.cases.length === 0) {
+      toast({
+        title: 'Error',
+        description: 'Please add at least one case',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsCreatingRecord(true);
+
+    try {
+      // Prepare data for createProcessingRecord API
+      const apiData = {
+        vin: warrantyRecordForm.vin,
+        odometer: parseInt(warrantyRecordForm.odometer),
+        guaranteeCases: warrantyRecordForm.cases.map(caseItem => ({
+          contentGuarantee: caseItem.text
+        }))
+      };
+      
+      // Call API to create processing record
+      const response = await createProcessingRecord(apiData);
+    
+      // Create new record object for local state
+      const newRecordForState: WarrantyRecord = {
+        id: response.data?.id || `temp-${Date.now()}`,
+        vinNumber: warrantyRecordForm.vin,
+        customerName: warrantyRecordForm.customerName,
+        odometer: parseInt(warrantyRecordForm.odometer),
+        cases: warrantyRecordForm.cases,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+      
+      // Add to local state immediately for better UX
+      setRecords(prev => [newRecordForState, ...prev]);
+      
+      // Reset forms and close dialogs
+      setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [] });
+      setWarrantyRecordCaseText('');
+      setShowCreateWarrantyDialog(false);
+      setVehicleWarrantyStatus(null);
+      setVehicleOdometer('');
+      
+      toast({
+        title: 'Success',
+        description: 'Warranty processing record created successfully',
+      });
+      
+    } catch (error: unknown) {
+      let errorMessage = 'Failed to create warranty record';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('Unauthorized')) {
+          errorMessage = 'Please login again';
+        } else if (error.message.includes('Required role')) {
+          errorMessage = 'You do not have permission to create records';
+        }
+      }
+      
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive'
+      });
+    } finally {
+      setIsCreatingRecord(false);
     }
   };
 
@@ -480,14 +900,7 @@ const SuperAdvisor = () => {
       return;
     }
 
-    if (!vehicleSearchResult.purchaseDate) {
-      toast({
-        title: 'Validation Error',
-        description: 'Please select purchase date',
-        variant: 'destructive'
-      });
-      return;
-    }
+
 
     try {
       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
@@ -512,8 +925,7 @@ const SuperAdvisor = () => {
         requestBody = {
           customerId: existingCustomer.id,
           dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-          licensePlate: vehicleSearchResult.licensePlate.trim(),
-          purchaseDate: vehicleSearchResult.purchaseDate
+          licensePlate: vehicleSearchResult.licensePlate.trim()
         };
       } else {
         // New customer - send full customer object (backend will create customer)
@@ -585,10 +997,10 @@ const SuperAdvisor = () => {
   };
 
   const handleCheckWarranty = async () => {
-    if (!vehicleSearchResult || !odometer || !vehicleSearchResult.purchaseDate) {
+    if (!vehicleSearchResult || !odometer) {
       toast({
         title: 'Error',
-        description: 'Please enter odometer reading and ensure purchase date is set',
+        description: 'Please enter odometer reading',
         variant: 'destructive'
       });
       return;
@@ -815,7 +1227,7 @@ const SuperAdvisor = () => {
     }
   };
 
-  const handleAddRecord = () => {
+  const handleAddRecord = async () => {
     if (!validateRecord(newRecord)) {
       toast({
         title: 'Validation Error',
@@ -825,25 +1237,60 @@ const SuperAdvisor = () => {
       return;
     }
 
-    const record: WarrantyRecord = {
-      id: `CLM-${String(records.length + 1).padStart(3, '0')}`,
-      vinNumber: newRecord.vinNumber.toUpperCase(),
-      customerName: newRecord.customerName,
-      odometer: parseInt(newRecord.odometer),
-      cases: newRecord.cases,
-      purchaseDate: newRecord.purchaseDate,
-      status: 'pending',
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-
-    setRecords([...records, record]);
-    setIsAddDialogOpen(false);
-    setNewRecord({ vinNumber: '', odometer: '', customerName: '', cases: [], purchaseDate: '' });
-
-    toast({
-      title: 'Record Created Successfully',
-      description: `New warranty claim ${record.id} has been created`,
-    });
+    try {
+      // Transform data to API format
+      const apiData = transformToApiFormat(newRecord);
+     
+      // Call API to create processing record
+      const response = await createProcessingRecord(apiData);
+    
+      // Create new record object for local state
+      const newRecordForState: WarrantyRecord = {
+        id: response.data?.id || `temp-${Date.now()}`,
+        vinNumber: newRecord.vinNumber,
+        customerName: newRecord.customerName,
+        odometer: parseInt(newRecord.odometer),
+        cases: newRecord.cases,
+        status: 'pending',
+        createdAt: new Date().toISOString()
+      };
+      
+      // Add to local state immediately for better UX
+      setRecords(prev => [newRecordForState, ...prev]);
+      
+      // Success - reset form and close dialog
+      setNewRecord({ vinNumber: '', odometer: '', customerName: '', cases: [] });
+      setIsAddDialogOpen(false);
+      
+      toast({
+        title: 'Success',
+        description: 'Processing record created successfully',
+      });
+      
+    } catch (error: unknown) {
+      // Parse specific error messages
+      let errorMessage = 'Failed to create record';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('At least one guarantee case')) {
+          errorMessage = 'Please add at least one guarantee case';
+        } else if (error.message.includes('Unauthorized')) {
+          errorMessage = 'Please login again';
+        } else if (error.message.includes('Required role')) {
+          errorMessage = 'You do not have permission to create records';
+        } else if (error.message.includes('does not have an owner')) {
+          errorMessage = 'Vehicle must have an owner before creating a processing record';
+        } else if (error.message.includes('already has an active record')) {
+          errorMessage = 'This vehicle already has an active processing record';
+        }
+      }
+      
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive'
+      });
+    }
   };
 
   const handleEditRecord = (record: WarrantyRecord) => {
@@ -853,10 +1300,23 @@ const SuperAdvisor = () => {
       odometer: record.odometer.toString(),
       customerName: record.customerName,
       cases: record.cases || [],
-      purchaseDate: record.purchaseDate,
+      purchaseDate: record.purchaseDate || '',
       status: record.status
     });
     setIsEditMode(true);
+  };
+
+  const handleDeleteRecord = (record: WarrantyRecord) => {
+    if (window.confirm(`Are you sure you want to delete this warranty record for VIN: ${record.vinNumber}?`)) {
+      // Remove from local state only
+      const updatedRecords = records.filter(r => r.id !== record.id);
+      setRecords(updatedRecords);
+      
+      toast({
+        title: 'Record Deleted',
+        description: `Warranty record for VIN ${record.vinNumber} has been deleted`,
+      });
+    }
   };
 
   const handleSaveEdit = () => {
@@ -1027,7 +1487,7 @@ const SuperAdvisor = () => {
                   searchMode === 'warranty' 
                     ? handleSearchWarranty 
                     : searchMode === 'customer'
-                    ? handleSearchCustomer
+                    ? () => handleSearchCustomer()
                     : handleSearchCustomerByPhone
                 }
               >
@@ -1049,7 +1509,6 @@ const SuperAdvisor = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Record ID</TableHead>
                     <TableHead>Vin</TableHead>
                     <TableHead>Case</TableHead>
                     <TableHead>Status</TableHead>
@@ -1059,14 +1518,13 @@ const SuperAdvisor = () => {
                 <TableBody>
                   {records.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
                         No warranty records found
                       </TableCell>
                     </TableRow>
                   ) : (
-                    records.map((record) => (
+                    records.map((record, index) => (
                       <TableRow key={record.id} className="hover:bg-muted/50">
-                        <TableCell className="font-medium">{record.id}</TableCell>
                         <TableCell className="font-mono text-sm">{record.vinNumber}</TableCell>
                         <TableCell className="max-w-xs">
                           <div className="flex items-center gap-2">
@@ -1087,6 +1545,15 @@ const SuperAdvisor = () => {
                             >
                               <Edit className="h-4 w-4 mr-1" />
                               Edit
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-red-600 hover:bg-red-50"
+                              onClick={() => handleDeleteRecord(record)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Delete
                             </Button>
                           </div>
                         </TableCell>
@@ -1175,19 +1642,19 @@ const SuperAdvisor = () => {
                         </div>
                       </div>
 
-                      {/* Purchase Date - Editable */}
+                      {/* Purchase Date - Editable only if vehicle has no owner */}
                       <div className="grid md:grid-cols-3 gap-2 items-center">
                         <Label className="font-medium text-gray-700">Purchase Date:</Label>
                         <div className="md:col-span-2">
                           <Input
                             type="date"
-                            value={vehicleSearchResult.purchaseDate ? 
-                              new Date(vehicleSearchResult.purchaseDate).toISOString().split('T')[0] : ''}
+                            value={vehicleSearchResult.purchaseDate ? new Date(vehicleSearchResult.purchaseDate).toISOString().split('T')[0] : ''}
                             onChange={(e) => setVehicleSearchResult(prev => ({
                               ...prev!,
                               purchaseDate: e.target.value ? new Date(e.target.value).toISOString() : ''
                             }))}
-                            className="bg-white border-green-300 focus:border-green-500"
+                            disabled={!!vehicleSearchResult.owner}
+                            className={vehicleSearchResult.owner ? "bg-gray-100" : "bg-white border-green-300 focus:border-green-500"}
                           />
                         </div>
                       </div>
@@ -1213,7 +1680,7 @@ const SuperAdvisor = () => {
                           <div className="space-y-2">
                             <Button
                               onClick={handleCheckWarranty}
-                              disabled={isCheckingWarranty || !odometer || !vehicleSearchResult.purchaseDate}
+                              disabled={isCheckingWarranty || !odometer}
                               className="w-full bg-purple-600 hover:bg-purple-700"
                             >
                               {isCheckingWarranty ? (
@@ -1580,7 +2047,7 @@ const SuperAdvisor = () => {
                         <Label className="font-medium text-gray-700">Phone Number:</Label>
                         <div className="md:col-span-2">
                           <Input
-                            value={foundCustomer.phoneNumber || ''}
+                            value={foundCustomer.phone || ''}
                             disabled
                             className="bg-gray-100 font-mono"
                           />
@@ -1614,38 +2081,108 @@ const SuperAdvisor = () => {
                   </div>
 
                   {/* Customer Vehicles */}
-                  {foundCustomer.vehicles && foundCustomer.vehicles.length > 0 && (
+                  {foundCustomer?.vehicles && Array.isArray(foundCustomer.vehicles) && foundCustomer.vehicles.length > 0 && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                       <h3 className="text-lg font-semibold text-blue-800 mb-4 flex items-center">
                         <Car className="mr-2 h-5 w-5" />
-                        Customer's Vehicles
+                        Customer's Vehicles ({foundCustomer.vehicles.length})
                       </h3>
                       <div className="space-y-3">
                         {foundCustomer.vehicles.map((vehicle: any, index: number) => (
-                          <div key={index} className="bg-white border border-blue-200 rounded p-3">
-                            <div className="grid md:grid-cols-2 gap-3">
+                          <div key={vehicle?.vin || index} className="bg-white border border-blue-200 rounded p-4">
+                            <div className="grid md:grid-cols-2 gap-3 mb-4">
                               <div>
                                 <span className="text-sm font-medium text-gray-600">VIN:</span>
-                                <p className="text-sm font-mono">{vehicle.vin}</p>
+                                <p className="text-sm font-mono">{vehicle?.vin || 'N/A'}</p>
                               </div>
                               <div>
                                 <span className="text-sm font-medium text-gray-600">Model:</span>
-                                <p className="text-sm">{vehicle.model || 'N/A'}</p>
+                                <p className="text-sm">{typeof vehicle?.model === 'string' ? vehicle.model : vehicle?.model?.name || 'N/A'}</p>
                               </div>
                               <div>
                                 <span className="text-sm font-medium text-gray-600">License Plate:</span>
-                                <p className="text-sm">{vehicle.licensePlate || 'N/A'}</p>
+                                <p className="text-sm">{typeof vehicle?.licensePlate === 'string' ? vehicle.licensePlate : 'N/A'}</p>
                               </div>
                               <div>
                                 <span className="text-sm font-medium text-gray-600">Purchase Date:</span>
-                                <p className="text-sm">{vehicle.purchaseDate || 'N/A'}</p>
+                                <p className="text-sm">{typeof vehicle?.purchaseDate === 'string' ? vehicle.purchaseDate : vehicle?.purchaseDate ? new Date(vehicle.purchaseDate).toLocaleDateString() : 'N/A'}</p>
                               </div>
                             </div>
+
+                            {/* Warranty Check Section for this vehicle */}
+                            {selectedVehicleForWarranty?.vin === vehicle.vin ? (
+                              <div className="border-t pt-4 space-y-3">
+                                <h5 className="font-medium text-gray-800">Check Warranty for this Vehicle</h5>
+                                <div className="flex gap-3 items-end">
+                                  <div className="flex-1">
+                                    <Label className="text-sm">Odometer (km):</Label>
+                                    <Input
+                                      type="number"
+                                      value={vehicleOdometer}
+                                      onChange={(e) => setVehicleOdometer(e.target.value)}
+                                      placeholder="Enter current odometer reading"
+                                      className="mt-1"
+                                    />
+                                  </div>
+                                  <Button
+                                    onClick={() => handleCheckVehicleWarranty(vehicle)}
+                                    disabled={isCheckingVehicleWarranty}
+                                    className="bg-green-600 hover:bg-green-700"
+                                  >
+                                    {isCheckingVehicleWarranty ? 'Checking...' : 'Check Warranty'}
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="border-t pt-4 flex gap-2">
+                                <Button
+                                  onClick={() => {
+                                    setSelectedVehicleForWarranty(vehicle);
+                                    setVehicleOdometer('');
+                                    setVehicleWarrantyStatus(null);
+                                  }}
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-green-300 text-green-700 hover:bg-green-50"
+                                >
+                                  Check Warranty
+                                </Button>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
+
+                  {/* Register New Vehicle Section */}
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <h3 className="text-lg font-semibold text-green-800 mb-4 flex items-center">
+                      <Plus className="mr-2 h-5 w-5" />
+                      Register New Vehicle
+                    </h3>
+                    <p className="text-sm text-green-700 mb-4">
+                      If the customer wants to register a new vehicle for warranty, enter the VIN below:
+                    </p>
+                    <div className="flex gap-3 items-end">
+                      <div className="flex-1">
+                        <Label className="text-sm">Vehicle VIN:</Label>
+                        <Input
+                          value={newVehicleVin}
+                          onChange={(e) => setNewVehicleVin(e.target.value.toUpperCase())}
+                          placeholder="Enter VIN number"
+                          className="mt-1 font-mono"
+                        />
+                      </div>
+                      <Button
+                        onClick={handleRegisterNewVehicle}
+                        disabled={!newVehicleVin.trim()}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        Register Vehicle
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               ) : hasSearchedCustomer ? (
                 <div className="text-center py-12">
@@ -1699,16 +2236,6 @@ const SuperAdvisor = () => {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="customerName">Customer Name *</Label>
-              <Input
-                id="customerName"
-                placeholder="Enter customer full name"
-                value={newRecord.customerName}
-                onChange={(e) => setNewRecord({ ...newRecord, customerName: e.target.value })}
-              />
-            </div>
-
-            <div className="grid gap-2">
               <Label htmlFor="odometer">Odometer (km) *</Label>
               <Input
                 id="odometer"
@@ -1716,17 +2243,6 @@ const SuperAdvisor = () => {
                 placeholder="Enter current odometer reading"
                 value={newRecord.odometer}
                 onChange={(e) => setNewRecord({ ...newRecord, odometer: e.target.value })}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="purchaseDate">Release Date *</Label>
-              <Input
-                id="purchaseDate"
-                type="date"
-                value={newRecord.purchaseDate}
-                onChange={(e) => setNewRecord({ ...newRecord, purchaseDate: e.target.value })}
-                max={new Date().toISOString().split('T')[0]}
               />
             </div>
 
@@ -1827,16 +2343,6 @@ const SuperAdvisor = () => {
                 placeholder="VIN" 
                 value={vinData.vinNumber}
                 readOnly              
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Purchase Date</Label>
-              <Input
-                id="purchaseDate"
-                placeholder="Purchase Date" 
-                value={vinData.purchaseDate}
-                readOnly             
               />
             </div>
 
@@ -1972,60 +2478,45 @@ const SuperAdvisor = () => {
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
-              <span>Edit Warranty</span>
+              <span>View Warranty Record</span>
             </DialogTitle>
             <DialogDescription>
-              Update warranty claim information
+              View warranty details and update status
             </DialogDescription>
           </DialogHeader>
 
           {isEditMode && (
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label className="text-muted-foreground">Record ID</Label>
-                <p className="font-medium">{selectedRecord?.id}</p>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-vinNumber">VIN Number *</Label>
+                <Label htmlFor="edit-vinNumber">VIN Number</Label>
                 <Input
                   id="edit-vinNumber"
-                  placeholder="Enter VIN (17 characters)"
                   value={editRecord.vinNumber}
-                  onChange={(e) => setEditRecord({ ...editRecord, vinNumber: e.target.value })}
-                  maxLength={17}
+                  readOnly
+                  className="bg-muted/50 cursor-default"
                 />
               </div>
 
+              
               <div className="grid gap-2">
-                <Label htmlFor="edit-customerName">Customer Name *</Label>
+                <Label htmlFor="edit-customerName">Customer Name</Label>
                 <Input
                   id="edit-customerName"
-                  placeholder="Enter customer full name"
                   value={editRecord.customerName}
-                  onChange={(e) => setEditRecord({ ...editRecord, customerName: e.target.value })}
+                  readOnly
+                  className="bg-muted/50 cursor-default"
                 />
               </div>
 
+
               <div className="grid gap-2">
-                <Label htmlFor="edit-odometer">Odometer (km) *</Label>
+                <Label htmlFor="edit-odometer">Odometer (km)</Label>
                 <Input
                   id="edit-odometer"
                   type="number"
-                  placeholder="Enter current odometer reading"
                   value={editRecord.odometer}
-                  onChange={(e) => setEditRecord({ ...editRecord, odometer: e.target.value })}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-purchaseDate">Purchase Date *</Label>
-                <Input
-                  id="edit-purchaseDate"
-                  type="date"
-                  value={editRecord.purchaseDate}
-                  onChange={(e) => setEditRecord({ ...editRecord, purchaseDate: e.target.value })}
-                  max={new Date().toISOString().split('T')[0]}
+                  readOnly
+                  className="bg-muted/50 cursor-default"
                 />
               </div>
 
@@ -2045,25 +2536,12 @@ const SuperAdvisor = () => {
 
               <div className="grid gap-2">
                 <div className="flex items-center justify-between mb-2">
-                  <Label>Cases * ({editRecord.cases.length})</Label>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setCurrentCaseText('');
-                      setEditingCaseId(null);
-                      setIsAddNewcaseOpen(true);
-                    }}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    New Case
-                  </Button>
+                  <Label>Cases ({editRecord.cases.length})</Label>
                 </div>
                 {editRecord.cases.length > 0 ? (
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {editRecord.cases.map((caseNote, index) => (
-                      <div key={caseNote.id} className="p-3 bg-muted/50 rounded-md border flex items-start justify-between gap-2">
+                      <div key={caseNote.id} className="p-3 bg-muted/50 rounded-md border">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <Badge variant="outline" className="text-xs">Case {index + 1}</Badge>
@@ -2071,40 +2549,12 @@ const SuperAdvisor = () => {
                           </div>
                           <p className="text-sm break-words">{caseNote.text}</p>
                         </div>
-                        <div className="flex gap-1 flex-shrink-0">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setCurrentCaseText(caseNote.text);
-                              setEditingCaseId(caseNote.id);
-                              setIsAddNewcaseOpen(true);
-                            }}
-                          >
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setEditRecord({
-                                ...editRecord,
-                                cases: editRecord.cases.filter(c => c.id !== caseNote.id)
-                              });
-                              toast({ title: 'Case deleted' });
-                            }}
-                          >
-                            <Trash2 className="h-3 w-3 text-destructive" />
-                          </Button>
-                        </div>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="p-3 bg-muted/20 rounded-md border border-dashed">
-                    <p className="text-sm text-muted-foreground italic">No cases added yet. Click "New Case" to add one.</p>
+                    <p className="text-sm text-muted-foreground italic">No cases available.</p>
                   </div>
                 )}
               </div>
@@ -2217,6 +2667,381 @@ const SuperAdvisor = () => {
             <Button onClick={handleRegisterOwner} className="bg-green-600 hover:bg-green-700">
               <CheckCircle className="h-4 w-4 mr-2" />
               Register Owner
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Warranty Check Dialog */}
+      <Dialog open={showWarrantyDialog} onOpenChange={setShowWarrantyDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <Car className="h-5 w-5" />
+              <span>Vehicle Warranty Information</span>
+            </DialogTitle>
+            <DialogDescription>
+              Detailed warranty coverage and status for this vehicle
+            </DialogDescription>
+          </DialogHeader>
+
+          {!warrantyDialogData && (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-center">
+                <Clock className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                <p className="text-gray-500">Loading warranty information...</p>
+              </div>
+            </div>
+          )}
+
+          {warrantyDialogData && (
+            <div className="grid gap-6 py-4">
+              {/* Vehicle Info */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="font-semibold mb-2">Vehicle Information</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium">VIN:</span> {currentVehicleForWarranty?.vin || 'N/A'}
+                  </div>
+                  <div>
+                    <span className="font-medium">Model:</span> {
+                      typeof currentVehicleForWarranty?.model === 'string' 
+                        ? currentVehicleForWarranty.model 
+                        : currentVehicleForWarranty?.model?.modelName || 'N/A'
+                    }
+                  </div>
+                  <div>
+                    <span className="font-medium">License Plate:</span> {currentVehicleForWarranty?.licensePlate || 'N/A'}
+                  </div>
+                  <div>
+                    <span className="font-medium">Purchase Date:</span> {
+                      currentVehicleForWarranty?.purchaseDate 
+                        ? new Date(currentVehicleForWarranty.purchaseDate).toLocaleDateString()
+                        : 'N/A'
+                    }
+                  </div>
+                </div>
+              </div>
+
+              {/* General Warranty */}
+              {warrantyDialogData.generalWarranty && (
+                <div className="border rounded-lg p-4">
+                  <h3 className="font-semibold mb-3 flex items-center">
+                    <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+                    General Warranty
+                  </h3>
+                  
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {/* Duration */}
+                    <div className="bg-blue-50 p-3 rounded-lg">
+                      <h4 className="font-medium text-blue-800 mb-2">Duration Coverage</h4>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span>Status:</span>
+                          <Badge variant={warrantyDialogData.generalWarranty.duration?.status === 'ACTIVE' ? 'default' : 'destructive'}>
+                            {warrantyDialogData.generalWarranty.duration?.status || 'N/A'}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Policy Duration:</span>
+                          <span className="font-medium">{warrantyDialogData.generalWarranty.policy?.durationMonths || 0} months</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>End Date:</span>
+                          <span className="text-green-600">{
+                            warrantyDialogData.generalWarranty.duration?.endDate 
+                              ? (typeof warrantyDialogData.generalWarranty.duration.endDate === 'string' 
+                                  ? warrantyDialogData.generalWarranty.duration.endDate 
+                                  : new Date(warrantyDialogData.generalWarranty.duration.endDate).toLocaleDateString())
+                              : 'N/A'
+                          }</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Remaining Days:</span>
+                          <span className="font-medium text-green-600">{warrantyDialogData.generalWarranty.duration?.remainingDays?.toLocaleString() || 0}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Mileage */}
+                    <div className="bg-green-50 p-3 rounded-lg">
+                      <h4 className="font-medium text-green-800 mb-2">Mileage Coverage</h4>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span>Status:</span>
+                          <Badge variant={warrantyDialogData.generalWarranty.mileage?.status === 'ACTIVE' ? 'default' : 'destructive'}>
+                            {warrantyDialogData.generalWarranty.mileage?.status || 'N/A'}
+                          </Badge>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Policy Limit:</span>
+                          <span className="font-medium">{warrantyDialogData.generalWarranty.policy?.mileageLimit?.toLocaleString() || 'N/A'} km</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Current Odometer:</span>
+                          <span>{parseInt(vehicleOdometer)?.toLocaleString() || 0} km</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Remaining:</span>
+                          <span className="font-medium text-green-600">{warrantyDialogData.generalWarranty.mileage?.remainingMileage?.toLocaleString() || 0} km</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Component Warranties */}
+              {warrantyDialogData?.componentWarranties && warrantyDialogData.componentWarranties.length > 0 && (
+                <div className="border rounded-lg p-4">
+                  <h3 className="font-semibold mb-3 flex items-center">
+                    <Wrench className="h-4 w-4 mr-2 text-blue-500" />
+                    Component Warranties ({warrantyDialogData.componentWarranties.length} components)
+                  </h3>
+                  
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-80 overflow-y-auto">
+                    {warrantyDialogData.componentWarranties.map((component: any, index: number) => {
+                      const isDurationActive = component.duration?.status === 'ACTIVE';
+                      const isMileageActive = component.mileage?.status === 'ACTIVE';
+                      const isComponentValid = isDurationActive && isMileageActive;
+                      
+                      return (
+                        <div key={component.typeComponentId || index} className={`p-3 rounded-lg border ${isComponentValid ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                          <h4 className="font-medium text-sm mb-2 text-gray-800">
+                            {component.componentName || `Component ${index + 1}`}
+                          </h4>
+                          <div className="space-y-1 text-xs">
+                            {/* Overall Status */}
+                            <div className="flex justify-between mb-2">
+                              <span className="font-medium">Overall:</span>
+                              <Badge variant={isComponentValid ? 'default' : 'destructive'}>
+                                {isComponentValid ? 'ACTIVE' : 'EXPIRED'}
+                              </Badge>
+                            </div>
+
+                            {/* Duration Info */}
+                            <div className="flex justify-between">
+                              <span>Duration:</span>
+                              <Badge variant={isDurationActive ? 'default' : 'destructive'}>
+                                {component.duration?.status || 'N/A'}
+                              </Badge>
+                            </div>
+                            
+                            {/* Mileage Info */}
+                            <div className="flex justify-between">
+                              <span>Mileage:</span>
+                              <Badge variant={isMileageActive ? 'default' : 'destructive'}>
+                                {component.mileage?.status || 'N/A'}
+                              </Badge>
+                            </div>
+
+                            <hr className="my-1" />
+
+                            {/* Policy Details */}
+                            <div className="flex justify-between">
+                              <span>Policy:</span>
+                              <span className="font-medium">{component.policy?.durationMonths || 0}m / {component.policy?.mileageLimit?.toLocaleString() || 'N/A'}km</span>
+                            </div>
+
+                            {/* Remaining Details */}
+                            <div className="flex justify-between">
+                              <span>Expires:</span>
+                              <span className="text-blue-600 text-xs">{
+                                component.duration?.endDate 
+                                  ? (typeof component.duration.endDate === 'string' 
+                                      ? component.duration.endDate 
+                                      : new Date(component.duration.endDate).toLocaleDateString())
+                                  : 'N/A'
+                              }</span>
+                            </div>
+                            
+                            <div className="flex justify-between">
+                              <span>Days left:</span>
+                              <span className="font-medium text-green-600">{component.duration?.remainingDays?.toLocaleString() || 0}</span>
+                            </div>
+                            
+                            <div className="flex justify-between">
+                              <span>KM left:</span>
+                              <span className="font-medium text-green-600">{component.mileage?.remainingMileage?.toLocaleString() || 0}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Overall Status */}
+              <div className={`p-4 rounded-lg ${vehicleWarrantyStatus === 'valid' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <div className="flex items-center space-x-2">
+                  {vehicleWarrantyStatus === 'valid' ? (
+                    <CheckCircle className="h-5 w-5 text-green-600" />
+                  ) : (
+                    <XCircle className="h-5 w-5 text-red-600" />
+                  )}
+                  <h3 className={`font-semibold ${vehicleWarrantyStatus === 'valid' ? 'text-green-800' : 'text-red-800'}`}>
+                    {vehicleWarrantyStatus === 'valid' ? 'Warranty Active' : 'Warranty Expired'}
+                  </h3>
+                </div>
+                <p className={`mt-2 text-sm ${vehicleWarrantyStatus === 'valid' ? 'text-green-700' : 'text-red-700'}`}>
+                  {vehicleWarrantyStatus === 'valid' 
+                    ? 'This vehicle is covered under warranty. You can create a warranty processing record.'
+                    : 'This vehicle\'s warranty has expired. No warranty claims can be processed.'
+                  }
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowWarrantyDialog(false)}>
+              Close
+            </Button>
+            {vehicleWarrantyStatus === 'valid' && (
+              <Button 
+                onClick={() => {
+                  handleCreateRecord(currentVehicleForWarranty);
+                  setShowWarrantyDialog(false);
+                }}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create Warranty Record
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Warranty Record Dialog */}
+      <Dialog open={showCreateWarrantyDialog} onOpenChange={setShowCreateWarrantyDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <Car className="h-5 w-5" />
+              <span>Create New Warranty Record</span>
+            </DialogTitle>
+            <DialogDescription>
+              Enter vehicle and customer information to create a new warranty record
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            {/* VIN Number - Read Only */}
+            <div className="grid gap-2">
+              <Label htmlFor="record-vin">VIN Number *</Label>
+              <Input
+                id="record-vin"
+                value={warrantyRecordForm.vin}
+                readOnly
+                className="bg-gray-100"
+                placeholder="Enter VIN (17 characters)"
+              />
+            </div>
+
+            {/* Customer Name - Read Only */}
+            <div className="grid gap-2">
+              <Label htmlFor="record-customer">Customer Name *</Label>
+              <Input
+                id="record-customer"
+                value={warrantyRecordForm.customerName}
+                readOnly
+                className="bg-gray-100"
+                placeholder="Customer name"
+              />
+            </div>
+
+            {/* Odometer - Read Only */}
+            <div className="grid gap-2">
+              <Label htmlFor="record-odometer">Odometer (km) *</Label>
+              <Input
+                id="record-odometer"
+                value={warrantyRecordForm.odometer}
+                readOnly
+                className="bg-gray-100"
+                placeholder="Enter current odometer reading"
+              />
+            </div>
+
+            {/* Cases Section */}
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between">
+                <Label>Cases * ({warrantyRecordForm.cases.length})</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddWarrantyCase}
+                  disabled={!warrantyRecordCaseText.trim()}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Case
+                </Button>
+              </div>
+
+              {/* Add Case Input */}
+              <div className="flex gap-2">
+                <Textarea
+                  value={warrantyRecordCaseText}
+                  onChange={(e) => setWarrantyRecordCaseText(e.target.value)}
+                  placeholder="Describe the warranty case..."
+                  rows={3}
+                  className="flex-1"
+                />
+              </div>
+
+              {/* Cases List */}
+              {warrantyRecordForm.cases.length === 0 ? (
+                <div className="text-center py-6 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
+                  <p>No cases added yet. Click "New Case" to add one.</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {warrantyRecordForm.cases.map((caseItem, index) => (
+                    <div key={caseItem.id} className="flex items-start gap-2 p-3 bg-gray-50 rounded-lg border">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant="outline">Case {index + 1}</Badge>
+                          <span className="text-xs text-gray-500">
+                            {new Date(caseItem.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-sm">{caseItem.text}</p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveWarrantyCase(caseItem.id)}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowCreateWarrantyDialog(false);
+                setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [] });
+                setWarrantyRecordCaseText('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleSubmitWarrantyRecord}
+              disabled={warrantyRecordForm.cases.length === 0 || isCreatingRecord}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              {isCreatingRecord ? 'Creating...' : 'Save Record'}
             </Button>
           </DialogFooter>
         </DialogContent>
