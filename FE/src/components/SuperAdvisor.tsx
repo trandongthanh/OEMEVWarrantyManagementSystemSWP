@@ -218,8 +218,9 @@ const SuperAdvisor = () => {
   const [records, setRecords] = useState<WarrantyRecord[]>([]);
 
   // Helper Functions
-  const validateRecord = (record: { vinNumber: string; customerName: string; odometer: string; cases: CaseNote[] }) => 
-    record.vinNumber && record.customerName && record.odometer && record.cases.length > 0;
+  // Validate record - customerName is optional for new records (will be fetched from vehicle owner)
+  const validateRecord = (record: { vinNumber: string; customerName?: string; odometer: string; cases: CaseNote[] }) => 
+    record.vinNumber && record.odometer && record.cases.length > 0;
 
   const mapApiStatus = (apiStatus: string): 'pending' | 'in-progress' | 'completed' => {
     if (['IN_DIAGNOSIS', 'PENDING'].includes(apiStatus)) return 'pending';
@@ -1282,6 +1283,8 @@ const SuperAdvisor = () => {
           errorMessage = 'Vehicle must have an owner before creating a processing record';
         } else if (error.message.includes('already has an active record')) {
           errorMessage = 'This vehicle already has an active processing record';
+        } else if (error.message.includes('Cannot find vehicle')) {
+          errorMessage = 'Cannot find vehicle with this VIN';
         }
       }
       
@@ -2219,7 +2222,7 @@ const SuperAdvisor = () => {
               <span>Create New Warranty Record</span>
             </DialogTitle>
             <DialogDescription>
-              Enter vehicle and customer information to create a new warranty record
+              Enter vehicle information to create a new warranty processing record
             </DialogDescription>
           </DialogHeader>
 
