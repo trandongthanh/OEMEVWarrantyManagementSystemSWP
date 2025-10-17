@@ -44,6 +44,12 @@ interface Technician {
   status?: string; // WORKING | DAY_OFF | LEAVE_REQUESTED | LEAVE_APPROVED
 }
 
+interface GuaranteeCase {
+  guaranteeCaseId: string;
+  contentGuarantee: string;
+  status?: string;
+}
+
 interface AssignedComponent {
   id: string;
   warehouse_id: string;
@@ -61,7 +67,7 @@ interface WarrantyClaim {
   vin: string;
   mileage: number;
   checkInDate: string;
-  caseDescription: string;
+  guaranteeCases: GuaranteeCase[]; // Array of guarantee cases
   assignedTechnicians: Technician[];
   assignedComponents: AssignedComponent[];
   model: string;
@@ -209,13 +215,18 @@ const ServiceCenterDashboard = () => {
         const apiRecords = res.data?.data?.records?.records || [];
         const mapped: WarrantyClaim[] = apiRecords.map((r: any) => {
           const mainTech = r.mainTechnician ? [{ id: r.mainTechnician.userId, name: r.mainTechnician.name, isAvailable: false, workload: typeof r.mainTechnician.activeTaskCount === 'number' ? r.mainTechnician.activeTaskCount : undefined, status: r.mainTechnician.status }] : [];
-          const primaryCase = Array.isArray(r.guaranteeCases) && r.guaranteeCases.length > 0 ? r.guaranteeCases[0] : null;
+          const cases: GuaranteeCase[] = Array.isArray(r.guaranteeCases) ? r.guaranteeCases.map((gc: any) => ({
+            guaranteeCaseId: gc.guaranteeCaseId || gc.id || '',
+            contentGuarantee: gc.contentGuarantee || '',
+            status: gc.status
+          })) : [];
+          const primaryCase = cases.length > 0 ? cases[0] : null;
           return {
             recordId: r.vehicleProcessingRecordId || r.recordId || r.processing_record_id || r.id || '',
             vin: r.vin || r.vehicle?.vin || '',
             mileage: r.odometer || 0,
             checkInDate: r.checkInDate || r.check_in_date || new Date().toISOString(),
-            caseDescription: primaryCase?.contentGuarantee || '',
+            guaranteeCases: cases,
             assignedTechnicians: mainTech,
             assignedComponents: [],
             model: r.vehicle?.model?.name || r.model || '',
@@ -1027,9 +1038,9 @@ const ServiceCenterDashboard = () => {
     }
   };
 
-  // Helper function to display value or "None" for null
-  const displayValue = (value: string | null) => {
-    return value || "None";
+  // Helper function to display value or "---" for null
+  const displayValue = (value: string | null | undefined) => {
+    return value || "---";
   };
 
   const getStatusBadge = (status: string) => {
@@ -1148,7 +1159,7 @@ const ServiceCenterDashboard = () => {
                         {warrantyClaims.map((claim, index) => (
                           <TableRow key={claim.recordId || claim.vin}>
                             <TableCell className="font-mono text-xs" title={claim.recordId}>
-                              {claim.recordId || 'N/A'}
+                              {claim.recordId || '---'}
                             </TableCell>
                             <TableCell className="font-mono text-sm font-medium">
                               {claim.vin}
@@ -1167,12 +1178,20 @@ const ServiceCenterDashboard = () => {
                               </Badge>
                             </TableCell>
                             <TableCell className="max-w-xs">
-                              <div className="space-y-1">
-                                <div className="font-medium text-sm">{claim.issueType}</div>
-                                {claim.caseDescription && claim.caseDescription.trim() !== (claim.issueType || '').trim() && (
-                                  <div className="text-xs text-muted-foreground line-clamp-2">
-                                    {claim.caseDescription}
+                              <div className="space-y-2">
+                                {claim.guaranteeCases && claim.guaranteeCases.length > 0 ? (
+                                  <div className="space-y-1.5">
+                                    {claim.guaranteeCases.map((gc, idx) => (
+                                      <div key={gc.guaranteeCaseId} className="flex items-start gap-2 p-2 bg-blue-50 dark:bg-blue-900/10 rounded border border-blue-200 dark:border-blue-800">
+                                        <Badge variant="outline" className="text-[10px] font-bold shrink-0 bg-blue-100 dark:bg-blue-900/30">
+                                          #{idx + 1}
+                                        </Badge>
+                                        <span className="text-xs leading-relaxed">{gc.contentGuarantee}</span>
+                                      </div>
+                                    ))}
                                   </div>
+                                ) : (
+                                  <div className="text-xs text-muted-foreground italic">No cases</div>
                                 )}
                                 {claim.priority && (
                                   <Badge variant={getPriorityBadgeVariant(claim.priority)} className="text-xs">
@@ -1542,10 +1561,10 @@ const ServiceCenterDashboard = () => {
                                           </div>
                                         </TableCell>
                                         <TableCell className="font-mono text-sm">
-                                          {component?.sku || 'N/A'}
+                                          {component?.sku || '---'}
                                         </TableCell>
                                         <TableCell>
-                                          <Badge variant="outline">{component?.category || 'N/A'}</Badge>
+                                          <Badge variant="outline">{component?.category || '---'}</Badge>
                                         </TableCell>
                                         <TableCell className="font-semibold">
                                           ${component?.price?.toLocaleString() || '0'}
@@ -1729,7 +1748,7 @@ const ServiceCenterDashboard = () => {
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="font-mono text-xs text-blue-900 dark:text-blue-100 break-all leading-relaxed">
-                                {selectedClaimForDetail.recordId || 'N/A'}
+                                {selectedClaimForDetail.recordId || '---'}
                               </p>
                             </div>
                           </div>
@@ -1810,11 +1829,32 @@ const ServiceCenterDashboard = () => {
                           )}
                         </div>
                       </div>
-                      {selectedClaimForDetail.caseDescription && selectedClaimForDetail.caseDescription.trim() !== (selectedClaimForDetail.issueType || '').trim() && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Case Description</label>
-                          <div className="mt-2 p-4 bg-muted rounded-lg">
-                            <p className="text-base leading-relaxed">{selectedClaimForDetail.caseDescription}</p>
+                      {selectedClaimForDetail.guaranteeCases && selectedClaimForDetail.guaranteeCases.length > 0 && (
+                        <div className="col-span-2">
+                          <label className="text-sm font-medium text-muted-foreground mb-3 block">Guarantee Cases ({selectedClaimForDetail.guaranteeCases.length})</label>
+                          <div className="space-y-3">
+                            {selectedClaimForDetail.guaranteeCases.map((gc, idx) => (
+                              <Card key={gc.guaranteeCaseId} className="border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/50 to-transparent dark:from-blue-900/20">
+                                <CardContent className="p-4">
+                                  <div className="flex items-start gap-3">
+                                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-500 text-white font-bold text-sm shrink-0">
+                                      {idx + 1}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">Case #{idx + 1}</span>
+                                        {gc.status && (
+                                          <Badge variant="outline" className="text-xs">
+                                            {getDisplayStatus(gc.status)}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <p className="text-sm leading-relaxed text-foreground">{gc.contentGuarantee}</p>
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            ))}
                           </div>
                         </div>
                       )}
@@ -2026,7 +2066,7 @@ const ServiceCenterDashboard = () => {
                           <FileText className="h-4 w-4 text-blue-600" />
                           <div className="flex-1">
                             <span className="text-xs text-muted-foreground mr-2">Record ID:</span>
-                            <span className="font-mono text-xs font-medium">{claim?.recordId || 'N/A'}</span>
+                            <span className="font-mono text-xs font-medium">{claim?.recordId || '---'}</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -2157,7 +2197,7 @@ const ServiceCenterDashboard = () => {
                         <FileText className="h-4 w-4 text-blue-600" />
                         <div className="flex-1">
                           <span className="text-xs text-muted-foreground mr-2">Record ID:</span>
-                          <span className="font-mono text-xs font-medium">{claim?.recordId || 'N/A'}</span>
+                          <span className="font-mono text-xs font-medium">{claim?.recordId || '---'}</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
