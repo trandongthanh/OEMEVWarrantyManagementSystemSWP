@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCircle, Save, Clock } from 'lucide-react';
+import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCircle, Save, Clock, FileText } from 'lucide-react';
 
 // API service function for creating processing record
 const createProcessingRecord = async (recordData: {
@@ -128,7 +128,6 @@ const SuperAdvisor = () => {
   // UI State
   const [searchVin, setSearchVin] = useState('');
   const [searchMode, setSearchMode] = useState<'warranty' | 'customer' | 'phone'>('phone');
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
   const [isDialogSearch, setIsDialogSearch] = useState(false);
@@ -139,12 +138,6 @@ const SuperAdvisor = () => {
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
   
   // Form States
-  const [newRecord, setNewRecord] = useState({
-    vinNumber: '',
-    odometer: '',
-    customerName: '',
-    cases: [] as CaseNote[]
-  });
   const [vinData, setVinData] = useState<VinDataState>({
     vinNumber: "",
     warrantyStatus: ""
@@ -205,7 +198,7 @@ const SuperAdvisor = () => {
   });
 
   // Transform form data to API format
-  const transformToApiFormat = (formData: typeof newRecord) => {
+  const transformToApiFormat = (formData: { vinNumber: string; odometer: string; cases: CaseNote[] }) => {
     return {
       vin: formData.vinNumber,
       odometer: parseInt(formData.odometer),
@@ -1228,75 +1221,43 @@ const SuperAdvisor = () => {
     }
   };
 
-  const handleAddRecord = async () => {
-    if (!validateRecord(newRecord)) {
+  // Handle creating record from VIN search flow - prepare form and open dialog
+  const handleCreateRecordFromVin = () => {
+    if (!vehicleSearchResult || !odometer) {
       toast({
         title: 'Validation Error',
-        description: 'Please fill in all required fields and add at least one case',
+        description: 'VIN and odometer are required',
         variant: 'destructive'
       });
       return;
     }
 
-    try {
-      // Transform data to API format
-      const apiData = transformToApiFormat(newRecord);
-     
-      // Call API to create processing record
-      const response = await createProcessingRecord(apiData);
-    
-      // Create new record object for local state
-      const newRecordForState: WarrantyRecord = {
-        id: response.data?.id || `temp-${Date.now()}`,
-        vinNumber: newRecord.vinNumber,
-        customerName: newRecord.customerName,
-        odometer: parseInt(newRecord.odometer),
-        cases: newRecord.cases,
-        status: 'pending',
-        createdAt: new Date().toISOString()
-      };
-      
-      // Add to local state immediately for better UX
-      setRecords(prev => [newRecordForState, ...prev]);
-      
-      // Success - reset form and close dialog
-      setNewRecord({ vinNumber: '', odometer: '', customerName: '', cases: [] });
-      setIsAddDialogOpen(false);
-      
-      toast({
-        title: 'Success',
-        description: 'Processing record created successfully',
-      });
-      
-    } catch (error: unknown) {
-      // Parse specific error messages
-      let errorMessage = 'Failed to create record';
-      
-      if (error instanceof Error) {
-        if (error.message.includes('At least one guarantee case')) {
-          errorMessage = 'Please add at least one guarantee case';
-        } else if (error.message.includes('Unauthorized')) {
-          errorMessage = 'Please login again';
-        } else if (error.message.includes('Required role')) {
-          errorMessage = 'You do not have permission to create records';
-        } else if (error.message.includes('does not have an owner')) {
-          errorMessage = 'Vehicle must have an owner before creating a processing record';
-        } else if (error.message.includes('already has an active record')) {
-          errorMessage = 'This vehicle already has an active processing record';
-        } else if (error.message.includes('Cannot find vehicle')) {
-          errorMessage = 'Cannot find vehicle with this VIN';
-        }
-      }
-      
+    if (!vehicleSearchResult.owner) {
       toast({
         title: 'Error',
-        description: errorMessage,
+        description: 'Vehicle must have an owner before creating a processing record',
         variant: 'destructive'
       });
+      return;
     }
+
+    // Prepare form data and open create warranty dialog
+    setWarrantyRecordForm({
+      vin: vehicleSearchResult.vin,
+      odometer: odometer,
+      purchaseDate: vehicleSearchResult.purchaseDate || '',
+      customerName: vehicleSearchResult.owner.fullName,
+      cases: []
+    });
+    
+    // Open create dialog
+    setShowCreateWarrantyDialog(true);
   };
 
   const handleEditRecord = (record: WarrantyRecord) => {
+    console.log('📝 Opening edit dialog for record:', record);
+    console.log('📋 Cases in record:', record.cases);
+    
     setSelectedRecord(record);
     setEditRecord({
       vinNumber: record.vinNumber,
@@ -1394,15 +1355,6 @@ const SuperAdvisor = () => {
                 <LogOut className="h-4 w-4 mr-2" />
                 Logout
               </Button>
-
-              <Button 
-                size="sm" 
-                className="bg-primary hover:bg-primary/90"
-                onClick={() => setIsAddDialogOpen(true)}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                New Record
-              </Button>
             </div>
           </div>
         </div>
@@ -1447,56 +1399,50 @@ const SuperAdvisor = () => {
               </Button>
             </div>
 
-            {/* Dynamic Search Bar */}
-            <div className="flex gap-3">
-              <div className="flex-1 relative">
-                {searchMode === 'warranty' ? (
-                  <Search className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
-                ) : searchMode === 'customer' ? (
-                  <Car className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
-                ) : (
-                  <User className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
-                )}
-                <Input
-                  placeholder={
-                    searchMode === 'warranty' 
-                      ? "Enter VIN to check warranty information" 
-                      : searchMode === 'customer'
-                      ? "Enter VIN to find vehicle and customer records"
-                      : "Enter customer phone number"
-                  }
-                  className="pl-10 h-11"
-                  value={searchMode === 'phone' ? customerSearchPhone : searchVin}
-                  onChange={(e) => {
-                    if (searchMode === 'phone') {
-                      const numericValue = e.target.value.replace(/[^0-9]/g, '');
-                      setCustomerSearchPhone(numericValue);
-                    } else {
-                      setSearchVin(e.target.value);
+            {/* Dynamic Search Bar - Only for customer and phone modes */}
+            {searchMode !== 'warranty' && (
+              <div className="flex gap-3">
+                <div className="flex-1 relative">
+                  {searchMode === 'customer' ? (
+                    <Car className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
+                  ) : (
+                    <User className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
+                  )}
+                  <Input
+                    placeholder={
+                      searchMode === 'customer'
+                        ? "Enter VIN to find vehicle and customer records"
+                        : "Enter customer phone number"
                     }
-                  }}
-                />
+                    className="pl-10 h-11"
+                    value={searchMode === 'phone' ? customerSearchPhone : searchVin}
+                    onChange={(e) => {
+                      if (searchMode === 'phone') {
+                        const numericValue = e.target.value.replace(/[^0-9]/g, '');
+                        setCustomerSearchPhone(numericValue);
+                      } else {
+                        setSearchVin(e.target.value);
+                      }
+                    }}
+                  />
+                </div>
+                <Button 
+                  size="sm" 
+                  className={
+                    searchMode === 'customer'
+                      ? "bg-green-600 hover:bg-green-700"
+                      : "bg-purple-600 hover:bg-purple-700"
+                  }
+                  onClick={
+                    searchMode === 'customer'
+                      ? () => handleSearchCustomer()
+                      : handleSearchCustomerByPhone
+                  }
+                >
+                  {searchMode === 'customer' ? 'Find Vehicle' : 'Search Customer'}
+                </Button>
               </div>
-              <Button 
-                size="sm" 
-                className={
-                  searchMode === 'warranty' 
-                    ? "bg-blue-600 hover:bg-blue-700" 
-                    : searchMode === 'customer'
-                    ? "bg-green-600 hover:bg-green-700"
-                    : "bg-purple-600 hover:bg-purple-700"
-                }
-                onClick={
-                  searchMode === 'warranty' 
-                    ? handleSearchWarranty 
-                    : searchMode === 'customer'
-                    ? () => handleSearchCustomer()
-                    : handleSearchCustomerByPhone
-                }
-              >
-                {searchMode === 'warranty' ? 'Check Warranty' : searchMode === 'customer' ? 'Find Vehicle' : 'Search Customer'}
-              </Button>
-            </div>
+            )}
           </CardContent>
         </Card>
 
@@ -1681,23 +1627,36 @@ const SuperAdvisor = () => {
                         <Label className="font-medium text-gray-700">Warranty Check:</Label>
                         <div className="md:col-span-2">
                           <div className="space-y-2">
-                            <Button
-                              onClick={handleCheckWarranty}
-                              disabled={isCheckingWarranty || !odometer}
-                              className="w-full bg-purple-600 hover:bg-purple-700"
-                            >
-                              {isCheckingWarranty ? (
-                                <>
-                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                  Checking Warranty...
-                                </>
-                              ) : (
-                                <>
-                                  <CheckCircle className="h-4 w-4 mr-2" />
-                                  Check Warranty Policy
-                                </>
+                            <div className="flex gap-2">
+                              <Button
+                                onClick={handleCheckWarranty}
+                                disabled={isCheckingWarranty || !odometer}
+                                className="flex-1 bg-purple-600 hover:bg-purple-700"
+                              >
+                                {isCheckingWarranty ? (
+                                  <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                    Checking Warranty...
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle className="h-4 w-4 mr-2" />
+                                    Check Warranty Policy
+                                  </>
+                                )}
+                              </Button>
+                              
+                              {/* Create Record Button - Show after warranty check and if vehicle has owner */}
+                              {warrantyStatus && vehicleSearchResult.owner && (
+                                <Button
+                                  onClick={handleCreateRecordFromVin}
+                                  className="flex-1 bg-green-600 hover:bg-green-700"
+                                >
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  Create Record
+                                </Button>
                               )}
-                            </Button>
+                            </div>
                             
                             {warrantyStatus && (
                               <div className={`p-3 rounded-lg border ${
@@ -2213,118 +2172,6 @@ const SuperAdvisor = () => {
         )}
       </main>
 
-      {/* Add Record Dialog */}
-      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center space-x-2">
-              <Car className="h-5 w-5" />
-              <span>Create New Warranty Record</span>
-            </DialogTitle>
-            <DialogDescription>
-              Enter vehicle information to create a new warranty processing record
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="vinNumber">VIN Number *</Label>
-              <Input
-                id="vinNumber"
-                placeholder="Enter VIN (17 characters)"
-                value={newRecord.vinNumber}
-                onChange={(e) => setNewRecord({ ...newRecord, vinNumber: e.target.value })}
-                maxLength={17}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="odometer">Odometer (km) *</Label>
-              <Input
-                id="odometer"
-                type="number"
-                placeholder="Enter current odometer reading"
-                value={newRecord.odometer}
-                onChange={(e) => setNewRecord({ ...newRecord, odometer: e.target.value })}
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <div className="flex items-center justify-between mb-2">
-                <Label>Cases * ({newRecord.cases.length})</Label>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setCurrentCaseText('');
-                    setEditingCaseId(null);
-                    setIsAddNewcaseOpen(true);
-                  }}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  New Case
-                </Button>
-              </div>
-              {newRecord.cases.length > 0 ? (
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {newRecord.cases.map((caseNote, index) => (
-                    <div key={caseNote.id} className="p-3 bg-muted/50 rounded-md border flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Badge variant="outline" className="text-xs">Case {index + 1}</Badge>
-                          <span className="text-xs text-muted-foreground">{formatDate(caseNote.createdAt)}</span>
-                        </div>
-                        <p className="text-sm break-words">{caseNote.text}</p>
-                      </div>
-                      <div className="flex gap-1 flex-shrink-0">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setCurrentCaseText(caseNote.text);
-                            setEditingCaseId(caseNote.id);
-                            setIsAddNewcaseOpen(true);
-                          }}
-                        >
-                          <Edit className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setNewRecord({
-                              ...newRecord,
-                              cases: newRecord.cases.filter(c => c.id !== caseNote.id)
-                            });
-                            toast({ title: 'Case deleted' });
-                          }}
-                        >
-                          <Trash2 className="h-3 w-3 text-destructive" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-3 bg-muted/20 rounded-md border border-dashed">
-                  <p className="text-sm text-muted-foreground italic">No cases added yet. Click "New Case" to add one.</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button onClick={handleAddRecord}>
-              <Plus className="h-4 w-4 mr-2" />
-              Save Record
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* dialog search */}
       <Dialog open={isDialogSearch} onOpenChange={setIsDialogSearch}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
@@ -2436,32 +2283,6 @@ const SuperAdvisor = () => {
                   });
                   toast({ title: 'Case added successfully' });
                 }
-              } else {
-                // Working with add dialog
-                if (editingCaseId) {
-                  // Edit existing case
-                  setNewRecord({
-                    ...newRecord,
-                    cases: newRecord.cases.map(c => 
-                      c.id === editingCaseId 
-                        ? { ...c, text: currentCaseText } 
-                        : c
-                    )
-                  });
-                  toast({ title: 'Case updated successfully' });
-                } else {
-                  // Add new case
-                  const newCase: CaseNote = {
-                    id: Date.now().toString(),
-                    text: currentCaseText,
-                    createdAt: new Date().toISOString()
-                  };
-                  setNewRecord({
-                    ...newRecord,
-                    cases: [...newRecord.cases, newCase]
-                  });
-                  toast({ title: 'Case added successfully' });
-                }
               }
 
               setIsAddNewcaseOpen(false);
@@ -2539,10 +2360,10 @@ const SuperAdvisor = () => {
 
               <div className="grid gap-2">
                 <div className="flex items-center justify-between mb-2">
-                  <Label>Cases ({editRecord.cases.length})</Label>
+                  <Label>Cases ({editRecord.cases?.length || 0})</Label>
                 </div>
-                {editRecord.cases.length > 0 ? (
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                {editRecord.cases && editRecord.cases.length > 0 ? (
+                  <div className="space-y-2 max-h-60 overflow-y-auto border rounded-lg p-2">
                     {editRecord.cases.map((caseNote, index) => (
                       <div key={caseNote.id} className="p-3 bg-muted/50 rounded-md border">
                         <div className="flex-1 min-w-0">
@@ -2971,16 +2792,6 @@ const SuperAdvisor = () => {
             <div className="grid gap-2">
               <div className="flex items-center justify-between">
                 <Label>Cases * ({warrantyRecordForm.cases.length})</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAddWarrantyCase}
-                  disabled={!warrantyRecordCaseText.trim()}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Case
-                </Button>
               </div>
 
               {/* Add Case Input */}
@@ -2991,16 +2802,34 @@ const SuperAdvisor = () => {
                   placeholder="Describe the warranty case..."
                   rows={3}
                   className="flex-1"
+                  onKeyDown={(e) => {
+                    // Allow adding case with Ctrl+Enter
+                    if (e.ctrlKey && e.key === 'Enter' && warrantyRecordCaseText.trim()) {
+                      handleAddWarrantyCase();
+                    }
+                  }}
                 />
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  onClick={handleAddWarrantyCase}
+                  disabled={!warrantyRecordCaseText.trim()}
+                  className="self-end"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add
+                </Button>
               </div>
+              <p className="text-xs text-muted-foreground">Press Ctrl+Enter or click "Add" to add the case</p>
 
               {/* Cases List */}
               {warrantyRecordForm.cases.length === 0 ? (
                 <div className="text-center py-6 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
-                  <p>No cases added yet. Click "New Case" to add one.</p>
+                  <p>No cases added yet. Enter description above and click "Add".</p>
                 </div>
               ) : (
-                <div className="space-y-2 max-h-40 overflow-y-auto">
+                <div className="space-y-2 max-h-60 overflow-y-auto border rounded-lg p-2">
                   {warrantyRecordForm.cases.map((caseItem, index) => (
                     <div key={caseItem.id} className="flex items-start gap-2 p-3 bg-gray-50 rounded-lg border">
                       <div className="flex-1">
