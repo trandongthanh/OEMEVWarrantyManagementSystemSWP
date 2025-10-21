@@ -494,7 +494,7 @@ router.get(
       "vehicleProcessingRecordController"
     );
 
-    await vehicleProcessingRecordController.getByIdd(req, res, next);
+    await vehicleProcessingRecordController.getById(req, res, next);
   }
 );
 

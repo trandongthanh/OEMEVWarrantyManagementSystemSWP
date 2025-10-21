@@ -179,6 +179,10 @@ class CaseLineService {
           Transaction.LOCK.UPDATE
         );
 
+      if (stocks.length === 0) {
+        return null;
+      }
+
       const totalAvailable = stocks.reduce(
         (total, stock) => total + stock.quantityAvailable,
         0
@@ -201,6 +205,7 @@ class CaseLineService {
       for (const stock of stocks) {
         stocksMap.set(stock.stockId, stock);
       }
+
       const allComponents = [];
       for (const reservation of reservations) {
         const stock = stocksMap.get(reservation.stockId);
@@ -291,13 +296,13 @@ class CaseLineService {
   };
 
   #allocateStock = ({ stocks, quantity }) => {
-    const singleStockSource = stocks.find(
-      (stock) => stock.quantityAvailable >= quantity
-    );
+    // const singleStockSource = stocks.find(
+    //   (stock) => stock.quantityAvailable >= quantity
+    // );
 
-    if (singleStockSource) {
-      return [{ stockId: singleStockSource.stockId, quantity: quantity }];
-    }
+    // if (singleStockSource) {
+    //   return [{ stockId: singleStockSource.stockId, quantity: quantity }];
+    // }
 
     let quantityNeed = quantity;
     const reservations = [];

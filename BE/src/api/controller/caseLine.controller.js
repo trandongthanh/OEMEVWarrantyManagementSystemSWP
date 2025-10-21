@@ -41,6 +41,27 @@ class CaseLineController {
       data: result,
     });
   };
+
+  allocateStockForCaseline = async (req, res, next) => {
+    const { caselineId } = req.params;
+
+    const result = await this.caseLineService.allocateStockForCaseline({
+      caselineId,
+    });
+
+    if (!result) {
+      return res.status(404).json({
+        status: "error",
+        message: "No available stock found for allocation",
+      });
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: "Stock allocated successfully",
+      data: result,
+    });
+  };
 }
 
 export default CaseLineController;

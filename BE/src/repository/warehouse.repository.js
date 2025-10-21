@@ -1,5 +1,6 @@
 import { Op } from "sequelize";
-import db from "../models/index.cjs";
+import db, { Sequelize } from "../models/index.cjs";
+
 // import {  } from "joi";
 
 const { Warehouse, TypeComponent, VehicleModel, Stock } = db;
@@ -101,8 +102,14 @@ class WareHouseRepository {
         typeComponentId: {
           [Op.in]: typeComponentIds,
         },
+
+        [Op.and]: Sequelize.where(
+          Sequelize.col("Stock.quantity_reserved"),
+          "<",
+          Sequelize.col("Stock.quantity_in_stock")
+        ),
       },
-      transaction: option,
+      transaction: transaction,
       lock: lock,
 
       attributes: [

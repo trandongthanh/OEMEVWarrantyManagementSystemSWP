@@ -152,25 +152,25 @@ class VehicleProcessingRecordController {
     });
   };
 
-  bulkUpdateStockQuantities = async (req, res, next) => {
-    const { caseId } = req.params;
-    const { caselines } = req.body;
-    const { serviceCenterId, userId } = req.user;
+  // bulkUpdateStockQuantities = async (req, res, next) => {
+  //   const { caseId } = req.params;
+  //   const { caselines } = req.body;
+  //   const { serviceCenterId, userId } = req.user;
 
-    const updatedStocks =
-      await this.#vehicleProcessingRecordService.bulkUpdateStockQuantities({
-        caseId: caseId,
-        caselines: caselines,
-        serviceCenterId: serviceCenterId,
-        userId: userId,
-      });
+  //   const updatedStocks =
+  //     await this.#vehicleProcessingRecordService.bulkUpdateStockQuantities({
+  //       caseId: caseId,
+  //       caselines: caselines,
+  //       serviceCenterId: serviceCenterId,
+  //       userId: userId,
+  //     });
 
-    res.status(200).json({
-      status: "success",
-      data: {
-        updatedStocks,
-      },
-    });
-  };
+  //   res.status(200).json({
+  //     status: "success",
+  //     data: {
+  //       updatedStocks,
+  //     },
+  //   });
+  // };
 }
 export default VehicleProcessingRecordController;

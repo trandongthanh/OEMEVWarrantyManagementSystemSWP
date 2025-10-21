@@ -3,6 +3,7 @@ import {
   createCaseLinesSchema,
   assignTechnicianParamsSchema,
   assignTechnicianBodySchema,
+  allocateStockParamsSchema,
 } from "../../validators/caseLine.validator.js";
 import {
   attachCompanyContext,
@@ -413,6 +414,225 @@ router.post(
     const caseLineController = req.container.resolve("caseLineController");
 
     await caseLineController.assignTechnician(req, res, next);
+  }
+);
+
+/**
+ * @swagger
+ * /case-lines/{caselineId}/allocate-stock:
+ *   post:
+ *     summary: Allocate stock for a caseline
+ *     description: Automatically allocate available stock (components) to a caseline based on FIFO (First In First Out) strategy. The system will search for available stock across warehouses and create component reservations. Only service center managers can allocate stock.
+ *     tags: [Case Line]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: caselineId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Caseline ID to allocate stock for
+ *         example: "770e8400-e29b-41d4-a716-446655440003"
+ *     responses:
+ *       200:
+ *         description: Stock allocated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 message:
+ *                   type: string
+ *                   example: "Stock allocated successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     caseline:
+ *                       type: object
+ *                       properties:
+ *                         caselineId:
+ *                           type: string
+ *                           format: uuid
+ *                           example: "770e8400-e29b-41d4-a716-446655440003"
+ *                         componentId:
+ *                           type: string
+ *                           format: uuid
+ *                           example: "1096033d-f11f-4a49-a751-8be0cfb9d705"
+ *                         quantity:
+ *                           type: integer
+ *                           example: 5
+ *                         quantityReserved:
+ *                           type: integer
+ *                           description: Total quantity reserved from warehouses
+ *                           example: 5
+ *                         status:
+ *                           type: string
+ *                           example: "READY_FOR_REPAIR"
+ *                     reservations:
+ *                       type: array
+ *                       description: List of component reservations created
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           reservationId:
+ *                             type: string
+ *                             format: uuid
+ *                             example: "abc12345-6789-0def-ghij-klmnopqrstuv"
+ *                           caselineId:
+ *                             type: string
+ *                             format: uuid
+ *                             example: "770e8400-e29b-41d4-a716-446655440003"
+ *                           stockId:
+ *                             type: string
+ *                             format: uuid
+ *                             example: "stock-uuid-1234"
+ *                           warehouseId:
+ *                             type: string
+ *                             format: uuid
+ *                             example: "warehouse-uuid-5678"
+ *                           warehouseName:
+ *                             type: string
+ *                             example: "Kho Trung Tâm HCM"
+ *                           componentId:
+ *                             type: string
+ *                             format: uuid
+ *                             example: "1096033d-f11f-4a49-a751-8be0cfb9d705"
+ *                           quantityReserved:
+ *                             type: integer
+ *                             description: Quantity reserved from this warehouse
+ *                             example: 3
+ *                           status:
+ *                             type: string
+ *                             example: "RESERVED"
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2025-10-21T08:30:00.000Z"
+ *             examples:
+ *               successfulAllocation:
+ *                 summary: Stock allocated from multiple warehouses
+ *                 value:
+ *                   status: "success"
+ *                   message: "Stock allocated successfully"
+ *                   data:
+ *                     caseline:
+ *                       caselineId: "770e8400-e29b-41d4-a716-446655440003"
+ *                       componentId: "1096033d-f11f-4a49-a751-8be0cfb9d705"
+ *                       quantity: 5
+ *                       quantityReserved: 5
+ *                       status: "READY_FOR_REPAIR"
+ *                     reservations:
+ *                       - reservationId: "res-001"
+ *                         caselineId: "770e8400-e29b-41d4-a716-446655440003"
+ *                         stockId: "stock-001"
+ *                         warehouseId: "wh-001"
+ *                         warehouseName: "Kho Trung Tâm HCM"
+ *                         componentId: "1096033d-f11f-4a49-a751-8be0cfb9d705"
+ *                         quantityReserved: 3
+ *                         status: "RESERVED"
+ *                         createdAt: "2025-10-21T08:30:00.000Z"
+ *                       - reservationId: "res-002"
+ *                         caselineId: "770e8400-e29b-41d4-a716-446655440003"
+ *                         stockId: "stock-002"
+ *                         warehouseId: "wh-002"
+ *                         warehouseName: "Kho Quận 7"
+ *                         componentId: "1096033d-f11f-4a49-a751-8be0cfb9d705"
+ *                         quantityReserved: 2
+ *                         status: "RESERVED"
+ *                         createdAt: "2025-10-21T08:30:00.000Z"
+ *       400:
+ *         description: Bad request - Invalid caseline ID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "caselineId must be a valid UUID"
+ *       401:
+ *         description: Unauthorized - Invalid or missing token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Unauthorized"
+ *       403:
+ *         description: Forbidden - Requires service_center_manager role
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Access denied. Required role: service_center_manager"
+ *       404:
+ *         description: Caseline not found or no available stock
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "No available stock found for allocation"
+ *       409:
+ *         description: Conflict - Caseline status not valid for allocation or stock already allocated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Caseline must be in CUSTOMER_APPROVED status to allocate stock"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Internal server error"
+ */
+router.post(
+  "/:caselineId/allocate-stock",
+  authentication,
+  authorizationByRole(["service_center_manager"]),
+  validate(allocateStockParamsSchema, "params"),
+  async (req, res, next) => {
+    const caseLineController = req.container.resolve("caseLineController");
+
+    await caseLineController.allocateStockForCaseline(req, res, next);
   }
 );
 
