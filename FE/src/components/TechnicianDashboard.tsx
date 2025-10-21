@@ -222,7 +222,6 @@ const TechnicianDashboard = ({
   // Compatible components for Processing Records modal
   const [compatibleComponents, setCompatibleComponents] = useState<Array<{ typeComponentId: string; name: string }>>([]);
   const [componentSearchQuery, setComponentSearchQuery] = useState<string>("");
-  const [selectedComponentCategory, setSelectedComponentCategory] = useState<string>("ALL");
   const [isLoadingComponents, setIsLoadingComponents] = useState(false);
 
   // Handle file upload
@@ -501,7 +500,7 @@ const TechnicianDashboard = ({
   }, []);
 
   // Fetch compatible components for a processing record
-  const fetchCompatibleComponents = useCallback(async (recordId: string, category?: string, searchName?: string) => {
+  const fetchCompatibleComponents = useCallback(async (recordId: string, searchName?: string) => {
     if (!recordId) {
       console.warn('⚠️ No recordId provided to fetchCompatibleComponents');
       return;
@@ -509,21 +508,18 @@ const TechnicianDashboard = ({
 
     try {
       setIsLoadingComponents(true);
-      console.log('🔍 Fetching components for recordId:', recordId, 'category:', category, 'searchName:', searchName);
-      
-      // Convert "ALL" to undefined for API call
-      const apiCategory = category === "ALL" ? undefined : category;
+      console.log('🔍 Fetching components for recordId:', recordId, 'searchName:', searchName);
       
       const components = await processingRecordsService.getCompatibleComponents(
         recordId,
-        { category: apiCategory, searchName }
+        { searchName }
       );
       console.log('✅ Fetched components:', components);
       setCompatibleComponents(components);
     } catch (error) {
       console.error('❌ Failed to fetch compatible components:', error);
       // Don't show toast error on initial load, only on user interaction
-      if (category || searchName) {
+      if (searchName) {
         toast({
           title: "Error",
           description: error instanceof Error ? error.message : "Failed to load compatible components",
@@ -599,7 +595,6 @@ const TechnicianDashboard = ({
       setUploadedFiles([]);
       setUploadedFileUrls([]);
       setComponentSearchQuery('');
-      setSelectedComponentCategory('ALL');
       setCompatibleComponents([]);
       setCreateIssueDiagnosisModalOpen(false);
       
@@ -2868,39 +2863,6 @@ const TechnicianDashboard = ({
 
               <div className="border-t pt-6">
                 <h4 className="font-medium text-base mb-4">🔧 Case Line Details</h4>
-                
-                {/* Component Category Filter */}
-                <div className="mb-4">
-                  <Label htmlFor="componentCategory">Component Category (Filter)</Label>
-                  <Select 
-                    value={selectedComponentCategory} 
-                    onValueChange={(value) => {
-                      setSelectedComponentCategory(value);
-                      // Refresh components with new category
-                      if (selectedRecord) {
-                        const identifier = selectedRecord.recordId || selectedRecord.vin;
-                        fetchCompatibleComponents(identifier, value, componentSearchQuery);
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="All Categories" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ALL">All Categories</SelectItem>
-                      <SelectItem value="ENGINE">🔧 Engine</SelectItem>
-                      <SelectItem value="TRANSMISSION">⚙️ Transmission</SelectItem>
-                      <SelectItem value="BRAKING">🛑 Braking</SelectItem>
-                      <SelectItem value="SUSPENSION">🔩 Suspension</SelectItem>
-                      <SelectItem value="ELECTRICAL">⚡ Electrical</SelectItem>
-                      <SelectItem value="BATTERY">🔋 Battery</SelectItem>
-                      <SelectItem value="MOTOR">🏎️ Motor</SelectItem>
-                      <SelectItem value="COOLING">❄️ Cooling</SelectItem>
-                      <SelectItem value="BODY">🚗 Body</SelectItem>
-                      <SelectItem value="INTERIOR">🪑 Interior</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -2937,7 +2899,7 @@ const TechnicianDashboard = ({
                           // Search components when typing
                           if (selectedRecord && e.target.value.length >= 2) {
                             const identifier = selectedRecord.recordId || selectedRecord.vin;
-                            fetchCompatibleComponents(identifier, selectedComponentCategory, e.target.value);
+                            fetchCompatibleComponents(identifier, e.target.value);
                           }
                         }}
                         placeholder="Search components..."
@@ -3073,7 +3035,6 @@ const TechnicianDashboard = ({
                   onClick={() => {
                     setCreateIssueDiagnosisModalOpen(false);
                     setComponentSearchQuery('');
-                    setSelectedComponentCategory('');
                     setCompatibleComponents([]);
                   }}
                   disabled={isSubmitting}
