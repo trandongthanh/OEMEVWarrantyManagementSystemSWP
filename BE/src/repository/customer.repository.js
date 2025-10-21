@@ -3,16 +3,13 @@ import db from "../models/index.cjs";
 const { Customer, Vehicle, VehicleModel } = db;
 
 class CustomerRepository {
-  findCustomerByPhoneOrEmail = async ({ phone, email }, option = null) => {
-    const phoneCondition = phone ? { phone: phone } : {};
-    const emailCondition = email ? { email: email } : {};
-
+  findCustomerByPhoneOrEmail = async (whereCondition = [], option = null) => {
     const existingCustomer = await Customer.findOne({
       where: {
-        [Op.or]: [phoneCondition, emailCondition],
+        [Op.or]: whereCondition,
       },
 
-      attributes: ["fullName", "email", "phone", "address"],
+      attributes: ["id", "fullName", "email", "phone", "address"],
 
       include: [
         {
@@ -21,12 +18,6 @@ class CustomerRepository {
           attributes: ["vin", "licensePlate", "purchaseDate"],
 
           include: [
-            {
-              model: Customer,
-              as: "owner",
-
-              attributes: ["fullName"],
-            },
             {
               model: VehicleModel,
               as: "model",
@@ -48,7 +39,8 @@ class CustomerRepository {
 
   createCustomer = async (
     { fullName, email, phone, address },
-    option = null
+    option = null,
+    lock = null
   ) => {
     const newCustomer = await Customer.create(
       {
@@ -57,8 +49,12 @@ class CustomerRepository {
         phone: phone,
         address: address,
       },
-      { transaction: option }
+      { transaction: option, lock: lock }
     );
+
+    if (!newCustomer) {
+      return null;
+    }
 
     return newCustomer.toJSON();
   };
