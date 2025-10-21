@@ -79,7 +79,7 @@ class WareHouseRepository {
 
   findStocksByTypeComponentOrderByWarehousePriority = async (
     { typeComponentIds, serviceCenterId, vehicleModelId },
-    option = null,
+    transaction = null,
     lock = null
   ) => {
     const warehouses = await Warehouse.findAll({
@@ -87,7 +87,7 @@ class WareHouseRepository {
         serviceCenterId: serviceCenterId,
       },
 
-      transaction: option,
+      transaction: transaction,
     });
 
     const warehousesId = warehouses.map((warehouse) => warehouse.warehouseId);
@@ -117,10 +117,6 @@ class WareHouseRepository {
           model: TypeComponent,
           as: "typeComponent",
           attributes: ["typeComponentId"],
-
-          // through: {
-          //   attributes: [],
-          // },
 
           include: [
             {
@@ -156,45 +152,48 @@ class WareHouseRepository {
     return stockJSON;
   };
 
-  bulkUpdateStockQuantities = async ({ reservations }, option = null) => {
+  bulkUpdateStockQuantities = async ({ reservations }, transaction = null) => {
     if (!reservations || reservations.length === 0) {
-      return;
+      return [];
     }
 
-    const stockIds = reservations.map((reservation) => reservation.stockId);
+    const caseWhenClauses = [];
+    const stockIds = [];
+    const replacements = {};
 
-    const reservedCase = reservations
-      .map((reservation) => {
-        return `WHEN stock_id = '${reservation.stockId}' THEN quantity_reserved = ${reservation.quantityReserved}`;
-      })
-      .join(" ");
+    reservations.forEach((reservation, index) => {
+      const stockIdKey = `stockId${index}`;
+      const quantityKey = `quantity${index}`;
 
-    // const [rowEffect] = await Stock.update(
-    //   {
-    //     quantityReserved: db.sequelize.literal(
-    //       `quantity_reserved + (CASE ${reservedCase}) ELSE 0 END`
-    //     ),
-    //   },
-    //   {
-    //     where: {
-    //       stockId: {
-    //         [Op.in]: stockIds,
-    //       },
-    //     },
-    //     transaction: option,
-    //   }
-    // );
+      stockIds.push(reservation.stockId);
+      replacements[stockIdKey] = reservation.stockId;
+      replacements[quantityKey] = reservation.quantityReserved;
 
-    const sqlStr = `UPDATE stock SET quantity_reserved = quantity_reserved + (CASE ${reservedCase} ELSE 0 END) WHERE stock_id IN ('${stockIds.join(
-      "','"
-    )}')`;
-
-    const [rowEffect] = await db.sequelize.query(sqlStr, {
-      transaction: option,
+      caseWhenClauses.push(
+        `WHEN stock_id = :${stockIdKey} THEN :${quantityKey}`
+      );
     });
 
-    if (rowEffect <= 0) {
-      return null;
+    replacements.stockIds = stockIds;
+
+    const sqlStr = `
+      UPDATE stock 
+      SET quantity_reserved = quantity_reserved + (
+        CASE 
+          ${caseWhenClauses.join(" ")}
+          ELSE 0 
+        END
+      )
+      WHERE stock_id IN (:stockIds)
+    `;
+
+    const [result] = await db.sequelize.query(sqlStr, {
+      replacements: replacements,
+      transaction: transaction,
+    });
+
+    if (!result || result === 0) {
+      return [];
     }
 
     const updatedStocks = await Stock.findAll({
@@ -203,7 +202,7 @@ class WareHouseRepository {
           [Op.in]: stockIds,
         },
       },
-      transaction: option,
+      transaction: transaction,
     });
 
     return updatedStocks.map((updatedStock) => updatedStock.toJSON());

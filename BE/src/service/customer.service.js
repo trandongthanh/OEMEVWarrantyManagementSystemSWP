@@ -3,13 +3,14 @@ import {
   ConflictError,
   NotFoundError,
 } from "../error/index.js";
+import createCustomerSchema from "../validators/createCustomer.validator.js";
 
 class CustomerService {
   constructor({ customerRepository }) {
     this.customerRepository = customerRepository;
   }
 
-  checkduplicateCustomer = async ({ phone, email }, option = null) => {
+  checkDuplicateCustomer = async ({ phone, email }, option = null) => {
     if (!phone && !email) {
       throw new BadRequestError(
         "Client must provide phone or email to customer"
@@ -18,15 +19,16 @@ class CustomerService {
 
     const existingCustomer =
       await this.customerRepository.findCustomerByPhoneOrEmail(
-        {
-          phone: phone,
-          email: email,
-        },
+        [{ phone: phone }, { email: email }],
         option
       );
 
     if (existingCustomer) {
       throw new ConflictError("Customer is already in system");
+    }
+
+    if (existingCustomer) {
+      return true;
     }
   };
 
@@ -37,12 +39,14 @@ class CustomerService {
       );
     }
 
+    const whereCondition = [];
+
+    if (phone) whereCondition.push({ phone: phone });
+    if (email) whereCondition.push({ email: email });
+
     const existingCustomer =
       await this.customerRepository.findCustomerByPhoneOrEmail(
-        {
-          phone: phone,
-          email: email,
-        },
+        whereCondition,
         option
       );
 
@@ -53,17 +57,31 @@ class CustomerService {
     { fullName, email, phone, address },
     option = null
   ) => {
-    if (!fullName || !email || !phone || !address) {
+    const { error } = createCustomerSchema.validate({
+      fullName: fullName,
+      email: email,
+      phone: phone,
+      address: address,
+    });
+
+    if (error) {
       throw new BadRequestError(
-        "fullName, email, phone and address is required"
+        `Validation error when create customer: ${error.message}`
       );
     }
 
-    const validateEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const validatePhone = /^\d{11}$/;
+    const isValidCustomer = await this.checkDuplicateCustomer(
+      {
+        phone: phone,
+        email: email,
+      },
+      option
+    );
 
-    if (!validateEmail.test(email) || !validatePhone.test(phone)) {
-      throw new BadRequestError("Email or phone is wrong format");
+    if (isValidCustomer) {
+      throw new BadRequestError(
+        `Customer already exists with this info ${phone} ${email}`
+      );
     }
 
     const newCustomer = await this.customerRepository.createCustomer(
@@ -76,10 +94,14 @@ class CustomerService {
       option
     );
 
+    if (!newCustomer) {
+      throw new BadRequestError("Failed to create customer");
+    }
+
     return newCustomer;
   };
 
-  checkExistCustomerById = async ({ id }, option = null) => {
+  checkExistCustomerById = async ({ id }, option = null, lock = null) => {
     if (!id) {
       throw new BadRequestError(
         "Client must provide customerId to find customer"
@@ -90,11 +112,12 @@ class CustomerService {
       {
         id: id,
       },
-      option
+      option,
+      lock
     );
 
     if (!existingCustomer) {
-      throw new NotFoundError("Cannot find customer with this id");
+      return null;
     }
 
     return existingCustomer;

@@ -37,6 +37,7 @@ class UserRepository {
     }
 
     const userCondition = {};
+
     if (serviceCenterId) {
       userCondition.serviceCenterId = serviceCenterId;
     }
@@ -75,6 +76,37 @@ class UserRepository {
     });
 
     return technicians.map((technician) => technician.toJSON());
+  }
+
+  async findUserById({ userId }, transaction = null, lock = null) {
+    const user = await User.findOne({
+      where: {
+        userId: userId,
+      },
+
+      include: [
+        {
+          model: Role,
+          as: "role",
+
+          attributes: ["roleName"],
+        },
+        {
+          model: ServiceCenter,
+          as: "serviceCenter",
+          attributes: ["serviceCenterId", "name", "address"],
+        },
+      ],
+
+      transaction,
+      lock,
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    return user.toJSON();
   }
 }
 

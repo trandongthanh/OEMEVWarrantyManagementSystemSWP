@@ -2,7 +2,7 @@ import express from "express";
 import { scopePerRequest } from "awilix-express";
 import container from "./container.js";
 import cors from "cors";
-import { hanldeError } from "./src/api/middleware/index.js";
+import { handleError } from "./src/api/middleware/index.js";
 import { specs, swaggerUi } from "./src/config/swagger.js";
 
 const app = express();
@@ -19,6 +19,8 @@ import vehicleRouter from "./src/api/routes/vehicle.router.js";
 import customerRouter from "./src/api/routes/customer.router.js";
 import vehicleProcessingRecordRouter from "./src/api/routes/vehicleProcessingRecord.router.js";
 import guaranteeCaseRouter from "./src/api/routes/guaranteeCase.router.js";
+import chatRouter from "./src/api/routes/chat.router.js";
+import caseLineRouter from "./src/api/routes/caseLine.router.js";
 
 app.get("/", async (req, res) => {
   res.send("Hello world");
@@ -32,7 +34,9 @@ app.use(`${url}/customers`, customerRouter);
 app.use(`${url}/processing-records`, vehicleProcessingRecordRouter);
 app.use(`${url}/users`, userRouter);
 app.use(`${url}/guarantee-cases`, guaranteeCaseRouter);
+app.use(`${url}/chats`, chatRouter);
+app.use(`${url}/case-lines`, caseLineRouter);
 
-app.use(hanldeError);
+app.use(handleError);
 
 export default app;
