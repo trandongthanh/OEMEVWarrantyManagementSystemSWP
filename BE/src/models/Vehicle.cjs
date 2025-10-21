@@ -35,11 +35,6 @@ module.exports = (sequelize, DataTypes) => {
         field: "place_of_manufacture",
       },
 
-      // vehicleProcessingRecordId: {
-      //   type: DataTypes.UUID,
-      //   field: "vehicle_processing_record_id",
-      // },
-
       vehicleModelId: {
         type: DataTypes.UUID,
         field: "vehicle_model_id",

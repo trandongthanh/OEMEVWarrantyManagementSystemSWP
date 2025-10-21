@@ -1,4 +1,4 @@
-import swaggerJSDoc from "swagger-jsdoc";
+import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
 
 const options = {
@@ -8,10 +8,10 @@ const options = {
       title: "OEM EV Warranty Management System API",
       version: "1.0.0",
       description:
-        "API documentation for OEM EV Warranty Management System - A comprehensive system for managing electric vehicle warranties, service records, and inventory. All endpoints are visible. Some endpoints require authentication (🔒 icon indicates authentication required).",
+        "API documentation for OEM EV Warranty Management System - Hệ thống quản lý bảo hành xe điện",
       contact: {
         name: "API Support",
-        email: "support@oem-warranty.com",
+        email: "support@oemevwarranty.com",
       },
       license: {
         name: "MIT",
@@ -20,53 +20,12 @@ const options = {
     },
     servers: [
       {
-        url: "http://localhost:3000/api/v1",
+        url: "http://localhost:3000/api",
         description: "Development server",
       },
       {
-        url: "https://api.oem-warranty.com/v1",
+        url: "https://api.oemevwarranty.com/api",
         description: "Production server",
-      },
-    ],
-    tags: [
-      {
-        name: "Authentication",
-        description:
-          "🔓 Public - User authentication and authorization endpoints (no token required)",
-      },
-      {
-        name: "User",
-        description:
-          "🔓 Public - User management operations (no token required for registration)",
-      },
-      {
-        name: "Customer",
-        description: "🔓 Public - Customer information and search operations",
-      },
-      {
-        name: "Vehicle",
-        description:
-          "🔒 Protected - Vehicle management, registration and warranty information (authentication required)",
-      },
-      {
-        name: "Vehicle Processing Record",
-        description:
-          "🔒 Protected - Service records, technician assignments and component management (authentication required)",
-      },
-      {
-        name: "Guarantee Case",
-        description:
-          "🔒 Protected - Warranty claim cases and issue tracking (authentication required)",
-      },
-      {
-        name: "Case Line",
-        description:
-          "🔒 Protected - Work items and component replacements within guarantee cases (authentication required)",
-      },
-      {
-        name: "Warehouse",
-        description:
-          "🔒 Protected - Inventory management and stock operations (authentication required)",
       },
     ],
     components: {
@@ -75,8 +34,7 @@ const options = {
           type: "http",
           scheme: "bearer",
           bearerFormat: "JWT",
-          description:
-            "Enter JWT token obtained from /auth/login endpoint. Format: Bearer <your_token>",
+          description: "Enter JWT token",
         },
       },
       schemas: {
@@ -89,7 +47,7 @@ const options = {
             },
             message: {
               type: "string",
-              example: "Error message description",
+              example: "Error message",
             },
           },
         },
@@ -102,110 +60,35 @@ const options = {
             },
             data: {
               type: "object",
-              description: "Response data object",
             },
           },
         },
-        ValidationError: {
+        User: {
           type: "object",
           properties: {
-            status: {
-              type: "string",
-              example: "error",
-            },
-            message: {
-              type: "string",
-              example: "Validation failed",
-            },
-            errors: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  field: {
-                    type: "string",
-                    example: "email",
-                  },
-                  message: {
-                    type: "string",
-                    example: "Email is required",
-                  },
-                },
-              },
-            },
-          },
-        },
-        GuaranteeCase: {
-          type: "object",
-          properties: {
-            id: {
+            userId: {
               type: "string",
               format: "uuid",
             },
-            description: {
+            name: {
               type: "string",
             },
-            symptom: {
+            email: {
+              type: "string",
+              format: "email",
+            },
+            phoneNumber: {
               type: "string",
             },
-            diagnosis: {
+            role: {
               type: "string",
-            },
-            status: {
-              type: "string",
-              enum: ["pending", "in_progress", "completed", "cancelled"],
-            },
-            vehicleProcessingRecordId: {
-              type: "string",
-              format: "uuid",
-            },
-            createdAt: {
-              type: "string",
-              format: "date-time",
-            },
-            updatedAt: {
-              type: "string",
-              format: "date-time",
-            },
-          },
-        },
-        CaseLine: {
-          type: "object",
-          properties: {
-            id: {
-              type: "string",
-              format: "uuid",
-            },
-            guaranteeCaseId: {
-              type: "string",
-              format: "uuid",
-            },
-            typeComponentId: {
-              type: "string",
-              format: "uuid",
-            },
-            quantity: {
-              type: "integer",
-              minimum: 1,
-            },
-            description: {
-              type: "string",
-            },
-            laborHours: {
-              type: "number",
-              minimum: 0,
-            },
-            status: {
-              type: "string",
-              enum: ["pending", "in_progress", "completed", "cancelled"],
-            },
-            createdAt: {
-              type: "string",
-              format: "date-time",
-            },
-            updatedAt: {
-              type: "string",
-              format: "date-time",
+              enum: [
+                "service_center_staff",
+                "service_center_technician",
+                "service_center_manager",
+                "warehouse_manager",
+                "warranty_admin",
+              ],
             },
           },
         },
@@ -214,46 +97,42 @@ const options = {
           properties: {
             vin: {
               type: "string",
-            },
-            dateOfManufacture: {
-              type: "string",
-              format: "date-time",
-            },
-            placeOfManufacture: {
-              type: "string",
+              description: "Vehicle Identification Number",
             },
             licensePlate: {
               type: "string",
             },
-            purchaseDate: {
+            color: {
               type: "string",
-              format: "date-time",
             },
-            ownerId: {
-              type: "string",
-              format: "uuid",
+            manufacturingYear: {
+              type: "integer",
             },
-            vehicleModelId: {
+            warrantyStartDate: {
               type: "string",
-              format: "uuid",
+              format: "date",
+            },
+            warrantyEndDate: {
+              type: "string",
+              format: "date",
             },
           },
         },
         Customer: {
           type: "object",
           properties: {
-            id: {
+            customerId: {
               type: "string",
               format: "uuid",
             },
-            fullName: {
+            name: {
               type: "string",
             },
             email: {
               type: "string",
               format: "email",
             },
-            phone: {
+            phoneNumber: {
               type: "string",
             },
             address: {
@@ -261,12 +140,105 @@ const options = {
             },
           },
         },
+        Component: {
+          type: "object",
+          properties: {
+            componentId: {
+              type: "string",
+              format: "uuid",
+            },
+            componentCode: {
+              type: "string",
+            },
+            name: {
+              type: "string",
+            },
+            category: {
+              type: "string",
+            },
+            price: {
+              type: "number",
+            },
+          },
+        },
       },
     },
+    tags: [
+      {
+        name: "Authentication",
+        description:
+          "API endpoints cho xác thực người dùng - Login, Register, Token management",
+      },
+      {
+        name: "Users",
+        description:
+          "API endpoints quản lý người dùng - CRUD operations, profile management",
+      },
+      {
+        name: "Customers",
+        description:
+          "API endpoints quản lý khách hàng - Tìm kiếm, tạo mới, cập nhật thông tin khách hàng",
+      },
+      {
+        name: "Vehicles",
+        description:
+          "API endpoints quản lý phương tiện - Quản lý thông tin xe, gán chủ xe, lịch sử bảo hành",
+      },
+      {
+        name: "Vehicle Processing Record",
+        description:
+          "API endpoints quản lý hồ sơ sửa chữa xe - Tạo hồ sơ, phân công kỹ thuật viên, theo dõi tiến độ",
+      },
+      {
+        name: "Guarantee Cases",
+        description:
+          "API endpoints quản lý các trường hợp bảo hành - Tạo case, cập nhật trạng thái, quản lý linh kiện",
+      },
+      {
+        name: "Case Lines",
+        description:
+          "API endpoints quản lý linh kiện cho các case - Thêm, cập nhật, xóa linh kiện trong case",
+      },
+      {
+        name: "Components",
+        description:
+          "API endpoints quản lý linh kiện - Tìm kiếm, thông tin chi tiết linh kiện",
+      },
+      {
+        name: "Warehouse",
+        description:
+          "API endpoints quản lý kho - Quản lý tồn kho, nhập xuất linh kiện",
+      },
+      {
+        name: "Service Centers",
+        description: "API endpoints quản lý trung tâm dịch vụ",
+      },
+      {
+        name: "Chat",
+        description: "API endpoints cho hệ thống chat hỗ trợ khách hàng",
+      },
+      {
+        name: "Mail",
+        description: "API endpoints gửi email thông báo",
+      },
+      {
+        name: "Notifications",
+        description: "API endpoints quản lý thông báo",
+      },
+      {
+        name: "Work Schedule",
+        description: "API endpoints quản lý lịch làm việc của kỹ thuật viên",
+      },
+    ],
+    security: [
+      {
+        BearerAuth: [],
+      },
+    ],
   },
   apis: ["./src/api/routes/*.js", "./src/api/controller/*.js"],
 };
 
-const specs = swaggerJSDoc(options);
+const specs = swaggerJsdoc(options);
 
 export { specs, swaggerUi };

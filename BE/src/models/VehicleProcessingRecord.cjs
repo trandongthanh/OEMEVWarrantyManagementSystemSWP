@@ -1,3 +1,5 @@
+const { default: dayjs } = require("dayjs");
+
 module.exports = (sequelize, DataTypes) => {
   const VehicleProcessingRecord = sequelize.define(
     "VehicleProcessingRecord",
@@ -10,16 +12,58 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       vin: {
-        type: DataTypes.STRING,
+        type: DataTypes.STRING(17),
         allowNull: false,
         field: "vin",
       },
 
       checkInDate: {
         type: DataTypes.DATE,
-        defaultVlaue: DataTypes.NOW,
-        allowNull: "false",
+        defaultValue: DataTypes.NOW,
+        allowNull: false,
         field: "check_in_date",
+      },
+
+      checkOutDate: {
+        type: DataTypes.DATE,
+        field: "check_out_date",
+      },
+
+      visitorInfo: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        validate: {
+          isVisitorInfoValid(value) {
+            if (!value) {
+              return;
+            }
+
+            if (typeof value !== "object" || Array.isArray(value)) {
+              throw new Error("visitorInfo must be a valid JSON object");
+            }
+
+            if (
+              !value.fullName ||
+              typeof value.fullName !== "string" ||
+              value.fullName.trim() === ""
+            ) {
+              throw new Error(
+                "visitorInfo.fullName must be a non-empty string"
+              );
+            }
+
+            if (
+              !value.phone ||
+              typeof value.phone !== "string" ||
+              value.phone.trim() === ""
+            ) {
+              throw new Error(
+                "visitorInfo must have a non-empty phone number."
+              );
+            }
+          },
+        },
+        field: "visitor_info",
       },
 
       odometer: {
@@ -27,13 +71,22 @@ module.exports = (sequelize, DataTypes) => {
         field: "odometer",
       },
 
+      duration: {
+        type: DataTypes.VIRTUAL,
+        get() {
+          if (this.checkOutDate && this.checkInDate) {
+            dayjs(this.checkOutDate).diff(dayjs(this.checkInDate), "day");
+          }
+        },
+      },
+
       status: {
         type: DataTypes.ENUM(
           "CHECKED_IN",
           "IN_DIAGNOSIS",
           "WAITING_CUSTOMER_APPROVAL",
-          "PAID",
-          "IN_REPAIR",
+          "CUSTOMER_APPROVED",
+          "PROCESSING",
           "READY_FOR_PICKUP",
           "COMPLETED",
           "CANCELLED"
@@ -53,12 +106,6 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.UUID,
         allowNull: true,
         field: "main_technician_id",
-      },
-
-      diagnosticFee: {
-        type: DataTypes.FLOAT,
-        allowNull: true,
-        field: "diagnostic_fee",
       },
     },
     {

@@ -13,7 +13,17 @@ module.exports = (sequelize, DataTypes) => {
       field: "guarantee_case_id",
     },
 
-    techId: { type: DataTypes.UUID, allowNull: false, field: "tech_id" },
+    diagnosticTechId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      field: "diagnostic_tech_id",
+    },
+
+    repairTechId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      field: "repair_tech_id",
+    },
 
     diagnosisText: {
       type: DataTypes.TEXT,
@@ -29,14 +39,13 @@ module.exports = (sequelize, DataTypes) => {
 
     warrantyStatus: {
       type: DataTypes.ENUM("ELIGIBLE", "INELIGIBLE"),
-      // defaultValue: "ELIGIBLE",
       field: "warranty_status",
     },
 
-    componentId: {
+    typeComponentId: {
       type: DataTypes.UUID,
       allowNull: true,
-      field: "component_id",
+      field: "type_component_id",
     },
 
     quantity: {
@@ -48,10 +57,10 @@ module.exports = (sequelize, DataTypes) => {
 
     status: {
       type: DataTypes.ENUM(
-        "PENDING_MANAGER_APPROVAL",
-        "PENDING_CUSTOMER_APPROVAL",
-        "CUSTOMER_APPROVED",
-        "CUSTOMER_REJECTED",
+        "PENDING_APPROVAL",
+        "APPROVED",
+        "REJECTED_BY_OUT_OF_WARRANTY",
+        "REJECTED_BY_TECH",
         "WAITING_FOR_PARTS",
         "READY_FOR_REPAIR",
         "IN_REPAIR",
@@ -59,8 +68,14 @@ module.exports = (sequelize, DataTypes) => {
         "CANCELLED"
       ),
       allowNull: false,
-      defaultValue: "PENDING_MANAGER_APPROVAL",
+      defaultValue: "PENDING_APPROVAL",
       field: "status",
+    },
+
+    rejectionReason: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      field: "rejection_reason",
     },
   });
 
@@ -76,14 +91,24 @@ module.exports = (sequelize, DataTypes) => {
     });
 
     CaseLine.belongsTo(models.TypeComponent, {
-      foreignKey: "component_id",
+      foreignKey: "typeComponentId",
       as: "typeComponent",
     });
 
-    // CaseLine.hasMany(models.TaskAssignment, {
-    //   foreignKey: "case_line_id",
-    //   as: "assignments",
-    // });
+    CaseLine.hasMany(models.TaskAssignment, {
+      foreignKey: "case_line_id",
+      as: "assignments",
+    });
+
+    CaseLine.belongsTo(models.User, {
+      foreignKey: "diagnostic_tech_id",
+      as: "diagnosticTechnician",
+    });
+
+    CaseLine.belongsTo(models.User, {
+      foreignKey: "repair_tech_id",
+      as: "repairTechnician",
+    });
 
     CaseLine.hasMany(models.ComponentReservation, {
       foreignKey: "case_line_id",

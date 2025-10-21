@@ -1,12 +1,14 @@
-// seeder.cjs
-const { faker } = require("@faker-js/faker/locale/vi"); // Sử dụng locale Tiếng Việt
-const { Sequelize } = require("sequelize");
+// src/seeders/seeders.cjs
+const { faker } = require("@faker-js/faker/locale/vi");
+const { Sequelize, Op } = require("sequelize");
 const bcrypt = require("bcrypt");
+const path = require("path");
 
 const env = process.env.NODE_ENV || "development";
-const config = require(__dirname + "/../config/config.json")[env];
+// Đảm bảo đường dẫn này trỏ đúng đến file config.json của bạn từ thư mục seeders
+const config = require(path.join(__dirname, "../config/config.json"))[env];
 
-// Import tất cả các model
+// Import tất cả các model (Đảm bảo đường dẫn này đúng)
 const models = require("../models/index.cjs");
 const {
   VehicleCompany,
@@ -21,6 +23,8 @@ const {
   Stock,
   Customer,
   WorkSchedule,
+  Component, // Đảm bảo Component model tồn tại
+  // Thêm các model khác nếu bạn đã tạo (ví dụ: DiagnosticFee, TaskAssignment...)
 } = models;
 
 let sequelize;
@@ -35,10 +39,12 @@ if (config.use_env_variable) {
   );
 }
 
+// --- CONFIGURATION ---
 const NUM_STAFF_PER_CENTER = 3;
 const NUM_TECH_PER_CENTER = 5;
 const NUM_NEW_VEHICLES = 50;
 const NUM_SOLD_VEHICLES = 30;
+const NUM_COMPONENTS_PER_TYPE = 10; // Số lượng linh kiện vật lý cho mỗi loại
 
 // Danh sách lý do nghỉ phép thực tế
 const LEAVE_REASONS = [
@@ -60,17 +66,79 @@ const WORK_NOTES = [
   "Làm thêm giờ",
   "",
   "",
-  "", // Nhiều trường hợp không có note
+  "",
 ];
+
+// Hàm tạo tên tiếng Việt ngẫu nhiên
+const generateVietnameseName = () => {
+  const lastNames = [
+    "Nguyễn",
+    "Trần",
+    "Lê",
+    "Phạm",
+    "Hoàng",
+    "Phan",
+    "Vũ",
+    "Đặng",
+    "Bùi",
+    "Đỗ",
+  ];
+  const middleNames = [
+    "Văn",
+    "Thị",
+    "Đức",
+    "Minh",
+    "Hồng",
+    "Anh",
+    "Thanh",
+    "Quốc",
+    "Hữu",
+  ];
+  const firstNames = [
+    "An",
+    "Bình",
+    "Cường",
+    "Dũng",
+    "Hùng",
+    "Khoa",
+    "Linh",
+    "Nam",
+    "Phong",
+    "Quân",
+    "Sơn",
+    "Tâm",
+    "Tuấn",
+    "Vinh",
+    "Mai",
+    "Lan",
+    "Hương",
+    "Thảo",
+    "Trang",
+  ];
+  return `${faker.helpers.arrayElement(lastNames)} ${faker.helpers.arrayElement(
+    middleNames
+  )} ${faker.helpers.arrayElement(firstNames)}`;
+};
+
+// Hàm tạo VIN 17 ký tự
+const generateVIN = (modelCode, serialNumber) => {
+  const WMI = "8VV"; // VinFast VN
+  const VDS = modelCode.padEnd(6, "0");
+  const year = "P"; // P = 2024 (Ví dụ)
+  const plant = "H"; // H = Hải Phòng
+  const serial = String(serialNumber).padStart(6, "0");
+  const VIS = year + plant + serial;
+  return WMI + VDS + VIS;
+};
 
 const generateData = async () => {
   try {
     await sequelize.authenticate();
     console.log("✅ Connection has been established successfully.");
 
-    console.log("🔥 Resetting database...");
-    await sequelize.sync({ force: true });
-    console.log("✅ Database synchronized (all tables dropped and recreated).");
+    console.log("🔥 Resetting database using sync({ force: true })...");
+    await sequelize.sync({ force: true }); // Dùng sync force để reset an toàn
+    console.log("✅ Database reset successfully.");
 
     // --- 1. SEED CORE DATA ---
     console.log("🌱 Seeding Core Data...");
@@ -80,25 +148,179 @@ const generateData = async () => {
       phone: "1900232389",
       email: "info@vinfast.vn",
     });
-
     const createdRoles = await Role.bulkCreate([
       { roleName: "service_center_staff" },
       { roleName: "service_center_manager" },
       { roleName: "service_center_technician" },
       { roleName: "emv_admin" },
     ]);
-
     const typeComponentData = [
+      // HIGH VOLTAGE BATTERY - Pin cao áp
       {
-        name: "Bộ sạc trong xe 11kW",
+        name: "Pin cao áp 87.7kWh - VF8",
+        sku: "VF8-HVB-87.7",
+        price: 420000000,
+        category: "HIGH_VOLTAGE_BATTERY",
+      },
+      {
+        name: "Pin cao áp 92kWh - VF9",
+        sku: "VF9-HVB-92",
+        price: 480000000,
+        category: "HIGH_VOLTAGE_BATTERY",
+      },
+      {
+        name: "Pin cao áp 42kWh - VFe34",
+        sku: "VFE34-HVB-42",
+        price: 250000000,
+        category: "HIGH_VOLTAGE_BATTERY",
+      },
+      {
+        name: "Module pin 4kWh",
+        sku: "VF-HVB-MOD-4",
+        price: 28000000,
+        category: "HIGH_VOLTAGE_BATTERY",
+      },
+      {
+        name: "BMS - Hệ thống quản lý pin",
+        sku: "VF-BMS-01",
+        price: 45000000,
+        category: "HIGH_VOLTAGE_BATTERY",
+      },
+      // POWERTRAIN - Hệ thống truyền động
+      {
+        name: "Động cơ điện 150kW - Trước",
+        sku: "VF-MTR-150-F",
+        price: 180000000,
+        category: "POWERTRAIN",
+      },
+      {
+        name: "Động cơ điện 150kW - Sau",
+        sku: "VF-MTR-150-R",
+        price: 180000000,
+        category: "POWERTRAIN",
+      },
+      {
+        name: "Động cơ điện 200kW - VF9",
+        sku: "VF9-MTR-200",
+        price: 220000000,
+        category: "POWERTRAIN",
+      },
+      {
+        name: "Bộ giảm tốc 1 cấp",
+        sku: "VF-GBX-01",
+        price: 45000000,
+        category: "POWERTRAIN",
+      },
+      {
+        name: "Bộ nghịch lưu (Inverter)",
+        sku: "VF-INV-01",
+        price: 65000000,
+        category: "POWERTRAIN",
+      },
+      // CHARGING SYSTEM - Hệ thống sạc
+      {
+        name: "Bộ sạc trong xe OBC 11kW",
         sku: "VF-OBC-11",
         price: 15000000,
         category: "CHARGING_SYSTEM",
       },
       {
+        name: "Bộ sạc trong xe OBC 22kW",
+        sku: "VF-OBC-22",
+        price: 28000000,
+        category: "CHARGING_SYSTEM",
+      },
+      {
+        name: "Cổng sạc AC Type 2",
+        sku: "VF-CHG-AC-T2",
+        price: 3500000,
+        category: "CHARGING_SYSTEM",
+      },
+      {
+        name: "Cổng sạc DC CCS2",
+        sku: "VF-CHG-DC-CCS2",
+        price: 8500000,
+        category: "CHARGING_SYSTEM",
+      },
+      {
+        name: "Cáp sạc AC 16A",
+        sku: "VF-CBL-AC-16",
+        price: 4200000,
+        category: "CHARGING_SYSTEM",
+      },
+      // THERMAL MANAGEMENT - Quản lý nhiệt
+      {
+        name: "Hệ thống làm mát pin",
+        sku: "VF-TMS-BAT",
+        price: 35000000,
+        category: "THERMAL_MANAGEMENT",
+      },
+      {
+        name: "Bơm nước làm mát",
+        sku: "VF-WP-01",
+        price: 6500000,
+        category: "THERMAL_MANAGEMENT",
+      },
+      {
+        name: "Két nước giải nhiệt",
+        sku: "VF-RAD-01",
+        price: 12000000,
+        category: "THERMAL_MANAGEMENT",
+      },
+      // HVAC - Điều hòa
+      {
+        name: "Máy điều hòa cabin Heat Pump",
+        sku: "VF-HVAC-HP",
+        price: 35000000,
+        category: "HVAC",
+      },
+      {
+        name: "Compressor điều hòa điện",
+        sku: "VF-HVAC-CMP",
+        price: 18000000,
+        category: "HVAC",
+      },
+      {
+        name: "Lõi giàn lạnh",
+        sku: "VF-HVAC-EVAP",
+        price: 8500000,
+        category: "HVAC",
+      },
+      // BRAKING - Phanh
+      {
         name: "Má phanh trước VF8",
-        sku: "VF8-BRK-FRT",
+        sku: "VF8-BRK-FRT-PAD",
         price: 2500000,
+        category: "BRAKING",
+      },
+      {
+        name: "Má phanh sau VF8",
+        sku: "VF8-BRK-RR-PAD",
+        price: 2200000,
+        category: "BRAKING",
+      },
+      {
+        name: "Đĩa phanh trước",
+        sku: "VF-BRK-DISC-F",
+        price: 4500000,
+        category: "BRAKING",
+      },
+      {
+        name: "Đĩa phanh sau",
+        sku: "VF-BRK-DISC-R",
+        price: 4200000,
+        category: "BRAKING",
+      },
+      {
+        name: "Bộ phanh ABS",
+        sku: "VF-ABS-01",
+        price: 25000000,
+        category: "BRAKING",
+      },
+      {
+        name: "Cảm biến ABS bánh trước",
+        sku: "VF-ABS-SEN-F",
+        price: 850000,
         category: "BRAKING",
       },
       {
@@ -107,12 +329,38 @@ const generateData = async () => {
         price: 850000,
         category: "BRAKING",
       },
+      // SUSPENSION & STEERING - Giảm xóc và lái
       {
-        name: "Giảm xóc trước",
-        sku: "VF-SUS-FRT",
+        name: "Giảm xóc trước trái",
+        sku: "VF-SUS-FRT-L",
         price: 3500000,
         category: "SUSPENSION_STEERING",
       },
+      {
+        name: "Giảm xóc trước phải",
+        sku: "VF-SUS-FRT-R",
+        price: 3500000,
+        category: "SUSPENSION_STEERING",
+      },
+      {
+        name: "Giảm xóc sau",
+        sku: "VF-SUS-RR",
+        price: 3200000,
+        category: "SUSPENSION_STEERING",
+      },
+      {
+        name: "Hệ thống lái trợ lực điện EPS",
+        sku: "VF-EPS-01",
+        price: 32000000,
+        category: "SUSPENSION_STEERING",
+      },
+      {
+        name: "Càng A trước dưới",
+        sku: "VF-ARM-FRT-LOW",
+        price: 4800000,
+        category: "SUSPENSION_STEERING",
+      },
+      // INFOTAINMENT & ADAS
       {
         name: "Màn hình trung tâm 15.6 inch",
         sku: "VF-INF-15.6",
@@ -120,53 +368,85 @@ const generateData = async () => {
         category: "INFOTAINMENT_ADAS",
       },
       {
-        name: "Ắc quy 12V",
-        sku: "VF-BAT-12V",
+        name: "Camera 360 độ (bộ 4 camera)",
+        sku: "VF-CAM-360",
+        price: 12000000,
+        category: "INFOTAINMENT_ADAS",
+      },
+      {
+        name: "Radar trước ADAS",
+        sku: "VF-RADAR-FRT",
+        price: 18000000,
+        category: "INFOTAINMENT_ADAS",
+      },
+      {
+        name: "Cảm biến siêu âm (bộ 12)",
+        sku: "VF-USS-12",
+        price: 8500000,
+        category: "INFOTAINMENT_ADAS",
+      },
+      // LOW VOLTAGE SYSTEM - Hệ thống điện 12V
+      {
+        name: "Ắc quy 12V 60Ah",
+        sku: "VF-BAT-12V-60",
         price: 2200000,
         category: "LOW_VOLTAGE_SYSTEM",
       },
       {
-        name: "Đèn pha LED",
-        sku: "VF-LED-HEAD",
+        name: "Bộ chuyển đổi DC/DC 12V",
+        sku: "VF-DCDC-12V",
+        price: 8500000,
+        category: "LOW_VOLTAGE_SYSTEM",
+      },
+      {
+        name: "Đèn pha LED trái",
+        sku: "VF-LED-HEAD-L",
         price: 4500000,
-        category: "LOW_VOLTAGE_SYSTEM", // Changed from LIGHTING to LOW_VOLTAGE_SYSTEM
+        category: "LOW_VOLTAGE_SYSTEM",
       },
       {
-        name: "Bộ phanh đĩa sau",
-        sku: "VF-BRK-DISC-R",
-        price: 5200000,
-        category: "BRAKING",
+        name: "Đèn pha LED phải",
+        sku: "VF-LED-HEAD-R",
+        price: 4500000,
+        category: "LOW_VOLTAGE_SYSTEM",
       },
       {
-        name: "Pin cao áp 90kWh",
-        sku: "VF-HVB-90",
-        price: 450000000,
-        category: "HIGH_VOLTAGE_BATTERY",
+        name: "Đèn hậu LED trái",
+        sku: "VF-LED-TAIL-L",
+        price: 3800000,
+        category: "LOW_VOLTAGE_SYSTEM",
       },
       {
-        name: "Động cơ điện 150kW",
-        sku: "VF-MTR-150",
-        price: 180000000,
-        category: "POWERTRAIN",
-      },
-      {
-        name: "Hệ thống làm mát pin",
-        sku: "VF-TMS-BAT",
-        price: 35000000,
-        category: "THERMAL_MANAGEMENT",
-      },
-      {
-        name: "Máy điều hòa cabin",
-        sku: "VF-HVAC-01",
-        price: 25000000,
-        category: "HVAC",
+        name: "Đèn hậu LED phải",
+        sku: "VF-LED-TAIL-R",
+        price: 3800000,
+        category: "LOW_VOLTAGE_SYSTEM",
       },
     ];
 
+    // Lọc SKU trùng lặp
+    const uniqueSkus = new Set();
+    const uniqueTypeComponentData = typeComponentData.filter((component) => {
+      if (!component.sku) {
+        console.warn("Component missing SKU:", component.name);
+        return false;
+      }
+      if (uniqueSkus.has(component.sku)) {
+        console.warn(
+          `Duplicate SKU found and removed: ${component.sku} (${component.name})`
+        );
+        return false;
+      }
+      uniqueSkus.add(component.sku);
+      return true;
+    });
+
     const createdTypeComponents = await TypeComponent.bulkCreate(
-      typeComponentData
+      uniqueTypeComponentData
     );
-    console.log("✅ Seeded Core Data (Company, Roles, TypeComponents).");
+    console.log(
+      `✅ Seeded ${createdTypeComponents.length} unique Type Components.`
+    );
 
     // --- 2. SEED LOCATIONS, PEOPLE & VEHICLE MODELS ---
     console.log("🌱 Seeding Locations, People & Vehicle Models...");
@@ -187,7 +467,6 @@ const generateData = async () => {
         phone: "02363666888",
       },
     ];
-
     const createdServiceCenters = await ServiceCenter.bulkCreate(
       serviceCenterData.map((sc) => ({
         ...sc,
@@ -200,7 +479,6 @@ const generateData = async () => {
       address: "Khu công nghiệp VSIP, Hải Phòng",
       vehicleCompanyId: createdCompany.vehicleCompanyId,
     });
-
     const perSCWarehousesPayload = createdServiceCenters.flatMap((sc) => [
       {
         name: `${sc.name} - Kho Linh Kiện`,
@@ -213,7 +491,6 @@ const generateData = async () => {
         serviceCenterId: sc.serviceCenterId,
       },
     ]);
-
     const createdSCWarehouses = await Warehouse.bulkCreate(
       perSCWarehousesPayload
     );
@@ -221,8 +498,6 @@ const generateData = async () => {
 
     const hashedPassword = await bcrypt.hash("123456", 10);
     const usersPayload = [];
-
-    // Tạo Admin Hãng
     usersPayload.push({
       username: "admin.vinfast",
       name: "Nguyễn Văn Quản",
@@ -233,68 +508,12 @@ const generateData = async () => {
       roleId: createdRoles.find((r) => r.roleName === "emv_admin").roleId,
       vehicleCompanyId: createdCompany.vehicleCompanyId,
     });
-
-    // Danh sách tên họ và tên đệm phổ biến
-    const lastNames = [
-      "Nguyễn",
-      "Trần",
-      "Lê",
-      "Phạm",
-      "Hoàng",
-      "Phan",
-      "Vũ",
-      "Đặng",
-      "Bùi",
-      "Đỗ",
-    ];
-    const middleNames = [
-      "Văn",
-      "Thị",
-      "Đức",
-      "Minh",
-      "Hồng",
-      "Anh",
-      "Thanh",
-      "Quốc",
-      "Hữu",
-    ];
-    const firstNames = [
-      "An",
-      "Bình",
-      "Cường",
-      "Dũng",
-      "Hùng",
-      "Khoa",
-      "Linh",
-      "Nam",
-      "Phong",
-      "Quân",
-      "Sơn",
-      "Tâm",
-      "Tuấn",
-      "Vinh",
-      "Mai",
-      "Lan",
-      "Hương",
-      "Thảo",
-      "Trang",
-    ];
-
-    const generateVietnameseName = () => {
-      const lastName = faker.helpers.arrayElement(lastNames);
-      const middleName = faker.helpers.arrayElement(middleNames);
-      const firstName = faker.helpers.arrayElement(firstNames);
-      return `${lastName} ${middleName} ${firstName}`;
-    };
-
-    // Tạo nhiều nhân viên cho mỗi trung tâm
     for (const center of createdServiceCenters) {
       const centerNameShort = center.name.split(" ")[1].toLowerCase();
-
       // 1 Manager/Center
       usersPayload.push({
         username: `manager.${centerNameShort}`,
-        name: `${generateVietnameseName()}`,
+        name: `Quản lý ${center.name}`,
         password: hashedPassword,
         email: `manager.${centerNameShort}@vinfast.vn`,
         phone: `09${faker.number.int({ min: 10000000, max: 99999999 })}`,
@@ -304,12 +523,11 @@ const generateData = async () => {
         ).roleId,
         serviceCenterId: center.serviceCenterId,
       });
-
       // Nhiều Staff/Center
       for (let i = 1; i <= NUM_STAFF_PER_CENTER; i++) {
         usersPayload.push({
           username: `staff${i}.${centerNameShort}`,
-          name: `${generateVietnameseName()}`,
+          name: `SA ${generateVietnameseName()}`,
           password: hashedPassword,
           email: `staff${i}.${centerNameShort}@vinfast.vn`,
           phone: `09${faker.number.int({ min: 10000000, max: 99999999 })}`,
@@ -320,12 +538,11 @@ const generateData = async () => {
           serviceCenterId: center.serviceCenterId,
         });
       }
-
       // Nhiều Tech/Center
       for (let i = 1; i <= NUM_TECH_PER_CENTER; i++) {
         usersPayload.push({
           username: `tech${i}.${centerNameShort}`,
-          name: `${generateVietnameseName()}`,
+          name: `KTV ${generateVietnameseName()}`,
           password: hashedPassword,
           email: `tech${i}.${centerNameShort}@vinfast.vn`,
           phone: `09${faker.number.int({ min: 10000000, max: 99999999 })}`,
@@ -337,7 +554,6 @@ const generateData = async () => {
         });
       }
     }
-
     const createdUsers = await User.bulkCreate(usersPayload, {
       returning: true,
     });
@@ -385,7 +601,7 @@ const generateData = async () => {
       ],
       { returning: true }
     );
-    console.log(`✅ Seeded Locations, People & Vehicle Models.`);
+    console.log(`✅ Seeded ${createdModels.length} Vehicle Models.`);
 
     // --- 3. SEED INVENTORY & COMPATIBILITY ---
     console.log("🌱 Seeding Inventory (Stock for all warehouses)...");
@@ -411,11 +627,11 @@ const generateData = async () => {
     const warrantyComponents = [];
     for (const model of createdModels) {
       for (const type of createdTypeComponents) {
-        // Pin và hệ thống điện có bảo hành dài hơn
         const isLongWarranty =
           type.category === "CHARGING_SYSTEM" ||
-          type.category === "LOW_VOLTAGE_SYSTEM";
-
+          type.category === "LOW_VOLTAGE_SYSTEM" ||
+          type.category === "HIGH_VOLTAGE_BATTERY" ||
+          type.category === "POWERTRAIN";
         warrantyComponents.push({
           vehicleModelId: model.vehicleModelId,
           typeComponentId: type.typeComponentId,
@@ -430,6 +646,7 @@ const generateData = async () => {
     // --- 4. SEED VEHICLES & CUSTOMERS ---
     console.log("🌱 Seeding Vehicles & Customers...");
     const vehicles = [];
+    let vinSerialCounter = 1000;
 
     // Xe chưa bán
     for (let i = 0; i < NUM_NEW_VEHICLES; i++) {
@@ -438,11 +655,12 @@ const generateData = async () => {
         from: new Date("2023-01-01"),
         to: new Date("2024-12-31"),
       });
-
+      const modelCode = model.vehicleModelName
+        .replace(/\s+/g, "")
+        .substring(0, 6)
+        .toUpperCase();
       vehicles.push({
-        vin: `VIN${model.vehicleModelName.replace(/\s/g, "")}NEW${String(
-          i
-        ).padStart(3, "0")}`,
+        vin: generateVIN(modelCode, vinSerialCounter++),
         dateOfManufacture: manufactureDate,
         placeOfManufacture: "Hải Phòng, Việt Nam",
         vehicleModelId: model.vehicleModelId,
@@ -461,7 +679,8 @@ const generateData = async () => {
         address: `${faker.location.streetAddress()}, ${faker.helpers.arrayElement(
           ["TP. HCM", "Hà Nội", "Đà Nẵng", "Cần Thơ", "Hải Phòng"]
         )}`,
-      }))
+      })),
+      { returning: true }
     );
 
     for (let i = 0; i < NUM_SOLD_VEHICLES; i++) {
@@ -474,7 +693,6 @@ const generateData = async () => {
       purchaseDate.setMonth(
         purchaseDate.getMonth() + faker.number.int({ min: 1, max: 6 })
       );
-
       const cityCode = faker.helpers.arrayElement([
         "51",
         "30",
@@ -503,11 +721,12 @@ const generateData = async () => {
         "Y",
         "Z",
       ]);
-
+      const modelCode = model.vehicleModelName
+        .replace(/\s+/g, "")
+        .substring(0, 6)
+        .toUpperCase();
       vehicles.push({
-        vin: `VIN${model.vehicleModelName.replace(/\s/g, "")}SOLD${String(
-          i
-        ).padStart(3, "0")}`,
+        vin: generateVIN(modelCode, vinSerialCounter++),
         dateOfManufacture: manufactureDate,
         placeOfManufacture: "Hải Phòng, Việt Nam",
         vehicleModelId: model.vehicleModelId,
@@ -520,9 +739,10 @@ const generateData = async () => {
       });
     }
 
-    await Vehicle.bulkCreate(vehicles, { ignoreDuplicates: true });
+    await Vehicle.bulkCreate(vehicles, { ignoreDuplicates: true }); // ignoreDuplicates để tránh lỗi nếu generateVIN bị trùng
+    const createdVehicles = await Vehicle.findAll(); // Lấy lại danh sách vehicles đã tạo để dùng VIN hợp lệ
     console.log(
-      `✅ Seeded ${vehicles.length} vehicles (${NUM_NEW_VEHICLES} new, ${NUM_SOLD_VEHICLES} sold).`
+      `✅ Seeded ${createdVehicles.length} vehicles (${NUM_NEW_VEHICLES} new estimated, ${NUM_SOLD_VEHICLES} sold).`
     );
 
     // --- 5. SEED WORK SCHEDULES ---
@@ -533,39 +753,27 @@ const generateData = async () => {
         createdRoles.find((r) => r.roleName === "service_center_technician")
           .roleId
     );
-
     const schedules = [];
     const today = new Date();
-
-    // Tạo lịch cho 60 ngày (30 ngày trước + 30 ngày sau)
     const startDate = new Date(today);
     startDate.setDate(today.getDate() - 30);
-
     for (const tech of technicians) {
-      // Mỗi kỹ thuật viên có pattern riêng về nghỉ
-      const hasRegularDayOff = Math.random() > 0.3; // 70% có ngày nghỉ cố định
-      const regularDayOff = faker.number.int({ min: 0, max: 6 }); // 0=CN, 1=T2, ...
-
+      const hasRegularDayOff = Math.random() > 0.3;
+      const regularDayOff = faker.number.int({ min: 0, max: 6 });
       for (let i = 0; i < 60; i++) {
         const workDate = new Date(startDate);
         workDate.setDate(startDate.getDate() + i);
         const dayOfWeek = workDate.getDay();
-
         let status = "WORKING";
         let requestReason = null;
         let notes = null;
-
-        // Logic xác định trạng thái
         if (hasRegularDayOff && dayOfWeek === regularDayOff) {
-          // Ngày nghỉ cố định
           status = "DAY_OFF";
           notes = "Ngày nghỉ hàng tuần";
         } else if (dayOfWeek === 0 && Math.random() > 0.7) {
-          // 30% nghỉ Chủ nhật không phải ngày nghỉ cố định
           status = "DAY_OFF";
           notes = "Ngày nghỉ Chủ nhật";
         } else if (Math.random() > 0.95) {
-          // 5% nghỉ đột xuất
           const leaveType = faker.helpers.arrayElement([
             "LEAVE_REQUESTED",
             "LEAVE_APPROVED",
@@ -574,11 +782,9 @@ const generateData = async () => {
           requestReason = faker.helpers.arrayElement(LEAVE_REASONS);
           notes = null;
         } else {
-          // Làm việc bình thường
           status = "WORKING";
           notes = faker.helpers.arrayElement(WORK_NOTES);
         }
-
         schedules.push({
           technicianId: tech.userId,
           workDate: workDate.toISOString().slice(0, 10),
@@ -588,12 +794,81 @@ const generateData = async () => {
         });
       }
     }
-
     await WorkSchedule.bulkCreate(schedules);
     console.log(
       `✅ Seeded ${schedules.length} schedule entries for ${technicians.length} technicians (60 days range).`
     );
 
+    // --- 6. SEED COMPONENTS ---
+    console.log("🌱 Seeding Components (Physical components)...");
+    const components = [];
+    let serialCounterComp = 1000;
+    const validWarehouseIds = allWarehouses.map((wh) => wh.warehouseId);
+    const validTechnicianIds = technicians.map((tech) => tech.userId);
+    const soldVehicleVINs = createdVehicles
+      .filter((v) => v.ownerId !== null)
+      .map((v) => v.vin); // Dùng createdVehicles
+
+    for (const typeComponent of createdTypeComponents) {
+      const skuPrefix = typeComponent.sku.substring(0, 6).toUpperCase();
+      for (let i = 0; i < NUM_COMPONENTS_PER_TYPE; i++) {
+        serialCounterComp++;
+        const serialNumber = `${skuPrefix}-${String(serialCounterComp).padStart(
+          6,
+          "0"
+        )}`;
+        const statusRoll = Math.random();
+        let status,
+          warehouseId = null,
+          currentHolderId = null,
+          vehicleVin = null,
+          installedAt = null;
+
+        if (statusRoll < 0.6) {
+          status = "IN_WAREHOUSE";
+          warehouseId = faker.helpers.arrayElement(validWarehouseIds);
+        } else if (statusRoll < 0.75 && soldVehicleVINs.length > 0) {
+          status = "INSTALLED";
+          vehicleVin = faker.helpers.arrayElement(soldVehicleVINs);
+          const vehicle = createdVehicles.find((v) => v.vin === vehicleVin);
+          installedAt = faker.date.between({
+            from: vehicle.purchaseDate,
+            to: new Date(),
+          });
+        } else if (statusRoll < 0.85 && validTechnicianIds.length > 0) {
+          status = "WITH_TECHNICIAN";
+          currentHolderId = faker.helpers.arrayElement(validTechnicianIds);
+        } else if (statusRoll < 0.95) {
+          status = "RESERVED";
+          warehouseId = faker.helpers.arrayElement(validWarehouseIds);
+        } else {
+          status = "PICKED_UP";
+        }
+
+        // Đảm bảo các trường không liên quan là null
+        if (status !== "IN_WAREHOUSE" && status !== "RESERVED")
+          warehouseId = null;
+        if (status !== "WITH_TECHNICIAN") currentHolderId = null;
+        if (status !== "INSTALLED") {
+          vehicleVin = null;
+          installedAt = null;
+        }
+
+        components.push({
+          typeComponentId: typeComponent.typeComponentId,
+          serialNumber,
+          warehouseId,
+          status,
+          currentHolderId,
+          vehicleVin,
+          installedAt,
+        });
+      }
+    }
+    await Component.bulkCreate(components);
+    console.log(`✅ Seeded ${components.length} physical components.`);
+
+    // --- FINAL SUMMARY ---
     console.log("\n🎉 Seeding finished successfully!");
     console.log("\n📋 Summary:");
     console.log(`   - Company: ${createdCompany.name}`);
@@ -601,16 +876,22 @@ const generateData = async () => {
     console.log(`   - Warehouses: ${allWarehouses.length}`);
     console.log(`   - Users: ${createdUsers.length}`);
     console.log(`   - Vehicle Models: ${createdModels.length}`);
-    console.log(`   - Components: ${createdTypeComponents.length}`);
-    console.log(`   - Vehicles: ${vehicles.length}`);
+    console.log(
+      `   - Type Components: ${createdTypeComponents.length} (unique)`
+    );
+    console.log(`   - Physical Components: ${components.length}`);
+    console.log(`   - Vehicles: ${createdVehicles.length}`);
     console.log(`   - Customers: ${customers.length}`);
     console.log(`   - Work Schedules: ${schedules.length}`);
     console.log(`\n🔐 Default password for all users: "123456"`);
   } catch (error) {
     console.error("❌ Unable to seed database:", error);
+    if (error.original) console.error("   Original Error:", error.original);
+    if (error.errors) console.error("   Validation Errors:", error.errors);
   } finally {
     if (sequelize) {
       await sequelize.close();
+      console.log("🔒 Database connection closed.");
     }
   }
 };

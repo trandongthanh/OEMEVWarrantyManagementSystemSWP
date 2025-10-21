@@ -3,7 +3,18 @@ import {
   attachCompanyContext,
   authentication,
   authorizationByRole,
+  validate,
 } from "../middleware/index.js";
+import {
+  assignOwnerToVehicleBodySchema,
+  assignOwnerToVehicleParamsSchema,
+} from "../../validators/assignOwnerToVehicle.validator.js";
+import {
+  findVehicleByVinWithWarrantyParamsSchema,
+  findVehicleByVinWithWarrantyPreviewBodySchema,
+  findVehicleByVinWithWarrantyPreviewParamsSchema,
+  findVehicleByVinWithWarrantyQuerySchema,
+} from "../../validators/findVehicleByVinWithWarranty.validator.js";
 
 const router = express.Router();
 
@@ -140,7 +151,7 @@ router.get(
   async (req, res, next) => {
     const vehicleController = req.container.resolve("vehicleController");
 
-    await vehicleController.findVehicleByVin(req, res, next);
+    await vehicleController.getVehicle(req, res, next);
   }
 );
 
@@ -346,11 +357,13 @@ router.patch(
   authentication,
   authorizationByRole(["service_center_staff"]),
   attachCompanyContext,
+  validate(assignOwnerToVehicleParamsSchema, "params"),
+  validate(assignOwnerToVehicleBodySchema, "body"),
 
   async (req, res, next) => {
     const vehicleController = req.container.resolve("vehicleController");
 
-    await vehicleController.registerCustomerForVehicle(req, res, next);
+    await vehicleController.assignOwnerToVehicle(req, res, next);
   }
 );
 
@@ -537,6 +550,9 @@ router.get(
   authentication,
   authorizationByRole(["service_center_staff"]),
   attachCompanyContext,
+  validate(findVehicleByVinWithWarrantyParamsSchema, "params"),
+  validate(findVehicleByVinWithWarrantyQuerySchema, "query"),
+
   async (req, res, next) => {
     const vehicleController = req.container.resolve("vehicleController");
 
@@ -741,6 +757,9 @@ router.post(
   authentication,
   authorizationByRole(["service_center_staff"]),
   attachCompanyContext,
+  validate(findVehicleByVinWithWarrantyPreviewParamsSchema, "params"),
+  validate(findVehicleByVinWithWarrantyPreviewBodySchema, "body"),
+
   async (req, res, next) => {
     const vehicleController = req.container.resolve("vehicleController");
 

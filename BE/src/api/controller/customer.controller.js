@@ -12,8 +12,15 @@ class CustomerController {
         email: email,
       });
 
+    if (!existingCustomer) {
+      return res.status(404).json({
+        status: "fail",
+        message: "Customer is not found",
+      });
+    }
+
     res.status(200).json({
-      status: "sucess",
+      status: "success",
       data: {
         customer: existingCustomer,
       },

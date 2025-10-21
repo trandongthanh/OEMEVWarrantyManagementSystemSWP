@@ -40,3 +40,9 @@ export class ForbiddenError extends ApiError {
     super(message, 403);
   }
 }
+
+export class AuthenticationError extends ApiError {
+  constructor(message = "Authentication failed") {
+    super(message, 401);
+  }
+}
