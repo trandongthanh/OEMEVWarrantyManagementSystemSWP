@@ -488,6 +488,7 @@ router.get(
     "service_center_technician",
     "service_center_manager",
   ]),
+  attachCompanyContext,
 
   async (req, res, next) => {
     const vehicleProcessingRecordController = req.container.resolve(

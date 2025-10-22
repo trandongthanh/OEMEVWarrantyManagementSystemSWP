@@ -1,83 +1,89 @@
 module.exports = (sequelize, DataTypes) => {
-  const CaseLine = sequelize.define("CaseLine", {
-    id: {
-      type: DataTypes.UUID,
-      defaultValue: DataTypes.UUIDV4,
-      primaryKey: true,
-      field: "id",
-    },
+  const CaseLine = sequelize.define(
+    "CaseLine",
+    {
+      id: {
+        type: DataTypes.UUID,
+        defaultValue: DataTypes.UUIDV4,
+        primaryKey: true,
+        field: "id",
+      },
 
-    guaranteeCaseId: {
-      type: DataTypes.UUID,
-      allowNull: false,
-      field: "guarantee_case_id",
-    },
+      guaranteeCaseId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        field: "guarantee_case_id",
+      },
 
-    diagnosticTechId: {
-      type: DataTypes.UUID,
-      allowNull: false,
-      field: "diagnostic_tech_id",
-    },
+      diagnosticTechId: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        field: "diagnostic_tech_id",
+      },
 
-    repairTechId: {
-      type: DataTypes.UUID,
-      allowNull: true,
-      field: "repair_tech_id",
-    },
+      repairTechId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        field: "repair_tech_id",
+      },
 
-    diagnosisText: {
-      type: DataTypes.TEXT,
-      allowNull: false,
-      field: "diagnosis_text",
-    },
+      diagnosisText: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+        field: "diagnosis_text",
+      },
 
-    correctionText: {
-      type: DataTypes.TEXT,
-      allowNull: false,
-      field: "correction_text",
-    },
+      correctionText: {
+        type: DataTypes.TEXT,
+        allowNull: false,
+        field: "correction_text",
+      },
 
-    warrantyStatus: {
-      type: DataTypes.ENUM("ELIGIBLE", "INELIGIBLE"),
-      field: "warranty_status",
-    },
+      warrantyStatus: {
+        type: DataTypes.ENUM("ELIGIBLE", "INELIGIBLE"),
+        field: "warranty_status",
+      },
 
-    typeComponentId: {
-      type: DataTypes.UUID,
-      allowNull: true,
-      field: "type_component_id",
-    },
+      typeComponentId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        field: "type_component_id",
+      },
 
-    quantity: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 1,
-      field: "quantity",
-    },
+      quantity: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 1,
+        field: "quantity",
+      },
 
-    status: {
-      type: DataTypes.ENUM(
-        "PENDING_APPROVAL",
-        "APPROVED",
-        "REJECTED_BY_OUT_OF_WARRANTY",
-        "REJECTED_BY_TECH",
-        "WAITING_FOR_PARTS",
-        "READY_FOR_REPAIR",
-        "IN_REPAIR",
-        "COMPLETED",
-        "CANCELLED"
-      ),
-      allowNull: false,
-      defaultValue: "PENDING_APPROVAL",
-      field: "status",
-    },
+      status: {
+        type: DataTypes.ENUM(
+          "PENDING_APPROVAL",
+          "APPROVED",
+          "REJECTED_BY_OUT_OF_WARRANTY",
+          "REJECTED_BY_TECH",
+          "WAITING_FOR_PARTS",
+          "READY_FOR_REPAIR",
+          "IN_REPAIR",
+          "COMPLETED",
+          "CANCELLED"
+        ),
+        allowNull: false,
+        defaultValue: "PENDING_APPROVAL",
+        field: "status",
+      },
 
-    rejectionReason: {
-      type: DataTypes.STRING,
-      allowNull: true,
-      field: "rejection_reason",
+      rejectionReason: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        field: "rejection_reason",
+      },
     },
-  });
+    {
+      tableName: "case_line",
+    }
+  );
 
   CaseLine.associate = function (models) {
     CaseLine.belongsTo(models.GuaranteeCase, {
@@ -85,13 +91,8 @@ module.exports = (sequelize, DataTypes) => {
       as: "guaranteeCase",
     });
 
-    CaseLine.belongsTo(models.User, {
-      foreignKey: "tech_id",
-      as: "ownerTech",
-    });
-
     CaseLine.belongsTo(models.TypeComponent, {
-      foreignKey: "typeComponentId",
+      foreignKey: "type_componentId",
       as: "typeComponent",
     });
 

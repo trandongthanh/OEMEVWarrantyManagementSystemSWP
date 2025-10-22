@@ -108,7 +108,7 @@ class CaseLineService {
       const dataCaselines = caselines.map((caseline) => ({
         ...caseline,
         guaranteeCaseId: guaranteeCaseId,
-        techId: techId,
+        diagnosticTechId: techId,
       }));
 
       const newCaseLines = await this.#caselineRepository.bulkCreate(
