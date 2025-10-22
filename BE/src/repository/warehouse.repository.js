@@ -1,5 +1,5 @@
 import { Op } from "sequelize";
-import db, { Sequelize } from "../models/index.cjs";
+import db from "../models/index.cjs";
 
 // import {  } from "joi";
 
@@ -103,7 +103,7 @@ class WareHouseRepository {
           [Op.in]: typeComponentIds,
         },
 
-        [Op.and]: Sequelize.where(
+        [Op.and]: db.Sequelize.where(
           Sequelize.col("Stock.quantity_reserved"),
           "<",
           Sequelize.col("Stock.quantity_in_stock")

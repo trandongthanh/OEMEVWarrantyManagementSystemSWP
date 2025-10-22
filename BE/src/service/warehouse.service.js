@@ -21,12 +21,6 @@ class WarehouseService {
       throw new BadRequestError("serviceCenterId, modelId is required");
     }
 
-    // if (!searchName && !category) {
-    //   throw new BadRequestError(
-    //     "At least one of searchName or category is required"
-    //   );
-    // }
-
     if (!searchName) {
       searchName = "";
     }
