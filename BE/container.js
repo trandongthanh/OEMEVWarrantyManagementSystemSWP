@@ -30,7 +30,7 @@ import ComponentRepository from "./src/repository/component.repository.js";
 import TaskAssignmentRepository from "./src/repository/taskAssignment.repository.js";
 import UserController from "./src/api/controller/user.controller.js";
 import UserService from "./src/service/user.service.js";
-import redisClient from "./src/util/redisClient.js";
+// import redisClient from "./src/util/redisClient.js";
 import MailMessage from "nodemailer/lib/mailer/mail-message.js";
 import transporter from "./src/util/emailTranporter.js";
 import NotificationService from "./src/service/notification.service.js";
@@ -52,7 +52,7 @@ export function setupContainer({ io, notificationNamespace, chatNamespace }) {
     chats: asValue(chatNamespace, {
       lifetime: Lifetime.SINGLETON,
     }),
-    redisClient: asValue(redisClient, { lifetime: Lifetime.SCOPED }),
+    // redisClient: asValue(redisClient, { lifetime: Lifetime.SCOPED }),
     transporter: asValue(transporter, { lifetime: Lifetime.SINGLETON }),
 
     // Controllers
