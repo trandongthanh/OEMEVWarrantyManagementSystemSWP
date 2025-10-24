@@ -44,22 +44,20 @@ interface Technician {
   status?: string; // WORKING | DAY_OFF | LEAVE_REQUESTED | LEAVE_APPROVED
 }
 
+interface CaseLine {
+  id: string;
+  diagnosisText: string;
+  correctionText: string;
+  warrantyStatus: string;
+  status: string;
+  rejectionReason: string | null;
+}
+
 interface GuaranteeCase {
   guaranteeCaseId: string;
   contentGuarantee: string;
   status?: string;
-}
-
-interface AssignedComponent {
-  id: string;
-  warehouse_id: string;
-  warehouse_name: string;
-  type_component_id: string;
-  component_name: string;
-  component_sku: string;
-  quantity: number;
-  assigned_at: string;
-  status: 'pending' | 'reserved' | 'dispatched' | 'delivered';
+  caseLines?: CaseLine[];
 }
 
 interface WarrantyClaim {
@@ -69,9 +67,11 @@ interface WarrantyClaim {
   checkInDate: string;
   guaranteeCases: GuaranteeCase[]; // Array of guarantee cases
   assignedTechnicians: Technician[];
-  assignedComponents: AssignedComponent[];
   model: string;
+  modelId?: string; // Vehicle model ID
   serviceCenter: string;
+  createdByStaffId?: string; // Staff who created the record
+  createdByStaffName?: string; // Staff name who created the record
   submissionDate: string;
   estimatedCost: number;
   status?: string;
@@ -140,13 +140,6 @@ const ServiceCenterDashboard = () => {
   const [showTechnicianRecordsModal, setShowTechnicianRecordsModal] = useState(false);
   const [selectedTechnicianForRecords, setSelectedTechnicianForRecords] = useState<Technician | null>(null);
   const [technicianRecords, setTechnicianRecords] = useState<WarrantyClaim[]>([]);
-
-  // Component Assignment Modal States
-  const [showComponentAssignmentModal, setShowComponentAssignmentModal] = useState(false);
-  const [selectedClaimForComponents, setSelectedClaimForComponents] = useState<string>('');
-  const [selectedWarehouseForAssignment, setSelectedWarehouseForAssignment] = useState<string>('');
-  const [selectedComponentForAssignment, setSelectedComponentForAssignment] = useState<string>('');
-  const [componentQuantity, setComponentQuantity] = useState<number>(1);
 
   // Inventory Management States
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -221,7 +214,15 @@ const ServiceCenterDashboard = () => {
           const cases: GuaranteeCase[] = Array.isArray(r.guaranteeCases) ? r.guaranteeCases.map((gc: any) => ({
             guaranteeCaseId: gc.guaranteeCaseId || gc.id || '',
             contentGuarantee: gc.contentGuarantee || '',
-            status: gc.status
+            status: gc.status,
+            caseLines: Array.isArray(gc.caseLines) ? gc.caseLines.map((cl: any) => ({
+              id: cl.id || '',
+              diagnosisText: cl.diagnosisText || '',
+              correctionText: cl.correctionText || '',
+              warrantyStatus: cl.warrantyStatus || '',
+              status: cl.status || '',
+              rejectionReason: cl.rejectionReason || null
+            })) : []
           })) : [];
           const primaryCase = cases.length > 0 ? cases[0] : null;
           return {
@@ -231,9 +232,11 @@ const ServiceCenterDashboard = () => {
             checkInDate: r.checkInDate || r.check_in_date || new Date().toISOString(),
             guaranteeCases: cases,
             assignedTechnicians: mainTech,
-            assignedComponents: [],
             model: r.vehicle?.model?.name || r.model || '',
+            modelId: r.vehicle?.model?.vehicleModelId || r.vehicle?.model?.id || undefined,
             serviceCenter: r.createdByStaff?.name || r.serviceCenter || '',
+            createdByStaffId: r.createdByStaff?.userId || r.createdByStaff?.id || undefined,
+            createdByStaffName: r.createdByStaff?.name || undefined,
             submissionDate: r.createdAt || new Date().toISOString(),
             estimatedCost: 0,
             priority: r.priority || undefined,
@@ -848,24 +851,6 @@ const ServiceCenterDashboard = () => {
     }
   };
 
-  // Change technician status (optimistic UI + persist)
-  const changeTechnicianStatus = async (techId: string, newStatus: string) => {
-    // update local list optimistically
-    setAvailableTechnicians(prev => prev.map(t => t.id === techId ? { ...t, status: newStatus, isAvailable: newStatus === 'WORKING' } : t));
-
-    try {
-      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-      if (!token) return;
-      // assuming backend supports PATCH /users/technicians/:id/status
-      await axios.patch(`http://localhost:3000/api/v1/users/technicians/${techId}/status`, { status: newStatus }, { headers: { Authorization: `Bearer ${token}` } });
-    } catch (err) {
-      console.error('Failed to change technician status', err);
-      alert('Failed to change technician status on server.');
-      // optional: revert by reloading
-      refreshTechnicians();
-    }
-  };
-
   const getTechBadgeVariant = (status?: string) => {
     switch ((status || '').toUpperCase()) {
       case 'WORKING':
@@ -879,178 +864,6 @@ const ServiceCenterDashboard = () => {
       default:
         return 'outline';
     }
-  };
-
-  // Update claim status locally (and persist to backend if possible)
-  const updateClaimStatus = async (vin: string, newStatus: string) => {
-    // find the claim across claimsByStatus or warrantyClaims
-    let currentClaim: WarrantyClaim | undefined;
-    for (const k of Object.keys(claimsByStatus)) {
-      const found = claimsByStatus[k]?.find(c => c.vin === vin);
-      if (found) {
-        currentClaim = found;
-        break;
-      }
-    }
-    if (!currentClaim) {
-      currentClaim = warrantyClaims.find(c => c.vin === vin);
-    }
-    if (!currentClaim) return;
-
-    const prevStatus = currentClaim.status || activeStatus;
-
-    // Optimistically update UI: remove from old status and add to new status
-    setClaimsByStatus(prev => {
-      const next: Record<string, WarrantyClaim[]> = {};
-      Object.keys(prev).forEach(k => {
-        next[k] = prev[k].filter(c => c.vin !== vin);
-      });
-      const updated: WarrantyClaim = { ...currentClaim!, status: newStatus };
-      next[newStatus] = [updated, ...(next[newStatus] || [])];
-      return next;
-    });
-
-    setWarrantyClaims(prev => {
-      // if active tab was the previous status, remove it
-      if (activeStatus === prevStatus) {
-        return prev.filter(c => c.vin !== vin);
-      }
-      // if active tab is the new status, prepend it
-      if (activeStatus === newStatus) {
-        return [{ ...currentClaim!, status: newStatus }, ...prev];
-      }
-      return prev;
-    });
-
-    setSelectedClaimForDetail(prev => prev && prev.vin === vin ? { ...prev, status: newStatus } : prev);
-
-    // Persist change to backend if possible
-    try {
-      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-      if (token) {
-        // Assuming backend supports PATCH /processing-records/:vin/status
-        await axios.patch(
-          `http://localhost:3000/api/v1/processing-records/${vin}/status`,
-          { status: newStatus },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-      }
-    } catch (err) {
-      console.error('Failed to persist status update', err);
-      // Optionally show error to user
-      // For now, keep optimistic UI but inform
-      alert('Status updated locally but failed to persist to server.');
-    }
-  };
-
-  // Component Assignment Handlers
-  const openComponentAssignmentModal = (vin: string) => {
-    setSelectedClaimForComponents(vin);
-    setShowComponentAssignmentModal(true);
-    setSelectedWarehouseForAssignment('');
-    setSelectedComponentForAssignment('');
-    setComponentQuantity(1);
-  };
-
-  const closeComponentAssignmentModal = () => {
-    setShowComponentAssignmentModal(false);
-    setSelectedClaimForComponents('');
-    setSelectedWarehouseForAssignment('');
-    setSelectedComponentForAssignment('');
-    setComponentQuantity(1);
-  };
-
-  const getAvailableStock = (warehouseId: string, componentId: string): number => {
-    const stock = stocks.find(
-      s => s.warehouse_id === warehouseId && s.type_component_id === componentId
-    );
-    if (!stock) return 0;
-    return stock.quantity_in_stock - stock.quantity_reserved;
-  };
-
-  const handleAssignComponent = () => {
-    if (!selectedWarehouseForAssignment || !selectedComponentForAssignment || componentQuantity <= 0) {
-      return;
-    }
-
-    const availableStock = getAvailableStock(selectedWarehouseForAssignment, selectedComponentForAssignment);
-    if (componentQuantity > availableStock) {
-      alert(`Insufficient stock! Only ${availableStock} units available.`);
-      return;
-    }
-
-    const warehouse = warehouses.find(w => w.warehouse_id === selectedWarehouseForAssignment);
-    const component = typeComponents.find(c => c.type_component_id === selectedComponentForAssignment);
-
-    if (!warehouse || !component) return;
-
-    const newAssignment: AssignedComponent = {
-      id: `assign-${Date.now()}`,
-      warehouse_id: warehouse.warehouse_id,
-      warehouse_name: warehouse.name,
-      type_component_id: component.type_component_id,
-      component_name: component.name,
-      component_sku: component.sku,
-      quantity: componentQuantity,
-      assigned_at: new Date().toISOString(),
-      status: 'pending'
-    };
-
-    setWarrantyClaims(prev => prev.map(claim => {
-      if (claim.vin === selectedClaimForComponents) {
-        return {
-          ...claim,
-          assignedComponents: [...claim.assignedComponents, newAssignment]
-        };
-      }
-      return claim;
-    }));
-
-    // Update stock - reserve the quantity
-    setStocks(prev => prev.map(stock => {
-      if (stock.warehouse_id === selectedWarehouseForAssignment &&
-        stock.type_component_id === selectedComponentForAssignment) {
-        return {
-          ...stock,
-          quantity_reserved: stock.quantity_reserved + componentQuantity
-        };
-      }
-      return stock;
-    }));
-
-    setSelectedComponentForAssignment('');
-    setComponentQuantity(1);
-  };
-
-  const handleRemoveAssignedComponent = (vin: string, assignmentId: string) => {
-    const claim = warrantyClaims.find(c => c.vin === vin);
-    if (!claim) return;
-
-    const assignment = claim.assignedComponents.find(a => a.id === assignmentId);
-    if (!assignment) return;
-
-    // Remove the assignment
-    setWarrantyClaims(prev => prev.map(c => {
-      if (c.vin === vin) {
-        return {
-          ...c,
-          assignedComponents: c.assignedComponents.filter(a => a.id !== assignmentId)
-        };
-      }
-      return c;
-    }));
-
-    // Return stock to available
-    setStocks(prev => prev.map(stock => {
-      if (stock.warehouse_id === assignment.warehouse_id &&
-        stock.type_component_id === assignment.type_component_id) {
-        return {
-          ...stock,
-          quantity_reserved: Math.max(0, stock.quantity_reserved - assignment.quantity)
-        };
-      }
-      return stock;
-    }));
   };
 
   // Helper function to format date
@@ -1176,7 +989,7 @@ const ServiceCenterDashboard = () => {
                           <TableHead>Mileage</TableHead>
                           <TableHead>Check-in Date</TableHead>
                           <TableHead>Status</TableHead>
-                          <TableHead>Case</TableHead>
+                          <TableHead>Cases</TableHead>
                           <TableHead>Technician Assignment</TableHead>
                           <TableHead>Actions</TableHead>
                         </TableRow>
@@ -1203,29 +1016,26 @@ const ServiceCenterDashboard = () => {
                                 {getDisplayStatus(claim.status)}
                               </Badge>
                             </TableCell>
-                            <TableCell className="max-w-xs">
-                              <div className="space-y-2">
+                            <TableCell>
+                              <div className="flex items-center gap-2">
                                 {claim.guaranteeCases && claim.guaranteeCases.length > 0 ? (
-                                  <div className="space-y-1.5">
-                                    {claim.guaranteeCases.map((gc, idx) => (
-                                      <div key={gc.guaranteeCaseId} className="flex items-start gap-2 p-2 bg-blue-50 dark:bg-blue-900/10 rounded border border-blue-200 dark:border-blue-800">
-                                        <Badge variant="outline" className="text-[10px] font-bold shrink-0 bg-blue-100 dark:bg-blue-900/30">
-                                          #{idx + 1}
-                                        </Badge>
-                                        <span className="text-xs leading-relaxed">{gc.contentGuarantee}</span>
-                                      </div>
-                                    ))}
-                                  </div>
+                                  <>
+                                    <Badge variant="default" className="text-xs">
+                                      {claim.guaranteeCases.length} case{claim.guaranteeCases.length > 1 ? 's' : ''}
+                                    </Badge>
+                                    {claim.priority && (
+                                      <Badge variant={getPriorityBadgeVariant(claim.priority)} className="text-xs">
+                                        {claim.priority === 'Urgent' && '🚨 '}
+                                        {claim.priority === 'High' && '🔥 '}
+                                        {claim.priority === 'Medium' && '📋 '}
+                                        {claim.priority === 'Low' && '📝 '}
+                                        {claim.priority}
+                                      </Badge>
+                                    )}
+                                  </>
                                 ) : (
-                                  <div className="text-xs text-muted-foreground italic">No cases</div>
-                                )}
-                                {claim.priority && (
-                                  <Badge variant={getPriorityBadgeVariant(claim.priority)} className="text-xs">
-                                    {claim.priority === 'Urgent' && '🚨 '}
-                                    {claim.priority === 'High' && '🔥 '}
-                                    {claim.priority === 'Medium' && '📋 '}
-                                    {claim.priority === 'Low' && '📝 '}
-                                    {claim.priority}
+                                  <Badge variant="outline" className="text-xs text-muted-foreground">
+                                    No cases
                                   </Badge>
                                 )}
                               </div>
@@ -1268,19 +1078,6 @@ const ServiceCenterDashboard = () => {
                                   </Button>
                                 )}
 
-                                {/* Assign Components Button */}
-                                {hasPermission(user, 'assign_technicians') && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-full mt-2 border-dashed border-green-300 text-green-600 hover:bg-green-50"
-                                    onClick={() => openComponentAssignmentModal(claim.vin)}
-                                  >
-                                    <Package className="h-4 w-4 mr-2" />
-                                    Assign Components ({claim.assignedComponents.length})
-                                  </Button>
-                                )}
-
                               </div>
                             </TableCell>
                             <TableCell>
@@ -1292,27 +1089,6 @@ const ServiceCenterDashboard = () => {
                                 >
                                   View
                                 </Button>
-
-                                {/* Status update select - moves record between status groups */}
-                                <Select
-                                  onValueChange={(value) => {
-                                    if (!value) return;
-                                    if (value === claim.status) return;
-                                    updateClaimStatus(claim.vin, value);
-                                  }}
-                                  value={undefined}
-                                >
-                                  <SelectTrigger className="min-w-[160px]">
-                                    <SelectValue placeholder="Update Status" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {STATUSES.map(s => (
-                                      <SelectItem key={s} value={s}>
-                                        {getDisplayStatus(s)}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -1701,32 +1477,13 @@ const ServiceCenterDashboard = () => {
                               </Badge>
                             </TableCell>
                             <TableCell>
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => viewTechnicianRecords(tech)}
-                                >
-                                  View
-                                </Button>
-                                <Select onValueChange={(val) => {
-                                  if (!val) return;
-                                  if (val === 'DAY_OFF') {
-                                    if (!confirm('Mark technician as DAY_OFF?')) return;
-                                  }
-                                  changeTechnicianStatus(tech.id, val);
-                                }} value={undefined}>
-                                  <SelectTrigger className="min-w-[140px]">
-                                    <SelectValue placeholder="Change status" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="WORKING">{getDisplayStatus('WORKING')}</SelectItem>
-                                    <SelectItem value="LEAVE_REQUESTED">{getDisplayStatus('LEAVE_REQUESTED')}</SelectItem>
-                                    <SelectItem value="LEAVE_APPROVED">{getDisplayStatus('LEAVE_APPROVED')}</SelectItem>
-                                    <SelectItem value="DAY_OFF">{getDisplayStatus('DAY_OFF')}</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => viewTechnicianRecords(tech)}
+                              >
+                                View
+                              </Button>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1793,6 +1550,11 @@ const ServiceCenterDashboard = () => {
                         <div>
                           <label className="text-sm font-medium text-muted-foreground">Vehicle Model</label>
                           <p className="text-base">{selectedClaimForDetail.model}</p>
+                          {selectedClaimForDetail.modelId && (
+                            <p className="font-mono text-xs text-muted-foreground mt-1">
+                              Model ID: {selectedClaimForDetail.modelId}
+                            </p>
+                          )}
                         </div>
                         <div>
                           <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
@@ -1812,10 +1574,15 @@ const ServiceCenterDashboard = () => {
                         </div>
                         <div>
                           <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                            <MapPin className="h-4 w-4" />
-                            Service Center
+                            <User className="h-4 w-4" />
+                            Created By Staff
                           </label>
-                          <p className="text-base">{selectedClaimForDetail.serviceCenter}</p>
+                          <p className="text-base font-semibold">{selectedClaimForDetail.serviceCenter}</p>
+                          {selectedClaimForDetail.createdByStaffId && (
+                            <p className="font-mono text-xs text-muted-foreground mt-1">
+                              ID: {selectedClaimForDetail.createdByStaffId}
+                            </p>
+                          )}
                         </div>
                         <div>
                           <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
@@ -1865,25 +1632,104 @@ const ServiceCenterDashboard = () => {
                       {selectedClaimForDetail.guaranteeCases && selectedClaimForDetail.guaranteeCases.length > 0 && (
                         <div className="col-span-2">
                           <label className="text-sm font-medium text-muted-foreground mb-3 block">Guarantee Cases ({selectedClaimForDetail.guaranteeCases.length})</label>
-                          <div className="space-y-3">
+                          <div className="space-y-4">
                             {selectedClaimForDetail.guaranteeCases.map((gc, idx) => (
-                              <Card key={gc.guaranteeCaseId} className="border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/50 to-transparent dark:from-blue-900/20">
-                                <CardContent className="p-4">
-                                  <div className="flex items-start gap-3">
-                                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-500 text-white font-bold text-sm shrink-0">
-                                      {idx + 1}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">Case #{idx + 1}</span>
-                                        {gc.status && (
-                                          <Badge variant="outline" className="text-xs">
-                                            {getDisplayStatus(gc.status)}
-                                          </Badge>
-                                        )}
+                              <Card key={gc.guaranteeCaseId} className="border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-shadow">
+                                <CardContent className="p-5">
+                                  <div className="space-y-4">
+                                    {/* Case Header */}
+                                    <div className="flex items-start gap-4">
+                                      <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white font-bold text-base shrink-0 shadow-sm">
+                                        {idx + 1}
                                       </div>
-                                      <p className="text-sm leading-relaxed text-foreground">{gc.contentGuarantee}</p>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-2">
+                                          <span className="text-sm font-bold text-blue-700 dark:text-blue-300">Guarantee Case #{idx + 1}</span>
+                                          {gc.status && (
+                                            <Badge variant="outline" className="text-xs font-semibold">
+                                              {getDisplayStatus(gc.status)}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <p className="text-base leading-relaxed text-gray-900 dark:text-gray-100 font-medium bg-blue-50 dark:bg-blue-900/30 p-3 rounded-md border border-blue-100 dark:border-blue-800">
+                                          {gc.contentGuarantee}
+                                        </p>
+                                      </div>
                                     </div>
+
+                                    {/* Case Lines */}
+                                    {gc.caseLines && gc.caseLines.length > 0 && (
+                                      <div className="ml-14 space-y-3 mt-4 pt-4 border-t-2 border-blue-100 dark:border-blue-800">
+                                        <div className="flex items-center gap-2 mb-3">
+                                          <div className="h-5 w-1 bg-blue-500 rounded"></div>
+                                          <span className="text-sm font-bold text-gray-700 dark:text-gray-300">
+                                            Diagnosis & Correction Plan
+                                          </span>
+                                          <Badge variant="secondary" className="text-xs">
+                                            {gc.caseLines.length} item{gc.caseLines.length > 1 ? 's' : ''}
+                                          </Badge>
+                                        </div>
+
+                                        <div className="space-y-3">
+                                          {gc.caseLines.map((line, lineIdx) => (
+                                            <div key={line.id} className="bg-gradient-to-br from-gray-50 to-white dark:from-gray-800 dark:to-gray-900 rounded-lg p-4 border-2 border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all">
+                                              {/* Line Header */}
+                                              <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200 dark:border-gray-700">
+                                                <div className="flex items-center justify-center w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-blue-500 text-white font-bold text-xs">
+                                                  {lineIdx + 1}
+                                                </div>
+                                                <Badge
+                                                  variant={
+                                                    line.status === 'PENDING_APPROVAL' ? 'secondary' :
+                                                      line.status === 'READY_FOR_REPAIR' ? 'default' :
+                                                        line.status === 'REJECTED_BY_CUSTOMER' ? 'destructive' :
+                                                          'outline'
+                                                  }
+                                                  className="text-xs font-semibold"
+                                                >
+                                                  {getDisplayStatus(line.status)}
+                                                </Badge>
+                                                <Badge
+                                                  variant={line.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}
+                                                  className="text-xs font-semibold"
+                                                >
+                                                  {line.warrantyStatus}
+                                                </Badge>
+                                              </div>
+
+                                              {/* Diagnosis */}
+                                              <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-md border border-amber-200 dark:border-amber-800">
+                                                <div className="flex items-center gap-2 mb-1.5">
+                                                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                                                  <span className="font-bold text-sm text-amber-700 dark:text-amber-400">Diagnosis</span>
+                                                </div>
+                                                <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed">{line.diagnosisText}</p>
+                                              </div>
+
+                                              {/* Correction */}
+                                              <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-md border border-green-200 dark:border-green-800">
+                                                <div className="flex items-center gap-2 mb-1.5">
+                                                  <CheckCircle className="h-4 w-4 text-green-600" />
+                                                  <span className="font-bold text-sm text-green-700 dark:text-green-400">Correction Plan</span>
+                                                </div>
+                                                <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed">{line.correctionText}</p>
+                                              </div>
+
+                                              {/* Rejection Reason */}
+                                              {line.rejectionReason && (
+                                                <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-md border-2 border-red-300 dark:border-red-800">
+                                                  <div className="flex items-center gap-2 mb-1.5">
+                                                    <XCircle className="h-4 w-4 text-red-600" />
+                                                    <span className="font-bold text-sm text-red-700 dark:text-red-400">Rejection Reason</span>
+                                                  </div>
+                                                  <p className="text-sm text-red-900 dark:text-red-100 font-medium">{line.rejectionReason}</p>
+                                                </div>
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 </CardContent>
                               </Card>
@@ -1949,93 +1795,6 @@ const ServiceCenterDashboard = () => {
                       <div className="text-center py-8">
                         <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                         <p className="text-muted-foreground">No technicians assigned yet</p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-
-                {/* Assigned Components */}
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="flex items-center gap-2 text-lg">
-                        <Package className="h-5 w-5" />
-                        Assigned Components ({selectedClaimForDetail.assignedComponents.length})
-                      </CardTitle>
-                      {hasPermission(user, 'assign_technicians') && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setShowClaimDetailModal(false);
-                            openComponentAssignmentModal(selectedClaimForDetail.vin);
-                          }}
-                          className="border-dashed border-green-300 text-green-600 hover:bg-green-50"
-                        >
-                          <Package className="h-4 w-4 mr-2" />
-                          Assign Components
-                        </Button>
-                      )}
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {selectedClaimForDetail.assignedComponents.length > 0 ? (
-                      <div className="space-y-3">
-                        {selectedClaimForDetail.assignedComponents.map((comp) => (
-                          <Card key={comp.id} className="border-dashed border-green-200">
-                            <CardContent className="p-4">
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <Box className="h-4 w-4 text-green-600" />
-                                    <span className="font-semibold">{comp.component_name}</span>
-                                    <Badge variant="outline" className="text-xs">
-                                      {comp.component_sku}
-                                    </Badge>
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-3 text-sm">
-                                    <div>
-                                      <p className="text-muted-foreground flex items-center gap-1">
-                                        <Warehouse className="h-3 w-3" />
-                                        Warehouse
-                                      </p>
-                                      <p className="font-medium">{comp.warehouse_name}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-muted-foreground">Quantity</p>
-                                      <p className="font-medium">{comp.quantity} units</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-muted-foreground">Status</p>
-                                      <Badge
-                                        variant={
-                                          comp.status === 'pending' ? 'secondary' :
-                                            comp.status === 'reserved' ? 'default' :
-                                              comp.status === 'dispatched' ? 'outline' : 'default'
-                                        }
-                                        className="text-xs"
-                                      >
-                                        {comp.status}
-                                      </Badge>
-                                    </div>
-                                    <div>
-                                      <p className="text-muted-foreground">Assigned At</p>
-                                      <p className="text-xs">{new Date(comp.assigned_at).toLocaleString()}</p>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-8">
-                        <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                        <p className="text-muted-foreground">No components assigned yet</p>
-                        <p className="text-sm text-muted-foreground mt-2">
-                          Click "Assign Components" to allocate parts from inventory
-                        </p>
                       </div>
                     )}
                   </CardContent>
@@ -2209,211 +1968,6 @@ const ServiceCenterDashboard = () => {
                   })}
                 </div>
               </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Component Assignment Modal */}
-        <Dialog open={showComponentAssignmentModal} onOpenChange={closeComponentAssignmentModal}>
-          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Package className="h-5 w-5 text-green-600" />
-                Assign Components to Claim
-              </DialogTitle>
-              <DialogDescription>
-                {selectedClaimForComponents && (() => {
-                  const claim = warrantyClaims.find(c => c.vin === selectedClaimForComponents);
-                  return (
-                    <div className="mt-2 p-3 bg-muted/50 rounded-lg border space-y-2">
-                      <div className="flex items-center gap-2">
-                        <FileText className="h-4 w-4 text-blue-600" />
-                        <div className="flex-1">
-                          <span className="text-xs text-muted-foreground mr-2">Record ID:</span>
-                          <span className="font-mono text-xs font-medium">{claim?.recordId || '---'}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Car className="h-4 w-4 text-primary" />
-                        <div className="flex-1">
-                          <span className="text-xs text-muted-foreground mr-2">VIN:</span>
-                          <span className="font-mono font-medium text-sm">{selectedClaimForComponents}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <AlertCircle className="h-4 w-4 text-amber-600" />
-                        <div className="flex-1">
-                          <span className="text-xs text-muted-foreground mr-2">Issue:</span>
-                          <span className="font-medium text-sm">{claim?.issueType}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-6">
-              {/* Currently Assigned Components */}
-              {selectedClaimForComponents && (
-                <Card className="border-green-200 bg-green-50">
-                  <CardHeader>
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <Package className="h-4 w-4" />
-                      Currently Assigned Components ({warrantyClaims.find(c => c.vin === selectedClaimForComponents)?.assignedComponents.length || 0})
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {warrantyClaims.find(c => c.vin === selectedClaimForComponents)?.assignedComponents.length ? (
-                      <div className="space-y-2">
-                        {warrantyClaims.find(c => c.vin === selectedClaimForComponents)?.assignedComponents.map((comp) => (
-                          <div key={comp.id} className="flex items-center justify-between p-3 bg-white rounded-lg border">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="font-medium">{comp.component_name}</span>
-                                <Badge variant="outline" className="text-xs">
-                                  {comp.component_sku}
-                                </Badge>
-                                <Badge
-                                  variant={
-                                    comp.status === 'pending' ? 'secondary' :
-                                      comp.status === 'reserved' ? 'default' :
-                                        comp.status === 'dispatched' ? 'outline' : 'default'
-                                  }
-                                  className="text-xs"
-                                >
-                                  {getDisplayStatus(comp.status)}
-                                </Badge>
-                              </div>
-                              <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                                <span className="flex items-center gap-1">
-                                  <Warehouse className="h-3 w-3" />
-                                  {comp.warehouse_name}
-                                </span>
-                                <span>Qty: {comp.quantity}</span>
-                                <span className="text-xs">{new Date(comp.assigned_at).toLocaleString()}</span>
-                              </div>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-600 hover:bg-red-50"
-                              onClick={() => handleRemoveAssignedComponent(selectedClaimForComponents, comp.id)}
-                            >
-                              <Trash className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">No components assigned yet</p>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Assign New Component */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm">Assign New Component</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Warehouse Selection */}
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">Select Warehouse</label>
-                    <Select value={selectedWarehouseForAssignment} onValueChange={setSelectedWarehouseForAssignment}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Choose a warehouse" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {warehouses.map(warehouse => (
-                          <SelectItem key={warehouse.warehouse_id} value={warehouse.warehouse_id}>
-                            <div className="flex items-center gap-2">
-                              <Warehouse className="h-4 w-4" />
-                              {warehouse.name}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Component Selection (filtered by warehouse) */}
-                  {selectedWarehouseForAssignment && (
-                    <div>
-                      <label className="text-sm font-medium mb-2 block">Select Component</label>
-                      <Select
-                        value={selectedComponentForAssignment}
-                        onValueChange={setSelectedComponentForAssignment}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Choose a component" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {stocks
-                            .filter(s => s.warehouse_id === selectedWarehouseForAssignment)
-                            .map(stock => {
-                              const component = typeComponents.find(c => c.type_component_id === stock.type_component_id);
-                              const availableStock = stock.quantity_in_stock - stock.quantity_reserved;
-                              if (!component) return null;
-                              return (
-                                <SelectItem
-                                  key={stock.stock_id}
-                                  value={component.type_component_id}
-                                  disabled={availableStock <= 0}
-                                >
-                                  <div className="flex items-center justify-between w-full gap-4">
-                                    <span>{component.name}</span>
-                                    <span className="text-xs">
-                                      <Badge variant={availableStock > 5 ? 'default' : availableStock > 0 ? 'secondary' : 'destructive'}>
-                                        Stock: {availableStock}
-                                      </Badge>
-                                    </span>
-                                  </div>
-                                </SelectItem>
-                              );
-                            })}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {/* Quantity Input with Stock Info */}
-                  {selectedComponentForAssignment && selectedWarehouseForAssignment && (
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="text-sm font-medium">Quantity</label>
-                        <span className="text-xs text-muted-foreground">
-                          Available: {getAvailableStock(selectedWarehouseForAssignment, selectedComponentForAssignment)} units
-                        </span>
-                      </div>
-                      <Input
-                        type="number"
-                        min="1"
-                        max={getAvailableStock(selectedWarehouseForAssignment, selectedComponentForAssignment)}
-                        value={componentQuantity}
-                        onChange={(e) => setComponentQuantity(parseInt(e.target.value) || 1)}
-                        className="w-full"
-                      />
-                      {componentQuantity > getAvailableStock(selectedWarehouseForAssignment, selectedComponentForAssignment) && (
-                        <p className="text-xs text-red-600 mt-1">
-                          ⚠️ Insufficient stock! Only {getAvailableStock(selectedWarehouseForAssignment, selectedComponentForAssignment)} units available.
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Assign Button */}
-                  <Button
-                    onClick={handleAssignComponent}
-                    disabled={!selectedWarehouseForAssignment || !selectedComponentForAssignment || componentQuantity <= 0}
-                    className="w-full"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Assign Component
-                  </Button>
-                </CardContent>
-              </Card>
             </div>
           </DialogContent>
         </Dialog>
