@@ -234,6 +234,16 @@ class VehicleProcessingRecordRepository {
                 "warrantyStatus",
                 "status",
                 "rejectionReason",
+                "repairTechId",
+                "quantity",
+              ],
+
+              include: [
+                {
+                  model: TypeComponent,
+                  as: "typeComponent",
+                  attributes: ["typeComponentId", "name", "category"],
+                },
               ],
             },
           ],
