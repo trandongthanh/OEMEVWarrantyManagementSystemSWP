@@ -1,80 +1,97 @@
-import { where } from "sequelize";
 import db from "../models/index.cjs";
 
-const { GuaranteeCase, VehicleProcessingRecord, Vehicle, User } = db;
+const { GuaranteeCase, VehicleProcessingRecord, Vehicle, User, CaseLine } = db;
 
 class GuaranteeCaseRepository {
-  createGuaranteeCases = async ({ guaranteeCases }, option = null) => {
+  createGuaranteeCases = async ({ guaranteeCases }, transaction = null) => {
     const newGuaranteeCases = await GuaranteeCase.bulkCreate(guaranteeCases, {
-      transaction: option,
+      transaction: transaction,
     });
 
     return newGuaranteeCases.map((item) => item.toJSON());
   };
 
+  findByRecordId = async (
+    { vehicleProcessingRecordId },
+    transaction = null,
+    lock = null
+  ) => {
+    const guaranteeCases = await GuaranteeCase.findAll({
+      where: { vehicleProcessingRecordId },
+      transaction,
+      lock,
+    });
+
+    return guaranteeCases.map((gc) => gc.toJSON());
+  };
+
   updateMainTechnician = async (
     { vehicleProcessingRecordId, technicianId },
-    option = null
+    transaction = null
   ) => {
-    const rowEffect = await GuaranteeCase.update(
+    const [affectedRows] = await GuaranteeCase.update(
       {
         leadTechId: technicianId,
+        status: "IN_DIAGNOSIS",
       },
       {
         where: {
           vehicleProcessingRecordId: vehicleProcessingRecordId,
         },
-        transaction: option,
+
+        transaction: transaction,
       }
     );
 
-    if (rowEffect <= 0) {
-      return null;
+    if (affectedRows === 0) {
+      return affectedRows;
     }
 
-    const updatedGuaranteeCases = await GuaranteeCase.findAll({
-      where: {
-        vehicleProcessingRecordId: vehicleProcessingRecordId,
-      },
-
-      include: [
-        {
-          model: User,
-          as: "leadTechnicianCases",
-          attributes: ["userId", "name"],
-        },
-      ],
-
-      transaction: option,
-    });
-
-    if (!updatedGuaranteeCases) {
-      return null;
-    }
-
-    return updatedGuaranteeCases.map((updatedGuaranteeCase) =>
-      updatedGuaranteeCase.toJSON()
+    const updatedGuaranteeCases = await this.findByRecordId(
+      { vehicleProcessingRecordId },
+      transaction
     );
+
+    return updatedGuaranteeCases.map((gc) => gc);
   };
 
-  validateGuaranteeCase = async ({ guaranteeCaseId }, option = null) => {
+  findDetailById = async ({ guaranteeCaseId }, transaction = null) => {
     const existingGuaranteeCase = await GuaranteeCase.findByPk(
       guaranteeCaseId,
       {
-        transaction: option,
+        transaction: transaction,
         attributes: ["leadTechId", "status"],
         include: [
           {
             model: VehicleProcessingRecord,
             as: "vehicleProcessingRecord",
-            attributes: ["vehicleProcessingRecordId"],
+            attributes: ["vehicleProcessingRecordId", "odometer"],
 
             include: [
               {
                 model: Vehicle,
                 as: "vehicle",
-                attributes: ["vehicleModelId"],
+                attributes: ["vin", "vehicleModelId"],
+                required: true,
               },
+              {
+                model: User,
+                as: "createdByStaff",
+                attributes: ["userId", "name", "serviceCenterId"],
+
+                required: true,
+              },
+            ],
+          },
+          {
+            model: CaseLine,
+            as: "caseLines",
+            attributes: [
+              "id",
+              "typeComponentId",
+              "quantity",
+              "warrantyStatus",
+              "status",
             ],
           },
         ],
@@ -89,11 +106,10 @@ class GuaranteeCaseRepository {
   };
 
   updateStatus = async ({ guaranteeCaseId, status }, option = null) => {
-    const rowEffect = await GuaranteeCase.update(
+    const [rowEffect] = await GuaranteeCase.update(
       { status },
       {
         where: { guaranteeCaseId: guaranteeCaseId },
-        returning: true,
         transaction: option,
       }
     );

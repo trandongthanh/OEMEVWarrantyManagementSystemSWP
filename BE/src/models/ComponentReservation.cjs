@@ -8,25 +8,73 @@ module.exports = (sequelize, DataTypes) => {
         primaryKey: true,
         field: "reservation_id",
       },
+
       caseLineId: {
         type: DataTypes.UUID,
         allowNull: false,
         field: "case_line_id",
       },
-      stockId: {
+
+      componentId: {
         type: DataTypes.UUID,
         allowNull: false,
-        field: "stock_id",
+        field: "component_id",
       },
-      quantity: {
-        type: DataTypes.INTEGER,
-        allowNull: false,
-      },
+
       status: {
-        type: DataTypes.ENUM("RESERVED", "PICKED", "USED", "CANCELLED"),
+        type: DataTypes.ENUM("RESERVED", "PICKED_UP", "INSTALLED", "CANCELLED"),
         allowNull: false,
         defaultValue: "RESERVED",
         field: "status",
+      },
+
+      pickedUpBy: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        field: "picked_up_by",
+      },
+
+      pickedUpAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        field: "picked_up_at",
+      },
+
+      installedAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        field: "installed_at",
+      },
+
+      oldComponentSerial: {
+        type: DataTypes.STRING(100),
+        allowNull: true,
+        field: "old_component_serial",
+      },
+
+      oldComponentCondition: {
+        type: DataTypes.ENUM("DEFECTIVE", "DAMAGED"),
+        allowNull: true,
+        field: "old_component_condition",
+      },
+
+      oldComponentReturned: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        field: "old_component_returned",
+      },
+
+      returnedAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        field: "returned_at",
+      },
+
+      cancelledAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        field: "cancelled_at",
       },
     },
     {
@@ -36,12 +84,18 @@ module.exports = (sequelize, DataTypes) => {
 
   ComponentReservation.associate = function (models) {
     ComponentReservation.belongsTo(models.CaseLine, {
-      foreignKey: "caseLineId",
+      foreignKey: "case_line_id",
       as: "caseLine",
     });
-    ComponentReservation.belongsTo(models.Stock, {
-      foreignKey: "stockId",
-      as: "stock",
+
+    ComponentReservation.belongsTo(models.Component, {
+      foreignKey: "component_id",
+      as: "component",
+    });
+
+    ComponentReservation.belongsTo(models.User, {
+      foreignKey: "picked_up_by",
+      as: "pickedUpByTech",
     });
   };
 

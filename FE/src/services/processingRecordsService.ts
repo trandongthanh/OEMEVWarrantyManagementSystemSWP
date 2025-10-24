@@ -3,6 +3,7 @@ import axios from 'axios';
 const API_BASE_URL = 'http://localhost:3000/api/v1';
 
 export interface ProcessingRecord {
+  recordId?: string; // UUID of the processing record (if available from API)
   vin: string;
   checkInDate: string;
   odometer: number;
@@ -150,6 +151,43 @@ export const processingRecordsService = {
       return groupedRecords;
     } catch (error) {
       console.error('Error fetching and grouping processing records:', error);
+      throw error;
+    }
+  },
+
+  // Get compatible components for a processing record
+  getCompatibleComponents: async (
+    recordId: string, 
+    params?: { category?: string; searchName?: string }
+  ): Promise<Array<{ typeComponentId: string; name: string }>> => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.category) queryParams.append('category', params.category);
+      if (params?.searchName) queryParams.append('searchName', params.searchName);
+      
+      const url = `/processing-records/${recordId}/compatible-components${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      
+      console.log('🔍 Fetching compatible components:', url);
+      const response = await apiClient.get(url);
+      console.log('✅ Compatible components response:', response.data);
+      
+      return response.data?.data?.result || [];
+    } catch (error) {
+      console.error('❌ Error fetching compatible components:', error);
+      throw error;
+    }
+  },
+
+  // Get processing record detail by recordId
+  getProcessingRecordById: async (recordId: string): Promise<ProcessingRecord> => {
+    try {
+      console.log('🔍 Fetching processing record detail for:', recordId);
+      const response = await apiClient.get(`/processing-records/${recordId}`);
+      console.log('✅ Processing record detail response:', response.data);
+      
+      return response.data?.data?.record || response.data?.data || response.data;
+    } catch (error) {
+      console.error('❌ Error fetching processing record detail:', error);
       throw error;
     }
   }

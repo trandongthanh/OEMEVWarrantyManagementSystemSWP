@@ -7,222 +7,302 @@ import {
 } from "../error/index.js";
 
 import { formatUTCtzHCM } from "../util/formatUTCtzHCM.js";
-import { ro } from "@faker-js/faker";
-import { allocateStock } from "../util/allocateStock.js";
-import { validate } from "../api/middleware/index.js";
-import guaranteeCaseToCreateStockValidator from "../validators/guaranteeCaseToCreateStock.validator.js";
+import { Transaction } from "sequelize";
+import dayjs from "dayjs";
 
 class VehicleProcessingRecordService {
+  #notificationService;
+  #vehicleProcessingRecordRepository;
+  #guaranteeCaseRepository;
+  #vehicleRepository;
+  #taskAssignmentRepository;
+  #userRepository;
+
   constructor({
     vehicleProcessingRecordRepository,
     guaranteeCaseRepository,
     vehicleRepository,
-    serviceCenterService,
-    customerService,
-    taskAssignemntRepository,
-    componentReservationRepository,
-    wareHouseRepository,
+    notificationService,
+    userRepository,
+    taskAssignmentRepository,
   }) {
-    this.vehicleProcessingRecordRepository = vehicleProcessingRecordRepository;
-    this.guaranteeCaseRepository = guaranteeCaseRepository;
-    this.vehicleRepository = vehicleRepository;
-    this.serviceCenterService = serviceCenterService;
-    this.customerService = customerService;
-    this.taskAssignemntRepository = taskAssignemntRepository;
-    this.componentReservationRepository = componentReservationRepository;
-    this.wareHouseRepository = wareHouseRepository;
+    this.#vehicleProcessingRecordRepository = vehicleProcessingRecordRepository;
+    this.#guaranteeCaseRepository = guaranteeCaseRepository;
+    this.#vehicleRepository = vehicleRepository;
+    this.#taskAssignmentRepository = taskAssignmentRepository;
+    this.#notificationService = notificationService;
+    this.#userRepository = userRepository;
   }
 
   createRecord = async ({
-    odometer,
-    createdByStaffId,
     vin,
+    odometer,
     guaranteeCases,
+    visitorInfo,
+    createdByStaffId,
+    serviceCenterId,
     companyId,
   }) => {
-    if (!odometer || !createdByStaffId || !vin) {
-      throw new Error(
-        "Missing required fields to create vehicle processing record"
+    if (!createdByStaffId || !companyId) {
+      throw new ForbiddenError("You don't have permission to create record");
+    }
+
+    const rawResult = await db.sequelize.transaction(async (t) => {
+      const existingVehicle = await this.#vehicleRepository.findByVinAndCompany(
+        {
+          vin: vin,
+          companyId: companyId,
+        },
+        t,
+        Transaction.LOCK.SHARE
       );
-    }
-
-    if (
-      !guaranteeCases ||
-      !Array.isArray(guaranteeCases) ||
-      guaranteeCases.length <= 0
-    ) {
-      throw new BadRequestError("At least one guarantee case is required.");
-    }
-
-    for (const caseItem of guaranteeCases) {
-      if (!caseItem.contentGuarantee) {
-        throw new BadRequestError("Guaranteecase must provide content");
-      }
-    }
-
-    if (odometer < 0) {
-      throw new Error("Odometer cannot be negative");
-    }
-
-    return await db.sequelize.transaction(async (t) => {
-      const existingVehicle =
-        await this.vehicleRepository.findByVinAndCompanyWithOwner(
-          {
-            vin: vin,
-            companyId: companyId,
-          },
-          t
-        );
 
       if (!existingVehicle) {
         throw new NotFoundError(`Cannot find vehicle with ${vin}`);
       }
 
-      if (!existingVehicle.owner) {
+      if (!existingVehicle?.owner) {
         throw new NotFoundError(
           `Vehicle with ${vin} does not have an owner, cannot create a record`
         );
       }
 
       const existingRecord =
-        await this.vehicleProcessingRecordRepository.findRecordIsNotCompleted({
-          vin: vin,
-        });
+        await this.#vehicleProcessingRecordRepository.findRecordIsNotCompleted(
+          {
+            vin: vin,
+          },
+          t,
+          Transaction.LOCK.SHARE
+        );
 
       if (existingRecord) {
         throw new ConflictError("Vehicle already has an active record");
       }
 
       const newRecord =
-        await this.vehicleProcessingRecordRepository.createRecord(
+        await this.#vehicleProcessingRecordRepository.createRecord(
           {
             odometer,
             createdByStaffId,
             vin,
+            visitorInfo,
+            checkInDate: dayjs(),
           },
           t
         );
 
-      const guaranteeCasesWithRecordId = guaranteeCases.map((guaranteeCase) => {
+      if (!newRecord) {
+        throw new Error("Failed to create vehicle processing record");
+      }
+
+      const dataGuaranteeCaseToCreate = guaranteeCases.map((guaranteeCase) => {
         return {
           ...guaranteeCase,
-          vehicleProcessingRecordId: newRecord.vehicleProcessingRecordId,
+          vehicleProcessingRecordId: newRecord?.vehicleProcessingRecordId,
         };
       });
 
       const newGuaranteeCases =
-        await this.guaranteeCaseRepository.createGuaranteeCases(
+        await this.#guaranteeCaseRepository.createGuaranteeCases(
           {
-            guaranteeCases: guaranteeCasesWithRecordId,
+            guaranteeCases: dataGuaranteeCaseToCreate,
           },
           t
         );
 
-      const formatGuaranteeCases = newGuaranteeCases.map((guaranteeCase) => {
-        return {
-          ...guaranteeCase,
-          openedAt: formatUTCtzHCM(newRecord.openedAt),
-          createdAt: formatUTCtzHCM(newRecord.createdAt),
-          updatedAt: formatUTCtzHCM(newRecord.updatedAt),
-        };
-      });
+      if (!newGuaranteeCases || newGuaranteeCases.length === 0) {
+        throw new Error("Failed to create guarantee cases");
+      }
 
+      return { newRecord, newGuaranteeCases };
+    });
+
+    const { newRecord, newGuaranteeCases } = rawResult;
+
+    const formatGuaranteeCases = newGuaranteeCases.map((guaranteeCase) => {
       return {
-        record: {
-          ...newRecord,
-          openedAt: formatUTCtzHCM(newRecord.openedAt),
-          createdAt: formatUTCtzHCM(newRecord.createdAt),
-          updatedAt: formatUTCtzHCM(newRecord.updatedAt),
-          case: formatGuaranteeCases,
-        },
+        ...guaranteeCase,
+        createdAt: formatUTCtzHCM(newRecord?.createdAt),
       };
     });
+
+    const formattedRecord = {
+      ...newRecord,
+      createdAt: formatUTCtzHCM(newRecord?.createdAt),
+
+      guaranteeCases: formatGuaranteeCases,
+    };
+
+    const room = `service_center_manager_${serviceCenterId}`;
+    const event = "new_record_notification";
+    const payload = {
+      message: "A new vehicle processing record has been created",
+      record: formattedRecord,
+      room: room,
+      sendAt: dayjs(),
+    };
+
+    this.#notificationService.sendToRoom(room, event, payload);
+
+    return formattedRecord;
   };
 
   updateMainTechnician = async ({
     vehicleProcessingRecordId,
     technicianId,
+    serviceCenterId,
   }) => {
-    // if (!vehicleProcessingRecordId || !technicianId) {
-    //   throw new BadRequestError(
-    //     "vehicleProcessingRecordId, technicianId is required"
-    //   );
-    // }
+    let oldTechnicianId = null;
 
-    return await db.sequelize.transaction(async (t) => {
-      const updatedRecord =
-        await this.vehicleProcessingRecordRepository.updateMainTechnician(
-          {
-            vehicleProcessingRecordId: vehicleProcessingRecordId,
-            technicianId: technicianId,
-          },
-          t
+    const rawResult = await db.sequelize.transaction(async (t) => {
+      await this.#canAssignTask({
+        serviceCenterId: serviceCenterId,
+        technicianId: technicianId,
+        vehicleProcessingRecordId: vehicleProcessingRecordId,
+        transaction: t,
+        lock: Transaction.LOCK.UPDATE,
+      });
+
+      const existingRecord =
+        await this.#vehicleProcessingRecordRepository.findDetailById(
+          { id: vehicleProcessingRecordId },
+          t,
+          Transaction.LOCK.UPDATE
         );
 
-      const updatedGuaranteeCases =
-        await this.guaranteeCaseRepository.updateMainTechnician(
-          {
-            vehicleProcessingRecordId: vehicleProcessingRecordId,
-            technicianId: technicianId,
-          },
-          t
-        );
-      const updatedGuaranteeCaseIds = updatedGuaranteeCases.map(
-        (item) => item.guaranteeCaseId
+      if (!existingRecord) {
+        throw new NotFoundError("Record not found.");
+      }
+
+      oldTechnicianId = existingRecord?.mainTechnician?.userId;
+
+      const guaranteeCaseIds = existingRecord?.guaranteeCases.map(
+        (gc) => gc?.guaranteeCaseId
       );
 
-      const newTaskAssignments =
-        await this.taskAssignemntRepository.bulkCreateTaskAssignments(
-          {
-            guaranteeCaseIds: updatedGuaranteeCaseIds,
-            technicianId: technicianId,
-          },
-          t
-        );
+      if (oldTechnicianId !== technicianId && oldTechnicianId) {
+        const affectedRows =
+          await this.#taskAssignmentRepository.cancelAssignmentsByGuaranteeCaseIds(
+            {
+              guaranteeCaseIds: guaranteeCaseIds,
+            },
+            t
+          );
 
-      const formatUpdatedRecord = {
+        if (affectedRows === 0) {
+          throw new Error("No assignments were cancelled");
+        }
+      }
+
+      const [updatedRecord, updatedGuaranteeCases, newTaskAssignments] =
+        await Promise.all([
+          this.#vehicleProcessingRecordRepository.updateMainTechnician(
+            {
+              vehicleProcessingRecordId: vehicleProcessingRecordId,
+              technicianId: technicianId,
+            },
+            t
+          ),
+
+          this.#guaranteeCaseRepository.updateMainTechnician(
+            {
+              vehicleProcessingRecordId: vehicleProcessingRecordId,
+              technicianId: technicianId,
+            },
+            t
+          ),
+
+          this.#taskAssignmentRepository.bulkCreateTaskAssignments(
+            { guaranteeCaseIds: guaranteeCaseIds, technicianId: technicianId },
+            t
+          ),
+        ]);
+
+      return { updatedRecord, updatedGuaranteeCases, newTaskAssignments };
+    });
+
+    const { updatedRecord, updatedGuaranteeCases, newTaskAssignments } =
+      rawResult;
+
+    if (updatedRecord === 0) {
+      throw new NotFoundError("Record not found or not updated.");
+    }
+
+    if (updatedGuaranteeCases === 0) {
+      throw new Error("Guarantee cases were not updated.");
+    }
+
+    const formatUpdatedRecord = {
+      recordId: updatedRecord?.vehicleProcessingRecordId,
+      vin: updatedRecord?.vin,
+      status: updatedRecord?.status,
+      technician: updatedRecord?.mainTechnician,
+      updatedCases: updatedGuaranteeCases.map((guaranteeCase) => ({
+        caseId: guaranteeCase?.guaranteeCaseId,
+        status: guaranteeCase?.status,
+        leadTech: guaranteeCase?.leadTechId,
+      })),
+      assignments: newTaskAssignments.map((assignment) => ({
+        assignmentId: assignment?.taskAssignmentId,
+        guaranteeCaseId: assignment?.guaranteeCaseId,
+        technicianId: assignment?.technicianId,
+        taskType: assignment?.taskType,
+        assignedAt: formatUTCtzHCM(assignment?.assignedAt),
+      })),
+    };
+
+    if (oldTechnicianId && oldTechnicianId !== technicianId) {
+      const oldTechRoom = `user_${oldTechnicianId}`;
+      const unassignPayload = {
+        message: "You have been unassigned from tasks.",
         recordId: updatedRecord?.vehicleProcessingRecordId,
         vin: updatedRecord?.vin,
-        status: updatedRecord?.status,
-        technician: updatedRecord?.mainTechnician,
-        updatedCases: updatedGuaranteeCases.map((guaranteeCase) => ({
-          caseId: guaranteeCase?.guaranteeCaseId,
-          status: guaranteeCase?.status,
-          leadTech: guaranteeCase?.leadTechnicianCases,
-        })),
-        assignments: newTaskAssignments.map((assignment) => ({
-          assignmentId: assignment?.taskAssignmentId,
-          guaranteeCaseId: assignment?.guaranteeCaseId,
-          technicianId: assignment?.technicianId,
-          taskType: assignment?.taskType,
-          assignedAt: formatUTCtzHCM(assignment?.assignedAt),
-        })),
+        reason: "Reassigned to another technician",
+        timestamp: formatUTCtzHCM(dayjs()),
+        room: oldTechRoom,
       };
 
-      return formatUpdatedRecord;
-    });
+      this.#notificationService.sendToRoom(
+        oldTechRoom,
+        "task_unassigned_notification",
+        unassignPayload
+      );
+    }
+
+    const room = `user_${technicianId}`;
+    const event = "new_task_assignment_notification";
+    const payload = {
+      message: "You have been assigned new tasks.",
+      assignmentDetails: formatUpdatedRecord,
+      timestamp: dayjs(),
+      room: room,
+    };
+
+    this.#notificationService.sendToRoom(room, event, payload);
+
+    return formatUpdatedRecord;
   };
 
-  findById = async ({ id, userId, roleName, serviceCenterId }) => {
-    if (!id || !userId || !roleName) {
-      throw new BadRequestError("RecordId, userId, and roleName are required");
+  findDetailById = async ({ id, userId, serviceCenterId }) => {
+    if (!id) {
+      throw new BadRequestError("RecordId is required");
     }
 
-    const record = await this.vehicleProcessingRecordRepository.findById({
-      id: id,
-    });
+    const record = await this.#vehicleProcessingRecordRepository.findDetailById(
+      { id }
+    );
 
     if (!record) {
-      throw new NotFoundError(`Record with id ${id} not found`);
+      throw new NotFoundError("Record not found");
     }
 
-    const isOwner = record.createdByStaff?.userId === userId;
-    const isMainTechnician = record.mainTechnician?.userId === userId;
-    const isManager =
-      roleName === "service_center_manager" &&
+    const hasPermission =
+      record.createdByStaff?.userId === userId ||
+      record.mainTechnician?.userId === userId ||
       record.createdByStaff?.serviceCenterId === serviceCenterId;
 
-    if (!isOwner && !isMainTechnician && !isManager) {
+    if (!hasPermission) {
       throw new ForbiddenError(
         "You do not have permission to view this record"
       );
@@ -245,10 +325,13 @@ class VehicleProcessingRecordService {
 
     const offset = (page - 1) * limit;
 
-    const records = await this.vehicleProcessingRecordRepository.findAll({
+    const limitNumber = parseInt(limit);
+    const offsetNumber = parseInt(offset);
+
+    const records = await this.#vehicleProcessingRecordRepository.findAll({
       serviceCenterId: serviceCenterId,
-      limit: limit,
-      offset: offset,
+      limit: limitNumber,
+      offset: offsetNumber,
       status: status,
       userId: userId,
       roleName: roleName,
@@ -261,167 +344,60 @@ class VehicleProcessingRecordService {
     return records;
   };
 
-  bulkUpdateStockQuantities = async ({
-    caseId,
-    caselines,
-    serviceCenterId,
-    userId,
+  #canAssignTask = async ({
+    serviceCenterId: managerServiceCenterId,
+    technicianId,
+    vehicleProcessingRecordId,
+    transaction = null,
+    lock = null,
   }) => {
-    if (!caseId || !caselines || !serviceCenterId || !userId) {
-      throw new BadRequestError(
-        "caseId, caselines, serviceCenterId, userId are required"
+    const [record, technician] = await Promise.all([
+      this.#vehicleProcessingRecordRepository.findDetailById(
+        { id: vehicleProcessingRecordId },
+        transaction,
+        lock
+      ),
+
+      this.#userRepository.findUserById(
+        { userId: technicianId },
+        transaction,
+        lock
+      ),
+    ]);
+
+    if (!record) {
+      throw new NotFoundError("Record not found.");
+    }
+
+    if (!technician) {
+      throw new NotFoundError(`Technician with ID: ${technicianId} not found.`);
+    }
+
+    const ASSIGNABLE_STATUSES = ["CHECKED_IN", "IN_DIAGNOSIS"];
+
+    if (!ASSIGNABLE_STATUSES.includes(record.status)) {
+      throw new ForbiddenError(
+        "Task can only be assigned to checked-in records or records in diagnosis."
       );
     }
 
-    const existingGuaranteeCase =
-      await this.guaranteeCaseRepository.validateGuaranteeCase({
-        guaranteeCaseId: caseId,
-      });
-
-    const guaranteeCaseStatus = existingGuaranteeCase?.status;
-    guaranteeCaseToCreateStockValidator.validateAsync({
-      guaranteeCaseStatus: guaranteeCaseStatus,
-    });
-
-    const vehicleModelId =
-      existingGuaranteeCase?.vehicleProcessingRecord?.vehicle?.vehicleModelId;
-
-    if (!existingGuaranteeCase) {
-      throw new NotFoundError(`Guarantee case with id ${caseId} not found`);
+    if (technician.role?.roleName !== "service_center_technician") {
+      throw new ForbiddenError(
+        "Assigned user must have role service_center_technician"
+      );
     }
 
-    return await db.sequelize.transaction(async (t) => {
-      const typeComponentIds = [];
-      for (const caseline of caselines) {
-        if (caseline.componentId) {
-          typeComponentIds.push(caseline.componentId);
-        }
-      }
-
-      const requiredQuantitiesMap = new Map();
-      for (const caseline of caselines) {
-        const componentId = caseline.componentId;
-        const quantity = caseline.quantity;
-
-        const currentQuantity = requiredQuantitiesMap.get(componentId) || 0;
-        requiredQuantitiesMap.set(componentId, currentQuantity + quantity);
-      }
-
-      const stocks =
-        await this.wareHouseRepository.findStocksByTypeComponentOrderByWarehousePriority(
-          { typeComponentIds, serviceCenterId, vehicleModelId },
-          t,
-          t.LOCK.UPDATE
-        );
-
-      for (const [companyId, quantityNeeded] of requiredQuantitiesMap) {
-        const stocksForComponent = stocks.filter(
-          (stock) => stock.typeComponent.typeComponentId === companyId
-        );
-
-        const availableQuantity = stocksForComponent.reduce(
-          (sum, stock) => sum + stock.quantityAvailable,
-          0
-        );
-
-        if (availableQuantity < quantityNeeded) {
-          throw new BadRequestError(
-            `Insufficient stock for component ${companyId}. Available: ${availableQuantity}, Requested: ${quantityNeeded}`
-          );
-        }
-      }
-
-      const arrayStocksToUpdate = [];
-      for (const caseline of caselines) {
-        const stocksForComponent = stocks.filter(
-          (stock) =>
-            // console.log(
-            //   "stock",
-            //   stock.typeComponent.typeComponentId,
-            //   caseline.componentId
-            // ),
-            stock.typeComponent.typeComponentId === caseline.componentId
-        );
-
-        const availableQuantity = stocksForComponent.reduce(
-          (sum, stock) => sum + stock.quantityAvailable,
-          0
-        );
-
-        // const quantityNeedForComponents = requiredQuantitiesMap.get(
-        //   caseline.componentId
-        // );
-
-        // if (quantityNeedForComponents > availableQuantity) {
-        //   throw new BadRequestError(
-        //     `Insufficient stock for component ${caseline.componentId}. Available: ${availableQuantity}, Requested: ${quantityNeedForComponents}`
-        //   );
-        // }
-
-        if (availableQuantity < caseline.quantity) {
-          throw new BadRequestError(
-            `Insufficient stock for component ${caseline.componentId}. Available: ${availableQuantity}, Requested: ${caseline.quantity}`
-          );
-        }
-
-        const reservations = allocateStock({
-          stocks: stocksForComponent,
-          quantity: caseline.quantity,
-        });
-
-        const stocksForCaseLine = [];
-        for (const reservation of reservations) {
-          const stocksToUpdate = stocks.find(
-            (stock) => stock.stockId === reservation.stockId
-          );
-
-          if (!stocksToUpdate) {
-            throw new NotFoundError(
-              `Stock with id ${reservation.stockId} not found`
-            );
-          }
-
-          stocksToUpdate.quantityReserved += reservation.quantity;
-
-          stocksForCaseLine.push({
-            stockId: stocksToUpdate.stockId,
-            quantityReserved: stocksToUpdate.quantityReserved,
-            caseLineId: caseline.id,
-          });
-        }
-
-        arrayStocksToUpdate.push(...stocksForCaseLine);
-      }
-
-      const updatedStocks =
-        await this.wareHouseRepository.bulkUpdateStockQuantities(
-          {
-            reservations: arrayStocksToUpdate,
-          },
-          t
-        );
-
-      const componentReservationsToCreate = arrayStocksToUpdate.map(
-        (stock) => ({
-          caseLineId: stock.caseLineId,
-          stockId: stock.stockId,
-          quantity: stock.quantityReserved,
-        })
+    if (record.createdByStaff?.serviceCenterId !== managerServiceCenterId) {
+      throw new ForbiddenError(
+        "You can only assign tasks for records in your own service center."
       );
+    }
 
-      const newComponentReservations =
-        await this.componentReservationRepository.bulkCreate(
-          {
-            componentReservations: componentReservationsToCreate,
-          },
-          t
-        );
-
-      return {
-        updatedStocks,
-        newComponentReservations,
-      };
-    });
+    if (technician.serviceCenterId !== managerServiceCenterId) {
+      throw new ForbiddenError(
+        "You can only assign technicians from your own service center."
+      );
+    }
   };
 }
 

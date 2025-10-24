@@ -1,31 +1,35 @@
-import { BadRequestError, NotFoundError } from "../error/index.js";
+import { AuthenticationError } from "../error/index.js";
 
 class AuthService {
+  #userRepository;
+  #hashService;
+  #tokenService;
+
   constructor({ userRepository, hashService, tokenService }) {
-    this.userRepository = userRepository;
-    this.hashService = hashService;
-    this.tokenService = tokenService;
+    this.#userRepository = userRepository;
+    this.#hashService = hashService;
+    this.#tokenService = tokenService;
   }
 
   login = async ({ username, password }) => {
-    const existingUser = await this.userRepository.findByUsername({
+    const existingUser = await this.#userRepository.findByUsername({
       username: username,
     });
 
     if (!existingUser) {
-      throw new NotFoundError("Can not find user");
+      throw new AuthenticationError("Username or password is incorrect");
     }
 
-    const isMatchedPassword = await this.hashService.compare({
+    const isMatchedPassword = await this.#hashService.compare({
       string: password,
       hashed: existingUser.password,
     });
 
     if (!isMatchedPassword) {
-      throw new BadRequestError("Password is wrong");
+      throw new AuthenticationError("Username or password is incorrect");
     }
 
-    const token = this.tokenService.generateToken({
+    const token = this.#tokenService.generateToken({
       userId: existingUser.userId,
       roleName: existingUser.role.roleName,
       serviceCenterId: existingUser.serviceCenterId,

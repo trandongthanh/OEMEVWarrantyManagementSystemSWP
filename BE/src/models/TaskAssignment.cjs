@@ -4,7 +4,7 @@ module.exports = (sequelize, DataTypes) => {
     {
       taskAssignmentId: {
         type: DataTypes.UUID,
-        defaultValue: DataTypes.UUIDV1,
+        defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
         field: "task_assignment_id",
       },
@@ -17,13 +17,11 @@ module.exports = (sequelize, DataTypes) => {
 
       guaranteeCaseId: {
         type: DataTypes.UUID,
-        allowNull: true,
         field: "guarantee_case_id",
       },
 
       caseLineId: {
         type: DataTypes.UUID,
-        allowNull: true,
         field: "case_line_id",
       },
 

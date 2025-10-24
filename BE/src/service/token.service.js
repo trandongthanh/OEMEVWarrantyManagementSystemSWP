@@ -2,7 +2,7 @@ import jwt from "jsonwebtoken";
 import { configDotenv } from "dotenv";
 configDotenv();
 
-const SECRET_KEY = process.env.SECRET_KEY;
+const SECRET_KEY = process.env.JWT_SECRET;
 class TokenService {
   generateToken({ userId, roleName, serviceCenterId, companyId }) {
     const payload = { userId, roleName, serviceCenterId, companyId };

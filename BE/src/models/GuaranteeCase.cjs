@@ -16,14 +16,9 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       status: {
-        type: DataTypes.ENUM(
-          "PENDING_DIAGNOSIS",
-          "DIAGNOSED",
-          "COMPLETED",
-          "REJECTED"
-        ),
+        type: DataTypes.ENUM("PENDING_ASSIGNMENT", "IN_DIAGNOSIS", "DIAGNOSED"),
         allowNull: false,
-        defaultValue: "PENDING_DIAGNOSIS",
+        defaultValue: "PENDING_ASSIGNMENT",
         field: "status",
       },
 
@@ -35,24 +30,7 @@ module.exports = (sequelize, DataTypes) => {
 
       leadTechId: {
         type: DataTypes.UUID,
-        filed: "lech_tech_id",
-      },
-
-      expectedCompletionDate: {
-        type: DataTypes.DATE,
-        field: "expected_completion_date",
-      },
-
-      openedAt: {
-        type: DataTypes.DATE,
-        allowNull: false,
-        defaultValue: DataTypes.NOW,
-        field: "open_at",
-      },
-
-      closeAt: {
-        type: DataTypes.DATE,
-        field: "close_at",
+        field: "lead_tech_id",
       },
     },
     {
@@ -71,10 +49,10 @@ module.exports = (sequelize, DataTypes) => {
       as: "leadTechnicianCases",
     });
 
-    // GuaranteeCase.hasMany(models.PartShipment, {
-    //   foreignKey: "guarantee_case_id",
-    //   as: "partShipMents",
-    // });
+    GuaranteeCase.hasMany(models.CaseLine, {
+      foreignKey: "guarantee_case_id",
+      as: "caseLines",
+    });
 
     // GuaranteeCase.hasMany(models.InstalledPart, {
     //   foreignKey: "guarantee_case_id",

@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "@/hooks/use-toast";
 import { processingRecordsService, ProcessingRecord, ProcessingRecordsByStatus } from "@/services/processingRecordsService";
-import ProcessingRecordsView from "./ProcessingRecordsView";
+import { caseLineService, CaseLineRequest } from "@/services/caseLineService";
 import {
   Wrench,
   FileText,
@@ -28,7 +28,11 @@ import {
   SearchIcon,
   Plus,
   Car,
-  Trash2
+  Trash2,
+  Calendar,
+  Gauge,
+  AlertCircle,
+  RefreshCw
 } from "lucide-react";
 
 interface Component {
@@ -111,6 +115,14 @@ interface CaseLine {
   status: 'draft' | 'submitted' | 'approved' | 'rejected';
 }
 
+interface IssueDiagnosisForm {
+  affectedComponent: string;
+  damageLevel: string;
+  repairPossibility: string;
+  warrantyDecision: string;
+  technicianNotes: string;
+}
+
 // API Interface cho Guarantee Cases
 
 interface GuaranteeCase {
@@ -119,14 +131,6 @@ interface GuaranteeCase {
   status: string;
   recordId: string;
   createdAt: string;
-}
-
-interface CaseLineRequest {
-  diagnosisText: string;
-  correctionText: string;
-  componentId: string | null;
-  quantity: number;
-  warrantyStatus: 'ELIGIBLE' | 'INELIGIBLE';
 }
 
 interface CaseLineResponse {
@@ -159,14 +163,13 @@ const TechnicianDashboard = ({
   const [appliedSearchTerm, setAppliedSearchTerm] = useState("");
   const [componentSearch, setComponentSearch] = useState("");
   const [componentCategoryFilter, setComponentCategoryFilter] = useState<string>("all");
-  const [createCaseLineModalOpen, setCreateCaseLineModalOpen] = useState(false);
-  const [viewCaseModalOpen, setViewCaseModalOpen] = useState(false);
   const [viewCaseLineModalOpen, setViewCaseLineModalOpen] = useState(false);
   const [selectedCaseLine, setSelectedCaseLine] = useState<CaseLine | null>(null);
   const [imagePreviewModalOpen, setImagePreviewModalOpen] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string>("");
   const [confirmRemoveModalOpen, setConfirmRemoveModalOpen] = useState(false);
   const [caseLineToRemove, setCaseLineToRemove] = useState<string | null>(null);
+  // NOTE: createCaseLineModalOpen is not used - modal exists but no trigger button
 
   const [reportPreviewModalOpen, setReportPreviewModalOpen] = useState(false);
   const [updateDetailsModalOpen, setUpdateDetailsModalOpen] = useState(false);
@@ -188,16 +191,38 @@ const TechnicianDashboard = ({
   const [isLoadingRecords, setIsLoadingRecords] = useState(false);
   const [recordsError, setRecordsError] = useState<string | null>(null);
 
-  const [caseLineForm, setCaseLineForm] = useState({
+  // Processing Records View states
+  const [selectedRecord, setSelectedRecord] = useState<ProcessingRecord | null>(null);
+  const [viewCaseModalOpen, setViewCaseModalOpen] = useState(false);
+  const [viewReportModalOpen, setViewReportModalOpen] = useState(false);
+  const [createIssueDiagnosisModalOpen, setCreateIssueDiagnosisModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Processing Records form (uses CaseLineRequest for API)
+  const [caseLineForm, setCaseLineForm] = useState<CaseLineRequest>({
+    diagnosisText: '',
+    correctionText: '',
+    componentId: null,
+    quantity: 1,
+    warrantyStatus: 'ELIGIBLE'
+  });
+
+  // Issue Diagnosis tab form (old modal with different fields)
+  const [issueDiagnosisForm, setIssueDiagnosisForm] = useState<IssueDiagnosisForm>({
+    affectedComponent: '',
     damageLevel: '',
     repairPossibility: '',
     warrantyDecision: '',
-    affectedComponent: '',
     technicianNotes: ''
   });
 
-  // Component search state (for Affected Components field)
+  // Component search state (for Affected Components field in Issue Diagnosis tab)
   const [componentQuery, setComponentQuery] = useState<string>("");
+
+  // Compatible components for Processing Records modal
+  const [compatibleComponents, setCompatibleComponents] = useState<Array<{ typeComponentId: string; name: string }>>([]);
+  const [componentSearchQuery, setComponentSearchQuery] = useState<string>("");
+  const [isLoadingComponents, setIsLoadingComponents] = useState(false);
 
   // Handle file upload
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -245,16 +270,8 @@ const TechnicianDashboard = ({
   });
 
   // State cho API data
-  const [selectedRecord, setSelectedRecord] = useState<ProcessingRecord | null>(null);
   const [selectedGuaranteeCase, setSelectedGuaranteeCase] = useState<GuaranteeCase | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [newCaseLineForm, setNewCaseLineForm] = useState<CaseLineRequest>({
-    diagnosisText: '',
-    correctionText: '',
-    componentId: null,
-    quantity: 1,
-    warrantyStatus: 'ELIGIBLE'
-  });
   const [createdCaseLines, setCreatedCaseLines] = useState<CaseLineResponse[]>([]);
 
   const { user, logout } = useAuth();
@@ -348,33 +365,75 @@ const TechnicianDashboard = ({
     }
   }, []);
 
-  // Legacy fetch function for backwards compatibility
+  // Fetch processing records with IN_DIAGNOSIS status
   const fetchProcessingRecords = useCallback(async () => {
     try {
-      setIsLoading(true);
+      setIsLoadingRecords(true);
+      console.log('📡 Fetching records with status: IN_DIAGNOSIS');
       
-      const data = await apiCall('/processing-records');
-      console.log('Fetched processing records:', data);
+      const inDiagnosisRecords = await processingRecordsService.getProcessingRecordsByStatus('IN_DIAGNOSIS');
       
-      // For backwards compatibility with existing code
-      const records = data.data?.records?.records || data.data?.records || data.data || data || [];
-      setProcessingRecords(Array.isArray(records) ? records : []);
+      console.log('📦 Received records:', inDiagnosisRecords);
+      console.log(`✅ Loaded ${inDiagnosisRecords.length} records in diagnosis`);
       
-      toast({
-        title: "Success",
-        description: `Loaded ${records.length} processing records`,
-      });
+      setRecordsByStatus(prev => ({
+        ...prev,
+        IN_DIAGNOSIS: inDiagnosisRecords
+      }));
+      
+      console.log('💾 State updated with records');
     } catch (error) {
-      console.error('Error fetching processing records:', error);
+      console.error('❌ Error fetching records:', error);
+      if (error instanceof Error) {
+        console.error('❌ Error message:', error.message);
+        console.error('❌ Error stack:', error.stack);
+      }
+      setRecordsError(error instanceof Error ? error.message : "Failed to fetch records");
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to fetch processing records",
+        description: error instanceof Error ? error.message : "Failed to fetch records",
         variant: "destructive"
       });
     } finally {
-      setIsLoading(false);
+      setIsLoadingRecords(false);
     }
-  }, [apiCall]);
+  }, []);
+
+  // Helper functions for Processing Records
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case 'CHECKED_IN': return 'secondary';
+      case 'IN_DIAGNOSIS': return 'default';
+      case 'WAITING_FOR_PARTS': return 'outline';
+      case 'IN_REPAIR': return 'default';
+      case 'COMPLETED': return 'default';
+      case 'PAID': return 'default';
+      case 'CANCELLED': return 'destructive';
+      default: return 'secondary';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+      'CHECKED_IN': 'Checked In',
+      'IN_DIAGNOSIS': 'In Diagnosis',
+      'WAITING_FOR_PARTS': 'Waiting For Parts',
+      'IN_REPAIR': 'In Repair',
+      'COMPLETED': 'Completed',
+      'PAID': 'Paid',
+      'CANCELLED': 'Cancelled',
+    };
+    return labels[status] || status;
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+  };
 
   // Create case lines for a guarantee case
   const createCaseLines = useCallback(async (guaranteeCaseId: string, caseLines: CaseLineRequest[]) => {
@@ -399,15 +458,6 @@ const TechnicianDashboard = ({
       toast({
         title: "Success",
         description: `Created ${newCaseLines.length} case line(s) successfully`,
-      });
-      
-      // Reset form
-      setNewCaseLineForm({
-        diagnosisText: '',
-        correctionText: '',
-        componentId: null,
-        quantity: 1,
-        warrantyStatus: 'ELIGIBLE'
       });
       
       return newCaseLines;
@@ -449,27 +499,115 @@ const TechnicianDashboard = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Handle submit new case line
-  const handleSubmitCaseLine = async () => {
-    if (!selectedGuaranteeCase) {
-      toast({
-        title: "Error",
-        description: "Please select a guarantee case first",
-        variant: "destructive"
-      });
+  // Fetch compatible components for a processing record
+  const fetchCompatibleComponents = useCallback(async (recordId: string, searchName?: string) => {
+    if (!recordId) {
+      console.warn('⚠️ No recordId provided to fetchCompatibleComponents');
       return;
     }
 
-    if (!newCaseLineForm.diagnosisText || !newCaseLineForm.correctionText) {
+    try {
+      setIsLoadingComponents(true);
+      console.log('🔍 Fetching components for recordId:', recordId, 'searchName:', searchName);
+      
+      const components = await processingRecordsService.getCompatibleComponents(
+        recordId,
+        { searchName }
+      );
+      console.log('✅ Fetched components:', components);
+      setCompatibleComponents(components);
+    } catch (error) {
+      console.error('❌ Failed to fetch compatible components:', error);
+      // Don't show toast error on initial load, only on user interaction
+      if (searchName) {
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to load compatible components",
+          variant: "destructive"
+        });
+      }
+      setCompatibleComponents([]);
+    } finally {
+      setIsLoadingComponents(false);
+    }
+  }, []);
+
+  // Handle create issue diagnosis from Processing Records
+  const handleCreateIssueDiagnosis = async () => {
+    if (!caseLineForm.diagnosisText || !caseLineForm.correctionText) {
       toast({
-        title: "Error", 
+        title: "Validation Error",
         description: "Please fill in diagnosis and correction text",
         variant: "destructive"
       });
       return;
     }
 
-    await createCaseLines(selectedGuaranteeCase.guaranteeCaseId, [newCaseLineForm]);
+    if (!selectedRecord || !selectedRecord.guaranteeCases || selectedRecord.guaranteeCases.length === 0) {
+      toast({
+        title: "Error",
+        description: "No guarantee case found for this record",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const guaranteeCase = selectedRecord.guaranteeCases[0];
+      
+      console.log('🚀 Creating case line for guarantee case:', guaranteeCase.guaranteeCaseId);
+
+      const createdCaseLines = await caseLineService.createCaseLines(
+        guaranteeCase.guaranteeCaseId,
+        [caseLineForm]
+      );
+
+      console.log('✅ Case lines created:', createdCaseLines);
+
+      const newCaseLine: CaseLine = {
+        id: createdCaseLines[0].caseLineId,
+        caseId: createdCaseLines[0].guaranteeCaseId,
+        damageLevel: 'N/A',
+        repairPossibility: 'N/A',
+        warrantyDecision: createdCaseLines[0].warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
+        technicianNotes: `${createdCaseLines[0].diagnosisText} | ${createdCaseLines[0].correctionText}`,
+        photos: [...uploadedFileUrls],
+        photoFiles: [...uploadedFiles],
+        createdDate: new Date(createdCaseLines[0].createdAt).toLocaleDateString('en-GB'),
+        status: createdCaseLines[0].status === 'pending' ? 'submitted' : 'approved'
+      };
+
+      setCaseLines(prev => [...prev, newCaseLine]);
+
+      toast({
+        title: "Issue Diagnosis Created",
+        description: `Case line ${createdCaseLines[0].caseLineId.slice(-8)} has been created successfully. View it in the Issue Diagnosis tab.`,
+      });
+
+      setCaseLineForm({
+        diagnosisText: '',
+        correctionText: '',
+        componentId: null,
+        quantity: 1,
+        warrantyStatus: 'ELIGIBLE'
+      });
+      setUploadedFiles([]);
+      setUploadedFileUrls([]);
+      setComponentSearchQuery('');
+      setCompatibleComponents([]);
+      setCreateIssueDiagnosisModalOpen(false);
+      
+    } catch (error) {
+      console.error('❌ Failed to create case line:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create case line",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // useEffect hooks để call API
@@ -905,11 +1043,150 @@ const TechnicianDashboard = ({
 
           {/* Processing Records Tab */}
           <TabsContent value="processing-records">
-            <ProcessingRecordsView 
-              onCaseLineCreated={(caseLine) => {
-                setCaseLines(prev => [...prev, caseLine]);
-              }}
-            />
+            <div className="space-y-6">
+              {/* Processing Records Table */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Processing Records</CardTitle>
+                  <CardDescription>
+                    View and manage vehicle processing records in diagnosis
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>VIN</TableHead>
+                        <TableHead>Vehicle & Model</TableHead>
+                        <TableHead>Odometer</TableHead>
+                        <TableHead>Check-in Date</TableHead>
+                        <TableHead>Technician</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Cases</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {((recordsByStatus.IN_DIAGNOSIS || []).length === 0) ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8 text-slate-500">
+                            <AlertCircle className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+                            <p>No records found</p>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        (recordsByStatus.IN_DIAGNOSIS || []).map((record) => (
+                          <TableRow key={record.recordId || (record.vin + record.checkInDate)}>
+                            <TableCell className="font-mono text-sm">
+                              <div>
+                                <p>{record.vin}</p>
+                                {record.recordId && (
+                                  <p className="text-xs text-muted-foreground">ID: {record.recordId.substring(0, 8)}...</p>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <p className="font-medium">{record.vehicle.model.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Model ID: {record.vehicle.model.vehicleModelId.substring(0, 8)}...
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <p className="text-sm">{record.odometer.toLocaleString()} km</p>
+                            </TableCell>
+                            <TableCell className="text-sm">
+                              {formatDate(record.checkInDate)}
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <p className="text-sm">{record.mainTechnician.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {record.mainTechnician.userId.substring(0, 8)}...
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={getStatusBadgeVariant(record.status)}>
+                                {getStatusLabel(record.status)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">×{record.guaranteeCases.length}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedRecord(record);
+                                    setViewCaseModalOpen(true);
+                                  }}
+                                  title="View Case"
+                                >
+                                  <Eye className="h-3 w-3" />
+                                </Button>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedRecord(record);
+                                    setViewReportModalOpen(true);
+                                  }}
+                                  title="View Report"
+                                >
+                                  <FileText className="h-3 w-3" />
+                                </Button>
+                                <Button 
+                                  variant="default" 
+                                  size="sm"
+                                  className="bg-green-600 hover:bg-green-700 flex items-center justify-center"
+                                  onClick={async () => {
+                                    console.log('🔘 Create Issue Diagnosis button clicked for record:', record);
+                                    
+                                    try {
+                                      // If recordId exists in list, use it directly
+                                      if (record.recordId) {
+                                        console.log('✅ Using recordId from list:', record.recordId);
+                                        setSelectedRecord(record);
+                                        setCreateIssueDiagnosisModalOpen(true);
+                                        fetchCompatibleComponents(record.recordId).catch(error => {
+                                          console.error('❌ Failed to fetch components:', error);
+                                        });
+                                      } else {
+                                        // No recordId in list - need to fetch full record detail
+                                        console.warn('⚠️ No recordId in list, need to fetch by VIN or another identifier');
+                                        
+                                        // For now, just open modal without component search
+                                        setSelectedRecord(record);
+                                        setCreateIssueDiagnosisModalOpen(true);
+                                        
+                                        toast({
+                                          title: "Component Search Unavailable",
+                                          description: "Record ID not available. You can still create case line without component search.",
+                                          variant: "destructive"
+                                        });
+                                      }
+                                    } catch (error) {
+                                      console.error('❌ Error in create diagnosis handler:', error);
+                                    }
+                                  }}
+                                  title="Create Issue Diagnosis"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* Issue Diagnosis Tab */}
@@ -2048,328 +2325,6 @@ const TechnicianDashboard = ({
         </DialogContent>
       </Dialog>
 
-      {/* Create Case Line Modal */}
-      <Dialog open={createCaseLineModalOpen} onOpenChange={setCreateCaseLineModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Issue Diagnosis</DialogTitle>
-            <DialogDescription>
-              Create a new issue diagnosis for warranty case {selectedWarrantyCase?.id}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-6">
-            {/* Vehicle & Customer Information and Diagnosis */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-              <div>
-                <div className="space-y-4">
-                  <h4 className="font-medium text-base">🚗 Vehicle & Customer Information</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Vehicle VIN</Label>
-                      <Input 
-                        placeholder="Enter vehicle VIN..." 
-                        defaultValue={selectedWarrantyCase?.vehicleVin}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Customer Name</Label>
-                      <Input 
-                        placeholder="Enter customer name..." 
-                        defaultValue={selectedWarrantyCase?.customerName}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div style={{ marginTop: '1.1rem' }}>
-                  <div className="space-y-2">
-                    <Label>Customer Phone</Label>
-                    <Input 
-                      placeholder="Enter phone number..." 
-                      defaultValue={selectedWarrantyCase?.customerPhone}
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              <div className="space-y-4">
-                <h4 className="font-medium text-base">🔍 Diagnosis</h4>
-                <div className="space-y-2 mb-4">
-                  <Label>Affected Components</Label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      className="w-full border rounded px-3 py-2"
-                      placeholder="Search components..."
-                      value={componentQuery}
-                      onChange={(e) => setComponentQuery(e.target.value)}
-                    />
-                    {/* results dropdown */}
-                    {componentQuery.trim().length > 0 && (
-                      <div className="absolute z-30 bg-white border rounded mt-1 w-full max-h-40 overflow-auto shadow">
-                        {availableComponents
-                          .filter(c => c.name.toLowerCase().includes(componentQuery.toLowerCase()))
-                          .map((c) => (
-                            <div
-                              key={c.id}
-                              className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between"
-                              onClick={() => {
-                                setCaseLineForm(prev => ({ ...prev, affectedComponent: c.name }));
-                                setComponentQuery('');
-                              }}
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm">{c.name}</span>
-                                <span className="text-xs text-gray-400">{c.partNumber}</span>
-                              </div>
-                              <div className="text-xs text-gray-500">{c.category}</div>
-                            </div>
-                          ))}
-                        {availableComponents.filter(c => c.name.toLowerCase().includes(componentQuery.toLowerCase())).length === 0 && (
-                          <div className="px-3 py-2 text-sm text-gray-500">No components found</div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* show selected */}
-                    {caseLineForm.affectedComponent && (
-                      <div className="mt-2 text-sm text-green-700">Selected: <span className="font-medium">{caseLineForm.affectedComponent}</span></div>
-                    )}
-
-                    {/* show count of matches when typing */}
-                    {componentQuery.trim().length > 0 && (
-                      <div className="mt-1 text-xs text-gray-500">Matches: {availableComponents.filter(c => c.name.toLowerCase().includes(componentQuery.toLowerCase())).length}</div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Issue Description</Label>
-                  <Textarea 
-                    placeholder="Describe the warranty issue in detail..."
-                    className="min-h-20"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Component Assessment */}
-            <div className="border-t pt-6">
-              <h4 className="font-medium text-base mb-4">🔧 Component Assessment</h4>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Damage Level</Label>
-                  <Select value={caseLineForm.damageLevel} onValueChange={(value) => setCaseLineForm(prev => ({ ...prev, damageLevel: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select level..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="light">🟡 Light - Can be repaired</SelectItem>
-                      <SelectItem value="severe">🔴 Severe - Must replace</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Repair Possibility</Label>
-                  <Select value={caseLineForm.repairPossibility} onValueChange={(value) => setCaseLineForm(prev => ({ ...prev, repairPossibility: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Can repair?" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="repairable">✅ Yes - Repairable</SelectItem>
-                      <SelectItem value="replace-only">❌ No - Replace only</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Warranty Decision</Label>
-                  <Select value={caseLineForm.warrantyDecision} onValueChange={(value) => setCaseLineForm(prev => ({ ...prev, warrantyDecision: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Decision..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="approved">🛡️ Warranty Coverage</SelectItem>
-                      <SelectItem value="customer-choice">🤔 Customer Choice</SelectItem>
-                      <SelectItem value="repair-only">🔧 Repair Only</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-
-            {/* Documentation */}
-            <div className="border-t pt-6">
-              <h4 className="font-medium text-base mb-4">📷 Documentation</h4>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Technician Notes</Label>
-                  <Textarea 
-                    value={caseLineForm.technicianNotes}
-                    onChange={(e) => setCaseLineForm(prev => ({ ...prev, technicianNotes: e.target.value }))}
-                    placeholder="Enter detailed diagnosis notes, measurements, test results..."
-                    className="min-h-20"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Upload Photos</Label>
-                  <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center">
-                    <Camera className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Upload photos of the issue, components, and diagnostic results
-                    </p>
-                    <input
-                      type="file"
-                      id="photo-upload"
-                      multiple
-                      accept="image/*"
-                      onChange={handleFileUpload}
-                      className="hidden"
-                    />
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => document.getElementById('photo-upload')?.click()}
-                    >
-                      <Camera className="h-4 w-4 mr-2" />
-                      Choose Photos
-                    </Button>
-                  </div>
-                  
-                  {/* Display uploaded files */}
-                  {uploadedFiles.length > 0 && (
-                    <div className="mt-4 space-y-2">
-                      <Label className="text-sm font-medium">Uploaded Photos ({uploadedFiles.length})</Label>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        {uploadedFiles.map((file, index) => (
-                          <div key={index} className="relative group">
-                            <div className="bg-gray-100 rounded-lg p-2 border">
-                              <div className="aspect-square mb-2 overflow-hidden rounded">
-                                <img 
-                                  src={uploadedFileUrls[index]} 
-                                  alt={file.name}
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => {
-                                    console.error('Image load error:', e);
-                                    // Fallback to recreate URL if it fails
-                                    const newUrl = URL.createObjectURL(file);
-                                    setUploadedFileUrls(prev => {
-                                      const newUrls = [...prev];
-                                      newUrls[index] = newUrl;
-                                      return newUrls;
-                                    });
-                                  }}
-                                />
-                              </div>
-                              <div className="text-xs">
-                                <div className="font-medium truncate" title={file.name}>{file.name}</div>
-                                <div className="text-gray-500 mt-1">
-                                  {(file.size / 1024 / 1024).toFixed(2)} MB
-                                </div>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => removeFile(index)}
-                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="border-t pt-6">
-              <div className="flex gap-4">
-                <Button 
-                  className="flex-1"
-                  onClick={() => {
-                    // Validate form
-                    if (!caseLineForm.damageLevel || !caseLineForm.repairPossibility || !caseLineForm.warrantyDecision) {
-                      toast({
-                        title: "Missing Information",
-                        description: "Please fill in all assessment fields",
-                        variant: "destructive"
-                      });
-                      return;
-                    }
-
-                    // Create new case line
-                    const newCaseLine: CaseLine = {
-                      id: `CL-${Date.now()}`,
-                      caseId: selectedWarrantyCase?.id || '',
-                      damageLevel: caseLineForm.damageLevel,
-                      repairPossibility: caseLineForm.repairPossibility,
-                      warrantyDecision: caseLineForm.warrantyDecision,
-                      technicianNotes: caseLineForm.technicianNotes,
-                      photos: [...uploadedFileUrls], // Use the pre-created URLs
-                      photoFiles: [...uploadedFiles], // Store actual File objects
-                      createdDate: new Date().toLocaleDateString('en-GB'),
-                      status: 'submitted'
-                    };
-
-                    // Add to case lines list
-                    setCaseLines(prev => [...prev, newCaseLine]);
-
-                    // Reset form and close modal
-                    setCaseLineForm({
-                      damageLevel: '',
-                      repairPossibility: '',
-                      warrantyDecision: '',
-                      affectedComponent: '',
-                      technicianNotes: ''
-                    });
-                    setUploadedFiles([]);
-                    setUploadedFileUrls([]);
-                    setCreateCaseLineModalOpen(false);
-
-                    toast({ 
-                      title: "Issue Diagnosis Created", 
-                      description: `Issue diagnosis ${newCaseLine.id} has been created successfully with ${uploadedFiles.length} photos. View it in the Issue Diagnosis tab.`
-                    });
-                  }}
-                >
-                  Create Issue Diagnosis
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="flex-1"
-                  onClick={() => {
-                    toast({ 
-                      title: "Draft Saved", 
-                      description: "Issue diagnosis draft has been saved" 
-                    });
-                  }}
-                >
-                  Save Draft
-                </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setCreateCaseLineModalOpen(false);
-                    setUploadedFiles([]);
-                    setUploadedFileUrls([]);
-                    setCaseLineForm({
-                      damageLevel: '',
-                      repairPossibility: '',
-                      warrantyDecision: '',
-                      affectedComponent: '',
-                      technicianNotes: ''
-                    });
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* View Issue Diagnosis Modal */}
       <Dialog open={viewCaseLineModalOpen} onOpenChange={setViewCaseLineModalOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -2630,6 +2585,477 @@ const TechnicianDashboard = ({
               Remove Issue Diagnosis
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Case Modal from Processing Records */}
+      <Dialog open={viewCaseModalOpen} onOpenChange={setViewCaseModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Processing Record Details</DialogTitle>
+            <DialogDescription>
+              <div>VIN: {selectedRecord?.vin}</div>
+              {selectedRecord?.recordId && (
+                <div className="text-xs text-slate-400 font-mono mt-1">
+                  Record ID: {selectedRecord.recordId}
+                </div>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedRecord && (
+            <div className="space-y-4">
+              {selectedRecord.recordId && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-blue-600" />
+                    <div className="flex-1">
+                      <p className="text-xs text-blue-600 font-medium">Record ID</p>
+                      <p className="text-sm font-mono text-blue-800">{selectedRecord.recordId}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <div className="grid grid-cols-2 gap-4 p-4 bg-white border rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Car className="h-4 w-4 text-slate-500" />
+                  <div>
+                    <p className="text-xs text-slate-500">Vehicle Model</p>
+                    <p className="text-sm font-semibold">{selectedRecord.vehicle.model.name}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-slate-500" />
+                  <div>
+                    <p className="text-xs text-slate-500">Odometer</p>
+                    <p className="text-sm font-semibold">{selectedRecord.odometer.toLocaleString()} km</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-slate-500" />
+                  <div>
+                    <p className="text-xs text-slate-500">Check-in Date</p>
+                    <p className="text-sm font-semibold">{formatDate(selectedRecord.checkInDate)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant={getStatusBadgeVariant(selectedRecord.status)}>
+                    {getStatusLabel(selectedRecord.status)}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="p-4 bg-white border rounded-lg">
+                <div className="flex items-start gap-2">
+                  <Wrench className="h-4 w-4 text-slate-600 mt-1" />
+                  <div className="flex-1">
+                    <p className="text-xs text-slate-600 font-medium">Main Technician</p>
+                    <p className="text-sm font-semibold">{selectedRecord.mainTechnician.name}</p>
+                    <p className="text-xs text-slate-500">ID: {selectedRecord.mainTechnician.userId}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-white border rounded-lg">
+                <div className="flex items-start gap-2">
+                  <User className="h-4 w-4 text-slate-600 mt-1" />
+                  <div className="flex-1">
+                    <p className="text-xs text-slate-600 font-medium">Created By</p>
+                    <p className="text-sm font-semibold">{selectedRecord.createdByStaff.name}</p>
+                    <p className="text-xs text-slate-500">ID: {selectedRecord.createdByStaff.userId}</p>
+                  </div>
+                </div>
+              </div>
+
+              {selectedRecord.guaranteeCases && selectedRecord.guaranteeCases.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <FileText className="h-4 w-4" />
+                    Guarantee Cases ({selectedRecord.guaranteeCases.length})
+                  </div>
+                  {selectedRecord.guaranteeCases.map((guaranteeCase, index) => (
+                    <div key={guaranteeCase.guaranteeCaseId} className="p-4 bg-white rounded-lg border">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-xs font-medium text-slate-700">Case #{index + 1}</span>
+                        <Badge variant="outline" className="text-xs">
+                          {guaranteeCase.status}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-slate-700 mb-2">
+                        <span className="font-medium">Content:</span> {guaranteeCase.contentGuarantee}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        ID: {guaranteeCase.guaranteeCaseId}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="pt-2 border-t">
+                <p className="text-xs text-slate-500">VIN: {selectedRecord.vin}</p>
+                <p className="text-xs text-slate-500">Model ID: {selectedRecord.vehicle.model.vehicleModelId}</p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* View Report Modal from Processing Records */}
+      <Dialog open={viewReportModalOpen} onOpenChange={setViewReportModalOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="pb-4">
+            <DialogTitle className="text-xl font-semibold">Warranty Report Preview</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              Generated processing report for VIN {selectedRecord?.vin}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedRecord && (
+            <div className="space-y-6">
+              <div className="text-center py-4 border-b">
+                <h2 className="text-2xl font-bold text-blue-600">Warranty Report</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  📅 Generated on {new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })} at {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="bg-blue-500 text-white rounded-full p-1.5">
+                      <FileText className="h-4 w-4" />
+                    </div>
+                    <h3 className="font-semibold text-blue-700">Case Information</h3>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Case ID:</span>
+                      <span className="font-semibold text-blue-600">{selectedRecord.guaranteeCases[0]?.guaranteeCaseId.substring(0, 8) || 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Status:</span>
+                      <Badge variant={getStatusBadgeVariant(selectedRecord.status)}>{getStatusLabel(selectedRecord.status)}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Created Date:</span>
+                      <span className="font-medium">{formatDate(selectedRecord.checkInDate)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="bg-green-500 text-white rounded-full p-1.5">
+                      <Car className="h-4 w-4" />
+                    </div>
+                    <h3 className="font-semibold text-green-700">Vehicle Information</h3>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">VIN:</span>
+                      <span className="font-semibold font-mono">{selectedRecord.vin}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Model:</span>
+                      <span className="font-medium">{selectedRecord.vehicle.model.name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Mileage:</span>
+                      <span className="font-medium">{selectedRecord.odometer.toLocaleString()} km</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-cyan-50 p-4 rounded-lg border border-cyan-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="bg-cyan-500 text-white rounded-full p-1.5">
+                    <Wrench className="h-4 w-4" />
+                  </div>
+                  <h3 className="font-semibold text-cyan-700">Service Center Information</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Technician:</span>
+                    <p className="font-medium">{selectedRecord.mainTechnician.name}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Check-in Date:</span>
+                    <p className="font-medium">{formatDate(selectedRecord.checkInDate)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {selectedRecord.guaranteeCases.length > 0 && (
+                <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="bg-orange-500 text-white rounded-full p-1.5">
+                      <AlertCircle className="h-4 w-4" />
+                    </div>
+                    <h3 className="font-semibold text-orange-700">Diagnosis Report</h3>
+                  </div>
+                  <p className="text-sm">{selectedRecord.guaranteeCases[0]?.contentGuarantee}</p>
+                </div>
+              )}
+            </div>
+          )}
+          
+          <div className="flex justify-end pt-4 border-t">
+            <Button onClick={() => setViewReportModalOpen(false)}>
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Issue Diagnosis Modal from Processing Records */}
+      <Dialog open={createIssueDiagnosisModalOpen} onOpenChange={(open) => {
+        console.log('📝 Dialog onOpenChange:', open);
+        setCreateIssueDiagnosisModalOpen(open);
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create Issue Diagnosis</DialogTitle>
+            <DialogDescription>
+              Create a new issue diagnosis for VIN: {selectedRecord?.vin || 'N/A'}
+              {selectedRecord?.recordId && ` (Record: ${selectedRecord.recordId.substring(0, 8)}...)`}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedRecord ? (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+                <div>
+                  <div className="space-y-4">
+                    <h4 className="font-medium text-base">🚗 Vehicle & Customer Information</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Vehicle VIN</Label>
+                        <Input 
+                          placeholder="Enter vehicle VIN..." 
+                          defaultValue={selectedRecord.vin}
+                          disabled
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Vehicle Model</Label>
+                        <Input 
+                          placeholder="Vehicle model..." 
+                          defaultValue={selectedRecord.vehicle.model.name}
+                          disabled
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: '1.1rem' }}>
+                    <div className="space-y-2">
+                      <Label>Technician</Label>
+                      <Input 
+                        placeholder="Technician name..." 
+                        defaultValue={selectedRecord.mainTechnician.name}
+                        disabled
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-6">
+                <h4 className="font-medium text-base mb-4">🔧 Case Line Details</h4>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="diagnosisText">Diagnosis Text *</Label>
+                    <Textarea 
+                      id="diagnosisText"
+                      value={caseLineForm.diagnosisText}
+                      onChange={(e) => setCaseLineForm(prev => ({ ...prev, diagnosisText: e.target.value }))}
+                      placeholder="Describe the problem diagnosis..."
+                      className="min-h-24"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="correctionText">Correction Text *</Label>
+                    <Textarea 
+                      id="correctionText"
+                      value={caseLineForm.correctionText}
+                      onChange={(e) => setCaseLineForm(prev => ({ ...prev, correctionText: e.target.value }))}
+                      placeholder="Describe the correction action..."
+                      className="min-h-24"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="componentSearch">Component Search (Optional)</Label>
+                    <div className="relative">
+                      <Input 
+                        id="componentSearch"
+                        value={componentSearchQuery}
+                        onChange={(e) => {
+                          setComponentSearchQuery(e.target.value);
+                          // Search components when typing
+                          if (selectedRecord && e.target.value.length >= 2) {
+                            const identifier = selectedRecord.recordId || selectedRecord.vin;
+                            fetchCompatibleComponents(identifier, e.target.value);
+                          }
+                        }}
+                        placeholder="Search components..."
+                      />
+                      {isLoadingComponents && (
+                        <div className="absolute right-2 top-2">
+                          <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                        </div>
+                      )}
+                      {/* Dropdown results */}
+                      {componentSearchQuery.length >= 2 && Array.isArray(compatibleComponents) && compatibleComponents.length > 0 && (
+                        <div className="absolute z-50 bg-white border rounded mt-1 w-full max-h-60 overflow-auto shadow-lg">
+                          {compatibleComponents.map((component) => (
+                            <div
+                              key={component.typeComponentId}
+                              className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between"
+                              onClick={() => {
+                                setCaseLineForm(prev => ({ ...prev, componentId: component.typeComponentId }));
+                                setComponentSearchQuery(component.name);
+                              }}
+                            >
+                              <span className="text-sm font-medium">{component.name}</span>
+                              <span className="text-xs text-gray-400">{component.typeComponentId.slice(0, 8)}...</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {componentSearchQuery.length >= 2 && !isLoadingComponents && compatibleComponents.length === 0 && (
+                        <div className="absolute z-50 bg-white border rounded mt-1 w-full p-3 shadow-lg">
+                          <p className="text-sm text-gray-500">No compatible components found</p>
+                        </div>
+                      )}
+                    </div>
+                    {caseLineForm.componentId && (
+                      <p className="text-xs text-green-600">✓ Selected: {caseLineForm.componentId.slice(0, 8)}...</p>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="quantity">Quantity</Label>
+                    <Input 
+                      id="quantity"
+                      type="number"
+                      min="1"
+                      value={caseLineForm.quantity}
+                      onChange={(e) => setCaseLineForm(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="warrantyStatus">Warranty Status *</Label>
+                    <Select 
+                      value={caseLineForm.warrantyStatus} 
+                      onValueChange={(value: 'ELIGIBLE' | 'INELIGIBLE') => setCaseLineForm(prev => ({ ...prev, warrantyStatus: value }))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select status..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ELIGIBLE">✅ Eligible</SelectItem>
+                        <SelectItem value="INELIGIBLE">❌ Ineligible</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-6">
+                <h4 className="font-medium text-base mb-4">📷 Documentation</h4>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Upload Photos</Label>
+                    <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center">
+                      <Camera className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Upload photos of the issue, components, and diagnostic results
+                      </p>
+                      <input
+                        type="file"
+                        id="photo-upload-processing"
+                        multiple
+                        accept="image/*"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => document.getElementById('photo-upload-processing')?.click()}
+                      >
+                        <Camera className="h-4 w-4 mr-2" />
+                        Choose Photos
+                      </Button>
+                    </div>
+                    
+                    {uploadedFiles.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <Label className="text-sm font-medium">Uploaded Photos ({uploadedFiles.length})</Label>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {uploadedFiles.map((file, index) => (
+                            <div key={index} className="relative group">
+                              <div className="bg-gray-100 rounded-lg p-2 border">
+                                <div className="aspect-square mb-2 overflow-hidden rounded">
+                                  <img 
+                                    src={uploadedFileUrls[index]} 
+                                    alt={file.name}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                                <div className="text-xs">
+                                  <div className="font-medium truncate" title={file.name}>{file.name}</div>
+                                  <div className="text-gray-500 mt-1">
+                                    {(file.size / 1024 / 1024).toFixed(2)} MB
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => removeFile(index)}
+                                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-4 border-t">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setCreateIssueDiagnosisModalOpen(false);
+                    setComponentSearchQuery('');
+                    setCompatibleComponents([]);
+                  }}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={handleCreateIssueDiagnosis}
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? "Creating..." : "Create Issue Diagnosis"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-slate-500">
+              <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+              <p>No record selected</p>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

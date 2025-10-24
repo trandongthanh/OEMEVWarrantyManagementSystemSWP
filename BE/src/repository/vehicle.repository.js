@@ -2,19 +2,17 @@ import db from "../models/index.cjs";
 const { Vehicle, Customer, VehicleModel, VehicleCompany, TypeComponent } = db;
 
 class VehicleRepository {
-  findByVinAndCompanyWithOwner = async ({ vin, companyId }, option = null) => {
+  findByVinAndCompany = async (
+    { vin, companyId },
+    option = null,
+    lock = null
+  ) => {
     const existingVehicle = await Vehicle.findOne({
       where: {
         vin: vin,
       },
 
-      attributes: [
-        "vin",
-        "dateOfManufacture",
-        "placeOfManufacture",
-        "licensePlate",
-        "purchaseDate",
-      ],
+      attributes: ["vin", "dateOfManufacture", "licensePlate", "purchaseDate"],
 
       include: [
         {
@@ -36,6 +34,7 @@ class VehicleRepository {
               as: "company",
               where: { vehicleCompanyId: companyId },
               attributes: ["name", "vehicleCompanyId"],
+
               required: true,
             },
           ],
@@ -43,6 +42,7 @@ class VehicleRepository {
       ],
 
       transaction: option,
+      lock: lock,
     });
 
     if (!existingVehicle) {
@@ -52,7 +52,7 @@ class VehicleRepository {
     return existingVehicle.toJSON();
   };
 
-  assignOwner = async (
+  updateOwner = async (
     { companyId, vin, customerId, licensePlate, purchaseDate },
     option = null
   ) => {
@@ -74,7 +74,7 @@ class VehicleRepository {
       return null;
     }
 
-    const updatedVehicle = await this.findByVinAndCompanyWithOwner(
+    const updatedVehicle = await this.findByVinAndCompany(
       {
         vin: vin,
         companyId: companyId,
@@ -82,24 +82,28 @@ class VehicleRepository {
       option
     );
 
+    if (!updatedVehicle) {
+      return null;
+    }
+
     return updatedVehicle;
   };
 
-  findVehicleByVinWithWarranty = async ({ vin, companyId }) => {
+  findVehicleWithTypeComponentByVin = async ({ vin, companyId }) => {
     const existingVehicle = await Vehicle.findOne({
       where: {
         vin: vin,
       },
 
-      attributes: ["vin", "dateOfManufacture", "purchaseDate"],
+      attributes: ["vin", "purchaseDate", "dateOfManufacture"],
 
       include: [
         {
           model: VehicleModel,
           as: "model",
           attributes: ["generalWarrantyDuration", "generalWarrantyMileage"],
-          required: true,
 
+          required: true,
           include: [
             {
               model: TypeComponent,

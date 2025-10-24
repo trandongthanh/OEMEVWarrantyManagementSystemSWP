@@ -1,17 +1,27 @@
-import { Op, where } from "sequelize";
+import { Op } from "sequelize";
 import db from "../models/index.cjs";
 
-const { VehicleProcessingRecord, User, VehicleModel, Vehicle, GuaranteeCase } =
-  db;
+const {
+  VehicleProcessingRecord,
+  User,
+  VehicleModel,
+  Vehicle,
+  GuaranteeCase,
+  CaseLine,
+} = db;
 
 class VehicleProcessingRecordRepository {
-  createRecord = async ({ odometer, createdByStaffId, vin }, option = null) => {
+  createRecord = async (
+    { odometer, createdByStaffId, vin, visitorInfo = null, checkInDate },
+    option = null
+  ) => {
     const newRecord = await VehicleProcessingRecord.create(
       {
         vin: vin,
-        checkInDate: new Date(),
         odometer: odometer,
         createdByStaffId: createdByStaffId,
+        checkInDate: checkInDate,
+        visitorInfo: visitorInfo,
       },
       { transaction: option }
     );
@@ -25,81 +35,68 @@ class VehicleProcessingRecordRepository {
 
   updateMainTechnician = async (
     { vehicleProcessingRecordId, technicianId },
-    option = null
+    transaction = null
   ) => {
-    const rowEffect = await VehicleProcessingRecord.update(
+    const [affectedRows] = await VehicleProcessingRecord.update(
       { mainTechnicianId: technicianId, status: "IN_DIAGNOSIS" },
       {
         where: {
           vehicleProcessingRecordId: vehicleProcessingRecordId,
         },
-        transaction: option,
+        transaction: transaction,
       }
     );
 
-    if (rowEffect <= 0) {
-      return null;
+    if (affectedRows === 0) {
+      return affectedRows;
     }
 
-    const updatedRecord = await VehicleProcessingRecord.findOne({
-      where: {
-        vehicleProcessingRecordId: vehicleProcessingRecordId,
-      },
+    const updatedRecord = await VehicleProcessingRecord.findByPk(
+      vehicleProcessingRecordId,
+      {
+        transaction: transaction,
+        attributes: ["vehicleProcessingRecordId", "vin", "status"],
+        include: [
+          {
+            model: User,
+            as: "mainTechnician",
+            attributes: ["userId", "name"],
+          },
+        ],
+      }
+    );
 
-      attributes: [
-        "vehicleProcessingRecordId",
-        "status",
-        "vin",
-        "checkInDate",
-        "odometer",
-        "createdByStaffId",
-        "diagnosticFee",
-      ],
-
-      include: [
-        {
-          model: User,
-          as: "mainTechnician",
-          attributes: ["userId", "name"],
-        },
-      ],
-
-      transaction: option,
-    });
-
-    if (!updatedRecord) {
-      return null;
-    }
-
-    return updatedRecord.toJSON();
+    return updatedRecord;
   };
 
-  findRecordIsNotCompleted = async ({ vin }) => {
+  findRecordIsNotCompleted = async (
+    { vin },
+    transaction = null,
+    lock = null
+  ) => {
     const record = await VehicleProcessingRecord.findOne({
+      attributes: ["vehicleProcessingRecordId"],
       where: {
         vin,
         status: {
           [Op.ne]: "completed",
         },
       },
+      transaction: transaction,
+      lock: lock,
     });
 
     if (!record) {
       return null;
     }
 
-    if (Array.isArray(record)) {
-      return record.map((item) => item.toJSON());
-    }
-
     return record.toJSON();
   };
 
-  findById = async ({ id }) => {
+  findDetailById = async ({ id }, transaction = null, lock = null) => {
     const record = await VehicleProcessingRecord.findByPk(id, {
-      attributes: ["vin", "checkInDate", "odometer", "status"],
+      attributes: ["vin", "checkInDate", "odometer", "status", "visitorInfo"],
 
-      order: [["checkInDate", "DESC"]],
       include: [
         {
           model: User,
@@ -125,6 +122,21 @@ class VehicleProcessingRecordRepository {
           model: GuaranteeCase,
           as: "guaranteeCases",
           attributes: ["guaranteeCaseId", "status", "contentGuarantee"],
+
+          include: [
+            {
+              model: CaseLine,
+              as: "caseLines",
+              attributes: [
+                "id",
+                "diagnosisText",
+                "correctionText",
+                "warrantyStatus",
+                "status",
+                "rejectionReason",
+              ],
+            },
+          ],
         },
 
         {
@@ -133,6 +145,9 @@ class VehicleProcessingRecordRepository {
           attributes: ["userId", "name", "serviceCenterId"],
         },
       ],
+
+      transaction: transaction,
+      lock: lock,
     });
 
     if (!record) {
@@ -152,9 +167,10 @@ class VehicleProcessingRecordRepository {
   }) => {
     let staffCondition = { serviceCenterId: serviceCenterId };
     let technicianCondition = {};
+    let whereCondition = {};
 
-    if (roleName === "service_center_technician") {
-      technicianCondition = { userId: userId };
+    if (status) {
+      whereCondition.status = status;
     }
 
     if (roleName === "service_center_staff") {
@@ -164,9 +180,9 @@ class VehicleProcessingRecordRepository {
     }
 
     const records = await VehicleProcessingRecord.findAll({
-      where: status ? { status: status } : {},
-      limit,
-      offset,
+      where: whereCondition,
+      limit: limit,
+      offset: offset,
       subQuery: false,
       order: [["checkInDate", "DESC"]],
       attributes: [
@@ -212,9 +228,7 @@ class VehicleProcessingRecordRepository {
           model: User,
           as: "createdByStaff",
           attributes: ["userId", "name"],
-
           where: staffCondition,
-
           required: true,
         },
       ],

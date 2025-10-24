@@ -40,7 +40,6 @@ export function authorizationByRole(roles) {
     if (!roles.includes(req.user.roleName)) {
       throw new ForbiddenError();
     }
-
     next();
   };
 }
@@ -70,7 +69,7 @@ export async function attachCompanyContext(req, res, next) {
   next();
 }
 
-export function hanldeError(err, req, res, next) {
+export function handleError(err, req, res, next) {
   const statusCode = err.statusCode || 500;
   const message = err.message || "Server error";
   const status = statusCode !== 500 ? "error" : "fail";
@@ -144,16 +143,25 @@ export async function canAssignTask(req, res, next) {
       "You can only assign technicians from your own service center."
     );
   }
+
   next();
 }
 
-export const validate = (schema) => (req, res, next) => {
-  const { error } = schema.validate(req.body);
+export const validate =
+  (schema, property = "body") =>
+  (req, res, next) => {
+    const dataNeedToValidate = req[property];
 
-  if (error) {
-    const errorMessage = error.details[0].message;
-    throw new BadRequestError(errorMessage);
-  }
+    if (!dataNeedToValidate) {
+      throw new BadRequestError(`Missing ${property} in request`);
+    }
 
-  next();
-};
+    const { error } = schema.validate(dataNeedToValidate);
+
+    if (error) {
+      const errorMessage = error.details[0].message;
+      throw new BadRequestError(errorMessage);
+    }
+
+    next();
+  };

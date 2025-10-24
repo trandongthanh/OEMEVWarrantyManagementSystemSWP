@@ -3,16 +3,13 @@ import db from "../models/index.cjs";
 const { Customer, Vehicle, VehicleModel } = db;
 
 class CustomerRepository {
-  findCustomerByPhoneOrEmail = async ({ phone, email }, option = null) => {
-    const phoneCondition = phone ? { phone: phone } : {};
-    const emailCondition = email ? { email: email } : {};
-
+  findCustomerByPhoneOrEmail = async (whereCondition = [], option = null) => {
     const existingCustomer = await Customer.findOne({
       where: {
-        [Op.or]: [phoneCondition, emailCondition],
+        [Op.or]: whereCondition,
       },
 
-      attributes: ["fullName", "email", "phone", "address"],
+      attributes: ["id", "fullName", "email", "phone", "address"],
 
       include: [
         {
@@ -21,12 +18,6 @@ class CustomerRepository {
           attributes: ["vin", "licensePlate", "purchaseDate"],
 
           include: [
-            {
-              model: Customer,
-              as: "owner",
-
-              attributes: ["fullName"],
-            },
             {
               model: VehicleModel,
               as: "model",
@@ -48,7 +39,8 @@ class CustomerRepository {
 
   createCustomer = async (
     { fullName, email, phone, address },
-    option = null
+    option = null,
+    lock = null
   ) => {
     const newCustomer = await Customer.create(
       {
@@ -57,21 +49,47 @@ class CustomerRepository {
         phone: phone,
         address: address,
       },
-      { transaction: option }
+      { transaction: option, lock: lock }
     );
+
+    if (!newCustomer) {
+      return null;
+    }
 
     return newCustomer.toJSON();
   };
 
-  findCustomerById = async ({ id }, option = null) => {
+  updateCustomerInfoById = async (id, customerData, transaction = null) => {
+    const [rowsUpdated] = await Customer.update(customerData, {
+      where: { id: id },
+      transaction: transaction,
+    });
+
+    if (rowsUpdated <= 0) {
+      return null;
+    }
+
+    const updatedCustomer = await Customer.findByPk(id, {
+      transaction: transaction,
+    });
+
+    if (!updatedCustomer) {
+      return null;
+    }
+
+    return updatedCustomer.toJSON();
+  };
+
+  findCustomerById = async ({ id }, transaction = null, lock = null) => {
     const existingCustomer = await Customer.findOne({
       where: {
         id: id,
       },
 
-      attributes: ["id"],
+      attributes: ["id", "phone", "email"],
 
-      transaction: option,
+      transaction: transaction,
+      lock: lock,
     });
 
     if (!existingCustomer) {
@@ -79,6 +97,28 @@ class CustomerRepository {
     }
 
     return existingCustomer.toJSON();
+  };
+
+  getAllCustomer = async () => {
+    const customers = await Customer.findAll({
+      attributes: ["id", "fullName", "email", "phone", "address"],
+      include: [
+        {
+          model: Vehicle,
+          as: "vehicles",
+          attributes: ["vin", "licensePlate", "purchaseDate"],
+          include: [
+            {
+              model: VehicleModel,
+              as: "model",
+              attributes: [["vehicle_model_name", "modelName"]],
+            },
+          ],
+        },
+      ],
+    });
+
+    return customers.map((customer) => customer.toJSON());
   };
 }
 

@@ -1,25 +1,22 @@
-import { BadRequestError } from "../../error/index.js";
-
 class VehicleController {
-  constructor({ vehicleService, serviceCenterService, customerService }) {
-    this.vehicleService = vehicleService;
-    this.serviceCenterService = serviceCenterService;
-    this.customerService = customerService;
+  #vehicleService;
+  constructor({ vehicleService }) {
+    this.#vehicleService = vehicleService;
   }
 
-  findVehicleByVin = async (req, res, next) => {
+  getVehicle = async (req, res, next) => {
     const { vin } = req.params;
 
     const { companyId } = req;
 
-    const vehicle = await this.vehicleService.findVehicleByVin({
-      vehicleVin: vin,
+    const vehicle = await this.#vehicleService.getVehicleProfile({
+      vin: vin,
       companyId: companyId,
     });
 
     if (!vehicle) {
       return res.status(404).json({
-        status: "success",
+        status: "error",
         message: `Cannot find vehicle with this vin: ${vin}`,
       });
     }
@@ -32,7 +29,7 @@ class VehicleController {
     });
   };
 
-  registerCustomerForVehicle = async (req, res, next) => {
+  assignOwnerToVehicle = async (req, res, next) => {
     const {
       customer,
       customerId: ownerId,
@@ -45,7 +42,7 @@ class VehicleController {
 
     const { companyId } = req;
 
-    const updatedVehicle = await this.vehicleService.registerOwnerForVehicle({
+    const updatedVehicle = await this.#vehicleService.registerOwnerForVehicle({
       customer: customer,
       vin: vin,
       ownerId: ownerId,
@@ -57,9 +54,7 @@ class VehicleController {
 
     res.status(200).json({
       status: "success",
-      data: {
-        vehicle: updatedVehicle,
-      },
+      data: updatedVehicle,
     });
   };
 
@@ -71,7 +66,7 @@ class VehicleController {
     const { odometer } = req.query;
 
     const existingVehicle =
-      await this.vehicleService.findVehicleByVinWithWarranty({
+      await this.#vehicleService.findVehicleByVinWithWarranty({
         vin: vin,
         companyId: companyId,
         odometer: odometer,
@@ -100,7 +95,7 @@ class VehicleController {
     const { odometer, purchaseDate } = req.body;
 
     const vehicle =
-      await this.vehicleService.findVehicleByVinWithWarrantyPreview({
+      await this.#vehicleService.findVehicleByVinWithWarrantyPreview({
         vin: vin,
         companyId: companyId,
         odometer: odometer,
