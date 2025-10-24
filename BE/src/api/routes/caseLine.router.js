@@ -285,6 +285,79 @@ router.post(
   }
 );
 
+/**
+ * @swagger
+ * /case-lines/approve:
+ *   patch:
+ *     summary: Approve or reject case lines
+ *     description: Service center staff can approve or reject case lines submitted by technicians. This endpoint allows bulk approval/rejection.
+ *     tags: [Case Line]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               approvedCaseLineIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 description: Array of case line IDs to approve
+ *                 example: ["770e8400-e29b-41d4-a716-446655440003", "880e8400-e29b-41d4-a716-446655440004"]
+ *               rejectedCaseLineIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 description: Array of case line IDs to reject
+ *                 example: ["990e8400-e29b-41d4-a716-446655440005"]
+ *     responses:
+ *       200:
+ *         description: Case lines processed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     approved:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           caselineId:
+ *                             type: string
+ *                             format: uuid
+ *                           status:
+ *                             type: string
+ *                             example: "CUSTOMER_APPROVED"
+ *                     rejected:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           caselineId:
+ *                             type: string
+ *                             format: uuid
+ *                           status:
+ *                             type: string
+ *                             example: "REJECTED"
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - requires service_center_staff role
+ *       404:
+ *         description: One or more case lines not found
+ */
 router.patch(
   "/approve",
   authentication,
@@ -296,6 +369,91 @@ router.patch(
   }
 );
 
+/**
+ * @swagger
+ * /case-lines/case-line:
+ *   post:
+ *     summary: Create a single case line
+ *     description: Create a single case line (diagnosis and correction work item) for a guarantee case. Only technicians can create case lines.
+ *     tags: [Case Line]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - caseId
+ *               - diagnosisText
+ *               - correctionText
+ *               - typeComponentId
+ *               - quantity
+ *               - warrantyStatus
+ *             properties:
+ *               caseId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Guarantee case ID
+ *                 example: "110f907d-009d-441f-88ad-f9522ae44d0d"
+ *               diagnosisText:
+ *                 type: string
+ *                 description: Diagnostic findings
+ *                 example: "Pin cao áp bị suy giảm dung lượng"
+ *               correctionText:
+ *                 type: string
+ *                 description: Corrective action
+ *                 example: "Thay thế pin cao áp mới"
+ *               typeComponentId:
+ *                 type: string
+ *                 format: uuid
+ *                 nullable: true
+ *                 description: Component type ID
+ *                 example: "1096033d-f11f-4a49-a751-8be0cfb9d705"
+ *               quantity:
+ *                 type: integer
+ *                 minimum: 0
+ *                 description: Quantity of components
+ *                 example: 1
+ *               warrantyStatus:
+ *                 type: string
+ *                 enum: [ELIGIBLE, INELIGIBLE]
+ *                 description: Warranty eligibility status
+ *                 example: "ELIGIBLE"
+ *     responses:
+ *       201:
+ *         description: Case line created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     caseLine:
+ *                       type: object
+ *                       properties:
+ *                         caseLineId:
+ *                           type: string
+ *                           format: uuid
+ *                         diagnosisText:
+ *                           type: string
+ *                         correctionText:
+ *                           type: string
+ *                         quantity:
+ *                           type: integer
+ *                         warrantyStatus:
+ *                           type: string
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - requires service_center_technician role
+ */
 router.post(
   "/case-line",
   authentication,
@@ -310,6 +468,78 @@ router.post(
   }
 );
 
+/**
+ * @swagger
+ * /case-lines/{caselineId}:
+ *   get:
+ *     summary: Get case line details by ID
+ *     description: Retrieve detailed information about a specific case line. Accessible by technicians, staff, and managers.
+ *     tags: [Case Line]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: caselineId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Case line ID
+ *         example: "770e8400-e29b-41d4-a716-446655440003"
+ *     responses:
+ *       200:
+ *         description: Case line retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     caseLine:
+ *                       type: object
+ *                       properties:
+ *                         caseLineId:
+ *                           type: string
+ *                           format: uuid
+ *                         guaranteeCaseId:
+ *                           type: string
+ *                           format: uuid
+ *                         diagnosisText:
+ *                           type: string
+ *                         correctionText:
+ *                           type: string
+ *                         componentId:
+ *                           type: string
+ *                           format: uuid
+ *                         quantity:
+ *                           type: integer
+ *                         quantityReserved:
+ *                           type: integer
+ *                         warrantyStatus:
+ *                           type: string
+ *                         status:
+ *                           type: string
+ *                         techId:
+ *                           type: string
+ *                           format: uuid
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Case line not found
+ */
 router.get(
   "/:caselineId",
   authentication,
@@ -326,6 +556,89 @@ router.get(
   }
 );
 
+/**
+ * @swagger
+ * /case-lines/{caselineId}:
+ *   patch:
+ *     summary: Update case line information
+ *     description: Update case line details including diagnosis, correction, component, and warranty status. Only technicians can update.
+ *     tags: [Case Line]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: caselineId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Case line ID
+ *         example: "770e8400-e29b-41d4-a716-446655440003"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               diagnosisText:
+ *                 type: string
+ *                 description: Updated diagnostic findings
+ *                 example: "Pin cao áp bị suy giảm dung lượng nghiêm trọng"
+ *               correctionText:
+ *                 type: string
+ *                 description: Updated corrective action
+ *                 example: "Thay thế pin cao áp mới theo bảo hành"
+ *               typeComponentId:
+ *                 type: string
+ *                 format: uuid
+ *                 nullable: true
+ *                 description: Updated component type ID
+ *               quantity:
+ *                 type: integer
+ *                 minimum: 0
+ *                 description: Updated quantity
+ *               warrantyStatus:
+ *                 type: string
+ *                 enum: [ELIGIBLE, INELIGIBLE]
+ *                 description: Updated warranty status
+ *               rejectionReason:
+ *                 type: string
+ *                 description: Reason for rejection (if applicable)
+ *     responses:
+ *       200:
+ *         description: Case line updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     caseLine:
+ *                       type: object
+ *                       properties:
+ *                         caseLineId:
+ *                           type: string
+ *                           format: uuid
+ *                         diagnosisText:
+ *                           type: string
+ *                         correctionText:
+ *                           type: string
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - requires service_center_technician role
+ *       404:
+ *         description: Case line not found
+ */
 router.patch(
   "/:caselineId",
   authentication,
