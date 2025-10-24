@@ -68,13 +68,48 @@ export const caseLineService = {
       console.log('📝 Creating case lines for case:', guaranteeCaseId);
       console.log('📝 Case lines data:', caseLines);
       
+      // Map frontend CaseLineRequest (which uses `componentId`) to backend shape
+      // backend validator expects `typeComponentId` in each caseline item
+      const payload = {
+        caselines: caseLines.map((cl: CaseLineRequest) => ({
+          diagnosisText: cl.diagnosisText,
+          correctionText: cl.correctionText,
+          // backend expects typeComponentId; allow null when no component specified
+          typeComponentId: cl.componentId ?? null,
+          quantity: cl.quantity,
+          warrantyStatus: cl.warrantyStatus
+        }))
+      };
+
       const response = await apiClient.post<CreateCaseLinesResponse>(
         `/guarantee-cases/${guaranteeCaseId}/case-lines`,
-        { caselines: caseLines }  // Backend expects 'caselines' (lowercase)
+        payload
       );
       
-      console.log('✅ Case lines created:', response.data);
-      return response.data.data.caseLines;
+      console.log('✅ Case lines created (raw):', response.data);
+
+      // Normalize response shape: backend may return `id` instead of `caseLineId` and `typeComponentId` instead of `componentId`.
+      const rawCaseLines = response.data?.data?.caseLines || [];
+
+  // rawCaseLines comes from backend and may have snake_case or different keys; allow flexible mapping
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const normalized = rawCaseLines.map((cl: any) => ({
+        caseLineId: cl.caseLineId ?? cl.id ?? cl.case_line_id,
+        guaranteeCaseId:
+          cl.guaranteeCaseId ?? cl.guarantee_case_id ?? cl.guaranteeCase?.guaranteeCaseId ?? null,
+        diagnosisText: cl.diagnosisText ?? cl.diagnosis_text ?? null,
+        correctionText: cl.correctionText ?? cl.correction_text ?? null,
+        componentId: cl.componentId ?? cl.typeComponentId ?? cl.type_component_id ?? null,
+        quantity: cl.quantity ?? 0,
+        warrantyStatus: cl.warrantyStatus ?? cl.warranty_status ?? null,
+        techId: cl.techId ?? cl.diagnosticTechId ?? cl.diagnostic_tech_id ?? null,
+        status: cl.status ?? null,
+        createdAt: cl.createdAt ?? cl.created_at ?? null,
+        updatedAt: cl.updatedAt ?? cl.updated_at ?? null,
+      }));
+
+      console.log('✅ Case lines created (normalized):', normalized);
+      return normalized;
     } catch (error) {
       console.error('❌ Error creating case lines:', error);
       if (axios.isAxiosError(error)) {
@@ -103,4 +138,20 @@ export const caseLineService = {
       throw error;
     }
   },
+
+  // Delete a case line by ID
+  deleteCaseLine: async (caseLineId: string): Promise<boolean> => {
+    try {
+      console.log('🗑️ Deleting case line:', caseLineId);
+      const response = await apiClient.delete(`/case-lines/${caseLineId}`);
+      console.log('✅ Delete response:', response.data);
+      return response.data?.status === 'success';
+    } catch (error) {
+      console.error('❌ Error deleting case line:', error);
+      if (axios.isAxiosError(error)) {
+        throw new Error(error.response?.data?.message || 'Failed to delete case line');
+      }
+      throw error;
+    }
+  }
 };
