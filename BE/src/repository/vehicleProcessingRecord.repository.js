@@ -8,6 +8,7 @@ const {
   Vehicle,
   GuaranteeCase,
   CaseLine,
+  TypeComponent,
 } = db;
 
 class VehicleProcessingRecordRepository {
