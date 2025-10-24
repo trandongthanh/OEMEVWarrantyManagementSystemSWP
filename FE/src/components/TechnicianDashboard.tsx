@@ -220,7 +220,7 @@ const TechnicianDashboard = ({
   const [componentQuery, setComponentQuery] = useState<string>("");
 
   // Compatible components for Processing Records modal
-  const [compatibleComponents, setCompatibleComponents] = useState<Array<{ typeComponentId: string; name: string; isUnderWarranty: boolean }>>([]);
+  const [compatibleComponents, setCompatibleComponents] = useState<Array<{ typeComponentId: string; name: string }>>([]);
   const [componentSearchQuery, setComponentSearchQuery] = useState<string>("");
   const [isLoadingComponents, setIsLoadingComponents] = useState(false);
 
@@ -515,12 +515,38 @@ const TechnicianDashboard = ({
         { searchName }
       );
       console.log('✅ Fetched components:', components);
-      // Transform components to include isUnderWarranty if not present
-      const transformedComponents = components.map(comp => ({
-        ...comp,
-        isUnderWarranty: comp.isUnderWarranty ?? true // Default to true if not provided
-      }));
-      setCompatibleComponents(transformedComponents);
+      // Set components directly without transformation since API doesn't provide isUnderWarranty
+      setCompatibleComponents(Array.isArray(components) ? components : []);
+    } catch (error) {
+      console.error('❌ Failed to search components:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to search components",
+        variant: "destructive"
+      });
+      setCompatibleComponents([]);
+    } finally {
+      setIsLoadingComponents(false);
+    }
+  }, []);
+
+  // Search components without recordId dependency
+  const searchComponents = useCallback(async (searchName: string) => {
+    if (!searchName || searchName.length < 2) {
+      setCompatibleComponents([]);
+      return;
+    }
+
+    try {
+      setIsLoadingComponents(true);
+      console.log('🔍 Searching components with name:', searchName);
+
+      const components = await processingRecordsService.searchComponents(
+        { searchName }
+      );
+      console.log('✅ Fetched components:', components);
+      // Set components directly without transformation since API doesn't provide isUnderWarranty
+      setCompatibleComponents(Array.isArray(components) ? components : []);
     } catch (error) {
       console.error('❌ Failed to search components:', error);
       toast({
@@ -2914,12 +2940,6 @@ const TechnicianDashboard = ({
                                 <span className="text-sm font-medium">{component.name}</span>
                                 <div className="flex items-center gap-2 mt-1">
                                   <span className="text-xs text-gray-400">{component.typeComponentId.slice(0, 8)}...</span>
-                                  <Badge 
-                                    variant={component.isUnderWarranty ? "default" : "destructive"}
-                                    className="text-xs"
-                                  >
-                                    {component.isUnderWarranty ? "Under Warranty" : "Not Under Warranty"}
-                                  </Badge>
                                 </div>
                               </div>
                             </div>

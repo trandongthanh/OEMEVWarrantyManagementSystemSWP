@@ -181,7 +181,7 @@ export const processingRecordsService = {
   // Search components without recordId dependency
   searchComponents: async (
     params: { category?: string; searchName?: string }
-  ): Promise<Array<{ typeComponentId: string; name: string; isUnderWarranty: boolean }>> => {
+  ): Promise<Array<{ typeComponentId: string; name: string }>> => {
     try {
       const queryParams = new URLSearchParams();
       if (params?.category) queryParams.append('category', params.category);
