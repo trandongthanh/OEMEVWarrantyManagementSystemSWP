@@ -222,6 +222,21 @@ class VehicleProcessingRecordRepository {
           model: GuaranteeCase,
           as: "guaranteeCases",
           attributes: ["guaranteeCaseId", "status", "contentGuarantee"],
+
+          include: [
+            {
+              model: CaseLine,
+              as: "caseLines",
+              attributes: [
+                "id",
+                "diagnosisText",
+                "correctionText",
+                "warrantyStatus",
+                "status",
+                "rejectionReason",
+              ],
+            },
+          ],
         },
 
         {
