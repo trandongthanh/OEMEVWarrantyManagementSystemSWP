@@ -17,6 +17,10 @@ import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCi
 const createProcessingRecord = async (recordData: {
   vin: string;
   odometer: number;
+  visitorInfo: {
+    fullName: string;
+    phone: string;
+  };
   guaranteeCases: { contentGuarantee: string }[];
 }) => {
   const token = localStorage.getItem("ev_warranty_token");
@@ -152,7 +156,7 @@ const SuperAdvisor = () => {
   });
 
   // Customer search states
-  const [customerSearchPhone, setCustomerSearchPhone] = useState('');
+  const [customerSearchInput, setCustomerSearchInput] = useState('');
   const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
   const [hasSearchedCustomer, setHasSearchedCustomer] = useState(false);
@@ -173,6 +177,12 @@ const SuperAdvisor = () => {
   });
   const [warrantyRecordCaseText, setWarrantyRecordCaseText] = useState('');
   const [isCreatingRecord, setIsCreatingRecord] = useState(false);
+
+  // Visitor info state (person bringing vehicle for service)
+  const [visitorInfo, setVisitorInfo] = useState({
+    fullName: '',
+    phone: ''
+  });
 
   // Warranty check states
   const [odometer, setOdometer] = useState('');
@@ -447,7 +457,7 @@ const SuperAdvisor = () => {
         });
 
         // Reset customer search states and initialize owner form
-        setCustomerSearchPhone('');
+        setCustomerSearchInput('');
         setFoundCustomer(null);
         setHasSearchedCustomer(false);
 
@@ -507,10 +517,11 @@ const SuperAdvisor = () => {
   };
 
   const handleSearchCustomerByPhone = async () => {
-    if (!customerSearchPhone.trim()) {
+    // Validate input
+    if (!customerSearchInput.trim()) {
       toast({
         title: 'Error',
-        description: 'Please enter phone number',
+        description: 'Please enter phone number or email',
         variant: 'destructive'
       });
       return;
@@ -532,19 +543,29 @@ const SuperAdvisor = () => {
         return;
       }
 
-      const response = await axios.get(`http://localhost:3000/api/v1/customers/`, {
-        params: {
-          phone: customerSearchPhone.trim()
-        },
+      const searchValue = customerSearchInput.trim();
+      
+      // Determine if input is email or phone based on presence of '@'
+      const isEmail = searchValue.includes('@');
+      const params: { phone?: string; email?: string } = {};
+      
+      if (isEmail) {
+        params.email = searchValue;
+      } else {
+        params.phone = searchValue;
+      }
+
+      const response = await axios.get(`http://localhost:3000/api/v1/customers`, {
+        params,
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
 
-      if (response.data && response.data.status === 'sucess') {
-        // Try to get customer from different possible paths
-        const customer = response.data.data?.customer || response.data.customer;
+      // Check for successful response
+      if (response.data && response.data.status === 'success') {
+        const customer = response.data.data?.customer;
         
         if (customer) {
           setFoundCustomer(customer);
@@ -552,7 +573,7 @@ const SuperAdvisor = () => {
           // Fill all 4 fields with found customer data
           setOwnerForm({
             fullName: customer.fullName || '',
-            phone: customer.phone || '',
+            phone: customer.phone || customer.phoneNumber || '',
             email: customer.email || '',
             address: customer.address || ''
           });
@@ -564,45 +585,45 @@ const SuperAdvisor = () => {
           
           setHasSearchedCustomer(true);
         } else {
+          // No customer found
           setFoundCustomer(null);
           
-          // Fill only phone number, clear other fields
+          // Fill with search value in appropriate field
           setOwnerForm({
             fullName: '',
-            phone: customerSearchPhone.trim(),
-            email: '',
+            phone: isEmail ? '' : searchValue,
+            email: isEmail ? searchValue : '',
             address: ''
           });
 
           toast({
             title: 'Customer Not Found',
-            description: 'No customer found with this phone number. You can enter new customer information.',
+            description: 'No customer found. You can enter new customer information.',
             variant: 'default'
           });
           
           setHasSearchedCustomer(true);
         }
       } else {
+        // Unexpected response format
         setFoundCustomer(null);
         
-        // Fill only phone number, clear other fields
         setOwnerForm({
           fullName: '',
-          phone: customerSearchPhone.trim(),
-          email: '',
+          phone: isEmail ? '' : searchValue,
+          email: isEmail ? searchValue : '',
           address: ''
         });
 
         toast({
           title: 'Customer Not Found',
-          description: 'No customer found with this phone number. You can enter new customer information.',
+          description: 'No customer found. You can enter new customer information.',
           variant: 'default'
         });
         
         setHasSearchedCustomer(true);
       }
 
-      setHasSearchedCustomer(true);
       setIsSearchingCustomer(false);
 
     } catch (error) {
@@ -611,19 +632,43 @@ const SuperAdvisor = () => {
       setHasSearchedCustomer(true);
       setIsSearchingCustomer(false);
       
-      // Fill only phone number, clear other fields  
-      setOwnerForm({
-        fullName: '',
-        phone: customerSearchPhone.trim(),
-        email: '',
-        address: ''
-      });
+      const searchValue = customerSearchInput.trim();
+      const isEmail = searchValue.includes('@');
+      
+      // Check if it's a 404 error (customer not found)
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        // Customer not found - this is expected, allow user to enter new customer info
+        setOwnerForm({
+          fullName: '',
+          phone: isEmail ? '' : searchValue,
+          email: isEmail ? searchValue : '',
+          address: ''
+        });
 
-      toast({
-        title: 'Search Error',
-        description: 'An error occurred while searching for customer. You can enter new customer information.',
-        variant: 'default'
-      });
+        toast({
+          title: 'Customer Not Found',
+          description: 'No customer found. You can enter new customer information.',
+          variant: 'default'
+        });
+      } else {
+        // Other errors
+        setOwnerForm({
+          fullName: '',
+          phone: isEmail ? '' : searchValue,
+          email: isEmail ? searchValue : '',
+          address: ''
+        });
+
+        const errorMessage = axios.isAxiosError(error) 
+          ? (error.response?.data?.message || error.message)
+          : 'An unexpected error occurred';
+
+        toast({
+          title: 'Search Error',
+          description: errorMessage,
+          variant: 'destructive'
+        });
+      }
     }
   };
 
@@ -754,6 +799,12 @@ const SuperAdvisor = () => {
       cases: []
     });
     
+    // Pre-fill visitor info with customer info (can be edited)
+    setVisitorInfo({
+      fullName: foundCustomer.fullName || foundCustomer.name || '',
+      phone: foundCustomer.phoneNumber || foundCustomer.phone || ''
+    });
+    
     // Close warranty dialog and open create dialog
     setShowWarrantyDialog(false);
     setShowCreateWarrantyDialog(true);
@@ -794,10 +845,41 @@ const SuperAdvisor = () => {
 
   // Handle submit warranty record
   const handleSubmitWarrantyRecord = async () => {
+    // Validate cases
     if (warrantyRecordForm.cases.length === 0) {
       toast({
         title: 'Error',
         description: 'Please add at least one case',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Validate visitor info
+    if (!visitorInfo.fullName.trim()) {
+      toast({
+        title: 'Error',
+        description: 'Please enter visitor full name',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!visitorInfo.phone.trim()) {
+      toast({
+        title: 'Error',
+        description: 'Please enter visitor phone number',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Validate phone format (Vietnamese phone format)
+    const phoneRegex = /^(?:\+84|0)(?:\d{9}|\d{10})$/;
+    if (!phoneRegex.test(visitorInfo.phone)) {
+      toast({
+        title: 'Error',
+        description: 'Invalid phone number format. Use format: 0912345678 or +84912345678',
         variant: 'destructive'
       });
       return;
@@ -810,6 +892,10 @@ const SuperAdvisor = () => {
       const apiData = {
         vin: warrantyRecordForm.vin,
         odometer: parseInt(warrantyRecordForm.odometer),
+        visitorInfo: {
+          fullName: visitorInfo.fullName,
+          phone: visitorInfo.phone
+        },
         guaranteeCases: warrantyRecordForm.cases.map(caseItem => ({
           contentGuarantee: caseItem.text
         }))
@@ -835,6 +921,7 @@ const SuperAdvisor = () => {
       // Reset forms and close dialogs
       setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [] });
       setWarrantyRecordCaseText('');
+      setVisitorInfo({ fullName: '', phone: '' });
       setShowCreateWarrantyDialog(false);
       setVehicleWarrantyStatus(null);
       setVehicleOdometer('');
@@ -962,7 +1049,7 @@ const SuperAdvisor = () => {
         });
 
         // Reset search states
-        setCustomerSearchPhone('');
+        setCustomerSearchInput('');
         setFoundCustomer(null);
         setHasSearchedCustomer(false);
 
@@ -1377,7 +1464,7 @@ const SuperAdvisor = () => {
                 className={searchMode === 'phone' ? 'bg-purple-600 hover:bg-purple-700' : ''}
               >
                 <User className="h-4 w-4 mr-2" />
-                Find Customer by Phone
+                Find Customer by Phone/Email
               </Button>
               <Button
                 variant={searchMode === 'customer' ? 'default' : 'outline'}
@@ -1399,47 +1486,48 @@ const SuperAdvisor = () => {
               </Button>
             </div>
 
-            {/* Dynamic Search Bar - Only for customer and phone modes */}
-            {searchMode !== 'warranty' && (
+            {/* Dynamic Search Bar - Only for customer mode */}
+            {searchMode === 'customer' && (
               <div className="flex gap-3">
                 <div className="flex-1 relative">
-                  {searchMode === 'customer' ? (
-                    <Car className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
-                  ) : (
-                    <User className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
-                  )}
+                  <Car className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
                   <Input
-                    placeholder={
-                      searchMode === 'customer'
-                        ? "Enter VIN to find vehicle and customer records"
-                        : "Enter customer phone number"
-                    }
+                    placeholder="Enter VIN to find vehicle and customer records"
                     className="pl-10 h-11"
-                    value={searchMode === 'phone' ? customerSearchPhone : searchVin}
-                    onChange={(e) => {
-                      if (searchMode === 'phone') {
-                        const numericValue = e.target.value.replace(/[^0-9]/g, '');
-                        setCustomerSearchPhone(numericValue);
-                      } else {
-                        setSearchVin(e.target.value);
-                      }
-                    }}
+                    value={searchVin}
+                    onChange={(e) => setSearchVin(e.target.value)}
                   />
                 </div>
                 <Button 
                   size="sm" 
-                  className={
-                    searchMode === 'customer'
-                      ? "bg-green-600 hover:bg-green-700"
-                      : "bg-purple-600 hover:bg-purple-700"
-                  }
-                  onClick={
-                    searchMode === 'customer'
-                      ? () => handleSearchCustomer()
-                      : handleSearchCustomerByPhone
-                  }
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={() => handleSearchCustomer()}
                 >
-                  {searchMode === 'customer' ? 'Find Vehicle' : 'Search Customer'}
+                  Find Vehicle
+                </Button>
+              </div>
+            )}
+
+            {/* Phone/Email Search Bar - for phone mode */}
+            {searchMode === 'phone' && (
+              <div className="space-y-3">
+                <div className="relative">
+                  <User className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
+                  <Input
+                    placeholder="Enter phone number or email address"
+                    className="pl-10 h-11"
+                    value={customerSearchInput}
+                    onChange={(e) => setCustomerSearchInput(e.target.value)}
+                  />
+                </div>
+                <Button 
+                  size="sm" 
+                  className="bg-purple-600 hover:bg-purple-700 w-full"
+                  onClick={handleSearchCustomerByPhone}
+                  disabled={!customerSearchInput.trim()}
+                >
+                  <Search className="h-4 w-4 mr-2" />
+                  Search Customer
                 </Button>
               </div>
             )}
@@ -1822,42 +1910,39 @@ const SuperAdvisor = () => {
                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
                       <h4 className="font-semibold text-gray-800 mb-4 flex items-center">
                         <Search className="mr-2 h-4 w-4" />
-                        Search Customer by Phone
+                        Search Customer by Phone or Email
                         <Badge variant="outline" className="ml-2 text-xs bg-green-100 text-green-800">
                           Warranty Valid
                         </Badge>
                       </h4>
                     <div className="space-y-4">
-                      <div className="flex gap-3">
-                        <div className="flex-1">
-                          <Input
-                            placeholder="Enter customer phone number"
-                            value={customerSearchPhone}
-                            onChange={(e) => {
-                              const numericValue = e.target.value.replace(/[^0-9]/g, '');
-                              setCustomerSearchPhone(numericValue);
-                            }}
-                            className="bg-white"
-                          />
-                        </div>
-                        <Button
-                          onClick={handleSearchCustomerByPhone}
-                          disabled={isSearchingCustomer || !customerSearchPhone.trim()}
-                          className="bg-blue-600 hover:bg-blue-700"
-                        >
-                          {isSearchingCustomer ? (
-                            <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                              Searching...
-                            </>
-                          ) : (
-                            <>
-                              <Search className="h-4 w-4 mr-2" />
-                              Search
-                            </>
-                          )}
-                        </Button>
+                      <div>
+                        <Label htmlFor="search-input" className="text-sm mb-1.5 block">Phone Number or Email</Label>
+                        <Input
+                          id="search-input"
+                          placeholder="Enter phone number or email address"
+                          value={customerSearchInput}
+                          onChange={(e) => setCustomerSearchInput(e.target.value)}
+                          className="bg-white"
+                        />
                       </div>
+                      <Button
+                        onClick={handleSearchCustomerByPhone}
+                        disabled={isSearchingCustomer || !customerSearchInput.trim()}
+                        className="bg-blue-600 hover:bg-blue-700 w-full"
+                      >
+                        {isSearchingCustomer ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                            Searching...
+                          </>
+                        ) : (
+                          <>
+                            <Search className="h-4 w-4 mr-2" />
+                            Search Customer
+                          </>
+                        )}
+                      </Button>
 
                       {/* Search Result Status */}
                       {hasSearchedCustomer && (
@@ -1980,7 +2065,7 @@ const SuperAdvisor = () => {
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="text-xl">Customer Search Results</CardTitle>
-              <CardDescription>Search for customers by phone number</CardDescription>
+              <CardDescription>Search for customers by phone number or email</CardDescription>
             </CardHeader>
             <CardContent>
               {foundCustomer ? (
@@ -2482,7 +2567,7 @@ const SuperAdvisor = () => {
             <Button variant="outline" onClick={() => {
               setShowRegisterDialog(false);
               setOwnerForm({ fullName: '', phone: '', email: '', address: '' });
-              setCustomerSearchPhone('');
+              setCustomerSearchInput('');
               setFoundCustomer(null);
               setHasSearchedCustomer(false);
             }}>
@@ -2786,6 +2871,41 @@ const SuperAdvisor = () => {
                 className="bg-gray-100"
                 placeholder="Enter current odometer reading"
               />
+            </div>
+
+            {/* Visitor Information Section */}
+            <div className="border-t pt-4">
+              <h3 className="font-semibold text-sm mb-3 flex items-center">
+                <User className="h-4 w-4 mr-2" />
+                Visitor Information (Person Bringing Vehicle) *
+              </h3>
+              
+              <div className="grid gap-3 bg-blue-50 p-4 rounded-lg">
+                <div className="grid gap-2">
+                  <Label htmlFor="visitor-name">Full Name *</Label>
+                  <Input
+                    id="visitor-name"
+                    value={visitorInfo.fullName}
+                    onChange={(e) => setVisitorInfo({ ...visitorInfo, fullName: e.target.value })}
+                    placeholder="Enter visitor's full name"
+                    className="bg-white"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="visitor-phone">Phone Number *</Label>
+                  <Input
+                    id="visitor-phone"
+                    value={visitorInfo.phone}
+                    onChange={(e) => {
+                      const numericValue = e.target.value.replace(/[^0-9+]/g, '');
+                      setVisitorInfo({ ...visitorInfo, phone: numericValue });
+                    }}
+                    placeholder="Enter phone number (e.g. 0912345678)"
+                    className="bg-white font-mono"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Cases Section */}
