@@ -220,7 +220,7 @@ const TechnicianDashboard = ({
   const [componentQuery, setComponentQuery] = useState<string>("");
 
   // Compatible components for Processing Records modal
-  const [compatibleComponents, setCompatibleComponents] = useState<Array<{ typeComponentId: string; name: string }>>([]);
+  const [compatibleComponents, setCompatibleComponents] = useState<Array<{ typeComponentId: string; name: string; isUnderWarranty: boolean }>>([]);
   const [componentSearchQuery, setComponentSearchQuery] = useState<string>("");
   const [isLoadingComponents, setIsLoadingComponents] = useState(false);
 
@@ -515,17 +515,19 @@ const TechnicianDashboard = ({
         { searchName }
       );
       console.log('✅ Fetched components:', components);
-      setCompatibleComponents(components);
+      // Transform components to include isUnderWarranty if not present
+      const transformedComponents = components.map(comp => ({
+        ...comp,
+        isUnderWarranty: comp.isUnderWarranty ?? true // Default to true if not provided
+      }));
+      setCompatibleComponents(transformedComponents);
     } catch (error) {
-      console.error('❌ Failed to fetch compatible components:', error);
-      // Don't show toast error on initial load, only on user interaction
-      if (searchName) {
-        toast({
-          title: "Error",
-          description: error instanceof Error ? error.message : "Failed to load compatible components",
-          variant: "destructive"
-        });
-      }
+      console.error('❌ Failed to search components:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to search components",
+        variant: "destructive"
+      });
       setCompatibleComponents([]);
     } finally {
       setIsLoadingComponents(false);
@@ -1060,7 +1062,7 @@ const TechnicianDashboard = ({
                         <TableHead>Vehicle & Model</TableHead>
                         <TableHead>Odometer</TableHead>
                         <TableHead>Check-in Date</TableHead>
-                        <TableHead>Technician</TableHead>
+                        <TableHead>Main Technician</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Cases</TableHead>
                         <TableHead>Actions</TableHead>
@@ -1101,7 +1103,7 @@ const TechnicianDashboard = ({
                             </TableCell>
                             <TableCell>
                               <div>
-                                <p className="text-sm">{record.mainTechnician.name}</p>
+                                <p className="font-medium">{record.mainTechnician.name}</p>
                                 <p className="text-xs text-muted-foreground">
                                   {record.mainTechnician.userId.substring(0, 8)}...
                                 </p>
@@ -1147,28 +1149,14 @@ const TechnicianDashboard = ({
                                     console.log('🔘 Create Issue Diagnosis button clicked for record:', record);
                                     
                                     try {
-                                      // If recordId exists in list, use it directly
-                                      if (record.recordId) {
-                                        console.log('✅ Using recordId from list:', record.recordId);
-                                        setSelectedRecord(record);
-                                        setCreateIssueDiagnosisModalOpen(true);
-                                        fetchCompatibleComponents(record.recordId).catch(error => {
-                                          console.error('❌ Failed to fetch components:', error);
-                                        });
-                                      } else {
-                                        // No recordId in list - need to fetch full record detail
-                                        console.warn('⚠️ No recordId in list, need to fetch by VIN or another identifier');
-                                        
-                                        // For now, just open modal without component search
-                                        setSelectedRecord(record);
-                                        setCreateIssueDiagnosisModalOpen(true);
-                                        
-                                        toast({
-                                          title: "Component Search Unavailable",
-                                          description: "Record ID not available. You can still create case line without component search.",
-                                          variant: "destructive"
-                                        });
-                                      }
+                                      // Always open modal - component search now works without recordId
+                                      setSelectedRecord(record);
+                                      setCreateIssueDiagnosisModalOpen(true);
+                                      
+                                      toast({
+                                        title: "Component Search Available",
+                                        description: "You can now search for components in the Create Issue Diagnosis modal.",
+                                      });
                                     } catch (error) {
                                       console.error('❌ Error in create diagnosis handler:', error);
                                     }
@@ -2897,9 +2885,10 @@ const TechnicianDashboard = ({
                         onChange={(e) => {
                           setComponentSearchQuery(e.target.value);
                           // Search components when typing
-                          if (selectedRecord && e.target.value.length >= 2) {
-                            const identifier = selectedRecord.recordId || selectedRecord.vin;
-                            fetchCompatibleComponents(identifier, e.target.value);
+                          if (e.target.value.length >= 2) {
+                            searchComponents(e.target.value);
+                          } else {
+                            setCompatibleComponents([]);
                           }
                         }}
                         placeholder="Search components..."
@@ -2921,8 +2910,18 @@ const TechnicianDashboard = ({
                                 setComponentSearchQuery(component.name);
                               }}
                             >
-                              <span className="text-sm font-medium">{component.name}</span>
-                              <span className="text-xs text-gray-400">{component.typeComponentId.slice(0, 8)}...</span>
+                              <div className="flex-1">
+                                <span className="text-sm font-medium">{component.name}</span>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-xs text-gray-400">{component.typeComponentId.slice(0, 8)}...</span>
+                                  <Badge 
+                                    variant={component.isUnderWarranty ? "default" : "destructive"}
+                                    className="text-xs"
+                                  >
+                                    {component.isUnderWarranty ? "Under Warranty" : "Not Under Warranty"}
+                                  </Badge>
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
