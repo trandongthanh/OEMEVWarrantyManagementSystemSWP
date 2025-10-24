@@ -70,7 +70,7 @@ export const caseLineService = {
       
       const response = await apiClient.post<CreateCaseLinesResponse>(
         `/guarantee-cases/${guaranteeCaseId}/case-lines`,
-        { caseLines }
+        { caselines: caseLines }  // Backend expects 'caselines' (lowercase)
       );
       
       console.log('✅ Case lines created:', response.data);

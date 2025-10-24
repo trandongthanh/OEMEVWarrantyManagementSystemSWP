@@ -1,8 +1,14 @@
+import { createRecordSchema } from "../../validators/vehicleProcessingRecord.validator.js";
+import {
+  updateMainTechnicianBodySchema,
+  updateMainTechnicianParamsSchema,
+} from "../../validators/vehicleProcessingRecord.validator.js";
 import {
   attachCompanyContext,
   authentication,
   authorizationByRole,
-  canAssignTask,
+  // canAssignTask,
+  validate,
 } from "../middleware/index.js";
 
 import express from "express";
@@ -212,6 +218,8 @@ router.post(
   authentication,
   authorizationByRole(["service_center_staff"]),
   attachCompanyContext,
+  validate(createRecordSchema, "body"),
+
   async (req, res, next) => {
     const vehicleProcessingRecordController = req.container.resolve(
       "vehicleProcessingRecordController"
@@ -290,9 +298,12 @@ router.post(
 router.patch(
   "/:id/assignment",
   authentication,
-  canAssignTask,
+  authorizationByRole(["service_center_manager"]),
+  validate(updateMainTechnicianParamsSchema, "params"),
+  validate(updateMainTechnicianBodySchema, "body"),
+
   async (req, res, next) => {
-    const vehicleProcessingRecordController = await req.container.resolve(
+    const vehicleProcessingRecordController = req.container.resolve(
       "vehicleProcessingRecordController"
     );
 
@@ -477,12 +488,14 @@ router.get(
     "service_center_technician",
     "service_center_manager",
   ]),
+  attachCompanyContext,
+
   async (req, res, next) => {
     const vehicleProcessingRecordController = req.container.resolve(
       "vehicleProcessingRecordController"
     );
 
-    await vehicleProcessingRecordController.findById(req, res, next);
+    await vehicleProcessingRecordController.getById(req, res, next);
   }
 );
 
