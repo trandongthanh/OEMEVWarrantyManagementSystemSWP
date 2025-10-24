@@ -284,7 +284,7 @@ class VehicleProcessingRecordService {
     return formatUpdatedRecord;
   };
 
-  findById = async ({ id, userId, serviceCenterId }) => {
+  findDetailById = async ({ id, userId, serviceCenterId }) => {
     if (!id) {
       throw new BadRequestError("RecordId is required");
     }

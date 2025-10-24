@@ -3,7 +3,6 @@ import Joi from "joi";
 
 export const assignOwnerToVehicleParamsSchema = Joi.object({
   vin: Joi.string().length(17).required(),
-  // vin: Joi.string().required(),
 });
 
 export const assignOwnerToVehicleBodySchema = Joi.object({

@@ -41,6 +41,8 @@ class ChatService {
     const eventName = "newConversation";
     const data = {
       conversationId: rawtResult.id,
+      guestId: guestId,
+      serviceCenterId: serviceCenterId,
     };
 
     this.#notificationService.sendToRoom(roomName, eventName, data);

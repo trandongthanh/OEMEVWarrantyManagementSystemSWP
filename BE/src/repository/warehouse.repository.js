@@ -1,7 +1,5 @@
-import { Op } from "sequelize";
+import { Op, Transaction } from "sequelize";
 import db from "../models/index.cjs";
-
-// import {  } from "joi";
 
 const { Warehouse, TypeComponent, VehicleModel, Stock } = db;
 
@@ -26,7 +24,7 @@ class WareHouseRepository {
       return [];
     }
 
-    const components = await TypeComponent.findAll({
+    const typeComponents = await TypeComponent.findAll({
       where: {
         category: category ? category : { [Op.ne]: null },
         name: {
@@ -41,10 +39,6 @@ class WareHouseRepository {
           model: VehicleModel,
           as: "vehicleModels",
           attributes: [],
-
-          through: {
-            attributes: [],
-          },
 
           where: {
             vehicleModelId: modelId,
@@ -62,20 +56,12 @@ class WareHouseRepository {
               [Op.in]: warehouseIds,
             },
           },
-          through: {
-            attributes: [
-              // "quantityInStock",
-              // "quantityReserved",
-              // "quantityAvailable",
-            ],
-          },
-
           required: false,
         },
       ],
     });
 
-    return components.map((component) => component.toJSON());
+    return typeComponents.map((typeComponent) => typeComponent.toJSON());
   };
 
   findStocksByTypeComponentOrderByWarehousePriority = async (
@@ -89,6 +75,7 @@ class WareHouseRepository {
       },
 
       transaction: transaction,
+      lock: Transaction.LOCK.SHARE,
     });
 
     const warehousesId = warehouses.map((warehouse) => warehouse.warehouseId);
@@ -104,9 +91,9 @@ class WareHouseRepository {
         },
 
         [Op.and]: db.Sequelize.where(
-          Sequelize.col("Stock.quantity_reserved"),
+          db.Sequelize.col("Stock.quantity_reserved"),
           "<",
-          Sequelize.col("Stock.quantity_in_stock")
+          db.Sequelize.col("Stock.quantity_in_stock")
         ),
       },
       transaction: transaction,
@@ -133,9 +120,6 @@ class WareHouseRepository {
               required: true,
               where: {
                 vehicleModelId: vehicleModelId,
-              },
-              through: {
-                attributes: [],
               },
             },
           ],

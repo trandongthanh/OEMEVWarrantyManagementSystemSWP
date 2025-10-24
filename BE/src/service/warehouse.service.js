@@ -25,45 +25,46 @@ class WarehouseService {
       searchName = "";
     }
 
-    const components =
+    const [typeComponents, vehicleWarranty] = await Promise.all([
       await this.#warehouseRepository.searchCompatibleComponentsInStock({
         serviceCenterId: serviceCenterId,
         searchName: searchName,
         category: category,
         modelId: modelId,
-      });
+      }),
 
-    const vehicleWarranty =
       await this.#vehicleService.findVehicleByVinWithWarranty({
         odometer: odometer,
         vin: vin,
         companyId: companyId,
+      }),
+    ]);
+
+    const typeComponentWarranties = vehicleWarranty.componentWarranties
+      ?.filter(({ duration, mileage }) => duration && mileage)
+      .map((typeComponent) => {
+        return {
+          typeComponentId: typeComponent.typeComponentId,
+          duration: typeComponent?.duration?.status,
+          mileage: typeComponent?.mileage?.status,
+        };
       });
 
-    const componentWarrantys = vehicleWarranty?.componentWarranties?.map(
-      (component) => {
-        return {
-          typeComponentId: component.typeComponentId,
-          duration: component?.duration?.status,
-          mileage: component?.mileage?.status,
-        };
-      }
-    );
+    const typeComponentsUnderWarranty =
+      typeComponentWarranties
+        ?.filter(
+          ({ duration, mileage }) =>
+            duration === "ACTIVE" && mileage === "ACTIVE"
+        )
+        .map(({ typeComponentId }) => typeComponentId) || [];
 
-    const componentsUnderWarranty = [];
-    componentWarrantys.forEach((component) => {
-      if (component.duration === "ACTIVE" && component.mileage === "ACTIVE") {
-        componentsUnderWarranty.push(component.typeComponentId);
-      }
-    });
-
-    for (const component of components) {
-      if (componentsUnderWarranty.includes(component.typeComponentId)) {
-        component.isUnderWarranty = true;
+    for (const typeComponent of typeComponents) {
+      if (typeComponentsUnderWarranty.includes(typeComponent.typeComponentId)) {
+        typeComponent.isUnderWarranty = true;
       }
     }
 
-    return components;
+    return typeComponents;
   };
 }
 

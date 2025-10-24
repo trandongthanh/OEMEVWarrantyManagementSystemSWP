@@ -1,8 +1,14 @@
 import { Op } from "sequelize";
 import db from "../models/index.cjs";
 
-const { VehicleProcessingRecord, User, VehicleModel, Vehicle, GuaranteeCase } =
-  db;
+const {
+  VehicleProcessingRecord,
+  User,
+  VehicleModel,
+  Vehicle,
+  GuaranteeCase,
+  CaseLine,
+} = db;
 
 class VehicleProcessingRecordRepository {
   createRecord = async (
@@ -116,6 +122,21 @@ class VehicleProcessingRecordRepository {
           model: GuaranteeCase,
           as: "guaranteeCases",
           attributes: ["guaranteeCaseId", "status", "contentGuarantee"],
+
+          include: [
+            {
+              model: CaseLine,
+              as: "caseLines",
+              attributes: [
+                "id",
+                "diagnosisText",
+                "correctionText",
+                "warrantyStatus",
+                "status",
+                "rejectionReason",
+              ],
+            },
+          ],
         },
 
         {
@@ -150,10 +171,6 @@ class VehicleProcessingRecordRepository {
 
     if (status) {
       whereCondition.status = status;
-    }
-
-    if (roleName === "service_center_technician") {
-      technicianCondition = { userId: userId };
     }
 
     if (roleName === "service_center_staff") {
@@ -211,9 +228,7 @@ class VehicleProcessingRecordRepository {
           model: User,
           as: "createdByStaff",
           attributes: ["userId", "name"],
-
           where: staffCondition,
-
           required: true,
         },
       ],

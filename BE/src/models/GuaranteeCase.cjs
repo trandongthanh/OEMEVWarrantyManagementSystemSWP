@@ -49,10 +49,10 @@ module.exports = (sequelize, DataTypes) => {
       as: "leadTechnicianCases",
     });
 
-    // GuaranteeCase.hasMany(models.PartShipment, {
-    //   foreignKey: "guarantee_case_id",
-    //   as: "partShipMents",
-    // });
+    GuaranteeCase.hasMany(models.CaseLine, {
+      foreignKey: "guarantee_case_id",
+      as: "caseLines",
+    });
 
     // GuaranteeCase.hasMany(models.InstalledPart, {
     //   foreignKey: "guarantee_case_id",

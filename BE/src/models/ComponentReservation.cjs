@@ -50,7 +50,6 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING(100),
         allowNull: true,
         field: "old_component_serial",
-        comment: "Serial number of old component removed from vehicle",
       },
 
       oldComponentCondition: {
