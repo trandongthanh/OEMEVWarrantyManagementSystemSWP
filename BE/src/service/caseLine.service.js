@@ -697,15 +697,6 @@ class CaseLineService {
     if (!guaranteeCase) {
       throw new NotFoundError("Guarantee case not found");
     }
-
-    const caseLinesCount = guaranteeCase.caseLines.length;
-
-    if (caseLinesCount !== 0) {
-      throw new ConflictError(
-        "Case lines have already been created for this guarantee case"
-      );
-    }
-
     const isTechMain = techId === guaranteeCase.leadTechId;
 
     if (!isTechMain) {
@@ -867,6 +858,49 @@ class CaseLineService {
     );
 
     return componentIds;
+  };
+
+  // Delete a caseline by id. Technicians can delete caselines they created; staff/managers allowed as well.
+  deleteCaseline = async ({ caselineId, userId, roleName, serviceCenterId, companyId }) => {
+    return await db.sequelize.transaction(async (transaction) => {
+      const caseline = await this.#caselineRepository.findById(
+        caselineId,
+        transaction,
+        Transaction.LOCK.UPDATE
+      );
+
+      if (!caseline) {
+        throw new NotFoundError("Caseline not found");
+      }
+
+      const isDiagnosticTech = caseline.diagnosticTechnician?.userId === userId;
+      const isRepairTech = caseline.repairTechnician?.userId === userId;
+      const isLeadTechnician = caseline.guaranteeCase && (caseline.guaranteeCase.leadTechId === userId);
+
+      // If user is a technician, allow delete when:
+      // - they are the diagnostic technician on the caseline
+      // - they are the repair technician on the caseline
+      // - OR they are the lead technician of the guarantee case
+      // Staff/managers are allowed by router-level authorization.
+      if (roleName === "service_center_technician") {
+        if (!isDiagnosticTech && !isRepairTech && !isLeadTechnician) {
+          throw new ForbiddenError(
+            "User does not have permission to delete this caseline"
+          );
+        }
+      }
+
+      const deleted = await this.#caselineRepository.deleteCaseline(
+        caselineId,
+        transaction
+      );
+
+      if (!deleted) {
+        throw new ConflictError("Failed to delete caseline");
+      }
+
+      return { deleted: true };
+    });
   };
 }
 

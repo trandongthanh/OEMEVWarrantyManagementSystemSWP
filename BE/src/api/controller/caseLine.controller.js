@@ -179,6 +179,26 @@ class CaseLineController {
       },
     });
   };
+
+  // Delete a caseline (hard delete)
+  deleteCaseline = async (req, res, next) => {
+    const { caselineId } = req.params;
+    const { userId, roleName, serviceCenterId } = req.user;
+    const { companyId } = req;
+
+    const result = await this.#caseLineService.deleteCaseline({
+      caselineId,
+      userId,
+      roleName,
+      serviceCenterId,
+      companyId,
+    });
+
+    res.status(200).json({
+      status: "success",
+      data: result,
+    });
+  };
 }
 
 export default CaseLineController;
