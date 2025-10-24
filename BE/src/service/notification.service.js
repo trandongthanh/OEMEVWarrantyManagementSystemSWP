@@ -20,6 +20,11 @@ class NotificationService {
       return false;
     }
 
+    console.log(
+      `Sending notification to room: ${roomName}, event: ${eventName}, data: `,
+      data
+    );
+
     this.#notifications.to(roomName).emit(eventName, {
       ...data,
       sentAt: dayjs(),

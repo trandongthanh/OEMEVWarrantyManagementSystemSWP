@@ -40,7 +40,6 @@ export function authorizationByRole(roles) {
     if (!roles.includes(req.user.roleName)) {
       throw new ForbiddenError();
     }
-
     next();
   };
 }

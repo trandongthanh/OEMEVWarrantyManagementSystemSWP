@@ -1,8 +1,11 @@
 import { Transaction } from "sequelize";
-import { ConflictError, NotFoundError } from "../error/index.js";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from "../error/index.js";
 import db from "../models/index.cjs";
-import { allocateStock } from "../util/allocateStock.js";
-import guaranteeCaseToCreateCaseLinesValidator from "../validators/guaranteeCaseToCreateCaseLines.validatior.js";
+import { formatUTCtzHCM } from "../util/formatUTCtzHCM.js";
 
 class CaseLineService {
   #caselineRepository;
@@ -41,35 +44,14 @@ class CaseLineService {
     techId,
     companyId,
   }) => {
-    const rawResult = await db.sequelize.transaction(async (t) => {
-      const guaranteeCase = await this.#guaranteeCaseRepository.findDetailById(
-        { guaranteeCaseId: guaranteeCaseId },
-        t
+    const rawResult = await db.sequelize.transaction(async (transaction) => {
+      const guaranteeCase = await this.#validateGuaranteeCaseForCaseLines(
+        guaranteeCaseId,
+        transaction,
+        techId
       );
 
-      if (!guaranteeCase) {
-        throw new NotFoundError("Guarantee case not found");
-      }
-
-      const isTechMain = techId === guaranteeCase.leadTechId;
-
-      if (!isTechMain) {
-        throw new ConflictError(
-          "Technician is not the main technician for caselines"
-        );
-      }
-
-      const { error } = guaranteeCaseToCreateCaseLinesValidator.validate({
-        status: guaranteeCase.status,
-      });
-
-      if (error) {
-        throw new ConflictError(
-          `Guarantee case status is not valid for creating caselines: ${error.message}`
-        );
-      }
-
-      const components =
+      const typeComponents =
         await this.#warehouseService.searchCompatibleComponentsInStock({
           serviceCenterId: serviceCenterId,
           modelId:
@@ -79,33 +61,31 @@ class CaseLineService {
           companyId: companyId,
         });
 
-      const componentsFormat = components.map((component) => {
-        return {
-          typeComponentId: component.typeComponentId,
-          isUnderWarranty: component.isUnderWarranty || false,
-        };
-      });
+      const typeComponentsMap = new Map(
+        typeComponents
+          .filter((c) => c?.typeComponentId)
+          .map((c) => [c.typeComponentId, Boolean(c.isUnderWarranty)])
+      );
 
-      const componentsMap = new Map();
-      componentsFormat.forEach((component) => {
-        componentsMap.set(component.typeComponentId, component.isUnderWarranty);
-      });
+      this.#validateWarrantyConsistency(typeComponentsMap, caselines);
 
-      for (const caseline of caselines) {
-        if (componentsMap.has(caseline.componentId)) {
-          const isUnderWarranty = caseline.warrantyStatus === "ELIGIBLE";
+      const processedCaselines = this.#assignInitialCaseLineStatuses(
+        typeComponentsMap,
+        caselines
+      );
 
-          if (componentsMap.get(caseline.componentId) === isUnderWarranty) {
-            continue;
-          } else {
-            throw new ConflictError(
-              `Component warranty status mismatch for componentId: ${caseline.componentId}`
-            );
-          }
+      for (const caseline of processedCaselines) {
+        if (
+          caseline.warrantyStatus === "REJECTED_BY_TECH" &&
+          !caseline.rejectionReason
+        ) {
+          throw new ConflictError(
+            `Technician must provide a rejection reason if caseline with typeComponentId ${caseline.typeComponentId} is marked as REJECTED_BY_TECH`
+          );
         }
       }
 
-      const dataCaselines = caselines.map((caseline) => ({
+      const dataCaselines = processedCaselines.map((caseline) => ({
         ...caseline,
         guaranteeCaseId: guaranteeCaseId,
         diagnosticTechId: techId,
@@ -113,11 +93,11 @@ class CaseLineService {
 
       const newCaseLines = await this.#caselineRepository.bulkCreate(
         { caselines: dataCaselines },
-        t
+        transaction
       );
 
-      if (!newCaseLines || newCaseLines.length === 0) {
-        return;
+      if (!newCaseLines) {
+        throw new ConflictError("Failed to create case lines");
       }
 
       const updatedGuaranteeCase =
@@ -126,8 +106,9 @@ class CaseLineService {
             guaranteeCaseId: guaranteeCaseId,
             status: "DIAGNOSED",
           },
-          t
+          transaction
         );
+
       if (!updatedGuaranteeCase) {
         throw new ConflictError("Failed to update guarantee case status");
       }
@@ -138,32 +119,137 @@ class CaseLineService {
     return rawResult;
   };
 
-  allocateStockForCaseline = async ({ caselineId }) => {
-    return await db.sequelize.transaction(async (t) => {
-      const caseline = await this.#caselineRepository.findById(
-        { caselineId: caselineId },
-        t,
-        t.LOCK.UPDATE
-      );
-
-      if (!caseline) {
-        throw new NotFoundError("Caseline not found");
-      }
-
-      if (caseline.status !== "CUSTOMER_APPROVED") {
-        throw new ConflictError(
-          "Caseline must be CUSTOMER_APPROVED to allocate stock"
-        );
-      }
-
-      const guaranteeCase = await this.#guaranteeCaseRepository.findById(
-        { guaranteeCaseId: caseline.guaranteeCaseId },
-        t
+  createCaseLine = async ({
+    guaranteeCaseId,
+    typeComponentId,
+    quantity,
+    diagnosisText,
+    correctionText,
+    warrantyStatus,
+    serviceCenterId,
+    techId,
+    companyId,
+  }) => {
+    const rawResult = await db.sequelize.transaction(async (transaction) => {
+      const guaranteeCase = await this.#guaranteeCaseRepository.findDetailById(
+        { guaranteeCaseId: guaranteeCaseId },
+        transaction
       );
 
       if (!guaranteeCase) {
         throw new NotFoundError("Guarantee case not found");
       }
+
+      const typeComponents =
+        await this.#warehouseService.searchCompatibleComponentsInStock({
+          serviceCenterId: serviceCenterId,
+          modelId:
+            guaranteeCase?.vehicleProcessingRecord?.vehicle?.vehicleModelId,
+          vin: guaranteeCase?.vehicleProcessingRecord?.vehicle?.vin,
+          odometer: guaranteeCase?.vehicleProcessingRecord?.odometer,
+          companyId: companyId,
+        });
+
+      const typeComponentsMap = new Map(
+        typeComponents
+          .filter((c) => c?.typeComponentId)
+          .map((c) => [c.typeComponentId, Boolean(c.isUnderWarranty)])
+      );
+
+      if (typeComponentId && typeComponentsMap.has(typeComponentId)) {
+        const isUnderWarrantyByTech =
+          warrantyStatus === "ELIGIBLE" ? true : false;
+
+        const isUnderWarrantyBySystem = typeComponentsMap.get(typeComponentId);
+
+        if (!isUnderWarrantyBySystem && isUnderWarrantyByTech) {
+          throw new ConflictError(
+            "Component is marked as under warranty by technician but is out of warranty in system"
+          );
+        }
+      }
+
+      let initialStatus;
+      if (typeComponentId) {
+        const systemWarrantyStatus = typeComponentsMap.get(typeComponentId);
+
+        if (systemWarrantyStatus && warrantyStatus === "ELIGIBLE") {
+          initialStatus = "PENDING_APPROVAL";
+        } else if (systemWarrantyStatus && warrantyStatus === "INELIGIBLE") {
+          initialStatus = "REJECTED_BY_TECH";
+        } else {
+          initialStatus = "REJECTED_BY_OUT_OF_WARRANTY";
+        }
+      } else {
+        initialStatus = "PENDING_APPROVAL";
+      }
+
+      const newCaseLine = await this.#caselineRepository.createCaseline(
+        {
+          guaranteeCaseId: guaranteeCaseId,
+          typeComponentId,
+          quantity,
+          diagnosisText,
+          correctionText,
+          status: initialStatus,
+          warrantyStatus,
+          diagnosticTechId: techId,
+        },
+        transaction
+      );
+
+      if (!newCaseLine) {
+        throw new ConflictError("Failed to create case line");
+      }
+
+      return newCaseLine;
+    });
+
+    return rawResult;
+  };
+
+  getCaseLineById = async (
+    userId,
+    roleName,
+    caselineId,
+    transaction = null,
+    lock = null
+  ) => {
+    const caseLine = await this.#caselineRepository.findDetailById(
+      caselineId,
+      transaction,
+      lock
+    );
+
+    if (!caseLine) {
+      throw new NotFoundError("Case line not found");
+    }
+
+    const isDiagnosticTech = caseLine.diagnosticTechnician.userId === userId;
+
+    const repairTech = caseLine.repairTechnicianrepairTechId === userId;
+
+    if (roleName === "service_center_technician") {
+      if (!isDiagnosticTech && !repairTech) {
+        throw new ForbiddenError(
+          "User does not have permission to access this case line"
+        );
+      }
+    }
+    return caseLine;
+  };
+
+  allocateStockForCaseline = async ({ caseId, caselineId, userId }) => {
+    const rawResult = await db.sequelize.transaction(async (transaction) => {
+      const { caseline } = await this.#validateCaseLine(
+        caselineId,
+        transaction
+      );
+
+      const guaranteeCase = await this.#guaranteeCaseRepository.findDetailById(
+        { guaranteeCaseId: caseId },
+        transaction
+      );
 
       const stocks =
         await this.#warehouseRepository.findStocksByTypeComponentOrderByWarehousePriority(
@@ -175,122 +261,390 @@ class CaseLineService {
             vehicleModelId:
               guaranteeCase?.vehicleProcessingRecord?.vehicle?.vehicleModelId,
           },
-          t,
+          transaction,
           Transaction.LOCK.UPDATE
         );
-
-      if (stocks.length === 0) {
-        return null;
-      }
-
-      const totalAvailable = stocks.reduce(
-        (total, stock) => total + stock.quantityAvailable,
-        0
-      );
-
-      if (totalAvailable < caseline.quantity) {
-        throw new ConflictError("Insufficient stock available for allocation");
-      }
-
-      const reservations = this.#allocateStock({
-        stocks,
-        quantity: caseline.quantity,
-      });
-
-      if (reservations.length === 0) {
-        throw new ConflictError("Failed to allocate stock for caseline");
-      }
 
       const stocksMap = new Map();
       for (const stock of stocks) {
         stocksMap.set(stock.stockId, stock);
       }
 
-      const allComponents = [];
-      for (const reservation of reservations) {
-        const stock = stocksMap.get(reservation.stockId);
+      this.#validateStockAvailability(stocks, caseline);
 
-        if (!stock) {
-          throw new NotFoundError(
-            `Stock with ID ${reservation.stockId} not found`
-          );
-        }
+      const reservations = this.#allocateStock({
+        stocks,
+        quantity: caseline.quantity,
+      });
 
-        const components =
-          await this.#componentRepository.findAvailableComponents(
-            {
-              typeComponentId: caseline.typeComponentId,
-              warehouseId: stock.warehouseId,
-              limit: reservation.quantity,
-            },
-            t,
-            Transaction.LOCK.UPDATE
-          );
-
-        if (components.length < reservation.quantity) {
-          throw new ConflictError(
-            `Insufficient available components in warehouse ${stock.warehouseId}. ` +
-              `Requested: ${reservation.quantity}, Available: ${components.length}`
-          );
-        }
-
-        allComponents.push(...components);
-      }
-
-      const componentIds = allComponents.map(
-        (component) => component.componentId
-      );
-
-      const stockUpdates = reservations.map((reservation) => ({
-        stockId: reservation.stockId,
-        quantityReserved: reservation.quantity,
-      }));
+      const componentIds = await this.#collectComponentsFromReservations({
+        reservations,
+        caseline,
+        stocksMap,
+        transaction,
+      });
 
       const componentReservationsToCreate = componentIds.map((componentId) => ({
-        caselineId: caselineId,
+        caseLineId: caselineId,
         componentId: componentId,
       }));
 
-      await this.#componentReservationRepository.bulkCreate(
-        { componentReservations: componentReservationsToCreate },
-        t
+      const [
+        componentReservations,
+        stockUpdates,
+        componentStatusUpdates,
+        caselineStatusUpdate,
+      ] = await Promise.all([
+        this.#componentReservationRepository.bulkCreate(
+          { componentReservations: componentReservationsToCreate },
+          transaction
+        ),
+
+        this.#warehouseRepository.bulkUpdateStockQuantities(
+          { reservations: reservations },
+          transaction
+        ),
+
+        this.#componentRepository.bulkUpdateStatus(
+          {
+            componentIds: componentIds,
+            status: "RESERVED",
+          },
+          transaction
+        ),
+
+        this.#caselineRepository.bulkUpdateStatusByIds(
+          {
+            caseLineIds: [caselineId],
+            status: "READY_FOR_REPAIR",
+          },
+          transaction
+        ),
+      ]);
+
+      return {
+        componentReservations,
+        stockUpdates,
+        componentStatusUpdates,
+        caselineStatusUpdate,
+      };
+    });
+
+    const {
+      componentReservations,
+      stockUpdates,
+      componentStatusUpdates,
+      caselineStatusUpdate,
+    } = rawResult;
+
+    const formattedCaselineStatus = caselineStatusUpdate.map((cl) => ({
+      caselineId: cl.id,
+      status: cl.status,
+      updatedAt: formatUTCtzHCM(cl.updatedAt),
+    }));
+
+    return {
+      componentReservations,
+      stockUpdates,
+      componentStatusUpdates,
+      formattedCaselineStatus,
+    };
+  };
+
+  approveCaseline = async ({ approvedCaseLineIds, rejectedCaseLineIds }) => {
+    const arrayApproveIds = approvedCaseLineIds?.map((id) => id?.id);
+    const arrayRejectId = rejectedCaseLineIds?.map((id) => id?.id);
+
+    const arrayIds = [...arrayApproveIds, ...arrayRejectId];
+
+    const rawResult = await db.sequelize.transaction(async (transaction) => {
+      const caselines = await this.#caselineRepository.findByIds(
+        { caseLineIds: arrayIds },
+        transaction,
+        Transaction.LOCK.UPDATE
       );
 
-      await this.#warehouseRepository.bulkUpdateStockQuantities(
-        { reservations: stockUpdates },
-        t
+      if (!caselines || caselines.length === 0) {
+        throw new NotFoundError("Caselines not found");
+      }
+
+      for (const caseline of caselines) {
+        if (caseline.status !== "PENDING_APPROVAL") {
+          throw new ConflictError(
+            `Caseline with ID ${caseline.id} is not in PENDING_APPROVAL status`
+          );
+        }
+
+        if (caseline.warrantyStatus === "INELIGIBLE") {
+          throw new ConflictError(
+            `Caseline with ID ${caseline.id} has INELIGIBLE warranty status and cannot be approved by customer`
+          );
+        }
+      }
+
+      const [updatedApprovedCaseLines, updatedRejectedCaseLines] =
+        await Promise.all([
+          arrayApproveIds.length > 0
+            ? this.#caselineRepository.bulkUpdateStatusByIds(
+                {
+                  caseLineIds: arrayApproveIds,
+                  status: "CUSTOMER_APPROVED",
+                },
+                transaction
+              )
+            : null,
+
+          arrayRejectId.length > 0
+            ? this.#caselineRepository.bulkUpdateStatusByIds(
+                {
+                  caseLineIds: arrayRejectId,
+                  status: "REJECTED_BY_CUSTOMER",
+                },
+                transaction
+              )
+            : null,
+        ]);
+
+      return { updatedApprovedCaseLines, updatedRejectedCaseLines };
+    });
+
+    const { updatedApprovedCaseLines, updatedRejectedCaseLines } = rawResult;
+
+    const formattedApprovedCaselines = updatedApprovedCaseLines
+      ? this.#formatConfirmedCaseline(updatedApprovedCaseLines)
+      : [];
+
+    const formattedRejectedCaselines = updatedRejectedCaseLines
+      ? this.#formatConfirmedCaseline(updatedRejectedCaseLines)
+      : [];
+
+    return {
+      formattedApprovedCaselines,
+      formattedRejectedCaselines,
+    };
+  };
+
+  updateCaseline = async ({
+    guaranteeCaseId,
+    caselineId,
+    diagnosisText,
+    correctionText,
+    typeComponentId,
+    quantity,
+    warrantyStatus,
+    rejectionReason,
+    serviceCenterId,
+    companyId,
+  }) => {
+    const rawResult = await db.sequelize.transaction(async (transaction) => {
+      const caseline = await this.#caselineRepository.findById(
+        caselineId,
+        transaction,
+        Transaction.LOCK.UPDATE
       );
 
-      await this.#componentRepository.bulkUpdateStatus(
-        {
-          componentIds: componentIds,
-          status: "RESERVED",
-        },
-        t
+      if (!caseline) {
+        throw new NotFoundError("Caseline not found");
+      }
+
+      if (caseline.status === "PENDING_APPROVAL") {
+        const guaranteeCase =
+          await this.#guaranteeCaseRepository.findDetailById(
+            { guaranteeCaseId: guaranteeCaseId },
+            transaction
+          );
+
+        if (!guaranteeCase) {
+          throw new NotFoundError("Guarantee case not found");
+        }
+
+        const typeComponents =
+          await this.#warehouseService.searchCompatibleComponentsInStock({
+            serviceCenterId: serviceCenterId,
+            modelId:
+              guaranteeCase?.vehicleProcessingRecord?.vehicle?.vehicleModelId,
+            vin: guaranteeCase?.vehicleProcessingRecord?.vehicle?.vin,
+            odometer: guaranteeCase?.vehicleProcessingRecord?.odometer,
+            companyId: companyId,
+          });
+
+        const typeComponentsMap = new Map(
+          typeComponents
+            .filter((c) => c?.typeComponentId)
+            .map((c) => [c.typeComponentId, Boolean(c.isUnderWarranty)])
+        );
+
+        if (typeComponentId) {
+          if (typeComponentsMap.has(typeComponentId)) {
+            const isUnderWarrantyByTech =
+              warrantyStatus === "ELIGIBLE" ? true : false;
+
+            const isUnderWarrantyBySystem =
+              typeComponentsMap.get(typeComponentId);
+
+            if (!isUnderWarrantyBySystem && isUnderWarrantyByTech) {
+              throw new ConflictError(
+                "Component is marked as under warranty by technician but is out of warranty in system"
+              );
+            }
+          }
+        }
+
+        if (warrantyStatus === "INELIGIBLE" && !rejectionReason) {
+          throw new ConflictError(
+            `Technician must provide a rejection reason if caseline with typeComponentId ${caseline.typeComponentId} is marked as REJECTED_BY_TECH`
+          );
+        }
+
+        let initialStatus;
+
+        if (typeComponentId) {
+          const systemWarrantyStatus = typeComponentsMap.get(typeComponentId);
+
+          if (systemWarrantyStatus && warrantyStatus === "ELIGIBLE") {
+            initialStatus = "PENDING_APPROVAL";
+          } else if (systemWarrantyStatus && warrantyStatus === "INELIGIBLE") {
+            initialStatus = "REJECTED_BY_TECH";
+          } else {
+            initialStatus = "REJECTED_BY_OUT_OF_WARRANTY";
+          }
+        } else {
+          initialStatus = "PENDING_APPROVAL";
+        }
+
+        var updatedCaseline = await this.#caselineRepository.updateCaseline(
+          {
+            caselineId,
+            diagnosisText,
+            correctionText,
+            typeComponentId,
+            quantity,
+            status: initialStatus,
+            warrantyStatus,
+            rejectionReason,
+          },
+          transaction
+        );
+
+        if (!updatedCaseline) {
+          throw new ConflictError("Failed to update caseline");
+        }
+      } else {
+        throw new ConflictError(
+          "Caseline can only be updated when it is in PENDING_APPROVAL status"
+        );
+      }
+
+      return updatedCaseline;
+    });
+
+    return rawResult;
+  };
+
+  #formatConfirmedCaseline = (caselines) => {
+    return caselines.map((cl) => ({
+      caselineId: cl.id,
+      status: cl.status,
+      updatedAt: formatUTCtzHCM(cl.updatedAt),
+    }));
+  };
+
+  assignTechnicianToRepairCaseline = async ({
+    caselineId,
+    technicianId,
+    serviceCenterId,
+  }) => {
+    return await db.sequelize.transaction(async (transaction) => {
+      const caseline = await this.#caselineRepository.findById(
+        caselineId,
+        transaction,
+        Transaction.LOCK.UPDATE
       );
 
-      await this.#caselineRepository.bulkUpdateStatusByIds(
-        {
-          caseLineIds: [caselineId],
-          status: "READY_FOR_REPAIR",
-        },
-        t
+      if (!caseline) {
+        throw new NotFoundError("Caseline not found");
+      }
+
+      if (caseline.status !== "READY_FOR_REPAIR") {
+        throw new ConflictError(
+          `Caseline must be READY_FOR_REPAIR to assign technician. Current status: ${caseline.status}`
+        );
+      }
+
+      const existingAssignment =
+        await this.#taskAssignmentRepository.findByCaselineId(
+          caselineId,
+          transaction
+        );
+
+      if (existingAssignment) {
+        throw new ConflictError(
+          `Technician already assigned to this caseline. Current assignee: ${existingAssignment.technicianId}`
+        );
+      }
+
+      const technician = await this.#userRepository.findUserById(
+        { userId: technicianId },
+        transaction
       );
+
+      if (!technician) {
+        throw new NotFoundError("Technician not found");
+      }
+
+      if (technician.serviceCenterId !== serviceCenterId) {
+        throw new ConflictError(
+          "Technician does not belong to this service center"
+        );
+      }
+
+      if (technician.role.roleName !== "service_center_technician") {
+        throw new ConflictError(
+          "User is not a technician. Role must be service_center_technician"
+        );
+      }
+
+      const [taskAssignment, updatedCaseline] = await Promise.all([
+        this.#taskAssignmentRepository.createTaskAssignmentForCaseline(
+          {
+            caselineId,
+            technicianId,
+            taskType: "REPAIR",
+          },
+          transaction
+        ),
+
+        this.#caselineRepository.assignTechnicianToRepairCaseline({
+          caselineId,
+          technicianId,
+          transaction,
+        }),
+      ]);
+
+      if (!taskAssignment) {
+        throw new ConflictError("Failed to create task assignment");
+      }
+
+      if (!updatedCaseline) {
+        throw new ConflictError(
+          "Failed to update caseline with technician assignment"
+        );
+      }
 
       return {
         caseline: {
-          caselineId: caselineId,
-          status: "READY_FOR_REPAIR",
+          caselineId: updatedCaseline.id,
+          repairTechId: updatedCaseline.repairTechId,
+          status: updatedCaseline.status,
+          updatedAt: formatUTCtzHCM(updatedCaseline.updatedAt),
         },
-        allocatedComponents: allComponents.length,
-        allocations: reservations.map((r) => {
-          const stock = stocks.find((s) => s.stockId === r.stockId);
-          return {
-            warehouseId: stock.warehouseId,
-            warehouseName: stock.warehouse?.name,
-            quantity: r.quantity,
-          };
-        }),
+        assignment: {
+          taskAssignmentId: taskAssignment.taskAssignmentId,
+          technicianId: taskAssignment.technicianId,
+          technicianName: technician.name,
+          taskType: taskAssignment.taskType,
+          status: taskAssignment.status,
+        },
       };
     });
   };
@@ -312,7 +666,7 @@ class CaseLineService {
       if (quantityCantake) {
         reservations.push({
           stockId: stock.stockId,
-          quantity: quantityCantake,
+          quantityReserved: quantityCantake,
         });
 
         quantityNeed -= quantityCantake;
@@ -323,100 +677,196 @@ class CaseLineService {
       }
     }
 
+    if (reservations.length === 0) {
+      throw new ConflictError("Failed to allocate stock for caseline");
+    }
+
     return reservations;
   };
 
-  assignTechnicianToCaseline = async ({
-    caselineId,
-    technicianId,
-    serviceCenterId,
+  #validateGuaranteeCaseForCaseLines = async (
+    guaranteeCaseId,
+    transaction,
+    techId
+  ) => {
+    const guaranteeCase = await this.#guaranteeCaseRepository.findDetailById(
+      { guaranteeCaseId: guaranteeCaseId },
+      transaction
+    );
+
+    if (!guaranteeCase) {
+      throw new NotFoundError("Guarantee case not found");
+    }
+
+    const caseLinesCount = guaranteeCase.caseLines.length;
+
+    if (caseLinesCount !== 0) {
+      throw new ConflictError(
+        "Case lines have already been created for this guarantee case"
+      );
+    }
+
+    const isTechMain = techId === guaranteeCase.leadTechId;
+
+    if (!isTechMain) {
+      throw new ConflictError(
+        "Technician is not the main technician for caselines"
+      );
+    }
+
+    return guaranteeCase;
+  };
+
+  #validateWarrantyConsistency = (typeComponentsMap, caselines) => {
+    if (
+      !typeComponentsMap ||
+      !(typeComponentsMap instanceof Map) ||
+      !Array.isArray(caselines)
+    ) {
+      throw new Error("Invalid arguments for validateWarrantyConsistency");
+    }
+
+    for (const caseline of caselines) {
+      if (!caseline?.typeComponentId) continue;
+
+      if (typeComponentsMap.has(caseline.typeComponentId)) {
+        const isUnderWarrantyByTech =
+          caseline.warrantyStatus === "ELIGIBLE" ? true : false;
+
+        const isUnderWarrantyBySystem = typeComponentsMap.get(
+          caseline.typeComponentId
+        );
+
+        if (!isUnderWarrantyBySystem && isUnderWarrantyByTech) {
+          throw new ConflictError(
+            "Component is marked as under warranty by technician but is out of warranty in system"
+          );
+        }
+      }
+    }
+  };
+
+  #assignInitialCaseLineStatuses = (typeComponentsMap, caselines) => {
+    const processedCaselines = [];
+
+    for (const caseline of caselines) {
+      const newCaseline = { ...caseline };
+
+      const warrantyStatusByTech = newCaseline.warrantyStatus;
+
+      const systemWarrantyStatus = typeComponentsMap.get(
+        newCaseline.typeComponentId
+      );
+
+      let initialStatus;
+
+      if (systemWarrantyStatus && warrantyStatusByTech === "ELIGIBLE") {
+        initialStatus = "PENDING_APPROVAL";
+      } else if (
+        systemWarrantyStatus &&
+        warrantyStatusByTech === "INELIGIBLE"
+      ) {
+        initialStatus = "REJECTED_BY_TECH";
+      } else {
+        initialStatus = "REJECTED_BY_OUT_OF_WARRANTY";
+      }
+
+      newCaseline.status = initialStatus;
+      processedCaselines.push(newCaseline);
+    }
+
+    return processedCaselines;
+  };
+
+  #validateCaseLine = async (caselineId, transaction) => {
+    const caseline = await this.#caselineRepository.findById(
+      caselineId,
+      transaction,
+      Transaction.LOCK.UPDATE
+    );
+
+    if (!caseline) {
+      throw new NotFoundError("Caseline not found");
+    }
+
+    if (caseline.status !== "CUSTOMER_APPROVED") {
+      throw new ConflictError(
+        "Caseline must be CUSTOMER_APPROVED to allocate stock"
+      );
+    }
+
+    const guaranteeCase = caseline?.guaranteeCase;
+
+    if (!guaranteeCase) {
+      throw new NotFoundError(
+        "Associated guarantee case not found for the caseline"
+      );
+    }
+
+    return { caseline };
+  };
+
+  #validateStockAvailability = async (stocks, caseline) => {
+    if (stocks.length === 0) {
+      return null;
+    }
+
+    const totalAvailable = stocks.reduce(
+      (total, stock) => total + stock.quantityAvailable,
+      0
+    );
+
+    if (totalAvailable < caseline.quantity) {
+      throw new ConflictError("Insufficient stock available for allocation");
+    }
+  };
+
+  #collectComponentsFromReservations = async ({
+    reservations,
+    caseline,
+    stocksMap,
+    transaction,
   }) => {
-    return await db.sequelize.transaction(async (t) => {
-      const caseline = await this.#caselineRepository.findById(
-        { caselineId },
-        t,
-        Transaction.LOCK.UPDATE
-      );
+    const allComponents = [];
+    for (const reservation of reservations) {
+      const stock = stocksMap.get(reservation.stockId);
 
-      if (!caseline) {
-        throw new NotFoundError("Caseline not found");
-      }
-
-      if (caseline.status !== "READY_FOR_REPAIR") {
-        throw new ConflictError(
-          `Caseline must be READY_FOR_REPAIR to assign technician. Current status: ${caseline.status}`
+      if (!stock) {
+        throw new NotFoundError(
+          `Stock with ID ${reservation.stockId} not found`
         );
       }
 
-      const existingAssignment =
-        await this.#taskAssignmentRepository.findByCaselineId(
-          { caselineId },
-          t
-        );
-
-      if (existingAssignment) {
-        throw new ConflictError(
-          `Technician already assigned to this caseline. Current assignee: ${existingAssignment.technicianId}`
-        );
-      }
-
-      const technician = await this.#userRepository.findUserById(
-        { userId: technicianId },
-        t
-      );
-
-      if (!technician) {
-        throw new NotFoundError("Technician not found");
-      }
-
-      if (technician.serviceCenterId !== serviceCenterId) {
-        throw new ConflictError(
-          "Technician does not belong to this service center"
-        );
-      }
-
-      if (technician.roleId !== "service_center_technician") {
-        throw new ConflictError(
-          "User is not a technician. Role must be service_center_technician"
-        );
-      }
-
-      const taskAssignment =
-        await this.#taskAssignmentRepository.createTaskAssignmentForCaseline(
+      const components =
+        await this.#componentRepository.findAvailableComponents(
           {
-            caselineId,
-            technicianId,
-            taskType: "REPAIR",
+            typeComponentId: caseline.typeComponentId,
+            warehouseId: stock.warehouse.warehouseId,
+            limit: reservation.quantityReserved,
           },
-          t
+          transaction,
+          Transaction.LOCK.UPDATE
         );
 
-      if (!taskAssignment) {
-        throw new ConflictError("Failed to create task assignment");
+      if (components.length < reservation.quantityReserved) {
+        throw new ConflictError(
+          `Insufficient available components in warehouse ${stock.warehouseId}. ` +
+            `Requested: ${reservation.quantity}, Available: ${components.length}`
+        );
       }
 
-      await this.#caselineRepository.bulkUpdateStatusByIds(
-        {
-          caseLineIds: [caselineId],
-          status: "IN_PROGRESS",
-        },
-        t
-      );
+      allComponents.push(...components);
+    }
 
-      return {
-        caseline: {
-          caselineId,
-          status: "IN_PROGRESS",
-        },
-        assignment: {
-          taskAssignmentId: taskAssignment.taskAssignmentId,
-          technicianId: taskAssignment.technicianId,
-          technicianName: technician.name,
-          taskType: taskAssignment.taskType,
-          status: taskAssignment.status,
-        },
-      };
-    });
+    if (allComponents.length === 0) {
+      throw new ConflictError("No components collected from reservations");
+    }
+
+    const componentIds = allComponents.map(
+      (component) => component.componentId
+    );
+
+    return componentIds;
   };
 }
 

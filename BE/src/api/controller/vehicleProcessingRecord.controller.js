@@ -86,7 +86,7 @@ class VehicleProcessingRecordController {
     const { searchName, category } = req.query;
     const { companyId } = req;
 
-    const record = await this.#vehicleProcessingRecordService.findById({
+    const record = await this.#vehicleProcessingRecordService.findDetailById({
       id: id,
       userId: userId,
       roleName: roleName,

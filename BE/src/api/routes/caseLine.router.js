@@ -4,6 +4,11 @@ import {
   assignTechnicianParamsSchema,
   assignTechnicianBodySchema,
   allocateStockParamsSchema,
+  approveCaselineBodySchema,
+  updateCaselineBodySchema,
+  updateCaselineParamsSchema,
+  caseLineSchema,
+  getCaseLineByIdParamsSchema,
 } from "../../validators/caseLine.validator.js";
 import {
   attachCompanyContext,
@@ -272,7 +277,32 @@ router.post(
   authentication,
   authorizationByRole(["service_center_technician"]),
   attachCompanyContext,
-  validate(createCaseLinesSchema),
+  validate(createCaseLinesSchema, "body"),
+  async (req, res, next) => {
+    const caseLineController = req.container.resolve("caseLineController");
+
+    await caseLineController.createCaseLines(req, res, next);
+  }
+);
+
+router.patch(
+  "/approve",
+  authentication,
+  authorizationByRole(["service_center_staff"]),
+  validate(approveCaselineBodySchema, "body"),
+  async (req, res, next) => {
+    const caseLineController = req.container.resolve("caseLineController");
+    await caseLineController.approveCaseline(req, res, next);
+  }
+);
+
+router.post(
+  "/case-line",
+  authentication,
+  authorizationByRole(["service_center_technician"]),
+  attachCompanyContext,
+  validate(caseLineSchema, "body"),
+
   async (req, res, next) => {
     const caseLineController = req.container.resolve("caseLineController");
 
@@ -280,140 +310,34 @@ router.post(
   }
 );
 
-/**
- * @swagger
- * /case-lines/{caselineId}/assign-technician:
- *   post:
- *     summary: Assign a technician to a caseline
- *     description: Assign a technician to handle repairs for a specific caseline. The caseline must be in READY_FOR_REPAIR status. Only service center managers can assign technicians.
- *     tags: [Case Line]
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: caselineId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: Caseline ID to assign technician to
- *         example: "770e8400-e29b-41d4-a716-446655440003"
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - technicianId
- *             properties:
- *               technicianId:
- *                 type: string
- *                 format: uuid
- *                 description: ID of the technician to assign
- *                 example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
- *           example:
- *             technicianId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
- *     responses:
- *       200:
- *         description: Technician assigned successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: "success"
- *                 data:
- *                   type: object
- *                   properties:
- *                     caseline:
- *                       type: object
- *                       properties:
- *                         caselineId:
- *                           type: string
- *                           format: uuid
- *                           example: "770e8400-e29b-41d4-a716-446655440003"
- *                         status:
- *                           type: string
- *                           example: "IN_PROGRESS"
- *                     assignment:
- *                       type: object
- *                       properties:
- *                         taskAssignmentId:
- *                           type: string
- *                           format: uuid
- *                           example: "99887766-5544-3322-1100-ffeeddccbbaa"
- *                         technicianId:
- *                           type: string
- *                           format: uuid
- *                           example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
- *                         technicianName:
- *                           type: string
- *                           example: "Nguyễn Văn An"
- *                         taskType:
- *                           type: string
- *                           example: "REPAIR"
- *                         status:
- *                           type: string
- *                           example: "ASSIGNED"
- *       400:
- *         description: Bad request - Invalid input
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: "error"
- *                 message:
- *                   type: string
- *                   example: "technicianId must be a valid UUID"
- *       401:
- *         description: Unauthorized - Invalid or missing token
- *       403:
- *         description: Forbidden - Requires service_center_manager role
- *       404:
- *         description: Caseline or technician not found
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: "error"
- *                 message:
- *                   type: string
- *                   example: "Caseline not found"
- *       409:
- *         description: Conflict - Invalid state or technician already assigned
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: "error"
- *                 message:
- *                   type: string
- *                   example: "Caseline must be READY_FOR_REPAIR to assign technician. Current status: IN_PROGRESS"
- *       500:
- *         description: Internal server error
- */
-router.post(
-  "/:caselineId/assign-technician",
+router.get(
+  "/:caselineId",
   authentication,
-  authorizationByRole(["service_center_manager"]),
-  validate(assignTechnicianParamsSchema, "params"),
-  validate(assignTechnicianBodySchema, "body"),
+  authorizationByRole([
+    "service_center_technician",
+    "service_center_staff",
+    "service_center_manager",
+  ]),
+  attachCompanyContext,
+  validate(getCaseLineByIdParamsSchema, "params"),
+  async (req, res, next) => {
+    const caseLineController = req.container.resolve("caseLineController");
+    await caseLineController.getCaseLineById(req, res, next);
+  }
+);
+
+router.patch(
+  "/:caselineId",
+  authentication,
+  authorizationByRole(["service_center_technician"]),
+  attachCompanyContext,
+  validate(updateCaselineParamsSchema, "params"),
+  validate(updateCaselineBodySchema, "body"),
+
   async (req, res, next) => {
     const caseLineController = req.container.resolve("caseLineController");
 
-    await caseLineController.assignTechnician(req, res, next);
+    await caseLineController.updateCaseline(req, res, next);
   }
 );
 
@@ -633,6 +557,143 @@ router.post(
     const caseLineController = req.container.resolve("caseLineController");
 
     await caseLineController.allocateStockForCaseline(req, res, next);
+  }
+);
+
+/**
+ * @swagger
+ * /case-lines/{caselineId}/assign-technician:
+ *   post:
+ *     summary: Assign a technician to a caseline
+ *     description: Assign a technician to handle repairs for a specific caseline. The caseline must be in READY_FOR_REPAIR status. Only service center managers can assign technicians.
+ *     tags: [Case Line]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: caselineId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Caseline ID to assign technician to
+ *         example: "770e8400-e29b-41d4-a716-446655440003"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - technicianId
+ *             properties:
+ *               technicianId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the technician to assign
+ *                 example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *           example:
+ *             technicianId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *     responses:
+ *       200:
+ *         description: Technician assigned successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     caseline:
+ *                       type: object
+ *                       properties:
+ *                         caselineId:
+ *                           type: string
+ *                           format: uuid
+ *                           example: "770e8400-e29b-41d4-a716-446655440003"
+ *                         status:
+ *                           type: string
+ *                           example: "IN_PROGRESS"
+ *                     assignment:
+ *                       type: object
+ *                       properties:
+ *                         taskAssignmentId:
+ *                           type: string
+ *                           format: uuid
+ *                           example: "99887766-5544-3322-1100-ffeeddccbbaa"
+ *                         technicianId:
+ *                           type: string
+ *                           format: uuid
+ *                           example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *                         technicianName:
+ *                           type: string
+ *                           example: "Nguyễn Văn An"
+ *                         taskType:
+ *                           type: string
+ *                           example: "REPAIR"
+ *                         status:
+ *                           type: string
+ *                           example: "ASSIGNED"
+ *       400:
+ *         description: Bad request - Invalid input
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "technicianId must be a valid UUID"
+ *       401:
+ *         description: Unauthorized - Invalid or missing token
+ *       403:
+ *         description: Forbidden - Requires service_center_manager role
+ *       404:
+ *         description: Caseline or technician not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Caseline not found"
+ *       409:
+ *         description: Conflict - Invalid state or technician already assigned
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Caseline must be READY_FOR_REPAIR to assign technician. Current status: IN_PROGRESS"
+ *       500:
+ *         description: Internal server error
+ */
+router.patch(
+  "/:caselineId/assign-technician",
+  authentication,
+  authorizationByRole(["service_center_manager"]),
+  validate(assignTechnicianParamsSchema, "params"),
+  validate(assignTechnicianBodySchema, "body"),
+  async (req, res, next) => {
+    const caseLineController = req.container.resolve("caseLineController");
+
+    await caseLineController.assignTechnicianToRepairCaseline(req, res, next);
   }
 );
 

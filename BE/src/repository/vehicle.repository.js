@@ -34,6 +34,7 @@ class VehicleRepository {
               as: "company",
               where: { vehicleCompanyId: companyId },
               attributes: ["name", "vehicleCompanyId"],
+
               required: true,
             },
           ],

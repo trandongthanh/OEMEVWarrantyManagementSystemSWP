@@ -1,13 +1,16 @@
+import { Transaction } from "sequelize";
 import {
   BadRequestError,
   ConflictError,
   NotFoundError,
 } from "../error/index.js";
+import db from "../models/index.cjs";
 import createCustomerSchema from "../validators/createCustomer.validator.js";
 
 class CustomerService {
+  #customerRepository;
   constructor({ customerRepository }) {
-    this.customerRepository = customerRepository;
+    this.#customerRepository = customerRepository;
   }
 
   checkDuplicateCustomer = async ({ phone, email }, option = null) => {
@@ -18,17 +21,13 @@ class CustomerService {
     }
 
     const existingCustomer =
-      await this.customerRepository.findCustomerByPhoneOrEmail(
+      await this.#customerRepository.findCustomerByPhoneOrEmail(
         [{ phone: phone }, { email: email }],
         option
       );
 
     if (existingCustomer) {
-      throw new ConflictError("Customer is already in system");
-    }
-
-    if (existingCustomer) {
-      return true;
+      throw new ConflictError("Email or phone is already use in system");
     }
   };
 
@@ -45,7 +44,7 @@ class CustomerService {
     if (email) whereCondition.push({ email: email });
 
     const existingCustomer =
-      await this.customerRepository.findCustomerByPhoneOrEmail(
+      await this.#customerRepository.findCustomerByPhoneOrEmail(
         whereCondition,
         option
       );
@@ -84,7 +83,7 @@ class CustomerService {
       );
     }
 
-    const newCustomer = await this.customerRepository.createCustomer(
+    const newCustomer = await this.#customerRepository.createCustomer(
       {
         fullName: fullName,
         email: email,
@@ -99,6 +98,52 @@ class CustomerService {
     }
 
     return newCustomer;
+  };
+
+  updateCustomerInfo = async (id, customerData) => {
+    const rawResult = await db.sequelize.transaction(async (transaction) => {
+      const existingCustomer = await this.#customerRepository.findCustomerById(
+        { id: id },
+        transaction,
+        Transaction.LOCK.UPDATE
+      );
+
+      if (!existingCustomer) {
+        throw new NotFoundError("Customer not found.");
+      }
+
+      const oldEmail = existingCustomer.email;
+      const oldPhone = existingCustomer.phone;
+
+      const isEmailChanged =
+        customerData.email && customerData.email !== oldEmail;
+      const isPhoneChanged =
+        customerData.phone && customerData.phone !== oldPhone;
+
+      if (isEmailChanged || isPhoneChanged) {
+        const duplicateCheckData = {
+          phone: isPhoneChanged ? customerData.phone : null,
+          email: isEmailChanged ? customerData.email : null,
+        };
+
+        await this.checkDuplicateCustomer(duplicateCheckData, transaction);
+      }
+
+      const updatedCustomer =
+        await this.#customerRepository.updateCustomerInfoById(
+          id,
+          customerData,
+          transaction
+        );
+
+      if (!updatedCustomer) {
+        throw new BadRequestError("Failed to update customer info.");
+      }
+
+      return updatedCustomer;
+    });
+
+    return rawResult;
   };
 
   checkExistCustomerById = async ({ id }, option = null, lock = null) => {
@@ -121,6 +166,12 @@ class CustomerService {
     }
 
     return existingCustomer;
+  };
+
+  getAllCustomer = async () => {
+    const customers = await this.#customerRepository.getAllCustomer();
+
+    return customers;
   };
 }
 

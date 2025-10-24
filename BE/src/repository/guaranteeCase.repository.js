@@ -1,7 +1,6 @@
-import { where } from "sequelize";
 import db from "../models/index.cjs";
 
-const { GuaranteeCase, VehicleProcessingRecord, Vehicle, User } = db;
+const { GuaranteeCase, VehicleProcessingRecord, Vehicle, User, CaseLine } = db;
 
 class GuaranteeCaseRepository {
   createGuaranteeCases = async ({ guaranteeCases }, transaction = null) => {
@@ -33,6 +32,7 @@ class GuaranteeCaseRepository {
     const [affectedRows] = await GuaranteeCase.update(
       {
         leadTechId: technicianId,
+        status: "IN_DIAGNOSIS",
       },
       {
         where: {
@@ -72,12 +72,26 @@ class GuaranteeCaseRepository {
                 model: Vehicle,
                 as: "vehicle",
                 attributes: ["vin", "vehicleModelId"],
+                required: true,
               },
               {
                 model: User,
                 as: "createdByStaff",
                 attributes: ["userId", "name", "serviceCenterId"],
+
+                required: true,
               },
+            ],
+          },
+          {
+            model: CaseLine,
+            as: "caseLines",
+            attributes: [
+              "id",
+              "typeComponentId",
+              "quantity",
+              "warrantyStatus",
+              "status",
             ],
           },
         ],
@@ -92,11 +106,10 @@ class GuaranteeCaseRepository {
   };
 
   updateStatus = async ({ guaranteeCaseId, status }, option = null) => {
-    const rowEffect = await GuaranteeCase.update(
+    const [rowEffect] = await GuaranteeCase.update(
       { status },
       {
         where: { guaranteeCaseId: guaranteeCaseId },
-        returning: true,
         transaction: option,
       }
     );

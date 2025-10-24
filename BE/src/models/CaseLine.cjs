@@ -60,9 +60,10 @@ module.exports = (sequelize, DataTypes) => {
       status: {
         type: DataTypes.ENUM(
           "PENDING_APPROVAL",
-          "APPROVED",
+          "CUSTOMER_APPROVED",
           "REJECTED_BY_OUT_OF_WARRANTY",
           "REJECTED_BY_TECH",
+          "REJECTED_BY_CUSTOMER",
           "WAITING_FOR_PARTS",
           "READY_FOR_REPAIR",
           "IN_REPAIR",

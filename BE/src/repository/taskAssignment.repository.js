@@ -66,15 +66,14 @@ class TaskAssignmentRepository {
   };
 
   createTaskAssignmentForCaseline = async (
-    { caselineId, technicianId, taskType = "REPAIR" },
+    { caseLineId, technicianId, taskType = "REPAIR" },
     transaction
   ) => {
     const newTaskAssignment = await TaskAssignment.create(
       {
-        caselineId,
+        caseLineId,
         technicianId,
         taskType,
-        status: "ASSIGNED",
       },
       { transaction }
     );
@@ -86,13 +85,9 @@ class TaskAssignmentRepository {
     return newTaskAssignment.toJSON();
   };
 
-  findByCaselineId = async (
-    { caselineId },
-    transaction = null,
-    lock = null
-  ) => {
+  findByCaselineId = async (caseLineId, transaction = null, lock = null) => {
     const taskAssignment = await TaskAssignment.findOne({
-      where: { caselineId },
+      where: { caseLineId },
       transaction,
       lock,
     });

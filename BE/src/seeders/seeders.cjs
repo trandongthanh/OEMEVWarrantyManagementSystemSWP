@@ -44,7 +44,7 @@ const NUM_STAFF_PER_CENTER = 3;
 const NUM_TECH_PER_CENTER = 5;
 const NUM_NEW_VEHICLES = 50;
 const NUM_SOLD_VEHICLES = 30;
-const NUM_COMPONENTS_PER_TYPE = 10; // Số lượng linh kiện vật lý cho mỗi loại
+// Xóa NUM_COMPONENTS_PER_TYPE - sẽ tính động dựa trên Stock
 
 // Danh sách lý do nghỉ phép thực tế
 const LEAVE_REASONS = [
@@ -809,9 +809,12 @@ const generateData = async () => {
       .filter((v) => v.ownerId !== null)
       .map((v) => v.vin); // Dùng createdVehicles
 
-    for (const typeComponent of createdTypeComponents) {
+    for (const stock of stockData) {
+      const typeComponent = createdTypeComponents.find(
+        (tc) => tc.typeComponentId === stock.typeComponentId
+      );
       const skuPrefix = typeComponent.sku.substring(0, 6).toUpperCase();
-      for (let i = 0; i < NUM_COMPONENTS_PER_TYPE; i++) {
+      for (let i = 0; i < stock.quantityInStock; i++) {
         serialCounterComp++;
         const serialNumber = `${skuPrefix}-${String(serialCounterComp).padStart(
           6,
@@ -826,7 +829,7 @@ const generateData = async () => {
 
         if (statusRoll < 0.6) {
           status = "IN_WAREHOUSE";
-          warehouseId = faker.helpers.arrayElement(validWarehouseIds);
+          warehouseId = stock.warehouseId;
         } else if (statusRoll < 0.75 && soldVehicleVINs.length > 0) {
           status = "INSTALLED";
           vehicleVin = faker.helpers.arrayElement(soldVehicleVINs);
@@ -840,7 +843,7 @@ const generateData = async () => {
           currentHolderId = faker.helpers.arrayElement(validTechnicianIds);
         } else if (statusRoll < 0.95) {
           status = "RESERVED";
-          warehouseId = faker.helpers.arrayElement(validWarehouseIds);
+          warehouseId = stock.warehouseId;
         } else {
           status = "PICKED_UP";
         }

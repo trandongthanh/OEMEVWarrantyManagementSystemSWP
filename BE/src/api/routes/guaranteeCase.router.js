@@ -16,6 +16,7 @@ router.post(
     "service_center_staff",
     "service_center_technician",
   ]),
+
   async (req, res, next) => {
     const vehicleProcessingRecordController = req.container.resolve(
       "vehicleProcessingRecordController"

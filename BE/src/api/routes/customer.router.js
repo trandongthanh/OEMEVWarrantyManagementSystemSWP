@@ -1,4 +1,12 @@
 import express from "express";
+
+import { updateCustomerSchema } from "../../validators/customer.validator.js";
+import {
+  authentication,
+  authorizationByRole,
+  validate,
+} from "../middleware/index.js";
+
 const router = express.Router();
 
 /**
@@ -92,5 +100,27 @@ router.get("/", async (req, res, next) => {
 
   await customerController.findCustomerByPhoneOrEmail(req, res, next);
 });
+
+router.patch(
+  "/:id",
+  authentication,
+  authorizationByRole(["service_center_staff", "service_center_manager"]),
+  validate(updateCustomerSchema, "body"),
+  async (req, res, next) => {
+    const customerController = req.container.resolve("customerController");
+
+    await customerController.updateCustomerInfo(req, res, next);
+  }
+);
+
+router.get(
+  "/",
+  authorizationByRole(["service_center_manager"]),
+  async (req, res, next) => {
+    const customerController = req.container.resolve("customerController");
+
+    await customerController.getAllCustomer(req, res, next);
+  }
+);
 
 export default router;

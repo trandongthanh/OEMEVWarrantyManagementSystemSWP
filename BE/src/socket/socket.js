@@ -35,6 +35,8 @@ export function initializeSocket(httpServer) {
     if (roleName === "service_center_staff" && serviceCenterId) {
       const roomName = `service_center_staff_${serviceCenterId}`;
       socket.join(roomName);
+
+      const rooms = Array.from(socket.rooms);
     }
 
     if (roleName === "service_center_manager" && serviceCenterId) {
@@ -85,7 +87,7 @@ export function initializeSocket(httpServer) {
         content,
       });
 
-      socket.broadcast.to(`conversation_${conversationId}`).emit("newMessage", {
+      socket.to(`conversation_${conversationId}`).emit("newMessage", {
         sendAt: dayjs(),
         newMessage: rawResult,
       });
