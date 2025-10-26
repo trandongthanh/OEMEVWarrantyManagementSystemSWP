@@ -44,6 +44,12 @@ interface Technician {
   status?: string; // WORKING | DAY_OFF | LEAVE_REQUESTED | LEAVE_APPROVED
 }
 
+interface ComponentInfo {
+  typeComponentId: string;
+  name: string;
+  category: string;
+}
+
 interface CaseLine {
   id: string;
   diagnosisText: string;
@@ -51,6 +57,9 @@ interface CaseLine {
   warrantyStatus: string;
   status: string;
   rejectionReason: string | null;
+  repairTechId: string | null;
+  quantity: number;
+  typeComponent?: ComponentInfo;
 }
 
 interface GuaranteeCase {
@@ -135,6 +144,9 @@ const ServiceCenterDashboard = () => {
   const [selectedCaseForAssignment, setSelectedCaseForAssignment] = useState<string>('');
   const [showClaimDetailModal, setShowClaimDetailModal] = useState(false);
   const [selectedClaimForDetail, setSelectedClaimForDetail] = useState<WarrantyClaim | null>(null);
+
+  // Track case lines with out of stock status
+  const [outOfStockCaseLines, setOutOfStockCaseLines] = useState<Set<string>>(new Set());
 
   // Technician Records Modal States
   const [showTechnicianRecordsModal, setShowTechnicianRecordsModal] = useState(false);
@@ -221,7 +233,14 @@ const ServiceCenterDashboard = () => {
               correctionText: cl.correctionText || '',
               warrantyStatus: cl.warrantyStatus || '',
               status: cl.status || '',
-              rejectionReason: cl.rejectionReason || null
+              rejectionReason: cl.rejectionReason || null,
+              repairTechId: cl.repairTechId || null,
+              quantity: cl.quantity || 0,
+              typeComponent: cl.typeComponent ? {
+                typeComponentId: cl.typeComponent.typeComponentId || '',
+                name: cl.typeComponent.name || '',
+                category: cl.typeComponent.category || ''
+              } : undefined
             })) : []
           })) : [];
           const primaryCase = cases.length > 0 ? cases[0] : null;
@@ -618,43 +637,73 @@ const ServiceCenterDashboard = () => {
       );
 
       if (response.data?.status === 'success') {
-        // Update local state with the assigned technician
-        setWarrantyClaims(prev => prev.map(c =>
-          c.vin === vin
-            ? {
-              ...c,
-              assignedTechnicians: [...c.assignedTechnicians, technician]
-            }
-            : c
-        ));
+        alert(`Technician ${technician.name} assigned successfully!`);
 
-        // Also update claimsByStatus
-        setClaimsByStatus(prev => {
-          const updated = { ...prev };
-          Object.keys(updated).forEach(status => {
-            updated[status] = updated[status].map(c =>
-              c.vin === vin
-                ? {
-                  ...c,
-                  assignedTechnicians: [...c.assignedTechnicians, technician]
-                }
-                : c
-            );
+        // Refresh data from API to get latest state
+        const url = `http://localhost:3000/api/v1/processing-records?status=${activeStatus}`;
+        try {
+          const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+          const apiRecords = res.data?.data?.records?.records || [];
+          const mapped: WarrantyClaim[] = apiRecords.map((r: any) => {
+            const mainTech = r.mainTechnician ? [{ id: r.mainTechnician.userId, name: r.mainTechnician.name, isAvailable: false, workload: typeof r.mainTechnician.activeTaskCount === 'number' ? r.mainTechnician.activeTaskCount : undefined, status: r.mainTechnician.status }] : [];
+            const cases: GuaranteeCase[] = Array.isArray(r.guaranteeCases) ? r.guaranteeCases.map((gc: any) => ({
+              guaranteeCaseId: gc.guaranteeCaseId || gc.id || '',
+              contentGuarantee: gc.contentGuarantee || '',
+              status: gc.status,
+              caseLines: Array.isArray(gc.caseLines) ? gc.caseLines.map((cl: any) => ({
+                id: cl.id || '',
+                diagnosisText: cl.diagnosisText || '',
+                correctionText: cl.correctionText || '',
+                warrantyStatus: cl.warrantyStatus || '',
+                status: cl.status || '',
+                rejectionReason: cl.rejectionReason || null,
+                repairTechId: cl.repairTechId || null,
+                quantity: cl.quantity || 0,
+                typeComponent: cl.typeComponent ? {
+                  typeComponentId: cl.typeComponent.typeComponentId || '',
+                  name: cl.typeComponent.name || '',
+                  category: cl.typeComponent.category || ''
+                } : undefined
+              })) : []
+            })) : [];
+            const primaryCase = cases.length > 0 ? cases[0] : null;
+            return {
+              recordId: r.vehicleProcessingRecordId || r.recordId || r.processing_record_id || r.id || '',
+              vin: r.vin || r.vehicle?.vin || '',
+              mileage: r.odometer || 0,
+              checkInDate: r.checkInDate || r.check_in_date || new Date().toISOString(),
+              guaranteeCases: cases,
+              assignedTechnicians: mainTech,
+              model: r.vehicle?.model?.name || r.model || '',
+              modelId: r.vehicle?.model?.vehicleModelId || r.vehicle?.model?.id || undefined,
+              serviceCenter: r.createdByStaff?.name || r.serviceCenter || '',
+              createdByStaffId: r.createdByStaff?.userId || r.createdByStaff?.id || undefined,
+              createdByStaffName: r.createdByStaff?.name || undefined,
+              submissionDate: r.createdAt || new Date().toISOString(),
+              estimatedCost: 0,
+              priority: r.priority || undefined,
+              issueType: primaryCase ? primaryCase.contentGuarantee : '',
+              status: r.status || (primaryCase?.status) || activeStatus
+            } as WarrantyClaim;
           });
-          return updated;
-        });
 
-        // Update selected claim for detail if open
-        setSelectedClaimForDetail(prev =>
-          prev && prev.vin === vin
-            ? { ...prev, assignedTechnicians: [...prev.assignedTechnicians, technician] }
-            : prev
-        );
+          // Update state with new data
+          setWarrantyClaims(mapped);
+          setClaimsByStatus(prev => ({ ...prev, [activeStatus]: mapped }));
+
+          // Update the selected claim detail if modal is open
+          if (selectedClaimForDetail) {
+            const updatedClaim = mapped.find(c => c.vin === selectedClaimForDetail.vin);
+            if (updatedClaim) {
+              setSelectedClaimForDetail(updatedClaim);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to refresh data after assignment', err);
+        }
 
         // Refresh technicians list to update workload
         await refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
-
-        alert(`Technician ${technician.name} assigned successfully!`);
       }
     } catch (error: any) {
       console.error('Failed to assign technician:', error);
@@ -812,6 +861,103 @@ const ServiceCenterDashboard = () => {
     setShowTechnicianRecordsModal(false);
     setSelectedTechnicianForRecords(null);
     setTechnicianRecords([]);
+  };
+
+  // Allocate component for case line
+  const handleAllocateComponent = async (guaranteeCaseId: string, caseLineId: string) => {
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('ev_warranty_token');
+      const response = await axios.post(
+        `http://localhost:3000/api/v1/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/allocate-stock`,
+        {},
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (response.status === 200 || response.status === 201) {
+        alert('Component allocated successfully!');
+
+        // Refresh data for current status
+        const url = `http://localhost:3000/api/v1/processing-records?status=${activeStatus}`;
+        if (token) {
+          try {
+            const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+            const apiRecords = res.data?.data?.records?.records || [];
+            const mapped: WarrantyClaim[] = apiRecords.map((r: any) => {
+              const mainTech = r.mainTechnician ? [{ id: r.mainTechnician.userId, name: r.mainTechnician.name, isAvailable: false, workload: typeof r.mainTechnician.activeTaskCount === 'number' ? r.mainTechnician.activeTaskCount : undefined, status: r.mainTechnician.status }] : [];
+              const cases: GuaranteeCase[] = Array.isArray(r.guaranteeCases) ? r.guaranteeCases.map((gc: any) => ({
+                guaranteeCaseId: gc.guaranteeCaseId || gc.id || '',
+                contentGuarantee: gc.contentGuarantee || '',
+                status: gc.status,
+                caseLines: Array.isArray(gc.caseLines) ? gc.caseLines.map((cl: any) => ({
+                  id: cl.id || '',
+                  diagnosisText: cl.diagnosisText || '',
+                  correctionText: cl.correctionText || '',
+                  warrantyStatus: cl.warrantyStatus || '',
+                  status: cl.status || '',
+                  rejectionReason: cl.rejectionReason || null,
+                  repairTechId: cl.repairTechId || null,
+                  quantity: cl.quantity || 0,
+                  typeComponent: cl.typeComponent ? {
+                    typeComponentId: cl.typeComponent.typeComponentId || '',
+                    name: cl.typeComponent.name || '',
+                    category: cl.typeComponent.category || ''
+                  } : undefined
+                })) : []
+              })) : [];
+              const primaryCase = cases.length > 0 ? cases[0] : null;
+              return {
+                recordId: r.vehicleProcessingRecordId || r.recordId || r.processing_record_id || r.id || '',
+                vin: r.vin || r.vehicle?.vin || '',
+                mileage: r.odometer || 0,
+                checkInDate: r.checkInDate || r.check_in_date || new Date().toISOString(),
+                guaranteeCases: cases,
+                assignedTechnicians: mainTech,
+                model: r.vehicle?.model?.name || r.model || '',
+                modelId: r.vehicle?.model?.vehicleModelId || r.vehicle?.model?.id || undefined,
+                serviceCenter: r.createdByStaff?.name || r.serviceCenter || '',
+                createdByStaffId: r.createdByStaff?.userId || r.createdByStaff?.id || undefined,
+                createdByStaffName: r.createdByStaff?.name || undefined,
+                submissionDate: r.createdAt || new Date().toISOString(),
+                estimatedCost: 0,
+                priority: r.priority || undefined,
+                issueType: primaryCase ? primaryCase.contentGuarantee : '',
+                status: r.status || (primaryCase?.status) || activeStatus
+              } as WarrantyClaim;
+            });
+
+            // Update state with new data
+            setWarrantyClaims(mapped);
+            setClaimsByStatus(prev => ({ ...prev, [activeStatus]: mapped }));
+
+            // Update the selected claim detail if modal is open
+            if (selectedClaimForDetail) {
+              const updatedClaim = mapped.find(c => c.vin === selectedClaimForDetail.vin);
+              if (updatedClaim) {
+                setSelectedClaimForDetail(updatedClaim);
+              }
+            }
+          } catch (err) {
+            console.error('Failed to refresh data after allocation', err);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Error allocating component:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to allocate component. Please try again.';
+
+      // Check if error is due to out of stock
+      if (error.response?.status === 404 && errorMessage.includes('No available stock found')) {
+        // Mark this case line as out of stock
+        setOutOfStockCaseLines(prev => new Set([...prev, caseLineId]));
+        alert('⚠️ Out of Stock! No available component in warehouse. Please request from manufacturer.');
+      } else {
+        alert(errorMessage);
+      }
+    }
   };
 
   // Refresh technicians (callable from UI)
@@ -984,7 +1130,6 @@ const ServiceCenterDashboard = () => {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-[140px]">Record ID</TableHead>
                           <TableHead>VIN</TableHead>
                           <TableHead>Mileage</TableHead>
                           <TableHead>Check-in Date</TableHead>
@@ -997,9 +1142,6 @@ const ServiceCenterDashboard = () => {
                       <TableBody>
                         {warrantyClaims.map((claim, index) => (
                           <TableRow key={claim.recordId || claim.vin}>
-                            <TableCell className="font-mono text-xs" title={claim.recordId}>
-                              {claim.recordId || '---'}
-                            </TableCell>
                             <TableCell className="font-mono text-sm font-medium">
                               {claim.vin}
                             </TableCell>
@@ -1498,98 +1640,84 @@ const ServiceCenterDashboard = () => {
 
         {/* Claim Detail Modal */}
         <Dialog open={showClaimDetailModal} onOpenChange={setShowClaimDetailModal}>
-          <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-xl">
+          <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader className="pb-4 border-b">
+              <DialogTitle className="flex items-center gap-2 text-lg">
                 <FileText className="h-5 w-5 text-blue-600" />
                 Warranty Claim Details
               </DialogTitle>
-              <DialogDescription>
+              <DialogDescription className="text-sm mt-1">
                 Complete information for warranty claim
               </DialogDescription>
             </DialogHeader>
 
             {selectedClaimForDetail && (
               <div className="space-y-6 mt-6">
-                <div className="flex items-center gap-3">
-                  <Badge variant={getStatusBadgeVariant(selectedClaimForDetail.status)} className="text-sm">
+                <div className="flex items-center gap-2">
+                  <Badge variant={getStatusBadgeVariant(selectedClaimForDetail.status)} className="text-xs">
                     {selectedClaimForDetail.status || 'UNKNOWN'}
                   </Badge>
                 </div>
                 {/* Basic Information */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <Car className="h-5 w-5" />
+                <Card className="shadow-md border">
+                  <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-900/20 pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+                        <Car className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      </div>
                       Basic Information
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-4">
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground flex items-center gap-1.5 mb-2">
-                            <FileText className="h-4 w-4" />
-                            Record ID
-                          </label>
-                          <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                            <div className="p-1.5 bg-blue-100 dark:bg-blue-900/40 rounded">
-                              <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-mono text-xs text-blue-900 dark:text-blue-100 break-all leading-relaxed">
-                                {selectedClaimForDetail.recordId || '---'}
-                              </p>
-                            </div>
-                          </div>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">VIN</label>
+                          <p className="font-mono text-sm font-semibold mt-0.5">{selectedClaimForDetail.vin}</p>
                         </div>
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">VIN</label>
-                          <p className="font-mono text-base font-semibold">{selectedClaimForDetail.vin}</p>
-                        </div>
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Vehicle Model</label>
-                          <p className="text-base">{selectedClaimForDetail.model}</p>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Vehicle Model</label>
+                          <p className="text-sm font-medium mt-0.5">{selectedClaimForDetail.model}</p>
                           {selectedClaimForDetail.modelId && (
                             <p className="font-mono text-xs text-muted-foreground mt-1">
                               Model ID: {selectedClaimForDetail.modelId}
                             </p>
                           )}
                         </div>
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                            <Car className="h-4 w-4" />
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <Car className="h-3 w-3" />
                             Mileage
                           </label>
-                          <p className="text-base font-semibold">{selectedClaimForDetail.mileage.toLocaleString()} km</p>
+                          <p className="text-sm font-semibold mt-0.5">{selectedClaimForDetail.mileage.toLocaleString()} km</p>
                         </div>
                       </div>
-                      <div className="space-y-4">
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                            <Calendar className="h-4 w-4" />
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <Calendar className="h-3 w-3" />
                             Check-in Date
                           </label>
-                          <p className="text-base">{new Date(selectedClaimForDetail.checkInDate).toLocaleDateString('en-US')}</p>
+                          <p className="text-sm font-medium mt-0.5">{new Date(selectedClaimForDetail.checkInDate).toLocaleDateString('en-US')}</p>
                         </div>
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                            <User className="h-4 w-4" />
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <User className="h-3 w-3" />
                             Created By Staff
                           </label>
-                          <p className="text-base font-semibold">{selectedClaimForDetail.serviceCenter}</p>
+                          <p className="text-sm font-semibold mt-0.5">{selectedClaimForDetail.serviceCenter}</p>
                           {selectedClaimForDetail.createdByStaffId && (
                             <p className="font-mono text-xs text-muted-foreground mt-1">
                               ID: {selectedClaimForDetail.createdByStaffId}
                             </p>
                           )}
                         </div>
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                            <DollarSign className="h-4 w-4" />
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <DollarSign className="h-3 w-3" />
                             Estimated Cost
                           </label>
-                          <p className="text-base font-semibold text-green-600">
+                          <p className="text-sm font-semibold text-green-600 mt-0.5">
                             {selectedClaimForDetail.estimatedCost.toLocaleString()} VND
                           </p>
                         </div>
@@ -1598,155 +1726,188 @@ const ServiceCenterDashboard = () => {
                   </CardContent>
                 </Card>
 
-                {/* Issue Details */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-lg">
-                      <AlertCircle className="h-5 w-5" />
-                      Issue Details
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                          <Tag className="h-4 w-4" />
-                          Issue Type
-                        </label>
-                        <p className="text-base font-semibold">{selectedClaimForDetail.issueType}</p>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium text-muted-foreground">Priority Level</label>
-                        <div className="mt-1">
-                          {selectedClaimForDetail.priority && (
-                            <Badge variant={getPriorityBadgeVariant(selectedClaimForDetail.priority)} className="text-sm">
-                              {selectedClaimForDetail.priority === 'Urgent' && '🚨 '}
-                              {selectedClaimForDetail.priority === 'High' && '🔥 '}
-                              {selectedClaimForDetail.priority === 'Medium' && '📋 '}
-                              {selectedClaimForDetail.priority === 'Low' && '📝 '}
-                              {selectedClaimForDetail.priority}
-                            </Badge>
-                          )}
+                {/* Guarantee Cases */}
+                {selectedClaimForDetail.guaranteeCases && selectedClaimForDetail.guaranteeCases.length > 0 && (
+                  <Card className="shadow-md border">
+                    <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-900/20 pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <div className="p-1.5 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+                          <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                         </div>
-                      </div>
-                      {selectedClaimForDetail.guaranteeCases && selectedClaimForDetail.guaranteeCases.length > 0 && (
-                        <div className="col-span-2">
-                          <label className="text-sm font-medium text-muted-foreground mb-3 block">Guarantee Cases ({selectedClaimForDetail.guaranteeCases.length})</label>
-                          <div className="space-y-4">
-                            {selectedClaimForDetail.guaranteeCases.map((gc, idx) => (
-                              <Card key={gc.guaranteeCaseId} className="border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-shadow">
-                                <CardContent className="p-5">
-                                  <div className="space-y-4">
-                                    {/* Case Header */}
-                                    <div className="flex items-start gap-4">
-                                      <div className="flex items-center justify-center w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white font-bold text-base shrink-0 shadow-sm">
-                                        {idx + 1}
-                                      </div>
-                                      <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 mb-2">
-                                          <span className="text-sm font-bold text-blue-700 dark:text-blue-300">Guarantee Case #{idx + 1}</span>
-                                          {gc.status && (
-                                            <Badge variant="outline" className="text-xs font-semibold">
-                                              {getDisplayStatus(gc.status)}
-                                            </Badge>
-                                          )}
-                                        </div>
-                                        <p className="text-base leading-relaxed text-gray-900 dark:text-gray-100 font-medium bg-blue-50 dark:bg-blue-900/30 p-3 rounded-md border border-blue-100 dark:border-blue-800">
-                                          {gc.contentGuarantee}
-                                        </p>
-                                      </div>
+                        Guarantee Cases ({selectedClaimForDetail.guaranteeCases.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                      <div className="space-y-4">
+                        {selectedClaimForDetail.guaranteeCases.map((gc, idx) => (
+                          <Card key={gc.guaranteeCaseId} className="border-l-4 border-l-blue-500 shadow-md hover:shadow-lg transition-shadow bg-gradient-to-r from-blue-50/50 to-transparent dark:from-blue-900/10">
+                            <CardContent className="p-4">
+                              <div className="space-y-4">
+                                {/* Case Header */}
+                                <div className="flex items-start gap-3">
+                                  <div className="flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white font-bold text-sm shrink-0 shadow-sm">
+                                    {idx + 1}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1.5">
+                                      <span className="text-xs font-bold text-blue-700 dark:text-blue-300">Guarantee Case #{idx + 1}</span>
+                                      {gc.status && (
+                                        <Badge variant="outline" className="text-xs font-semibold">
+                                          {getDisplayStatus(gc.status)}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-sm leading-relaxed text-gray-900 dark:text-gray-100 font-medium bg-blue-50 dark:bg-blue-900/30 p-2 rounded-md border border-blue-100 dark:border-blue-800">
+                                      {gc.contentGuarantee}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Case Lines */}
+                                {gc.caseLines && gc.caseLines.length > 0 && (
+                                  <div className="space-y-2 mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                                    <div className="flex items-center gap-2 mb-2 px-1">
+                                      <span className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                                        Case Lines ({gc.caseLines.length})
+                                      </span>
                                     </div>
 
-                                    {/* Case Lines */}
-                                    {gc.caseLines && gc.caseLines.length > 0 && (
-                                      <div className="ml-14 space-y-3 mt-4 pt-4 border-t-2 border-blue-100 dark:border-blue-800">
-                                        <div className="flex items-center gap-2 mb-3">
-                                          <div className="h-5 w-1 bg-blue-500 rounded"></div>
-                                          <span className="text-sm font-bold text-gray-700 dark:text-gray-300">
-                                            Diagnosis & Correction Plan
-                                          </span>
-                                          <Badge variant="secondary" className="text-xs">
-                                            {gc.caseLines.length} item{gc.caseLines.length > 1 ? 's' : ''}
-                                          </Badge>
-                                        </div>
-
-                                        <div className="space-y-3">
-                                          {gc.caseLines.map((line, lineIdx) => (
-                                            <div key={line.id} className="bg-gradient-to-br from-gray-50 to-white dark:from-gray-800 dark:to-gray-900 rounded-lg p-4 border-2 border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-all">
-                                              {/* Line Header */}
-                                              <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-200 dark:border-gray-700">
-                                                <div className="flex items-center justify-center w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-blue-500 text-white font-bold text-xs">
-                                                  {lineIdx + 1}
-                                                </div>
-                                                <Badge
-                                                  variant={
+                                    <div className="space-y-2">
+                                      {gc.caseLines.map((line, lineIdx) => (
+                                        <div
+                                          key={line.id}
+                                          className={`rounded-md p-2.5 border transition-all ${line.status === 'CUSTOMER_APPROVED'
+                                            ? 'bg-green-50/50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
+                                            : 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
+                                            }`}
+                                        >
+                                          {/* Line Header - More compact */}
+                                          <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-200 dark:border-gray-700">
+                                            <div className="flex items-center gap-2">
+                                              <div className="flex items-center justify-center w-5 h-5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-bold text-xs">
+                                                {lineIdx + 1}
+                                              </div>
+                                              <Badge
+                                                variant={
+                                                  line.status === 'CUSTOMER_APPROVED' ? 'default' :
                                                     line.status === 'PENDING_APPROVAL' ? 'secondary' :
                                                       line.status === 'READY_FOR_REPAIR' ? 'default' :
                                                         line.status === 'REJECTED_BY_CUSTOMER' ? 'destructive' :
                                                           'outline'
-                                                  }
-                                                  className="text-xs font-semibold"
-                                                >
-                                                  {getDisplayStatus(line.status)}
-                                                </Badge>
-                                                <Badge
-                                                  variant={line.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}
-                                                  className="text-xs font-semibold"
-                                                >
-                                                  {line.warrantyStatus}
-                                                </Badge>
-                                              </div>
-
-                                              {/* Diagnosis */}
-                                              <div className="mb-3 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-md border border-amber-200 dark:border-amber-800">
-                                                <div className="flex items-center gap-2 mb-1.5">
-                                                  <AlertCircle className="h-4 w-4 text-amber-600" />
-                                                  <span className="font-bold text-sm text-amber-700 dark:text-amber-400">Diagnosis</span>
-                                                </div>
-                                                <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed">{line.diagnosisText}</p>
-                                              </div>
-
-                                              {/* Correction */}
-                                              <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-md border border-green-200 dark:border-green-800">
-                                                <div className="flex items-center gap-2 mb-1.5">
-                                                  <CheckCircle className="h-4 w-4 text-green-600" />
-                                                  <span className="font-bold text-sm text-green-700 dark:text-green-400">Correction Plan</span>
-                                                </div>
-                                                <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed">{line.correctionText}</p>
-                                              </div>
-
-                                              {/* Rejection Reason */}
-                                              {line.rejectionReason && (
-                                                <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-md border-2 border-red-300 dark:border-red-800">
-                                                  <div className="flex items-center gap-2 mb-1.5">
-                                                    <XCircle className="h-4 w-4 text-red-600" />
-                                                    <span className="font-bold text-sm text-red-700 dark:text-red-400">Rejection Reason</span>
-                                                  </div>
-                                                  <p className="text-sm text-red-900 dark:text-red-100 font-medium">{line.rejectionReason}</p>
-                                                </div>
-                                              )}
+                                                }
+                                                className={`text-xs px-2 py-0 ${line.status === 'CUSTOMER_APPROVED' ? 'bg-green-600 text-white' : ''
+                                                  }`}
+                                              >
+                                                {getDisplayStatus(line.status)}
+                                              </Badge>
+                                              <Badge
+                                                variant={line.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}
+                                                className="text-xs px-2 py-0"
+                                              >
+                                                {line.warrantyStatus}
+                                              </Badge>
                                             </div>
-                                          ))}
+                                          </div>
+
+                                          {/* Content Grid - 2 columns for better readability */}
+                                          <div className="grid grid-cols-2 gap-2 mb-2">
+                                            {/* Diagnosis */}
+                                            <div className="p-2 bg-amber-50/80 dark:bg-amber-900/10 rounded border-l-2 border-amber-400">
+                                              <div className="flex items-center gap-1 mb-1">
+                                                <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                                                <span className="font-semibold text-sm text-amber-700 dark:text-amber-400">Diagnosis</span>
+                                              </div>
+                                              <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{line.diagnosisText}</p>
+                                            </div>
+
+                                            {/* Correction */}
+                                            <div className="p-2 bg-green-50/80 dark:bg-green-900/10 rounded border-l-2 border-green-400">
+                                              <div className="flex items-center gap-1 mb-1">
+                                                <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                                                <span className="font-semibold text-sm text-green-700 dark:text-green-400">Correction</span>
+                                              </div>
+                                              <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{line.correctionText}</p>
+                                            </div>
+                                          </div>
+
+                                          {/* Component Information */}
+                                          {line.typeComponent && (
+                                            <div className="p-2 bg-blue-50/80 dark:bg-blue-900/10 rounded border-l-2 border-blue-400">
+                                              <div className="flex items-center justify-between mb-1.5">
+                                                <div className="flex items-center gap-1.5">
+                                                  <Package className="h-3.5 w-3.5 text-blue-600" />
+                                                  <span className="font-semibold text-sm text-blue-700 dark:text-blue-400">Component</span>
+                                                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{line.typeComponent.name}</span>
+                                                  <Badge variant="outline" className="text-xs px-1.5 py-0">
+                                                    {line.typeComponent.category}
+                                                  </Badge>
+                                                  <Badge variant="secondary" className="text-xs px-1.5 py-0">
+                                                    Qty: {line.quantity}
+                                                  </Badge>
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                  {/* Show Allocate button if CUSTOMER_APPROVED and NOT out of stock */}
+                                                  {line.status === 'CUSTOMER_APPROVED' && hasPermission(user, 'attach_parts') && !outOfStockCaseLines.has(line.id) && (
+                                                    <Button
+                                                      size="sm"
+                                                      variant="default"
+                                                      onClick={() => handleAllocateComponent(gc.guaranteeCaseId, line.id)}
+                                                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-6 px-2"
+                                                    >
+                                                      <Package className="h-3 w-3 mr-1" />
+                                                      Allocate
+                                                    </Button>
+                                                  )}
+                                                  {/* Show Request button if out of stock */}
+                                                  {outOfStockCaseLines.has(line.id) && (
+                                                    <Button
+                                                      size="sm"
+                                                      variant="outline"
+                                                      onClick={() => {
+                                                        // TODO: Implement request to manufacturer API
+                                                        alert('Request to Manufacturer feature - Coming soon!');
+                                                      }}
+                                                      className="bg-orange-600 hover:bg-orange-700 text-white border-orange-600 text-xs h-6 px-2"
+                                                    >
+                                                      <AlertCircle className="h-3 w-3 mr-1" />
+                                                      Request
+                                                    </Button>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          {/* Rejection Reason */}
+                                          {line.rejectionReason && (
+                                            <div className="mt-2 p-2 bg-red-50/80 dark:bg-red-900/10 rounded border-l-2 border-red-400">
+                                              <div className="flex items-center gap-1 mb-1">
+                                                <XCircle className="h-3.5 w-3.5 text-red-600" />
+                                                <span className="font-semibold text-sm text-red-700 dark:text-red-400">Rejection Reason</span>
+                                              </div>
+                                              <p className="text-sm text-red-900 dark:text-red-100 font-medium leading-relaxed">{line.rejectionReason}</p>
+                                            </div>
+                                          )}
                                         </div>
-                                      </div>
-                                    )}
+                                      ))}
+                                    </div>
                                   </div>
-                                </CardContent>
-                              </Card>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Assigned Technicians */}
-                <Card>
-                  <CardHeader>
+                <Card className="shadow-md border">
+                  <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="flex items-center gap-2 text-lg">
-                        <Users className="h-5 w-5" />
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Users className="h-4 w-4" />
                         Assigned Technicians ({selectedClaimForDetail.assignedTechnicians.length})
                       </CardTitle>
                       {hasPermission(user, 'assign_technicians') && (
@@ -1854,13 +2015,6 @@ const ServiceCenterDashboard = () => {
                     const claim = warrantyClaims.find(c => c.vin === selectedCaseForAssignment);
                     return (
                       <div className="mt-2 p-3 bg-muted/50 rounded-lg border space-y-2">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-blue-600" />
-                          <div className="flex-1">
-                            <span className="text-xs text-muted-foreground mr-2">Record ID:</span>
-                            <span className="font-mono text-xs font-medium">{claim?.recordId || '---'}</span>
-                          </div>
-                        </div>
                         <div className="flex items-center gap-2">
                           <Car className="h-4 w-4 text-primary" />
                           <div className="flex-1">
