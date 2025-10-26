@@ -178,6 +178,31 @@ export const processingRecordsService = {
     }
   },
 
+  // Search components without recordId dependency
+  searchComponents: async (
+    params: { category?: string; searchName?: string }
+  ): Promise<Array<{ typeComponentId: string; name: string }>> => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.category) queryParams.append('category', params.category);
+      if (params?.searchName) queryParams.append('searchName', params.searchName);
+      
+      // Use a dummy recordId for now since the API still requires it in the path
+      // This will be updated when the API is modified to not require recordId
+      const dummyRecordId = 'e2539a11-9dc5-45d9-9091-2e9641eeedde'; // From user's example
+      const url = `/processing-records/${dummyRecordId}/compatible-components${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      
+      console.log('🔍 Searching components:', url);
+      const response = await apiClient.get(url);
+      console.log('✅ Component search response:', response.data);
+      
+      return response.data?.data?.result || [];
+    } catch (error) {
+      console.error('❌ Error searching components:', error);
+      throw error;
+    }
+  },
+
   // Get processing record detail by recordId
   getProcessingRecordById: async (recordId: string): Promise<ProcessingRecord> => {
     try {

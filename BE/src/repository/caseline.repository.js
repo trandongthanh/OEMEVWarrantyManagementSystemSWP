@@ -206,6 +206,16 @@ class CaseLineRepository {
 
     return updatedCaseLine ? updatedCaseLine.toJSON() : null;
   };
+
+  // Delete a caseline by id (hard delete)
+  deleteCaseline = async (caselineId, transaction = null) => {
+    const rowsDeleted = await CaseLine.destroy({
+      where: { id: caselineId },
+      transaction: transaction,
+    });
+
+    return rowsDeleted > 0;
+  };
 }
 
 export default CaseLineRepository;

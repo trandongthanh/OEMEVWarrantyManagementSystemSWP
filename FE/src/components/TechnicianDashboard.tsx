@@ -274,6 +274,59 @@ const TechnicianDashboard = ({
   const [isLoading, setIsLoading] = useState(false);
   const [createdCaseLines, setCreatedCaseLines] = useState<CaseLineResponse[]>([]);
 
+  // Load persisted created case lines from localStorage on mount so UI survives F5
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('ev_created_caselines');
+      if (raw) {
+        const parsed = JSON.parse(raw) as CaseLineResponse[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setCreatedCaseLines(parsed);
+          // Also map into lightweight UI caseLines for display
+          setCaseLines(prev => {
+            const existing = new Set(prev.map(c => c.id));
+            const toAdd = (parsed as unknown[]).map((cl) => {
+              const mm = cl as Record<string, unknown>;
+              const id = (mm['caseLineId'] ?? mm['id'] ?? mm['case_line_id']) as string | undefined || '';
+              const caseId = (mm['guaranteeCaseId'] ?? mm['guarantee_case_id'] ?? mm['guaranteeCaseId']) as string | undefined || '';
+              const damageLevel = (mm['damageLevel'] as string) ?? 'N/A';
+              const warrantyStatus = (mm['warrantyStatus'] as string) ?? (mm['warranty_status'] as string) ?? null;
+              const diag = (mm['diagnosisText'] ?? mm['diagnosis_text']) as string | undefined || '';
+              const corr = (mm['correctionText'] ?? mm['correction_text']) as string | undefined || '';
+              const photos = Array.isArray(mm['photos']) ? (mm['photos'] as string[]) : [];
+              const createdAt = (mm['createdAt'] ?? mm['created_at']) as string | undefined || new Date().toLocaleDateString('en-GB');
+
+              return {
+                id,
+                caseId,
+                damageLevel,
+                repairPossibility: 'N/A',
+                warrantyDecision: warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
+                technicianNotes: `${diag} | ${corr}`,
+                photos,
+                createdDate: createdAt,
+                status: (mm['status'] as string) ?? 'submitted'
+              } as CaseLine;
+            }).filter((c: CaseLine) => c.id && !existing.has(c.id));
+
+            return [...prev, ...toAdd];
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Could not restore created case lines from localStorage', err);
+    }
+  }, []);
+
+  // Persist createdCaseLines to localStorage so refresh doesn't lose UI state
+  useEffect(() => {
+    try {
+      localStorage.setItem('ev_created_caselines', JSON.stringify(createdCaseLines));
+    } catch (err) {
+      console.warn('Failed to persist createdCaseLines to localStorage', err);
+    }
+  }, [createdCaseLines]);
+
   const { user, logout } = useAuth();
 
   // API Functions
@@ -372,16 +425,115 @@ const TechnicianDashboard = ({
       console.log('📡 Fetching records with status: IN_DIAGNOSIS');
       
       const inDiagnosisRecords = await processingRecordsService.getProcessingRecordsByStatus('IN_DIAGNOSIS');
-      
+
       console.log('📦 Received records:', inDiagnosisRecords);
       console.log(`✅ Loaded ${inDiagnosisRecords.length} records in diagnosis`);
-      
+
+      // Normalize record id field: backend may return id under different keys (recordId, id, vehicleProcessingRecordId, processing_record_id)
+      const normalized: ProcessingRecord[] = (inDiagnosisRecords || []).map((r: unknown) => {
+        const rr = r as Record<string, unknown>;
+        // preserve original fields but ensure `recordId` exists for downstream calls
+        const getStr = (key: string) => {
+          const v = rr[key];
+          if (typeof v === 'string') return v;
+          if (v == null) return '';
+          try { return String(v); } catch { return ''; }
+        };
+
+        const recordIdValue = getStr('id') || getStr('vehicleProcessingRecordId') || getStr('processing_record_id') || getStr('recordId') || '';
+        const merged = Object.assign({}, rr, { recordId: recordIdValue });
+        return merged as unknown as ProcessingRecord;
+      });
+
       setRecordsByStatus(prev => ({
         ...prev,
-        IN_DIAGNOSIS: inDiagnosisRecords
+        IN_DIAGNOSIS: normalized
       }));
       
       console.log('💾 State updated with records');
+
+      // After we've loaded records, attempt to fetch persisted case-lines for all guarantee cases
+        try {
+        const guaranteeIds: string[] = [];
+        (normalized || []).forEach((rec) => {
+          if (Array.isArray(rec.guaranteeCases)) {
+            rec.guaranteeCases.forEach(gc => {
+              // Normalize possible id fields coming from backend and coerce to string so
+              // TypeScript knows the type and we avoid pushing `unknown` into the string[]
+              const rawId = (gc as Record<string, unknown>).guaranteeCaseId ?? (gc as Record<string, unknown>).guarantee_case_id ?? (gc as Record<string, unknown>).id ?? '';
+              const id = typeof rawId === 'string' ? rawId : String(rawId);
+              if (id) guaranteeIds.push(id);
+            });
+          }
+        });
+
+        if (guaranteeIds.length > 0) {
+          console.log('🔁 Loading case-lines for guarantee cases:', guaranteeIds);
+          const fetches = guaranteeIds.map(id => caseLineService.getCaseLines(id).catch(err => {
+            console.error('❌ Failed loading case lines for', id, err);
+            return [] as unknown[];
+          }));
+
+          const results = await Promise.all(fetches);
+          // Flatten and dedupe by caseLineId / caseLineId-like fields
+          const flat = results.flat().filter(Boolean) as unknown[];
+          const dedupMap: Record<string, unknown> = {};
+          flat.forEach((cl: unknown) => {
+            const c = cl as Record<string, unknown>;
+            const key = (c['caseLineId'] ?? c['id'] ?? c['case_line_id']) as string | undefined;
+            if (!key) return;
+            if (!dedupMap[key]) dedupMap[key] = c;
+          });
+
+          const merged = Object.values(dedupMap);
+          if (merged.length > 0) {
+            // Merge into createdCaseLines state (avoid duplicates)
+            setCreatedCaseLines(prev => {
+              const existingKeys = new Set(prev.map(p => p.caseLineId));
+              const toAdd = (merged as unknown[]).filter((m: unknown) => {
+                  const mm = m as Record<string, unknown>;
+                  const k = (mm['caseLineId'] ?? mm['id'] ?? mm['case_line_id']) as string | undefined;
+                  return !!k && !existingKeys.has(k);
+                }) as unknown[];
+              // Cast to CaseLineResponse[] for state compatibility (we don't have full typing for external API shape)
+              return [...prev, ...(toAdd as unknown as CaseLineResponse[])];
+            });
+
+            // Also surface them in the lightweight caseLines UI list if they match expected fields
+            setCaseLines(prev => {
+              const existing = new Set(prev.map(c => c.id));
+              const toAdd = (merged as unknown[]).map((m: unknown) => {
+                const mm = m as Record<string, unknown>;
+                const id = (mm['caseLineId'] ?? mm['id'] ?? mm['case_line_id']) as string | undefined || '';
+                const caseId = (mm['guaranteeCaseId'] ?? mm['guarantee_case_id'] ?? mm['guaranteeCaseId']) as string | undefined || '';
+                const damageLevel = (mm['damageLevel'] as string) ?? 'N/A';
+                const warrantyStatus = (mm['warrantyStatus'] as string) ?? (mm['warranty_status'] as string) ?? null;
+                const diag = (mm['diagnosisText'] ?? mm['diagnosis_text']) as string | undefined || '';
+                const corr = (mm['correctionText'] ?? mm['correction_text']) as string | undefined || '';
+                const photos = Array.isArray(mm['photos']) ? (mm['photos'] as string[]) : [];
+                const createdAt = (mm['createdAt'] ?? mm['created_at']) as string | undefined || new Date().toLocaleDateString('en-GB');
+                const status = (mm['status'] as string) ?? 'submitted';
+
+                return {
+                  id,
+                  caseId,
+                  damageLevel,
+                  repairPossibility: 'N/A',
+                  warrantyDecision: warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
+                  technicianNotes: `${diag} | ${corr}`,
+                  photos,
+                  createdDate: createdAt,
+                  status
+                } as CaseLine;
+              }).filter((c: CaseLine) => c.id && !existing.has(c.id));
+
+              return [...prev, ...toAdd];
+            });
+          }
+        }
+      } catch (err) {
+        console.error('❌ Error while preloading case-lines after records fetch:', err);
+      }
     } catch (error) {
       console.error('❌ Error fetching records:', error);
       if (error instanceof Error) {
@@ -443,11 +595,20 @@ const TechnicianDashboard = ({
       console.log('Creating case lines for case:', guaranteeCaseId);
       console.log('Case lines data:', caseLines);
 
+      // Map frontend CaseLineRequest (componentId) to backend expected shape (typeComponentId)
+      const payload = {
+        caselines: caseLines.map((cl: CaseLineRequest) => ({
+          diagnosisText: cl.diagnosisText,
+          correctionText: cl.correctionText,
+          typeComponentId: cl.componentId ?? null,
+          quantity: cl.quantity,
+          warrantyStatus: cl.warrantyStatus
+        }))
+      };
+
       const data = await apiCall(`/guarantee-cases/${guaranteeCaseId}/case-lines`, {
         method: 'POST',
-        body: JSON.stringify({
-          caselines: caseLines
-        })
+        body: JSON.stringify(payload)
       });
 
       console.log('Created case lines response:', data);
@@ -515,17 +676,45 @@ const TechnicianDashboard = ({
         { searchName }
       );
       console.log('✅ Fetched components:', components);
-      setCompatibleComponents(components);
+      // Set components directly without transformation since API doesn't provide isUnderWarranty
+      setCompatibleComponents(Array.isArray(components) ? components : []);
     } catch (error) {
-      console.error('❌ Failed to fetch compatible components:', error);
-      // Don't show toast error on initial load, only on user interaction
-      if (searchName) {
-        toast({
-          title: "Error",
-          description: error instanceof Error ? error.message : "Failed to load compatible components",
-          variant: "destructive"
-        });
-      }
+      console.error('❌ Failed to search components:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to search components",
+        variant: "destructive"
+      });
+      setCompatibleComponents([]);
+    } finally {
+      setIsLoadingComponents(false);
+    }
+  }, []);
+
+  // Search components without recordId dependency
+  const searchComponents = useCallback(async (searchName: string) => {
+    if (!searchName || searchName.length < 2) {
+      setCompatibleComponents([]);
+      return;
+    }
+
+    try {
+      setIsLoadingComponents(true);
+      console.log('🔍 Searching components with name:', searchName);
+
+      const components = await processingRecordsService.searchComponents(
+        { searchName }
+      );
+      console.log('✅ Fetched components:', components);
+      // Set components directly without transformation since API doesn't provide isUnderWarranty
+      setCompatibleComponents(Array.isArray(components) ? components : []);
+    } catch (error) {
+      console.error('❌ Failed to search components:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to search components",
+        variant: "destructive"
+      });
       setCompatibleComponents([]);
     } finally {
       setIsLoadingComponents(false);
@@ -565,6 +754,15 @@ const TechnicianDashboard = ({
 
       console.log('✅ Case lines created:', createdCaseLines);
 
+      // Persist created case lines into normalized state so they survive F5
+      if (createdCaseLines && createdCaseLines.length > 0) {
+        try {
+          setCreatedCaseLines(prev => [...prev, ...createdCaseLines]);
+        } catch (err) {
+          console.warn('Failed to append created case lines to state', err);
+        }
+      }
+
       const newCaseLine: CaseLine = {
         id: createdCaseLines[0].caseLineId,
         caseId: createdCaseLines[0].guaranteeCaseId,
@@ -580,9 +778,15 @@ const TechnicianDashboard = ({
 
       setCaseLines(prev => [...prev, newCaseLine]);
 
+      // Safely compute a short id suffix for the toast (backend may vary response shape)
+      const createdIdSuffix =
+        createdCaseLines && createdCaseLines[0] && createdCaseLines[0].caseLineId
+          ? createdCaseLines[0].caseLineId.slice(-8)
+          : 'N/A';
+
       toast({
         title: "Issue Diagnosis Created",
-        description: `Case line ${createdCaseLines[0].caseLineId.slice(-8)} has been created successfully. View it in the Issue Diagnosis tab.`,
+        description: `Case line ${createdIdSuffix} has been created successfully. View it in the Issue Diagnosis tab.`,
       });
 
       setCaseLineForm({
@@ -806,17 +1010,38 @@ const TechnicianDashboard = ({
     setConfirmRemoveModalOpen(true);
   };
 
-  // Confirm remove case line
-  const confirmRemoveCaseLine = () => {
-    if (caseLineToRemove) {
+  // Confirm remove case line (persist deletion to backend)
+  const confirmRemoveCaseLine = async () => {
+    if (!caseLineToRemove) {
+      setConfirmRemoveModalOpen(false);
+      return;
+    }
+
+    try {
+      // Call backend delete endpoint
+      await caseLineService.deleteCaseLine(caseLineToRemove);
+
+      // Remove from local UI state after successful deletion
       setCaseLines(prev => prev.filter(caseLine => caseLine.id !== caseLineToRemove));
+
+      // Also remove from createdCaseLines normalized state if present
+      setCreatedCaseLines(prev => prev.filter(cl => (cl.caseLineId ?? cl.caseLineId) !== caseLineToRemove));
+
       toast({
         title: "Issue Diagnosis Removed",
-        description: "Issue diagnosis has been removed successfully",
+        description: `Case line ${caseLineToRemove.slice(-8)} deleted successfully`,
       });
+    } catch (error) {
+      console.error('❌ Failed to delete case line:', error);
+      toast({
+        title: "Delete Failed",
+        description: error instanceof Error ? error.message : 'Failed to delete case line',
+        variant: "destructive"
+      });
+    } finally {
+      setConfirmRemoveModalOpen(false);
+      setCaseLineToRemove(null);
     }
-    setConfirmRemoveModalOpen(false);
-    setCaseLineToRemove(null);
   };
 
   // Mock data - replace with API calls in production
@@ -1060,7 +1285,7 @@ const TechnicianDashboard = ({
                         <TableHead>Vehicle & Model</TableHead>
                         <TableHead>Odometer</TableHead>
                         <TableHead>Check-in Date</TableHead>
-                        <TableHead>Technician</TableHead>
+                        <TableHead>Main Technician</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Cases</TableHead>
                         <TableHead>Actions</TableHead>
@@ -1101,7 +1326,7 @@ const TechnicianDashboard = ({
                             </TableCell>
                             <TableCell>
                               <div>
-                                <p className="text-sm">{record.mainTechnician.name}</p>
+                                <p className="font-medium">{record.mainTechnician.name}</p>
                                 <p className="text-xs text-muted-foreground">
                                   {record.mainTechnician.userId.substring(0, 8)}...
                                 </p>
@@ -1145,24 +1370,37 @@ const TechnicianDashboard = ({
                                   className="bg-green-600 hover:bg-green-700 flex items-center justify-center"
                                   onClick={async () => {
                                     console.log('🔘 Create Issue Diagnosis button clicked for record:', record);
-                                    
+
                                     try {
-                                      // If recordId exists in list, use it directly
-                                      if (record.recordId) {
-                                        console.log('✅ Using recordId from list:', record.recordId);
-                                        setSelectedRecord(record);
-                                        setCreateIssueDiagnosisModalOpen(true);
-                                        fetchCompatibleComponents(record.recordId).catch(error => {
+                                      // Try to pick a usable id from common fields so component search can run when possible.
+                                      const recMap = record as unknown as Record<string, unknown>;
+                                      const candidateId = record.recordId
+                                        || (typeof recMap['vehicleProcessingRecordId'] === 'string' ? recMap['vehicleProcessingRecordId'] as string : (recMap['vehicleProcessingRecordId'] ?? ''))
+                                        || (typeof recMap['processing_record_id'] === 'string' ? recMap['processing_record_id'] as string : (recMap['processing_record_id'] ?? ''))
+                                        || (typeof recMap['id'] === 'string' ? recMap['id'] as string : (recMap['id'] ?? ''))
+                                        || '';
+
+                                      setSelectedRecord(record);
+                                      setCreateIssueDiagnosisModalOpen(true);
+
+                                      if (candidateId) {
+                                        console.log('✅ Using candidate recordId for component fetch:', candidateId);
+                                        // try fetching compatible components but don't block the UI if it fails
+                                        fetchCompatibleComponents(candidateId.toString()).catch(error => {
                                           console.error('❌ Failed to fetch components:', error);
+                                          toast({
+                                            title: "Component Fetch Failed",
+                                            description: "Failed to fetch compatible components. You can still create the case line.",
+                                            variant: "destructive"
+                                          });
+                                        });
+
+                                        toast({
+                                          title: "Component Search Available",
+                                          description: "Compatible components will be searched automatically.",
                                         });
                                       } else {
-                                        // No recordId in list - need to fetch full record detail
-                                        console.warn('⚠️ No recordId in list, need to fetch by VIN or another identifier');
-                                        
-                                        // For now, just open modal without component search
-                                        setSelectedRecord(record);
-                                        setCreateIssueDiagnosisModalOpen(true);
-                                        
+                                        console.warn('⚠️ No candidate recordId found on record, component search will be unavailable');
                                         toast({
                                           title: "Component Search Unavailable",
                                           description: "Record ID not available. You can still create case line without component search.",
@@ -1171,6 +1409,11 @@ const TechnicianDashboard = ({
                                       }
                                     } catch (error) {
                                       console.error('❌ Error in create diagnosis handler:', error);
+                                      toast({
+                                        title: "Error",
+                                        description: "Unexpected error while opening Create Issue Diagnosis modal.",
+                                        variant: "destructive"
+                                      });
                                     }
                                   }}
                                   title="Create Issue Diagnosis"
@@ -1197,6 +1440,7 @@ const TechnicianDashboard = ({
                 <CardDescription>
                   View and manage issue diagnoses you've created for warranty cases
                 </CardDescription>
+                {/* Bulk delete removed per request */}
               </CardHeader>
               <CardContent>
                 {caseLines.length === 0 ? (
@@ -2897,9 +3141,10 @@ const TechnicianDashboard = ({
                         onChange={(e) => {
                           setComponentSearchQuery(e.target.value);
                           // Search components when typing
-                          if (selectedRecord && e.target.value.length >= 2) {
-                            const identifier = selectedRecord.recordId || selectedRecord.vin;
-                            fetchCompatibleComponents(identifier, e.target.value);
+                          if (e.target.value.length >= 2) {
+                            searchComponents(e.target.value);
+                          } else {
+                            setCompatibleComponents([]);
                           }
                         }}
                         placeholder="Search components..."
@@ -2921,8 +3166,12 @@ const TechnicianDashboard = ({
                                 setComponentSearchQuery(component.name);
                               }}
                             >
-                              <span className="text-sm font-medium">{component.name}</span>
-                              <span className="text-xs text-gray-400">{component.typeComponentId.slice(0, 8)}...</span>
+                              <div className="flex-1">
+                                <span className="text-sm font-medium">{component.name}</span>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-xs text-gray-400">{component.typeComponentId.slice(0, 8)}...</span>
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
