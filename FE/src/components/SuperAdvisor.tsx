@@ -103,6 +103,8 @@ interface VehicleSearchResult {
   vin: string;
   dateOfManufacture: string;
   placeOfManufacture?: string;
+  model?: string;
+  company?: string;
   licensePlate?: string;
   purchaseDate?: string;
   owner?: {
@@ -437,14 +439,21 @@ const SuperAdvisor = () => {
 
       if (response.data && response.data.status === 'success' && response.data.data && response.data.data.vehicle) {
         const vehicle = response.data.data.vehicle;
+        console.log('🚗 Vehicle data received:', vehicle); // Debug log
         setVehicleSearchResult({
           vin: vehicle.vin,
           dateOfManufacture: vehicle.dateOfManufacture,
           placeOfManufacture: vehicle.placeOfManufacture,
+          model: vehicle.model || 'N/A',
+          company: vehicle.company || 'N/A',
           licensePlate: vehicle.licensePlate,
           purchaseDate: vehicle.purchaseDate,
           owner: vehicle.owner
         });
+
+        // Reset warranty status for new vehicle - user must check warranty first
+        setWarrantyStatus(null);
+        setWarrantyDetails(null);
 
         // Reset customer search states and initialize owner form
         setCustomerSearchPhone('');
@@ -532,17 +541,14 @@ const SuperAdvisor = () => {
         return;
       }
 
-      const response = await axios.get(`http://localhost:3000/api/v1/customers/`, {
-        params: {
-          phone: customerSearchPhone.trim()
-        },
+      const response = await axios.get(`http://localhost:3000/api/v1/customers/phone/${customerSearchPhone.trim()}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
 
-      if (response.data && response.data.status === 'sucess') {
+      if (response.data && response.data.status === 'success') {
         // Try to get customer from different possible paths
         const customer = response.data.data?.customer || response.data.customer;
         
@@ -885,6 +891,16 @@ const SuperAdvisor = () => {
       return;
     }
 
+    // Validate phone number is exactly 10 digits
+    if (ownerForm.phone.length !== 10) {
+      toast({
+        title: 'Validation Error',
+        description: 'Phone number must be exactly 10 digits',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     if (!vehicleSearchResult.licensePlate?.trim()) {
       toast({
         title: 'Validation Error',
@@ -893,8 +909,6 @@ const SuperAdvisor = () => {
       });
       return;
     }
-
-
 
     try {
       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
@@ -908,67 +922,203 @@ const SuperAdvisor = () => {
         return;
       }
 
-      // Prepare request body based on customer status
-      let requestBody;
+      // Case 1: Vehicle already has owner - Update customer info via PATCH /customers/{id}
+      if (vehicleSearchResult.owner && vehicleSearchResult.owner.id) {
+        const customerId = vehicleSearchResult.owner.id;
+        
+        // Update customer information with 4 fields + customer ID
+        await axios.patch(`http://localhost:3000/api/v1/customers/${customerId}`, {
+          fullName: ownerForm.fullName.trim(),
+          email: ownerForm.email.trim(),
+          phone: ownerForm.phone.trim(),
+          address: ownerForm.address.trim()
+        }, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
 
-      // Check if customer exists (either from search or from vehicle's existing owner)
-      const existingCustomer = foundCustomer || vehicleSearchResult.owner;
-
-      if (existingCustomer && existingCustomer.id) {
-        // Existing customer - send customerId only
-        requestBody = {
-          customerId: existingCustomer.id,
+        // Also update vehicle's license plate via vehicle endpoint
+        await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, {
+          ownerId: customerId,
+          licensePlate: vehicleSearchResult.licensePlate.trim(),
+          purchaseDate: vehicleSearchResult.purchaseDate,
           dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-          licensePlate: vehicleSearchResult.licensePlate.trim()
-        };
-      } else {
-        // New customer - send full customer object (backend will create customer)
-        requestBody = {
-          customer: {
+          placeOfManufacture: vehicleSearchResult.placeOfManufacture || ''
+        }, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        // Update local state
+        setVehicleSearchResult(prev => prev ? ({
+          ...prev,
+          owner: {
+            ...prev.owner!,
             fullName: ownerForm.fullName.trim(),
             email: ownerForm.email.trim(),
             phone: ownerForm.phone.trim(),
             address: ownerForm.address.trim()
-          },
-          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-          licensePlate: vehicleSearchResult.licensePlate.trim(),
-          purchaseDate: vehicleSearchResult.purchaseDate
-        };
-      }
-
-      // Update vehicle owner using PATCH endpoint: /api/v1/vehicles/{vin}
-      const response = await axios.patch(`http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}`, requestBody, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.data && response.data.status === 'success') {
-        // Update local state with owner info from response
-        const updatedVehicle = response.data.data.vehicle;
-        setVehicleSearchResult(prev => ({
-          ...prev!,
-          owner: updatedVehicle.owner,
-          licensePlate: updatedVehicle.licensePlate,
-          purchaseDate: updatedVehicle.purchaseDate,
-          dateOfManufacture: updatedVehicle.dateOfManufacture,
-          placeOfManufacture: updatedVehicle.placeOfManufacture
-        }));
+          }
+        }) : prev);
 
         toast({
           title: 'Success',
-          description: 'Vehicle and owner information updated successfully!',
+          description: 'Customer information updated successfully!',
         });
 
-        // Reset search states
-        setCustomerSearchPhone('');
-        setFoundCustomer(null);
-        setHasSearchedCustomer(false);
+      } 
+      // Case 2: Registering new vehicle with existing customer (found via phone search)
+      else if (foundCustomer && foundCustomer.id) {
+        // If customer info has been edited, update customer first
+        const customerChanged = 
+          ownerForm.fullName.trim() !== foundCustomer.fullName ||
+          ownerForm.email.trim() !== foundCustomer.email ||
+          ownerForm.phone.trim() !== foundCustomer.phone ||
+          ownerForm.address.trim() !== foundCustomer.address;
 
-      } else {
-        throw new Error('Failed to update vehicle owner');
+        if (customerChanged) {
+          // Update customer info via PATCH /customers/{id}
+          await axios.patch(`http://localhost:3000/api/v1/customers/${foundCustomer.id}`, {
+            fullName: ownerForm.fullName.trim(),
+            email: ownerForm.email.trim(),
+            phone: ownerForm.phone.trim(),
+            address: ownerForm.address.trim()
+          }, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+        }
+
+        // Register vehicle with ownerId only
+        const requestBody = {
+          ownerId: foundCustomer.id,
+          licensePlate: vehicleSearchResult.licensePlate.trim(),
+          purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString(),
+          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
+          placeOfManufacture: vehicleSearchResult.placeOfManufacture || ''
+        };
+
+        const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.data && response.data.status === 'success') {
+          const updatedVehicle = response.data.data.vehicle;
+          setVehicleSearchResult(prev => prev ? ({
+            ...prev,
+            owner: updatedVehicle.owner,
+            licensePlate: updatedVehicle.licensePlate,
+            purchaseDate: updatedVehicle.purchaseDate
+          }) : prev);
+
+          toast({
+            title: 'Success',
+            description: customerChanged 
+              ? 'Customer updated and vehicle registered successfully!'
+              : 'Vehicle registered to existing customer successfully!',
+          });
+        }
       }
+      // Case 3: Have form data but no customer ID - Search by phone or create new
+      else {
+        // Try to find customer by phone first
+        let customerId = null;
+        
+        try {
+          const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers/phone/${ownerForm.phone.trim()}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+
+          if (searchResponse.data && searchResponse.data.status === 'success') {
+            const customer = searchResponse.data.data?.customer || searchResponse.data.customer;
+            if (customer && customer.id) {
+              customerId = customer.id;
+              
+              // Update customer info with new data
+              await axios.patch(`http://localhost:3000/api/v1/customers/${customerId}`, {
+                fullName: ownerForm.fullName.trim(),
+                email: ownerForm.email.trim(),
+                phone: ownerForm.phone.trim(),
+                address: ownerForm.address.trim()
+              }, {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+            }
+          }
+        } catch (searchError) {
+          console.log('Customer not found by phone, will create new');
+        }
+
+        // If customer not found, create new one
+        if (!customerId) {
+          const createResponse = await axios.post(`http://localhost:3000/api/v1/customers/`, {
+            fullName: ownerForm.fullName.trim(),
+            email: ownerForm.email.trim(),
+            phone: ownerForm.phone.trim(),
+            address: ownerForm.address.trim()
+          }, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+
+          if (createResponse.data?.status === 'success') {
+            customerId = createResponse.data.data.customer.id;
+          } else {
+            throw new Error('Failed to create customer');
+          }
+        }
+
+        // Register vehicle with the customer ID
+        const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, {
+          ownerId: customerId,
+          licensePlate: vehicleSearchResult.licensePlate.trim(),
+          purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString(),
+          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
+          placeOfManufacture: vehicleSearchResult.placeOfManufacture || ''
+        }, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.data && response.data.status === 'success') {
+          const updatedVehicle = response.data.data.vehicle;
+          setVehicleSearchResult(prev => prev ? ({
+            ...prev,
+            owner: updatedVehicle.owner,
+            licensePlate: updatedVehicle.licensePlate,
+            purchaseDate: updatedVehicle.purchaseDate
+          }) : prev);
+
+          toast({
+            title: 'Success',
+            description: 'Customer and vehicle information saved successfully!',
+          });
+        }
+      }
+
+      // Reset search states
+      setCustomerSearchPhone('');
+      setFoundCustomer(null);
+      setHasSearchedCustomer(false);
 
     } catch (error) {
       console.error('❌ Error saving changes:', error);
@@ -1051,16 +1201,39 @@ const SuperAdvisor = () => {
             generalWarranty?.mileage?.status === 'ACTIVE';
           
           // Warranty is valid if BOTH duration and odometer are valid
-          const isWarrantyValid = isDurationValid && isMileageValid;
+          const isGeneralWarrantyValid = isDurationValid && isMileageValid;
           
-        
+          // Check component warranties
+          const componentWarranties = warrantyData.componentWarranties || [];
+          let hasExpiredComponent = false;
+          let expiredComponents = [];
+          
+          for (const comp of componentWarranties) {
+            const compDurationValid = 
+              comp.duration?.status === true || 
+              comp.duration?.status === 'ACTIVE';
+            const compMileageValid = 
+              comp.mileage?.status === 'ACTIVE';
+            
+            // Component is expired if EITHER duration OR mileage is expired
+            if (!compDurationValid || !compMileageValid) {
+              hasExpiredComponent = true;
+              expiredComponents.push({
+                name: comp.componentName || comp.name || 'Unknown component',
+                reason: !compDurationValid ? 'time limit exceeded' : 'mileage limit exceeded'
+              });
+            }
+          }
+          
+          // Overall warranty is valid only if general warranty is valid AND no component is expired
+          const isWarrantyValid = isGeneralWarrantyValid && !hasExpiredComponent;
           
           setWarrantyStatus(isWarrantyValid ? 'valid' : 'expired');
 
           if (isWarrantyValid) {
             toast({
               title: 'Warranty Active',
-              description: `Warranty valid for ${generalWarranty.duration.remainingDays} more days and ${generalWarranty.mileage.remainingMileage} km`,
+              description: `General warranty valid for ${generalWarranty.duration.remainingDays} more days and ${generalWarranty.mileage.remainingMileage} km. All components covered.`,
             });
 
             if (vehicleSearchResult.owner) {
@@ -1068,12 +1241,17 @@ const SuperAdvisor = () => {
             }
           } else {
             const reasons = [];
-            if (!isDurationValid) reasons.push('time limit exceeded');
-            if (!isMileageValid) reasons.push('odometer limit exceeded');
+            if (!isDurationValid) reasons.push('general warranty time limit exceeded');
+            if (!isMileageValid) reasons.push('general warranty odometer limit exceeded');
+            
+            if (hasExpiredComponent) {
+              const componentsList = expiredComponents.map(c => `${c.name} (${c.reason})`).join(', ');
+              reasons.push(`components expired: ${componentsList}`);
+            }
             
             toast({
               title: 'Warranty Expired',
-              description: `Vehicle warranty has expired: ${reasons.join(' and ')}`,
+              description: `Cannot register warranty claim: ${reasons.join('; ')}`,
               variant: 'destructive'
             });
           }
@@ -1104,6 +1282,16 @@ const SuperAdvisor = () => {
       toast({
         title: 'Validation Error',
         description: 'Please fill in all owner information (Full Name, Phone, Email, Address)',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Validate phone number is exactly 10 digits
+    if (ownerForm.phone.length !== 10) {
+      toast({
+        title: 'Validation Error',
+        description: 'Phone number must be exactly 10 digits',
         variant: 'destructive'
       });
       return;
@@ -1165,17 +1353,13 @@ const SuperAdvisor = () => {
         }
       }
 
-      // Prepare request body with 8 fields
+      // Prepare request body - only send ownerId and vehicle info
       const requestBody = {
-        customerId: customerData.id,
+        ownerId: customerData.id,  // Use existing customer ID
         licensePlate: vehicleSearchResult.licensePlate || '',
         purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString(),
         dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-        placeOfManufacture: vehicleSearchResult.placeOfManufacture || '',
-        fullName: customerData.fullName || customerData.fullname,
-        phone: customerData.phone,
-        email: customerData.email,
-        address: customerData.address
+        placeOfManufacture: vehicleSearchResult.placeOfManufacture || ''
       };
 
       // Register owner to vehicle
@@ -1193,8 +1377,8 @@ const SuperAdvisor = () => {
         });
 
         // Update vehicle search result with owner info
-        setVehicleSearchResult(prev => ({
-          ...prev!,
+        setVehicleSearchResult(prev => prev ? ({
+          ...prev,
           owner: {
             id: customerData.id,
             fullName: customerData.fullName || customerData.fullname,
@@ -1202,7 +1386,7 @@ const SuperAdvisor = () => {
             email: customerData.email,
             address: customerData.address
           }
-        }));
+        }) : prev);
 
         // Reset form and close dialog
         setOwnerForm({ fullName: '', phone: '', email: '', address: '' });
@@ -1412,18 +1596,19 @@ const SuperAdvisor = () => {
                     placeholder={
                       searchMode === 'customer'
                         ? "Enter VIN to find vehicle and customer records"
-                        : "Enter customer phone number"
+                        : "Enter 10-digit phone number"
                     }
                     className="pl-10 h-11"
                     value={searchMode === 'phone' ? customerSearchPhone : searchVin}
                     onChange={(e) => {
                       if (searchMode === 'phone') {
-                        const numericValue = e.target.value.replace(/[^0-9]/g, '');
+                        const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
                         setCustomerSearchPhone(numericValue);
                       } else {
                         setSearchVin(e.target.value);
                       }
                     }}
+                    maxLength={searchMode === 'phone' ? 10 : undefined}
                   />
                 </div>
                 <Button 
@@ -1563,30 +1748,43 @@ const SuperAdvisor = () => {
                         </div>
                       </div>
 
-                      {/* Place of Manufacture - Read Only */}
+                      {/* Place of Manufacture - Read Only - Show Model */}
                       <div className="grid md:grid-cols-3 gap-2 items-center">
                         <Label className="font-medium text-gray-700">Place of Manufacture:</Label>
                         <div className="md:col-span-2">
                           <Input
-                            value={vehicleSearchResult.placeOfManufacture || 'N/A'}
+                            value={vehicleSearchResult.model || 'N/A'}
                             disabled
                             className="bg-gray-100"
                           />
                         </div>
                       </div>
 
-                      {/* License Plate - Editable */}
+                      {/* Company - Read Only - New Field */}
+                      <div className="grid md:grid-cols-3 gap-2 items-center">
+                        <Label className="font-medium text-gray-700">Company:</Label>
+                        <div className="md:col-span-2">
+                          <Input
+                            value={vehicleSearchResult.company || 'N/A'}
+                            disabled
+                            className="bg-gray-100"
+                          />
+                        </div>
+                      </div>
+
+                      {/* License Plate - Editable only after valid warranty check */}
                       <div className="grid md:grid-cols-3 gap-2 items-center">
                         <Label className="font-medium text-gray-700">License Plate:</Label>
                         <div className="md:col-span-2">
                           <Input
-                            value={vehicleSearchResult.licensePlate || ''}
-                            onChange={(e) => setVehicleSearchResult(prev => ({
-                              ...prev!,
+                            value={warrantyStatus === 'valid' ? (vehicleSearchResult.licensePlate || '') : 'N/A'}
+                            onChange={(e) => setVehicleSearchResult(prev => prev ? ({
+                              ...prev,
                               licensePlate: e.target.value
-                            }))}
+                            }) : prev)}
                             placeholder="Enter license plate number"
-                            className="bg-white border-green-300 focus:border-green-500"
+                            disabled={warrantyStatus !== 'valid'}
+                            className={warrantyStatus === 'valid' ? "bg-white border-green-300 focus:border-green-500" : "bg-gray-100"}
                           />
                         </div>
                       </div>
@@ -1598,10 +1796,10 @@ const SuperAdvisor = () => {
                           <Input
                             type="date"
                             value={vehicleSearchResult.purchaseDate ? new Date(vehicleSearchResult.purchaseDate).toISOString().split('T')[0] : ''}
-                            onChange={(e) => setVehicleSearchResult(prev => ({
-                              ...prev!,
+                            onChange={(e) => setVehicleSearchResult(prev => prev ? ({
+                              ...prev,
                               purchaseDate: e.target.value ? new Date(e.target.value).toISOString() : ''
-                            }))}
+                            }) : prev)}
                             disabled={!!vehicleSearchResult.owner}
                             className={vehicleSearchResult.owner ? "bg-gray-100" : "bg-white border-green-300 focus:border-green-500"}
                           />
@@ -1739,6 +1937,21 @@ const SuperAdvisor = () => {
                                       </div>
                                     </div>
                                   </div>
+                                  
+                                  {/* Total Components Info */}
+                                  {warrantyDetails.componentWarranties && warrantyDetails.componentWarranties.length > 0 && (
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                      <div className="flex items-center justify-between text-sm">
+                                        <span className="text-gray-600 flex items-center">
+                                          <Wrench className="h-4 w-4 mr-2 text-blue-600" />
+                                          Additional Component Coverage
+                                        </span>
+                                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300">
+                                          Total components: {warrantyDetails.componentWarranties.length}
+                                        </Badge>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
 
                                 {/* Component Warranties - Secondary Info */}
@@ -1749,12 +1962,19 @@ const SuperAdvisor = () => {
                                       Component Warranties (Additional Coverage)
                                     </h4>
                                     <div className="space-y-2">
-                                      {warrantyDetails.componentWarranties.map((component: any, index: number) => (
+                                      {warrantyDetails.componentWarranties.map((component: any, index: number) => {
+                                        const remainingOdo = component.mileage?.remainingMileage || 0;
+                                        const isInactive = remainingOdo === 0;
+                                        
+                                        return (
                                         <div key={index} className="bg-white border border-gray-200 rounded p-3">
                                           <div className="flex items-center justify-between mb-2">
                                             <span className="font-medium text-sm text-gray-800">{component.componentName}</span>
-                                            <Badge variant="outline" className="text-xs">
-                                              {(component.duration?.status === 'ACTIVE' || component.duration?.status === true) ? '✓ Active' : '✗ Expired'}
+                                            <Badge 
+                                              variant={isInactive ? "destructive" : "outline"} 
+                                              className={`text-xs ${isInactive ? 'bg-red-500 text-white' : ''}`}
+                                            >
+                                              {isInactive ? '✗ Inactive' : (component.duration?.status === 'ACTIVE' || component.duration?.status === true) ? '✓ Active' : '✗ Expired'}
                                             </Badge>
                                           </div>
                                           <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
@@ -1762,7 +1982,7 @@ const SuperAdvisor = () => {
                                               <span className="text-gray-500">Duration:</span> {component.duration?.remainingDays || 0} days left
                                             </div>
                                             <div>
-                                              <span className="text-gray-500">Odometer:</span> {component.mileage?.remainingMileage?.toLocaleString() || 0} km left
+                                              <span className="text-gray-500">Odometer:</span> {remainingOdo.toLocaleString()} km left
                                             </div>
                                             <div>
                                               <span className="text-gray-500">Policy Duration:</span> {component.policy?.durationMonths || 0} months
@@ -1772,7 +1992,8 @@ const SuperAdvisor = () => {
                                             </div>
                                           </div>
                                         </div>
-                                      ))}
+                                        );
+                                      })}
                                     </div>
                                   </div>
                                 )}
@@ -1913,12 +2134,16 @@ const SuperAdvisor = () => {
                             <Input
                               value={ownerForm.phone}
                               onChange={(e) => {
-                                const numericValue = e.target.value.replace(/[^0-9]/g, '');
+                                const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
                                 setOwnerForm({ ...ownerForm, phone: numericValue });
                               }}
-                              placeholder="Enter phone number"
+                              placeholder="Enter 10-digit phone number"
+                              maxLength={10}
                               className="bg-white border-green-300 focus:border-green-500 font-mono"
                             />
+                            {ownerForm.phone && ownerForm.phone.length !== 10 && (
+                              <p className="text-xs text-red-500 mt-1">Phone must be exactly 10 digits</p>
+                            )}
                           </div>
                         </div>
                         <div className="grid md:grid-cols-3 gap-2 items-center">
@@ -2447,13 +2672,17 @@ const SuperAdvisor = () => {
               <Label htmlFor="phone">Phone Number *</Label>
               <Input
                 id="phone"
-                placeholder="Enter phone number"
+                placeholder="Enter 10-digit phone number"
                 value={ownerForm.phone}
                 onChange={(e) => {
-                  const numericValue = e.target.value.replace(/[^0-9]/g, '');
+                  const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
                   setOwnerForm({ ...ownerForm, phone: numericValue });
                 }}
+                maxLength={10}
               />
+              {ownerForm.phone && ownerForm.phone.length !== 10 && (
+                <p className="text-xs text-red-500">Phone must be exactly 10 digits</p>
+              )}
             </div>
 
             <div className="grid gap-2">
@@ -2627,7 +2856,9 @@ const SuperAdvisor = () => {
                     {warrantyDialogData.componentWarranties.map((component: any, index: number) => {
                       const isDurationActive = component.duration?.status === 'ACTIVE';
                       const isMileageActive = component.mileage?.status === 'ACTIVE';
-                      const isComponentValid = isDurationActive && isMileageActive;
+                      const remainingOdo = component.mileage?.remainingMileage || 0;
+                      const isInactive = remainingOdo === 0;
+                      const isComponentValid = isDurationActive && isMileageActive && !isInactive;
                       
                       return (
                         <div key={component.typeComponentId || index} className={`p-3 rounded-lg border ${isComponentValid ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
@@ -2639,7 +2870,7 @@ const SuperAdvisor = () => {
                             <div className="flex justify-between mb-2">
                               <span className="font-medium">Overall:</span>
                               <Badge variant={isComponentValid ? 'default' : 'destructive'}>
-                                {isComponentValid ? 'ACTIVE' : 'EXPIRED'}
+                                {isInactive ? 'INACTIVE' : isComponentValid ? 'ACTIVE' : 'EXPIRED'}
                               </Badge>
                             </div>
 
@@ -2686,7 +2917,9 @@ const SuperAdvisor = () => {
                             
                             <div className="flex justify-between">
                               <span>KM left:</span>
-                              <span className="font-medium text-green-600">{component.mileage?.remainingMileage?.toLocaleString() || 0}</span>
+                              <span className={`font-medium ${remainingOdo === 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                {remainingOdo.toLocaleString()}
+                              </span>
                             </div>
                           </div>
                         </div>
