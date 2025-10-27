@@ -22,7 +22,13 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       status: {
-        type: DataTypes.ENUM("RESERVED", "PICKED_UP", "INSTALLED", "CANCELLED"),
+        type: DataTypes.ENUM(
+          "RESERVED",
+          "PICKED_UP",
+          "INSTALLED",
+          "RETURNED",
+          "CANCELLED"
+        ),
         allowNull: false,
         defaultValue: "RESERVED",
         field: "status",
@@ -52,11 +58,11 @@ module.exports = (sequelize, DataTypes) => {
         field: "old_component_serial",
       },
 
-      oldComponentCondition: {
-        type: DataTypes.ENUM("DEFECTIVE", "DAMAGED"),
-        allowNull: true,
-        field: "old_component_condition",
-      },
+      // oldComponentCondition: {
+      //   type: DataTypes.ENUM("DEFECTIVE", "DAMAGED"),
+      //   allowNull: true,
+      //   field: "old_component_condition",
+      // },
 
       oldComponentReturned: {
         type: DataTypes.BOOLEAN,

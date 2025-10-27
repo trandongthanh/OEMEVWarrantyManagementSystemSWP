@@ -39,13 +39,15 @@ class VehicleProcessingRecordController {
   updateMainTechnician = async (req, res) => {
     const { technicianId } = req.body;
     const { id } = req.params;
-    const { serviceCenterId } = req.user;
+    const { serviceCenterId, roleName, userId } = req.user;
 
     const updatedRecord =
       await this.#vehicleProcessingRecordService.updateMainTechnician({
         vehicleProcessingRecordId: id,
         technicianId: technicianId,
         serviceCenterId: serviceCenterId,
+        roleName: roleName,
+        userId: userId,
       });
 
     res.status(200).json({
@@ -55,13 +57,14 @@ class VehicleProcessingRecordController {
   };
 
   getById = async (req, res, next) => {
-    const { userId, serviceCenterId } = req.user;
+    const { userId, roleName, serviceCenterId } = req.user;
 
     const { id } = req.params;
 
     const record = await this.#vehicleProcessingRecordService.findDetailById({
       id: id,
       userId: userId,
+      roleName: roleName,
       serviceCenterId: serviceCenterId,
     });
 
@@ -149,6 +152,53 @@ class VehicleProcessingRecordController {
       data: {
         records,
       },
+    });
+  };
+
+  completeRecord = async (req, res, next) => {
+    const { id } = req.params;
+
+    const completedRecord =
+      await this.#vehicleProcessingRecordService.completeRecord({
+        vehicleProcessingRecordId: id,
+      });
+
+    if (!completedRecord) {
+      return res.status(404).json({
+        status: "fail",
+        message: `Record with id ${id} not found or cannot be completed`,
+      });
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: completedRecord,
+    });
+  };
+
+  completeDiagnosis = async (req, res, next) => {
+    const { id } = req.params;
+    const { userId, roleName, serviceCenterId } = req.user;
+    const companyId = req.companyId;
+
+    const completedRecord =
+      await this.#vehicleProcessingRecordService.makeDiagnosisCompleted({
+        vehicleProcessingRecordId: id,
+        userId,
+        roleName,
+        serviceCenterId,
+      });
+
+    if (!completedRecord) {
+      return res.status(404).json({
+        status: "fail",
+        message: `Record with id ${id} not found or cannot be completed`,
+      });
+    }
+
+    res.status(200).json({
+      status: "success",
+      data: completedRecord,
     });
   };
 }

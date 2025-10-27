@@ -1,13 +1,8 @@
 import { Server } from "socket.io";
-import { socketAuth } from "./socketAuth.js";
+import { socketAuth, optionalSocketAuth } from "./socketAuth.js";
 import { messageSchema } from "../validators/message.validator.js";
 import dayjs from "dayjs";
-import { BadRequestError, NotFoundError } from "../error/index.js";
 import container from "../../container.js";
-
-import db from "../models/index.cjs";
-
-const { Message, Conversation } = db;
 
 export function initializeSocket(httpServer) {
   const io = new Server(httpServer, {
@@ -20,8 +15,18 @@ export function initializeSocket(httpServer) {
   const chatNamespace = io.of("/chats");
 
   notificationNamespace.use(socketAuth);
+
+  chatNamespace.use(optionalSocketAuth);
   notificationNamespace.on("connection", (socket) => {
-    const { userId, roleName, serviceCenterId } = socket.user;
+    const { userId, roleName, serviceCenterId, companyId } = socket.user;
+
+    if (roleName === "parts_coordinator_company" && companyId) {
+      socket.join(`parts_coordinator_company_${companyId}`);
+    }
+
+    if (roleName === "parts_coordinator_service_center" && companyId) {
+      socket.join(`parts_coordinator_service_center_${companyId}`);
+    }
 
     if (roleName && serviceCenterId) {
       socket.join(`user_${userId}`);
@@ -35,8 +40,6 @@ export function initializeSocket(httpServer) {
     if (roleName === "service_center_staff" && serviceCenterId) {
       const roomName = `service_center_staff_${serviceCenterId}`;
       socket.join(roomName);
-
-      const rooms = Array.from(socket.rooms);
     }
 
     if (roleName === "service_center_manager" && serviceCenterId) {
@@ -63,34 +66,63 @@ export function initializeSocket(httpServer) {
       });
     });
 
-    socket.on("sendMessage", async (dataMessage) => {
-      const { conversationId, senderId, senderType, content, timestamp } =
-        dataMessage;
+    socket.on("sendMessage", async (dataMessage, acknowledgment) => {
+      try {
+        const { conversationId, senderId, senderType, content } = dataMessage;
 
-      const { error } = messageSchema.validate({
-        conversationId,
-        senderId,
-        senderType,
-        content,
-      });
+        const { error } = messageSchema.validate({
+          conversationId,
+          senderId,
+          senderType,
+          content,
+        });
 
-      if (error) {
-        throw new BadRequestError(error.details[0].message);
+        if (error) {
+          const errorMessage = error.details[0].message;
+
+          if (acknowledgment && typeof acknowledgment === "function") {
+            acknowledgment({
+              success: false,
+              error: errorMessage,
+            });
+          }
+
+          return;
+        }
+
+        const chatService = socket.container.resolve("chatService");
+
+        const rawResult = await chatService.sendMessage({
+          conversationId,
+          senderId,
+          senderType,
+          content,
+        });
+
+        socket.to(`conversation_${conversationId}`).emit("newMessage", {
+          sendAt: dayjs(),
+          newMessage: rawResult,
+        });
+
+        if (acknowledgment && typeof acknowledgment === "function") {
+          acknowledgment({
+            success: true,
+            data: rawResult,
+          });
+        }
+      } catch (error) {
+        if (acknowledgment && typeof acknowledgment === "function") {
+          acknowledgment({
+            success: false,
+            error: error.message || "Failed to send message",
+          });
+        }
+
+        socket.emit("messageError", {
+          error: error.message || "Failed to send message",
+          timestamp: dayjs(),
+        });
       }
-
-      const chatService = socket.container.resolve("chatService");
-
-      const rawResult = await chatService.sendMessage({
-        conversationId,
-        senderId,
-        senderType,
-        content,
-      });
-
-      socket.to(`conversation_${conversationId}`).emit("newMessage", {
-        sendAt: dayjs(),
-        newMessage: rawResult,
-      });
     });
     socket.on("disconnect", () => {
       console.log("User disconnected from chat: " + socket.id);

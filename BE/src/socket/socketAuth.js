@@ -14,9 +14,35 @@ export const socketAuth = (socket, next) => {
     return next(new Error("Authentication error: Token not provided"));
   }
 
-  const decode = jwt.verify(token, JWT_SECRET);
+  try {
+    const decode = jwt.verify(token, JWT_SECRET);
+    socket.user = decode;
+    next();
+  } catch (error) {
+    return next(new Error("Authentication error: Invalid token"));
+  }
+};
 
-  socket.user = decode;
+// Optional authentication - allows both authenticated and anonymous connections
+export const optionalSocketAuth = (socket, next) => {
+  console.log("Optional authentication for socket...");
+
+  const token = socket.handshake.auth.token;
+
+  if (token) {
+    try {
+      const decode = jwt.verify(token, JWT_SECRET);
+      socket.user = decode;
+      socket.isAuthenticated = true;
+      console.log("Socket authenticated as:", decode.userId);
+    } catch (error) {
+      console.log("Invalid token provided, treating as guest");
+      socket.isAuthenticated = false;
+    }
+  } else {
+    socket.isAuthenticated = false;
+    console.log("No token provided, treating as guest");
+  }
 
   next();
 };

@@ -98,6 +98,37 @@ class TaskAssignmentRepository {
 
     return taskAssignment.toJSON();
   };
+
+  completeTaskByCaselineId = async (
+    { caseLineId, completedAt, isActive },
+    transaction = null
+  ) => {
+    const [affectedRows] = await TaskAssignment.update(
+      { isActive: isActive, completedAt: completedAt },
+      {
+        where: {
+          caseLineId: caseLineId,
+          isActive: true,
+        },
+        transaction,
+      }
+    );
+
+    if (affectedRows === 0) {
+      throw new ConflictError("No active task assignment found to complete.");
+    }
+
+    const updated = await TaskAssignment.findOne({
+      where: { caseLineId },
+      transaction,
+    });
+
+    if (!updated) {
+      throw new NotFoundError("Task assignment not found.");
+    }
+
+    return updated.toJSON();
+  };
 }
 
 export default TaskAssignmentRepository;

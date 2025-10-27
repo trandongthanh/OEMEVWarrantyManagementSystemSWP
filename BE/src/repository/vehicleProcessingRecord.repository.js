@@ -1,4 +1,4 @@
-import { Op } from "sequelize";
+import { Op, where } from "sequelize";
 import db from "../models/index.cjs";
 
 const {
@@ -12,6 +12,22 @@ const {
 } = db;
 
 class VehicleProcessingRecordRepository {
+  findByPk = async (
+    vehicleProcessingRecordId,
+    transaction = null,
+    lock = null
+  ) => {
+    const record = await VehicleProcessingRecord.findByPk(
+      vehicleProcessingRecordId,
+      {
+        transaction,
+        lock,
+      }
+    );
+
+    return record ? record.toJSON() : null;
+  };
+
   createRecord = async (
     { odometer, createdByStaffId, vin, visitorInfo = null, checkInDate },
     option = null
@@ -94,9 +110,38 @@ class VehicleProcessingRecordRepository {
     return record.toJSON();
   };
 
-  findDetailById = async ({ id }, transaction = null, lock = null) => {
-    const record = await VehicleProcessingRecord.findByPk(id, {
-      attributes: ["vin", "checkInDate", "odometer", "status", "visitorInfo"],
+  findDetailById = async (
+    { id, roleName, userId, serviceCenterId },
+    transaction = null,
+    lock = null
+  ) => {
+    let whereCondition = {};
+    const isTech = roleName === "service_center_technician";
+
+    if (roleName === "service_center_technician") {
+      whereCondition = {
+        [Op.or]: [
+          { "$guaranteeCases.caseLines.diagnostic_tech_id$": userId },
+          { "$guaranteeCases.caseLines.repair_tech_id$": userId },
+          { "$guaranteeCases.lead_tech_id$": userId },
+          { mainTechnicianId: userId },
+        ],
+      };
+    }
+
+    const record = await VehicleProcessingRecord.findOne({
+      where: {
+        vehicleProcessingRecordId: id,
+        ...whereCondition,
+      },
+      attributes: [
+        "vehicleProcessingRecordId",
+        "vin",
+        "checkInDate",
+        "odometer",
+        "status",
+        "visitorInfo",
+      ],
 
       include: [
         {
@@ -123,6 +168,7 @@ class VehicleProcessingRecordRepository {
           model: GuaranteeCase,
           as: "guaranteeCases",
           attributes: ["guaranteeCaseId", "status", "contentGuarantee"],
+          required: false,
 
           include: [
             {
@@ -135,7 +181,11 @@ class VehicleProcessingRecordRepository {
                 "warrantyStatus",
                 "status",
                 "rejectionReason",
+                "repairTechId",
+                "diagnosticTechId",
+                "quantity",
               ],
+              required: false,
             },
           ],
         },
@@ -144,6 +194,9 @@ class VehicleProcessingRecordRepository {
           model: User,
           as: "createdByStaff",
           attributes: ["userId", "name", "serviceCenterId"],
+
+          where: { serviceCenterId: serviceCenterId },
+          required: true,
         },
       ],
 
@@ -160,114 +213,192 @@ class VehicleProcessingRecordRepository {
 
   findAll = async ({
     serviceCenterId,
-    limit,
-    offset,
+    limit = 20,
+    offset = 0,
     status,
     userId,
     roleName,
   }) => {
-    let staffCondition = { serviceCenterId: serviceCenterId };
-    let technicianCondition = {};
-    let whereCondition = {};
+    const isTech = roleName === "service_center_technician";
 
-    if (status) {
-      whereCondition.status = status;
-    }
+    const techWhere = isTech
+      ? {
+          [Op.or]: [
+            { "$guaranteeCases.caseLines.diagnosticTechId$": userId },
+            { "$guaranteeCases.caseLines.repairTechId$": userId },
+            { "$guaranteeCases.leadTechId$": userId },
+            { mainTechnicianId: userId },
+          ],
+        }
+      : {};
 
-    if (roleName === "service_center_staff") {
-      staffCondition.userId = userId;
-    } else if (roleName === "service_center_technician") {
-      technicianCondition.userId = userId;
-    }
+    const { rows, count } = await VehicleProcessingRecord.findAndCountAll({
+      where: {
+        ...(status ? { status } : {}),
+        ...techWhere,
+      },
 
-    const records = await VehicleProcessingRecord.findAll({
-      where: whereCondition,
-      limit: limit,
-      offset: offset,
-      subQuery: false,
-      order: [["checkInDate", "DESC"]],
       attributes: [
         "vehicleProcessingRecordId",
         "vin",
         "checkInDate",
         "odometer",
         "status",
+        "visitorInfo",
       ],
-
       include: [
         {
           model: User,
           as: "mainTechnician",
           attributes: ["userId", "name"],
-
-          where: technicianCondition,
-
-          required: roleName === "service_center_technician",
+          required: false,
         },
-
         {
           model: Vehicle,
           as: "vehicle",
           attributes: ["vin"],
-
+          required: false,
           include: [
             {
               model: VehicleModel,
               as: "model",
               attributes: [["vehicle_model_name", "name"], "vehicleModelId"],
+              required: false,
             },
           ],
         },
-
         {
           model: GuaranteeCase,
           as: "guaranteeCases",
-          attributes: ["guaranteeCaseId", "status", "contentGuarantee"],
-
+          attributes: [
+            "guaranteeCaseId",
+            "status",
+            "contentGuarantee",
+            "leadTechId",
+          ],
+          required: false,
           include: [
             {
               model: CaseLine,
               as: "caseLines",
               attributes: [
                 "id",
+                "typeComponentId",
                 "diagnosisText",
                 "correctionText",
                 "warrantyStatus",
                 "status",
                 "rejectionReason",
                 "repairTechId",
+                "diagnosticTechId",
                 "quantity",
               ],
-
-              include: [
-                {
-                  model: TypeComponent,
-                  as: "typeComponent",
-                  attributes: ["typeComponentId", "name", "category"],
-                },
-              ],
+              required: false,
             },
           ],
         },
-
         {
           model: User,
           as: "createdByStaff",
-          attributes: ["userId", "name"],
-          where: staffCondition,
+          attributes: ["userId", "name", "serviceCenterId"],
+          where: { serviceCenterId },
           required: true,
         },
       ],
+
+      order: [["checkInDate", "DESC"]],
+      limit,
+      offset,
+      subQuery: false,
+      distinct: true,
     });
 
-    if (!records || records.length === 0) {
-      return null;
+    if (!rows.length) {
+      return { records: [], recordsCount: 0, total: 0 };
     }
 
     return {
-      records: records.map((record) => record.toJSON()),
-      recordsCount: records.length,
+      records: rows.map((r) => r.toJSON()),
+      recordsCount: rows.length,
+      total: count,
     };
+  };
+
+  updateStatus = async (
+    { vehicleProcessingRecordId, status },
+    transaction = null
+  ) => {
+    const [rowEffect] = await VehicleProcessingRecord.update(
+      { status },
+      {
+        where: { vehicleProcessingRecordId },
+        transaction,
+      }
+    );
+
+    if (rowEffect <= 0) {
+      return null;
+    }
+
+    const updatedRecord = await VehicleProcessingRecord.findByPk(
+      vehicleProcessingRecordId,
+      {
+        transaction,
+      }
+    );
+
+    return updatedRecord ? updatedRecord.toJSON() : null;
+  };
+
+  countPendingApprovalByVehicleProcessingRecordId = async (
+    vehicleProcessingRecordId,
+    transaction = null
+  ) => {
+    const count = await CaseLine.count({
+      where: {
+        status: "PENDING_APPROVAL",
+      },
+      include: [
+        {
+          model: GuaranteeCase,
+          as: "guaranteeCase",
+          attributes: [],
+          where: {
+            vehicleProcessingRecordId: vehicleProcessingRecordId,
+          },
+          required: true,
+        },
+      ],
+      transaction: transaction,
+    });
+
+    return count;
+  };
+
+  completeRecord = async (
+    { vehicleProcessingRecordId, status, checkOutDate },
+    transaction = null
+  ) => {
+    const [rowEffect] = await VehicleProcessingRecord.update(
+      { status, completedDate: checkOutDate },
+      {
+        where: { vehicleProcessingRecordId },
+        transaction,
+      }
+    );
+
+    if (rowEffect <= 0) {
+      return null;
+    }
+
+    const updatedRecord = await VehicleProcessingRecord.findByPk(
+      vehicleProcessingRecordId,
+      {
+        transaction,
+      }
+    );
+
+    return updatedRecord ? updatedRecord.toJSON() : null;
   };
 }
 

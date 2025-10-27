@@ -22,20 +22,9 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       status: {
-        type: DataTypes.ENUM(
-          "WORKING",
-          "DAY_OFF",
-          "LEAVE_REQUESTED",
-          "LEAVE_APPROVED"
-        ),
+        type: DataTypes.ENUM("AVAILABLE", "UNAVAILABLE"),
         allowNull: false,
-        defaultValue: "WORKING",
-      },
-
-      requestReason: {
-        type: DataTypes.STRING,
-        allowNull: true,
-        field: "request_reason",
+        defaultValue: "AVAILABLE",
       },
 
       notes: {

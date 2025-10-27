@@ -30,20 +30,29 @@ class ConversationRepository {
     const [rowsUpdated] = await Conversation.update(
       { staffId: staffId, status: status },
       {
-        where: { id: conversationId },
+        where: {
+          id: conversationId,
+          status: "UNASSIGNED",
+        },
         transaction: transaction,
       }
     );
 
     if (rowsUpdated <= 0) {
-      return null;
+      throw new Error(
+        "Failed to assign conversation - it may have been already accepted by another staff"
+      );
     }
 
     const updatedConversation = await Conversation.findByPk(conversationId, {
       transaction: transaction,
     });
 
-    return updatedConversation ? updatedConversation.toJSON() : null;
+    if (!updatedConversation) {
+      throw new Error("Conversation not found after update");
+    }
+
+    return updatedConversation.toJSON();
   };
 
   closeConversation = async (conversationId, transaction = null) => {
@@ -56,14 +65,20 @@ class ConversationRepository {
     );
 
     if (rowsUpdated <= 0) {
-      return null;
+      throw new Error(
+        "Failed to close conversation - conversation not found or already closed"
+      );
     }
 
     const updatedConversation = await Conversation.findByPk(conversationId, {
       transaction: transaction,
     });
 
-    return updatedConversation ? updatedConversation.toJSON() : null;
+    if (!updatedConversation) {
+      throw new Error("Conversation not found after update");
+    }
+
+    return updatedConversation.toJSON();
   };
 
   updateLastMessageAt = async (conversationId, transaction = null) => {

@@ -66,6 +66,18 @@ class WarehouseService {
 
     return typeComponents;
   };
+
+  getAllWarehouses = async (serviceCenterId) => {
+    const warehouses = await this.#warehouseRepository.getAllWarehouses(
+      serviceCenterId
+    );
+
+    if (!warehouses || warehouses.length === 0) {
+      return [];
+    }
+
+    return warehouses;
+  };
 }
 
 export default WarehouseService;

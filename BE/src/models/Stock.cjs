@@ -43,6 +43,13 @@ module.exports = (sequelize, DataTypes) => {
     },
     {
       tableName: "stock",
+      indexes: [
+        {
+          unique: true,
+          fields: ["warehouse_id", "type_component_id"],
+          name: "unique_stock_item_location",
+        },
+      ],
     }
   );
 
@@ -55,6 +62,11 @@ module.exports = (sequelize, DataTypes) => {
     Stock.belongsTo(models.TypeComponent, {
       foreignKey: "type_component_id",
       as: "typeComponent",
+    });
+
+    Stock.hasMany(models.StockReservation, {
+      foreignKey: "stock_id",
+      as: "reservations",
     });
   };
 

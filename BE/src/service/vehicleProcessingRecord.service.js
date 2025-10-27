@@ -17,6 +17,7 @@ class VehicleProcessingRecordService {
   #vehicleRepository;
   #taskAssignmentRepository;
   #userRepository;
+  #caselineRepository;
 
   constructor({
     vehicleProcessingRecordRepository,
@@ -25,6 +26,7 @@ class VehicleProcessingRecordService {
     notificationService,
     userRepository,
     taskAssignmentRepository,
+    caselineRepository,
   }) {
     this.#vehicleProcessingRecordRepository = vehicleProcessingRecordRepository;
     this.#guaranteeCaseRepository = guaranteeCaseRepository;
@@ -32,6 +34,7 @@ class VehicleProcessingRecordService {
     this.#taskAssignmentRepository = taskAssignmentRepository;
     this.#notificationService = notificationService;
     this.#userRepository = userRepository;
+    this.#caselineRepository = caselineRepository;
   }
 
   createRecord = async ({
@@ -152,6 +155,8 @@ class VehicleProcessingRecordService {
     vehicleProcessingRecordId,
     technicianId,
     serviceCenterId,
+    roleName,
+    userId,
   }) => {
     let oldTechnicianId = null;
 
@@ -166,7 +171,12 @@ class VehicleProcessingRecordService {
 
       const existingRecord =
         await this.#vehicleProcessingRecordRepository.findDetailById(
-          { id: vehicleProcessingRecordId },
+          {
+            id: vehicleProcessingRecordId,
+            roleName,
+            userId,
+            serviceCenterId: serviceCenterId,
+          },
           t,
           Transaction.LOCK.UPDATE
         );
@@ -284,28 +294,22 @@ class VehicleProcessingRecordService {
     return formatUpdatedRecord;
   };
 
-  findDetailById = async ({ id, userId, serviceCenterId }) => {
+  findDetailById = async ({ id, userId, roleName, serviceCenterId }) => {
     if (!id) {
       throw new BadRequestError("RecordId is required");
     }
 
     const record = await this.#vehicleProcessingRecordRepository.findDetailById(
-      { id }
+      {
+        id,
+        roleName,
+        userId,
+        serviceCenterId,
+      }
     );
 
     if (!record) {
       throw new NotFoundError("Record not found");
-    }
-
-    const hasPermission =
-      record.createdByStaff?.userId === userId ||
-      record.mainTechnician?.userId === userId ||
-      record.createdByStaff?.serviceCenterId === serviceCenterId;
-
-    if (!hasPermission) {
-      throw new ForbiddenError(
-        "You do not have permission to view this record"
-      );
     }
 
     return record;
@@ -344,6 +348,177 @@ class VehicleProcessingRecordService {
     return records;
   };
 
+  completeRecord = async ({ vehicleProcessingRecordId }) => {
+    const rawResult = await db.sequelize.transaction(async (transaction) => {
+      const record = await this.#vehicleProcessingRecordRepository.findByPk(
+        vehicleProcessingRecordId,
+        transaction,
+        Transaction.LOCK.UPDATE
+      );
+
+      if (!record) {
+        throw new NotFoundError(
+          `Processing record with ID ${vehicleProcessingRecordId} not found`
+        );
+      }
+
+      const validStatuses = ["PROCESSING", "READY_FOR_PICKUP"];
+      if (!validStatuses.includes(record.status)) {
+        throw new ConflictError(
+          `Cannot complete record with status ${
+            record.status
+          }. Record must be in one of these statuses: ${validStatuses.join(
+            ", "
+          )}`
+        );
+      }
+
+      const allCaseLines =
+        await this.#caselineRepository.findByProcessingRecordId(
+          { vehicleProcessingRecordId },
+          transaction
+        );
+
+      const completableStatuses = [
+        "COMPLETED",
+        "REJECTED_BY_OUT_OF_WARRANTY",
+        "REJECTED_BY_TECH",
+        "REJECTED_BY_CUSTOMER",
+        "CANCELLED",
+      ];
+
+      const incompleteCaseLines = allCaseLines.filter(
+        (cl) => !completableStatuses.includes(cl.status)
+      );
+
+      if (incompleteCaseLines.length > 0) {
+        const statusList = incompleteCaseLines
+          .map((cl) => `CaseLine ${cl.id}: ${cl.status}`)
+          .join(", ");
+        throw new ConflictError(
+          `Cannot complete record. ${incompleteCaseLines.length} caseline(s) are not completed: ${statusList}`
+        );
+      }
+
+      const completedRecord =
+        await this.#vehicleProcessingRecordRepository.completeRecord(
+          {
+            vehicleProcessingRecordId,
+            status: "COMPLETED",
+            checkOutDate: formatUTCtzHCM(dayjs()),
+          },
+          transaction
+        );
+
+      return completedRecord;
+    });
+
+    return rawResult;
+  };
+
+  makeDiagnosisCompleted = async ({
+    userId,
+    roleName,
+    serviceCenterId,
+    vehicleProcessingRecordId,
+  }) => {
+    const rawResult = await db.sequelize.transaction(async (transaction) => {
+      const vehicleProcessingRecord =
+        await this.#vehicleProcessingRecordRepository.findDetailById(
+          {
+            id: vehicleProcessingRecordId,
+            roleName,
+            userId,
+            serviceCenterId: serviceCenterId,
+          },
+          transaction,
+          Transaction.LOCK.UPDATE
+        );
+
+      if (!vehicleProcessingRecord) {
+        throw new NotFoundError("Vehicle processing record not found");
+      }
+
+      const guaranteeCases = vehicleProcessingRecord?.guaranteeCases || [];
+
+      for (const guaranteeCase of guaranteeCases) {
+        if (guaranteeCase.status !== "IN_DIAGNOSIS") {
+          throw new BadRequestError("Guarantee case is not in diagnosis");
+        }
+
+        const caseLines = guaranteeCase.caseLines || [];
+
+        for (const caseLine of caseLines) {
+          if (caseLine.status !== "DRAFT") {
+            throw new BadRequestError("Case line is not in diagnosis");
+          }
+        }
+      }
+
+      const updatedRecord =
+        await this.#vehicleProcessingRecordRepository.updateStatus(
+          {
+            vehicleProcessingRecordId: vehicleProcessingRecordId,
+            status: "WAITING_CUSTOMER_APPROVAL",
+          },
+          transaction
+        );
+
+      const updatedGuaranteeCases = [];
+
+      let caseLineIds = [];
+      for (const guaranteeCase of guaranteeCases) {
+        const updatedCase = await this.#guaranteeCaseRepository.updateStatus(
+          {
+            guaranteeCaseId: guaranteeCase.guaranteeCaseId,
+            status: "DIAGNOSED",
+          },
+          transaction
+        );
+
+        updatedGuaranteeCases.push(updatedCase);
+
+        for (const caseLine of guaranteeCase.caseLines) {
+          caseLineIds.push(caseLine.id);
+        }
+      }
+
+      const updatedCaseLines =
+        await this.#caselineRepository.bulkUpdateStatusByIds(
+          { caseLineIds: caseLineIds, status: "PENDING_APPROVAL" },
+          transaction
+        );
+
+      const record =
+        await this.#vehicleProcessingRecordRepository.findDetailById(
+          {
+            id: vehicleProcessingRecordId,
+            roleName,
+            userId,
+            serviceCenterId,
+          },
+          transaction
+        );
+
+      const roomName = `service_center_staff_${serviceCenterId}`;
+      const eventName = "vehicleProcessingRecordStatusUpdated";
+      const data = {
+        roomName,
+        record,
+      };
+
+      await this.#notificationService.sendToRoom(roomName, eventName, data);
+
+      return { record, updatedGuaranteeCases, updatedCaseLines };
+    });
+
+    return {
+      record: rawResult.record,
+      updatedGuaranteeCases: rawResult.updatedGuaranteeCases,
+      updatedCaseLines: rawResult.updatedCaseLines,
+    };
+  };
+
   #canAssignTask = async ({
     serviceCenterId: managerServiceCenterId,
     technicianId,
@@ -353,7 +528,10 @@ class VehicleProcessingRecordService {
   }) => {
     const [record, technician] = await Promise.all([
       this.#vehicleProcessingRecordRepository.findDetailById(
-        { id: vehicleProcessingRecordId },
+        {
+          id: vehicleProcessingRecordId,
+          serviceCenterId: managerServiceCenterId,
+        },
         transaction,
         lock
       ),

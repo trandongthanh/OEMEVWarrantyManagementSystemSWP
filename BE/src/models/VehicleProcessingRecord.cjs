@@ -85,7 +85,6 @@ module.exports = (sequelize, DataTypes) => {
           "CHECKED_IN",
           "IN_DIAGNOSIS",
           "WAITING_CUSTOMER_APPROVAL",
-          "CUSTOMER_APPROVED",
           "PROCESSING",
           "READY_FOR_PICKUP",
           "COMPLETED",

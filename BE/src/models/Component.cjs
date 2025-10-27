@@ -32,7 +32,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.ENUM(
           "IN_WAREHOUSE",
           "RESERVED",
-          "PICKED_UP",
+          "IN_TRANSIT",
           "WITH_TECHNICIAN",
           "INSTALLED",
           "RETURNED"
@@ -46,6 +46,12 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.UUID,
         allowNull: true,
         field: "current_holder_id",
+      },
+
+      requestId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        field: "request_id",
       },
 
       vehicleVin: {
@@ -90,6 +96,11 @@ module.exports = (sequelize, DataTypes) => {
     Component.hasMany(models.ComponentReservation, {
       foreignKey: "component_id",
       as: "reservations",
+    });
+
+    Component.belongsTo(models.StockTransferRequest, {
+      foreignKey: "request_id",
+      as: "stockTransferRequest",
     });
   };
 
