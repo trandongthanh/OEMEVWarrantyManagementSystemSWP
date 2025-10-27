@@ -7,7 +7,6 @@ import {
   attachCompanyContext,
   authentication,
   authorizationByRole,
-  // canAssignTask,
   validate,
 } from "../middleware/index.js";
 
@@ -229,6 +228,163 @@ router.post(
   }
 );
 
+router.patch(
+  "/:id/completed",
+  authentication,
+  authorizationByRole(["service_center_staff"]),
+  async (req, res, next) => {
+    const vehicleProcessingRecordController = req.container.resolve(
+      "vehicleProcessingRecordController"
+    );
+
+    await vehicleProcessingRecordController.completeRecord(req, res, next);
+  }
+);
+
+/**
+ * @swagger
+ * /processing-records/{id}/complete-diagnosis:
+ *   patch:
+ *     summary: Complete diagnosis phase and transition caselines from DRAFT to PENDING_APPROVAL
+ *     description: |
+ *       This endpoint marks the diagnosis phase as complete. It validates that all caselines are in DRAFT status,
+ *       then transitions them to PENDING_APPROVAL. It also updates the GuaranteeCase status to DIAGNOSED
+ *       and the VehicleProcessingRecord status to WAITING_CUSTOMER_APPROVAL.
+ *     tags: [Vehicle Processing Record]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Vehicle processing record ID
+ *         example: "550e8400-e29b-41d4-a716-446655440000"
+ *     responses:
+ *       200:
+ *         description: Diagnosis completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vehicleProcessingRecordId:
+ *                       type: string
+ *                       format: uuid
+ *                     status:
+ *                       type: string
+ *                       example: "WAITING_CUSTOMER_APPROVAL"
+ *                     guaranteeCases:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           guaranteeCaseId:
+ *                             type: string
+ *                             format: uuid
+ *                           status:
+ *                             type: string
+ *                             example: "DIAGNOSED"
+ *                           caseLines:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 caseLineId:
+ *                                   type: string
+ *                                   format: uuid
+ *                                 status:
+ *                                   type: string
+ *                                   example: "PENDING_APPROVAL"
+ *       400:
+ *         description: Bad request - caselines not in DRAFT status or GuaranteeCase not in IN_DIAGNOSIS
+ *       404:
+ *         description: Vehicle processing record not found
+ *       403:
+ *         description: Forbidden - user does not have permission
+ */
+router.patch(
+  "/:id/complete-diagnosis",
+  authentication,
+  authorizationByRole(["service_center_manager", "service_center_staff"]),
+  attachCompanyContext,
+  async (req, res, next) => {
+    const vehicleProcessingRecordController = req.container.resolve(
+      "vehicleProcessingRecordController"
+    );
+
+    await vehicleProcessingRecordController.completeDiagnosis(req, res, next);
+  }
+);
+
+/**
+ * @swagger
+ * /processing-records/{id}/completed:
+ *   patch:
+ *     summary: Complete a vehicle processing record
+ *     description: Mark a vehicle processing record as completed. All case lines must be completed before completing the record. Sets checkOutDate to current time.
+ *     tags: [Vehicle Processing Record]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Vehicle processing record ID
+ *     responses:
+ *       200:
+ *         description: Vehicle processing record completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vehicleProcessingRecordId:
+ *                       type: string
+ *                       format: uuid
+ *                     status:
+ *                       type: string
+ *                       example: "COMPLETED"
+ *                     checkOutDate:
+ *                       type: string
+ *                       format: date-time
+ *       404:
+ *         description: Vehicle processing record not found
+ *       409:
+ *         description: Conflict - not all case lines are completed
+ *       403:
+ *         description: Forbidden - user does not have permission
+ */
+router.patch(
+  "/:id/completed",
+  authentication,
+  authorizationByRole(["service_center_manager", "service_center_staff"]),
+  async (req, res, next) => {
+    const vehicleProcessingRecordController = req.container.resolve(
+      "vehicleProcessingRecordController"
+    );
+
+    await vehicleProcessingRecordController.completeRecord(req, res, next);
+  }
+);
+
 /**
  * @swagger
  * /processing-records/{id}/assignment:
@@ -299,6 +455,7 @@ router.patch(
   "/:id/assignment",
   authentication,
   authorizationByRole(["service_center_manager"]),
+  attachCompanyContext,
   validate(updateMainTechnicianParamsSchema, "params"),
   validate(updateMainTechnicianBodySchema, "body"),
 

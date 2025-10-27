@@ -59,6 +59,7 @@ module.exports = (sequelize, DataTypes) => {
 
       status: {
         type: DataTypes.ENUM(
+          "DRAFT",
           "PENDING_APPROVAL",
           "CUSTOMER_APPROVED",
           "REJECTED_BY_OUT_OF_WARRANTY",
@@ -71,7 +72,7 @@ module.exports = (sequelize, DataTypes) => {
           "CANCELLED"
         ),
         allowNull: false,
-        defaultValue: "PENDING_APPROVAL",
+        defaultValue: "DRAFT",
         field: "status",
       },
 
@@ -93,7 +94,7 @@ module.exports = (sequelize, DataTypes) => {
     });
 
     CaseLine.belongsTo(models.TypeComponent, {
-      foreignKey: "type_componentId",
+      foreignKey: "type_component_id",
       as: "typeComponent",
     });
 

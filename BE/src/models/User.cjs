@@ -141,15 +141,30 @@ module.exports = (sequelize, DataTypes) => {
       as: "tasks",
     });
 
-    // User.hasMany(models.InstalledPart, {
-    //   foreignKey: "technician_id",
-    //   as: "installedParts",
-    // });
+    User.hasMany(models.StockTransferRequest, {
+      foreignKey: "requested_by_user_id",
+      as: "stockTransferRequests",
+    });
 
-    // User.hasMany(models.Report, {
-    //   foreignKey: "technician_id",
-    //   as: "reports",
-    // });
+    User.hasMany(models.StockTransferRequest, {
+      foreignKey: "approved_by_user_id",
+      as: "approvedStockTransferRequests",
+    });
+
+    User.hasMany(models.StockTransferRequest, {
+      foreignKey: "rejected_by_user_id",
+      as: "rejectedStockTransferRequests",
+    });
+
+    User.hasMany(models.StockTransferRequest, {
+      foreignKey: "cancelled_by_user_id",
+      as: "cancelledStockTransferRequests",
+    });
+
+    User.hasMany(models.StockTransferRequest, {
+      foreignKey: "received_by_user_id",
+      as: "receivedStockTransferRequests",
+    });
   };
 
   return User;

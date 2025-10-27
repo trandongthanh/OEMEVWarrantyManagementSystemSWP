@@ -1,4 +1,9 @@
 import express from "express";
+import {
+  attachCompanyContext,
+  authentication,
+  authorizationByRole,
+} from "../middleware/index.js";
 
 const router = express.Router({ mergeParams: true });
 
@@ -85,10 +90,16 @@ const router = express.Router({ mergeParams: true });
  *       500:
  *         description: Internal server error
  */
-router.get("/", async (req, res, next) => {
-  const warehouseController = req.container.resolve("warehouseController");
+router.get(
+  "/",
+  authentication,
+  authorizationByRole(["service_center_manager"]),
 
-  await warehouseController.getWarehouseInfo(req, res, next);
-});
+  async (req, res, next) => {
+    const warehouseController = req.container.resolve("warehouseController");
+
+    await warehouseController.getAllWarehouse(req, res, next);
+  }
+);
 
 export default router;

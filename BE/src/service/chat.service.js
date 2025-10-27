@@ -64,10 +64,6 @@ class ChatService {
         throw new NotFoundError("Conversation not found.");
       }
 
-      if (existingConversation.status !== "UNASSIGNED") {
-        throw new Error("Chat has already been accepted.");
-      }
-
       const updatedConversation =
         await this.#conversationRepository.updateStaffId(
           conversationId,
@@ -144,9 +140,10 @@ class ChatService {
 
   closeConversation = async ({ conversationId, userId }) => {
     const updatedConversation = await db.sequelize.transaction(async (t) => {
-      const conversation = await this.#conversationRepository.findById({
-        conversationId,
-      });
+      const conversation = await this.#conversationRepository.findById(
+        { conversationId },
+        t
+      );
 
       if (!conversation) {
         throw new NotFoundError("Conversation not found.");
@@ -160,8 +157,9 @@ class ChatService {
         throw new Error("Conversation is not active.");
       }
 
+      // Pass transaction to closeConversation
       const updatedConversation =
-        await this.#conversationRepository.closeConversation(conversationId);
+        await this.#conversationRepository.closeConversation(conversationId, t);
 
       return updatedConversation;
     });

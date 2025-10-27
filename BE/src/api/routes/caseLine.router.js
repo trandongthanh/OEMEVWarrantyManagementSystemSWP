@@ -9,6 +9,7 @@ import {
   updateCaselineParamsSchema,
   caseLineSchema,
   getCaseLineByIdParamsSchema,
+  getAllCaselinesQuerySchema,
 } from "../../validators/caseLine.validator.js";
 import {
   attachCompanyContext,
@@ -18,6 +19,295 @@ import {
 } from "../middleware/index.js";
 
 const router = express.Router({ mergeParams: true });
+
+/**
+ * @swagger
+ * /case-lines:
+ *   get:
+ *     summary: Get list of case lines with filters
+ *     description: Retrieve a paginated list of case lines with optional filters. Service center users can only see case lines from their service center.
+ *     tags: [Case Line]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number for pagination
+ *         example: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Number of items per page
+ *         example: 10
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, CUSTOMER_APPROVED, REJECTED, READY_FOR_REPAIR, IN_PROGRESS, REPAIR_COMPLETED, QUALITY_CHECKED]
+ *         description: Filter by case line status
+ *         example: "PENDING"
+ *       - in: query
+ *         name: guaranteeCaseId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by guarantee case ID
+ *         example: "110f907d-009d-441f-88ad-f9522ae44d0d"
+ *       - in: query
+ *         name: warrantyStatus
+ *         schema:
+ *           type: string
+ *           enum: [ELIGIBLE, INELIGIBLE]
+ *         description: Filter by warranty eligibility status
+ *         example: "ELIGIBLE"
+ *       - in: query
+ *         name: vehicleProcessingRecordId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by vehicle processing record ID
+ *         example: "abc12345-6789-0def-ghij-klmnopqrstuv"
+ *       - in: query
+ *         name: diagnosticTechId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by diagnostic technician ID
+ *         example: "725d1073-9660-48ae-b970-7c8db76f676d"
+ *       - in: query
+ *         name: repairTechId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by repair technician ID
+ *         example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [createdAt, updatedAt, status, warrantyStatus]
+ *           default: createdAt
+ *         description: Field to sort by
+ *         example: "createdAt"
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [ASC, DESC]
+ *           default: DESC
+ *         description: Sort order
+ *         example: "DESC"
+ *     responses:
+ *       200:
+ *         description: Case lines retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     caseLines:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           caseLineId:
+ *                             type: string
+ *                             format: uuid
+ *                             example: "770e8400-e29b-41d4-a716-446655440003"
+ *                           guaranteeCaseId:
+ *                             type: string
+ *                             format: uuid
+ *                             example: "110f907d-009d-441f-88ad-f9522ae44d0d"
+ *                           diagnosisText:
+ *                             type: string
+ *                             example: "Pin cao áp bị suy giảm dung lượng"
+ *                           correctionText:
+ *                             type: string
+ *                             example: "Thay thế pin cao áp mới"
+ *                           typeComponentId:
+ *                             type: string
+ *                             format: uuid
+ *                             nullable: true
+ *                             example: "1096033d-f11f-4a49-a751-8be0cfb9d705"
+ *                           quantity:
+ *                             type: integer
+ *                             example: 1
+ *                           quantityReserved:
+ *                             type: integer
+ *                             example: 0
+ *                           warrantyStatus:
+ *                             type: string
+ *                             enum: [ELIGIBLE, INELIGIBLE]
+ *                             example: "ELIGIBLE"
+ *                           status:
+ *                             type: string
+ *                             example: "PENDING"
+ *                           diagnosticTechId:
+ *                             type: string
+ *                             format: uuid
+ *                             example: "725d1073-9660-48ae-b970-7c8db76f676d"
+ *                           repairTechId:
+ *                             type: string
+ *                             format: uuid
+ *                             nullable: true
+ *                             example: null
+ *                           rejectionReason:
+ *                             type: string
+ *                             nullable: true
+ *                             example: null
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2025-10-26T10:30:00.000Z"
+ *                           updatedAt:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2025-10-26T10:30:00.000Z"
+ *                           GuaranteeCase:
+ *                             type: object
+ *                             properties:
+ *                               guaranteeCaseId:
+ *                                 type: string
+ *                                 format: uuid
+ *                               caseNumber:
+ *                                 type: string
+ *                                 example: "GC-2025-001"
+ *                           TypeComponent:
+ *                             type: object
+ *                             nullable: true
+ *                             properties:
+ *                               typeComponentId:
+ *                                 type: string
+ *                                 format: uuid
+ *                               name:
+ *                                 type: string
+ *                                 example: "Pin Lithium-ion 60kWh"
+ *                           DiagnosticTech:
+ *                             type: object
+ *                             properties:
+ *                               userId:
+ *                                 type: string
+ *                                 format: uuid
+ *                               fullName:
+ *                                 type: string
+ *                                 example: "Nguyễn Văn An"
+ *                           RepairTech:
+ *                             type: object
+ *                             nullable: true
+ *                             properties:
+ *                               userId:
+ *                                 type: string
+ *                                 format: uuid
+ *                               fullName:
+ *                                 type: string
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         currentPage:
+ *                           type: integer
+ *                           example: 1
+ *                         totalPages:
+ *                           type: integer
+ *                           example: 5
+ *                         totalItems:
+ *                           type: integer
+ *                           example: 45
+ *                         itemsPerPage:
+ *                           type: integer
+ *                           example: 10
+ *                         hasNextPage:
+ *                           type: boolean
+ *                           example: true
+ *                         hasPrevPage:
+ *                           type: boolean
+ *                           example: false
+ *             examples:
+ *               withFilters:
+ *                 summary: Filtered case lines with pagination
+ *                 value:
+ *                   status: "success"
+ *                   data:
+ *                     caseLines:
+ *                       - caseLineId: "770e8400-e29b-41d4-a716-446655440003"
+ *                         guaranteeCaseId: "110f907d-009d-441f-88ad-f9522ae44d0d"
+ *                         diagnosisText: "Pin cao áp bị suy giảm dung lượng"
+ *                         correctionText: "Thay thế pin cao áp mới"
+ *                         typeComponentId: "1096033d-f11f-4a49-a751-8be0cfb9d705"
+ *                         quantity: 1
+ *                         quantityReserved: 0
+ *                         warrantyStatus: "ELIGIBLE"
+ *                         status: "PENDING"
+ *                         diagnosticTechId: "725d1073-9660-48ae-b970-7c8db76f676d"
+ *                         createdAt: "2025-10-26T10:30:00.000Z"
+ *                         updatedAt: "2025-10-26T10:30:00.000Z"
+ *                         GuaranteeCase:
+ *                           guaranteeCaseId: "110f907d-009d-441f-88ad-f9522ae44d0d"
+ *                           caseNumber: "GC-2025-001"
+ *                         TypeComponent:
+ *                           typeComponentId: "1096033d-f11f-4a49-a751-8be0cfb9d705"
+ *                           name: "Pin Lithium-ion 60kWh"
+ *                         DiagnosticTech:
+ *                           userId: "725d1073-9660-48ae-b970-7c8db76f676d"
+ *                           fullName: "Nguyễn Văn An"
+ *                     pagination:
+ *                       currentPage: 1
+ *                       totalPages: 5
+ *                       totalItems: 45
+ *                       itemsPerPage: 10
+ *                       hasNextPage: true
+ *                       hasPrevPage: false
+ *       400:
+ *         description: Bad request - Invalid query parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Validation failed"
+ *                 errors:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       401:
+ *         description: Unauthorized - Invalid or missing token
+ *       403:
+ *         description: Forbidden - Requires service center roles
+ *       500:
+ *         description: Internal server error
+ */
+router.get(
+  "/",
+  authentication,
+  authorizationByRole([
+    "service_center_technician",
+    "service_center_staff",
+    "service_center_manager",
+  ]),
+  validate(getAllCaselinesQuerySchema, "query"),
+  async (req, res, next) => {
+    const caseLineController = req.container.resolve("caseLineController");
+    await caseLineController.getCaseLines(req, res, next);
+  }
+);
 
 /**
  * @swagger
@@ -1007,6 +1297,127 @@ router.patch(
     const caseLineController = req.container.resolve("caseLineController");
 
     await caseLineController.assignTechnicianToRepairCaseline(req, res, next);
+  }
+);
+
+/**
+ * @swagger
+ * /case-lines/{caselineId}/mark-repair-complete:
+ *   patch:
+ *     summary: Đánh dấu sửa chữa hoàn tất (Technician)
+ *     description: Kỹ thuật viên đánh dấu caseline đã sửa chữa xong. Hệ thống sẽ cập nhật trạng thái caseline → REPAIR_COMPLETED và chuyển component reservations từ RESERVED → USED. Nếu tất cả caselines trong guarantee case đều REPAIR_COMPLETED, guarantee case sẽ tự động chuyển sang IN_QUALITY_CHECK.
+ *     tags: [Case Line]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: caselineId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID của caseline cần đánh dấu hoàn tất
+ *         example: "770e8400-e29b-41d4-a716-446655440003"
+ *     responses:
+ *       200:
+ *         description: Đánh dấu hoàn tất thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 message:
+ *                   type: string
+ *                   example: "Caseline marked as repair completed successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     caseline:
+ *                       type: object
+ *                       properties:
+ *                         caselineId:
+ *                           type: string
+ *                           format: uuid
+ *                           example: "770e8400-e29b-41d4-a716-446655440003"
+ *                         status:
+ *                           type: string
+ *                           example: "REPAIR_COMPLETED"
+ *                         repairedAt:
+ *                           type: string
+ *                           format: date-time
+ *                           example: "2025-10-26T14:30:00.000Z"
+ *                     reservationsUpdated:
+ *                       type: integer
+ *                       description: Số lượng component reservations đã chuyển sang USED
+ *                       example: 5
+ *                     guaranteeCase:
+ *                       type: object
+ *                       description: Thông tin guarantee case nếu tất cả caselines đã hoàn tất
+ *                       properties:
+ *                         guaranteeCaseId:
+ *                           type: string
+ *                           format: uuid
+ *                         status:
+ *                           type: string
+ *                           example: "IN_QUALITY_CHECK"
+ *                         allCaselinesCompleted:
+ *                           type: boolean
+ *                           example: true
+ *       400:
+ *         description: Dữ liệu không hợp lệ
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "caselineId must be a valid UUID"
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền (chỉ Technician được assigned)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Only assigned technician can mark repair complete"
+ *       404:
+ *         description: Không tìm thấy caseline
+ *       409:
+ *         description: Conflict - Caseline không ở trạng thái IN_PROGRESS
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Caseline must be IN_PROGRESS to mark as complete. Current status: READY_FOR_REPAIR"
+ */
+router.patch(
+  "/:caselineId/mark-repair-complete",
+  authentication,
+  authorizationByRole(["service_center_technician"]),
+  async (req, res, next) => {
+    const caseLineController = req.container.resolve("caseLineController");
+
+    await caseLineController.markRepairCompleted(req, res, next);
   }
 );
 

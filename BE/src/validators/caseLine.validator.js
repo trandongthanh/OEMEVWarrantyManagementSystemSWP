@@ -74,13 +74,25 @@ export const getAllCaselinesQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(10),
   status: Joi.string()
     .valid(
-      "PENDING",
+      "PENDING_APPROVAL",
       "CUSTOMER_APPROVED",
+      "REJECTED_BY_OUT_OF_WARRANTY",
+      "REJECTED_BY_TECH",
+      "REJECTED_BY_CUSTOMER",
+      "WAITING_FOR_PARTS",
       "READY_FOR_REPAIR",
-      "IN_PROGRESS",
+      "IN_REPAIR",
       "COMPLETED",
       "CANCELLED"
     )
     .optional(),
   guaranteeCaseId: Joi.string().uuid().optional(),
+  warrantyStatus: Joi.string().valid("ELIGIBLE", "INELIGIBLE").optional(),
+  vehicleProcessingRecordId: Joi.string().uuid().optional(),
+  diagnosticTechId: Joi.string().uuid().optional(),
+  repairTechId: Joi.string().uuid().optional(),
+  sortBy: Joi.string()
+    .valid("createdAt", "updatedAt", "status")
+    .default("createdAt"),
+  sortOrder: Joi.string().valid("ASC", "DESC").default("DESC"),
 });

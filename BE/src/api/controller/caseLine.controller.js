@@ -7,13 +7,14 @@ class CaseLineController {
   createCaseLines = async (req, res, next) => {
     const { caseId } = req.params;
     const { caselines } = req.body;
-    const { serviceCenterId, userId } = req.user;
+    const { serviceCenterId, userId, roleName } = req.user;
     const { companyId } = req;
 
     const newCaseLines = await this.#caseLineService.createCaseLines({
       guaranteeCaseId: caseId,
       caselines: caselines,
       serviceCenterId: serviceCenterId,
+      roleName: roleName,
       techId: userId,
       companyId: companyId,
     });
@@ -118,7 +119,7 @@ class CaseLineController {
     });
   };
 
-  updateCaseline = async (req, res, next) => {
+  updateCaseLine = async (req, res, next) => {
     const { caseId, caselineId } = req.params;
 
     const {
@@ -133,7 +134,7 @@ class CaseLineController {
     const { serviceCenterId } = req.user;
     const { companyId } = req;
 
-    const updatedCaseLine = await this.#caseLineService.updateCaseline({
+    const updatedCaseLine = await this.#caseLineService.updateCaseLine({
       guaranteeCaseId: caseId,
       caselineId,
       diagnosisText,
@@ -144,6 +145,7 @@ class CaseLineController {
       rejectionReason,
       serviceCenterId,
       companyId,
+      userId,
     });
 
     res.status(200).json({
@@ -151,6 +153,42 @@ class CaseLineController {
       data: {
         caseLine: updatedCaseLine,
       },
+    });
+  };
+
+  getCaseLines = async (req, res, next) => {
+    const {
+      page,
+      limit,
+      status,
+      guaranteeCaseId,
+      warrantyStatus,
+      vehicleProcessingRecordId,
+      diagnosticTechId,
+      repairTechId,
+      sortBy,
+      sortOrder,
+    } = req.query;
+
+    const { serviceCenterId } = req.user;
+
+    const result = await this.#caseLineService.getCaseLines({
+      page,
+      limit,
+      status,
+      guaranteeCaseId,
+      warrantyStatus,
+      vehicleProcessingRecordId,
+      diagnosticTechId,
+      repairTechId,
+      sortBy,
+      sortOrder,
+      serviceCenterId,
+    });
+
+    res.status(200).json({
+      status: "success",
+      data: result,
     });
   };
 
@@ -177,6 +215,32 @@ class CaseLineController {
       data: {
         caseLine,
       },
+    });
+  };
+
+  markRepairCompleted = async (req, res, next) => {
+    const { caselineId } = req.params;
+
+    const { userId, roleName, serviceCenterId } = req.user;
+
+    const result = await this.#caseLineService.markRepairCompleted(
+      caselineId,
+      userId,
+      roleName,
+      serviceCenterId
+    );
+
+    if (!result) {
+      return res.status(404).json({
+        status: "error",
+        message: "Caseline not found or already completed",
+      });
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: "Repair marked as completed successfully",
+      data: result,
     });
   };
 }

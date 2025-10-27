@@ -4,14 +4,10 @@ const { Guest } = db;
 
 class GuestRepository {
   async findOrCreate(guestId, transaction) {
-    const [guest, created] = await Guest.findOrCreate({
+    const [guest] = await Guest.findOrCreate({
       where: { guestId: guestId },
       transaction: transaction,
     });
-
-    if (!created) {
-      return null;
-    }
 
     return guest.toJSON();
   }

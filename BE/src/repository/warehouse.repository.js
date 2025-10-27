@@ -65,17 +65,48 @@ class WareHouseRepository {
   };
 
   findStocksByTypeComponentOrderByWarehousePriority = async (
-    { typeComponentIds, serviceCenterId, vehicleModelId },
+    { typeComponentIds, context, entityId, vehicleModelId },
     transaction = null,
     lock = null
   ) => {
-    const warehouses = await Warehouse.findAll({
-      where: {
-        serviceCenterId: serviceCenterId,
-      },
+    let warehouseWhereCondition = {};
+    let serviceCenterId;
+    let vehicleCompanyId;
 
+    if (context === "SERVICE_CENTER") {
+      if (!entityId)
+        throw new Error(
+          "serviceCenterId (entityId) is required for SERVICE_CENTER context"
+        );
+      serviceCenterId = entityId;
+      warehouseWhereCondition = { serviceCenterId: serviceCenterId };
+    } else if (context === "COMPANY" || context === "OEM") {
+      if (!entityId)
+        throw new Error(
+          "vehicleCompanyId (entityId) is required for OEM context"
+        );
+
+      vehicleCompanyId = entityId;
+      warehouseWhereCondition = {
+        vehicleCompanyId: vehicleCompanyId,
+        serviceCenterId: null,
+      };
+    } else {
+      throw new Error(
+        "Invalid context provided. Use 'SERVICE_CENTER' or 'OEM'."
+      );
+    }
+
+    let vehicleModelWhereCondition = {};
+    if (vehicleModelId) {
+      vehicleModelWhereCondition = { vehicleModelId: vehicleModelId };
+    }
+
+    const warehouses = await Warehouse.findAll({
+      where: warehouseWhereCondition,
+      attributes: ["warehouseId", "priority"],
       transaction: transaction,
-      lock: Transaction.LOCK.SHARE,
+      lock: lock,
     });
 
     const warehousesId = warehouses.map((warehouse) => warehouse.warehouseId);
@@ -111,16 +142,14 @@ class WareHouseRepository {
           model: TypeComponent,
           as: "typeComponent",
           attributes: ["typeComponentId"],
-
+          required: true,
           include: [
             {
               model: VehicleModel,
               as: "vehicleModels",
               attributes: ["vehicleModelId"],
-              required: true,
-              where: {
-                vehicleModelId: vehicleModelId,
-              },
+              required: !!vehicleModelId,
+              where: vehicleModelWhereCondition,
             },
           ],
         },
@@ -143,60 +172,148 @@ class WareHouseRepository {
     return stockJSON;
   };
 
-  bulkUpdateStockQuantities = async ({ reservations }, transaction = null) => {
-    if (!reservations || reservations.length === 0) {
+  bulkUpdateStockQuantities = async (stockUpdates, transaction = null) => {
+    if (!stockUpdates || stockUpdates.length === 0) {
       return [];
     }
 
-    const caseWhenClauses = [];
-    const stockIds = [];
-    const replacements = {};
+    const datatoUpdate = stockUpdates.map(async (update) => {
+      const updateFields = {};
 
-    reservations.forEach((reservation, index) => {
-      const stockIdKey = `stockId${index}`;
-      const quantityKey = `quantity${index}`;
+      if (update.quantityInStock) {
+        updateFields.quantityInStock = db.Sequelize.literal(
+          `quantity_in_stock + ${update.quantityInStock}`
+        );
+      }
 
-      stockIds.push(reservation.stockId);
-      replacements[stockIdKey] = reservation.stockId;
-      replacements[quantityKey] = reservation.quantityReserved;
+      if (update.quantityReserved) {
+        updateFields.quantityReserved = db.Sequelize.literal(
+          `quantity_reserved + ${update.quantityReserved}`
+        );
+      }
 
-      caseWhenClauses.push(
-        `WHEN stock_id = :${stockIdKey} THEN :${quantityKey}`
-      );
+      return Stock.update(updateFields, {
+        where: { stockId: update.stockId },
+        transaction,
+      });
     });
 
-    replacements.stockIds = stockIds;
+    await Promise.all(datatoUpdate);
 
-    const sqlStr = `
-      UPDATE stock 
-      SET quantity_reserved = quantity_reserved + (
-        CASE 
-          ${caseWhenClauses.join(" ")}
-          ELSE 0 
-        END
-      )
-      WHERE stock_id IN (:stockIds)
-    `;
-
-    const [result] = await db.sequelize.query(sqlStr, {
-      replacements: replacements,
-      transaction: transaction,
-    });
-
-    if (!result || result === 0) {
-      return [];
-    }
-
+    const stockIds = stockUpdates.map((u) => u.stockId);
     const updatedStocks = await Stock.findAll({
       where: {
         stockId: {
           [Op.in]: stockIds,
         },
       },
+      transaction,
+    });
+
+    return updatedStocks.map((stock) => stock.toJSON());
+  };
+
+  findStocksByIds = async ({ stockIds }, transaction = null, lock = null) => {
+    const stocks = await Stock.findAll({
+      where: {
+        stockId: {
+          [Op.in]: stockIds,
+        },
+      },
+      include: [
+        {
+          model: Warehouse,
+          as: "warehouse",
+          attributes: ["warehouseId", "name", "priority"],
+        },
+        {
+          model: TypeComponent,
+          as: "typeComponent",
+          attributes: ["typeComponentId", "name"],
+        },
+      ],
+      transaction,
+      lock,
+    });
+
+    return stocks.map((stock) => stock.toJSON());
+  };
+
+  findStockItem = async (
+    { warehouseId, typeComponentId },
+    transaction = null,
+    lock = null
+  ) => {
+    const stockItem = await Stock.findOne({
+      where: {
+        warehouseId: warehouseId,
+        typeComponentId: typeComponentId,
+      },
+      transaction: transaction,
+      lock: lock,
+    });
+
+    return stockItem ? stockItem.toJSON() : null;
+  };
+
+  updateStockItem = async (
+    { warehouseId, typeComponentId, quantityInStock, quantityReserved },
+    transaction = null
+  ) => {
+    const [affectedRows] = await Stock.update(
+      {
+        quantityInStock: quantityInStock,
+        quantityReserved: quantityReserved,
+      },
+      {
+        where: {
+          warehouseId: warehouseId,
+          typeComponentId: typeComponentId,
+        },
+        transaction: transaction,
+      }
+    );
+
+    if (affectedRows === 0) {
+      return null;
+    }
+
+    const updatedStockItem = await Stock.findOne({
+      where: {
+        warehouseId: warehouseId,
+        typeComponentId: typeComponentId,
+      },
       transaction: transaction,
     });
 
-    return updatedStocks.map((updatedStock) => updatedStock.toJSON());
+    return updatedStockItem ? updatedStockItem.toJSON() : null;
+  };
+
+  getAllWarehouses = async (serviceCenterId) => {
+    const warehouses = await Warehouse.findAll({
+      where: {
+        serviceCenterId: serviceCenterId,
+      },
+    });
+
+    return warehouses.map((warehouse) => warehouse.toJSON());
+  };
+
+  findStockByWarehouseAndTypeComponent = async (
+    { warehouseId, typeComponentId },
+    transaction = null,
+    lock = null
+  ) => {
+    const stock = await Stock.findOne({
+      where: {
+        warehouseId: warehouseId,
+        typeComponentId: typeComponentId,
+      },
+      transaction: transaction,
+      lock: lock,
+    });
+
+    return stock ? stock.toJSON() : null;
   };
 }
 

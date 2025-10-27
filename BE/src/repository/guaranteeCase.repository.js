@@ -65,7 +65,7 @@ class GuaranteeCaseRepository {
           {
             model: VehicleProcessingRecord,
             as: "vehicleProcessingRecord",
-            attributes: ["vehicleProcessingRecordId", "odometer"],
+            attributes: ["vehicleProcessingRecordId", "odometer", "status"],
 
             include: [
               {
@@ -142,6 +142,21 @@ class GuaranteeCaseRepository {
     }
 
     return existingGuaranteeCase.toJSON();
+  };
+
+  findRecordByGuaranteeCaseId = async (
+    { guaranteeCaseId },
+    transaction = null,
+    lock = null
+  ) => {
+    const record = await GuaranteeCase.findOne({
+      where: { guaranteeCaseId: guaranteeCaseId },
+      attributes: ["vehicleProcessingRecordId"],
+      transaction: transaction,
+      lock: lock,
+    });
+
+    return record ? record.toJSON() : null;
   };
 }
 

@@ -21,6 +21,11 @@ import vehicleProcessingRecordRouter from "./src/api/routes/vehicleProcessingRec
 import guaranteeCaseRouter from "./src/api/routes/guaranteeCase.router.js";
 import chatRouter from "./src/api/routes/chat.router.js";
 import caseLineRouter from "./src/api/routes/caseLine.router.js";
+import componentReservationsRouter from "./src/api/routes/componentReservations.router.js";
+import componentRouter from "./src/api/routes/component.router.js";
+import warehouseRouter from "./src/api/routes/warehouse.router.js";
+import stockTransferRequestRouter from "./src/api/routes/stockTransferRequest.router.js";
+import workScheduleRouter from "./src/api/routes/workSchedule.router.js";
 
 app.get("/", async (req, res) => {
   res.send("Hello world");
@@ -36,6 +41,12 @@ app.use(`${url}/users`, userRouter);
 app.use(`${url}/guarantee-cases`, guaranteeCaseRouter);
 app.use(`${url}/chats`, chatRouter);
 app.use(`${url}/case-lines`, caseLineRouter);
+app.use(`${url}/reservations`, componentReservationsRouter);
+app.use(`${url}/warehouses`, warehouseRouter);
+app.use(`${url}/components`, componentRouter);
+
+app.use(`${url}/stock-transfer-requests`, stockTransferRequestRouter);
+app.use(`${url}/work-schedules`, workScheduleRouter);
 
 app.use(handleError);
 

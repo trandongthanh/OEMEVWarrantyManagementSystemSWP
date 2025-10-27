@@ -8,11 +8,12 @@ const {
   TypeComponent,
   ComponentReservation,
   Component,
+  VehicleProcessingRecord,
 } = db;
 
 class CaseLineRepository {
-  bulkCreate = async ({ caselines }, transaction = null) => {
-    const newCaseLines = await CaseLine.bulkCreate(caselines, {
+  bulkCreate = async (caseLines, transaction = null) => {
+    const newCaseLines = await CaseLine.bulkCreate(caseLines, {
       transaction: transaction,
     });
 
@@ -23,24 +24,45 @@ class CaseLineRepository {
     return newCaseLines.map((caseLine) => caseLine.toJSON());
   };
 
-  createCaseline = async (caselineData, transaction = null) => {
-    const newCaseLine = await CaseLine.create(caselineData, {
+  createCaseLine = async (caseLineData, transaction = null) => {
+    const newCaseLine = await CaseLine.create(caseLineData, {
       transaction: transaction,
     });
 
     return newCaseLine ? newCaseLine.toJSON() : null;
   };
 
-  findById = async (caselineId, transaction = null, lock = null) => {
+  findById = async (caseLineId, transaction = null, lock = null) => {
     const caseLine = await CaseLine.findOne({
       include: [
         {
           model: GuaranteeCase,
           as: "guaranteeCase",
           required: true,
+
+          include: [
+            {
+              model: VehicleProcessingRecord,
+              as: "vehicleProcessingRecord",
+              attributes: [
+                "vehicleProcessingRecordId",
+                "vin",
+                "createdByStaffId",
+              ],
+              required: true,
+              include: [
+                {
+                  model: User,
+                  as: "createdByStaff",
+                  attributes: ["userId", "serviceCenterId"],
+                  required: true,
+                },
+              ],
+            },
+          ],
         },
       ],
-      where: { id: caselineId },
+      where: { id: caseLineId },
       transaction: transaction,
       lock: lock,
     });
@@ -50,7 +72,8 @@ class CaseLineRepository {
 
   bulkUpdateStatusByIds = async (
     { caseLineIds, status },
-    transaction = null
+    transaction = null,
+    lock = null
   ) => {
     const [numberOfAffectedRows] = await CaseLine.update(
       { status: status },
@@ -61,11 +84,12 @@ class CaseLineRepository {
           },
         },
         transaction: transaction,
+        lock: lock,
       }
     );
 
-    if (numberOfAffectedRows === 0) {
-      return numberOfAffectedRows;
+    if (numberOfAffectedRows <= 0) {
+      return [];
     }
 
     const updatedCaseLines = await this.findByIds({ caseLineIds }, transaction);
@@ -82,6 +106,15 @@ class CaseLineRepository {
           as: "guaranteeCase",
           attributes: ["guaranteeCaseId", "contentGuarantee", "status"],
           required: true,
+
+          include: [
+            {
+              model: VehicleProcessingRecord,
+              as: "vehicleProcessingRecord",
+              attributes: ["vehicleProcessingRecordId", "vin"],
+              required: true,
+            },
+          ],
         },
         {
           model: User,
@@ -205,6 +238,153 @@ class CaseLineRepository {
     });
 
     return updatedCaseLine ? updatedCaseLine.toJSON() : null;
+  };
+
+  getVinById = async (caselineId, transaction = null, lock = null) => {
+    const record = await CaseLine.findOne({
+      attributes: ["id"],
+      include: [
+        {
+          model: GuaranteeCase,
+          as: "guaranteeCase",
+          attributes: ["guaranteeCaseId"],
+          required: true,
+          include: [
+            {
+              model: VehicleProcessingRecord,
+              as: "vehicleProcessingRecord",
+              attributes: ["vin"],
+              required: true,
+            },
+          ],
+        },
+      ],
+      where: {
+        id: caselineId,
+      },
+      transaction: transaction,
+      lock: lock,
+    });
+
+    return record ? record.toJSON() : null;
+  };
+
+  findAll = async ({
+    page = 1,
+    limit = 10,
+    status,
+    guaranteeCaseId,
+    warrantyStatus,
+    vehicleProcessingRecordId,
+    diagnosticTechId,
+    repairTechId,
+    sortBy = "createdAt",
+    sortOrder = "DESC",
+    serviceCenterId,
+  }) => {
+    const offset = (page - 1) * limit;
+    const where = {};
+    const guaranteeCaseWhere = {};
+    const vehicleProcessingRecordWhere = {};
+
+    if (status) where.status = status;
+    if (warrantyStatus) where.warrantyStatus = warrantyStatus;
+    if (guaranteeCaseId) where.guaranteeCaseId = guaranteeCaseId;
+    if (diagnosticTechId) where.diagnosticTechId = diagnosticTechId;
+    if (repairTechId) where.repairTechId = repairTechId;
+    if (vehicleProcessingRecordId) {
+      vehicleProcessingRecordWhere.vehicleProcessingRecordId =
+        vehicleProcessingRecordId;
+    }
+    if (serviceCenterId) {
+      vehicleProcessingRecordWhere.serviceCenterId = serviceCenterId;
+    }
+
+    const { count, rows } = await CaseLine.findAndCountAll({
+      where,
+      include: [
+        {
+          model: GuaranteeCase,
+          as: "guaranteeCase",
+          attributes: ["guaranteeCaseId", "contentGuarantee", "status"],
+          where:
+            Object.keys(guaranteeCaseWhere).length > 0
+              ? guaranteeCaseWhere
+              : undefined,
+          required: true,
+          include: [
+            {
+              model: VehicleProcessingRecord,
+              as: "vehicleProcessingRecord",
+              attributes: [
+                "vehicleProcessingRecordId",
+                "vin",
+                "serviceCenterId",
+              ],
+              where:
+                Object.keys(vehicleProcessingRecordWhere).length > 0
+                  ? vehicleProcessingRecordWhere
+                  : undefined,
+              required: true,
+            },
+          ],
+        },
+        {
+          model: User,
+          as: "diagnosticTechnician",
+          attributes: ["userId", "name", "email"],
+        },
+        {
+          model: User,
+          as: "repairTechnician",
+          attributes: ["userId", "name", "email"],
+        },
+        {
+          model: TypeComponent,
+          as: "typeComponent",
+          attributes: ["typeComponentId", "sku", "name", "price"],
+        },
+        {
+          model: ComponentReservation,
+          as: "reservations",
+          attributes: ["reservationId", "quantityReserved", "status"],
+          required: false,
+        },
+      ],
+      limit,
+      offset,
+      order: [[sortBy, sortOrder]],
+      distinct: true,
+    });
+
+    return {
+      caseLines: rows.map((row) => row.toJSON()),
+      pagination: {
+        total: count,
+        page,
+        limit,
+        totalPages: Math.ceil(count / limit),
+      },
+    };
+  };
+
+  findByProcessingRecordId = async (
+    { vehicleProcessingRecordId },
+    transaction = null
+  ) => {
+    const caseLines = await CaseLine.findAll({
+      include: [
+        {
+          model: GuaranteeCase,
+          as: "guaranteeCase",
+          where: { vehicleProcessingRecordId },
+          attributes: ["guaranteeCaseId"],
+        },
+      ],
+      transaction,
+    });
+
+    return caseLines.map((cl) => cl.toJSON());
   };
 }
 
