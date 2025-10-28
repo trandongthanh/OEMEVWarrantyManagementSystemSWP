@@ -1,7 +1,7 @@
 import { Op } from "sequelize";
 import db from "../models/index.cjs";
 
-const { Component } = db;
+const { Component, TypeComponent } = db;
 
 class ComponentRepository {
   findAll = async (
@@ -213,6 +213,32 @@ class ComponentRepository {
     }
 
     return components.map((component) => component.toJSON());
+  };
+
+  findComponentInstalledOnVehicle = async (
+    { vehicleVin, status },
+    transaction = null,
+    lock = null
+  ) => {
+    let whereClause = { vehicleVin: vehicleVin };
+
+    if (status && status !== "ALL") {
+      whereClause.status = status;
+    }
+
+    const component = await Component.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: TypeComponent,
+          as: "typeComponent",
+          attributes: ["typeComponentId", "name", "sku", "category", "price"],
+        },
+      ],
+      order: [["installedAt", "DESC"]],
+    });
+
+    return component ? component.toJSON() : null;
   };
 }
 

@@ -18,6 +18,7 @@ class VehicleProcessingRecordService {
   #taskAssignmentRepository;
   #userRepository;
   #caselineRepository;
+  #workScheduleRepository;
 
   constructor({
     vehicleProcessingRecordRepository,
@@ -27,6 +28,7 @@ class VehicleProcessingRecordService {
     userRepository,
     taskAssignmentRepository,
     caselineRepository,
+    workScheduleRepository,
   }) {
     this.#vehicleProcessingRecordRepository = vehicleProcessingRecordRepository;
     this.#guaranteeCaseRepository = guaranteeCaseRepository;
@@ -35,6 +37,7 @@ class VehicleProcessingRecordService {
     this.#notificationService = notificationService;
     this.#userRepository = userRepository;
     this.#caselineRepository = caselineRepository;
+    this.#workScheduleRepository = workScheduleRepository;
   }
 
   createRecord = async ({
@@ -187,11 +190,34 @@ class VehicleProcessingRecordService {
 
       oldTechnicianId = existingRecord?.mainTechnician?.userId;
 
+      if (oldTechnicianId === technicianId) {
+        throw new ConflictError(
+          "Technician is already assigned to this record as main technician"
+        );
+      }
+
       const guaranteeCaseIds = existingRecord?.guaranteeCases.map(
         (gc) => gc?.guaranteeCaseId
       );
 
-      if (oldTechnicianId !== technicianId && oldTechnicianId) {
+      const schedule = await this.#workScheduleRepository.getMySchedule({
+        technicianId: technicianId,
+        workDate: dayjs().format("YYYY-MM-DD"),
+      });
+
+      if (!schedule) {
+        throw new ConflictError(
+          "Technician does not have a work schedule for today. Please create a schedule first."
+        );
+      }
+
+      if (schedule.status !== "AVAILABLE") {
+        throw new ConflictError(
+          `Technician is not available on the work date. Current status: ${schedule.status}`
+        );
+      }
+
+      if (oldTechnicianId && oldTechnicianId !== technicianId) {
         const affectedRows =
           await this.#taskAssignmentRepository.cancelAssignmentsByGuaranteeCaseIds(
             {
@@ -201,7 +227,9 @@ class VehicleProcessingRecordService {
           );
 
         if (affectedRows === 0) {
-          throw new Error("No assignments were cancelled");
+          throw new ConflictError(
+            `No active assignments found for old technician ${oldTechnicianId}. Data may be inconsistent or assignments were already cancelled.`
+          );
         }
       }
 
@@ -241,6 +269,12 @@ class VehicleProcessingRecordService {
 
     if (updatedGuaranteeCases === 0) {
       throw new Error("Guarantee cases were not updated.");
+    }
+
+    if (!newTaskAssignments || newTaskAssignments.length === 0) {
+      throw new Error(
+        "Failed to create task assignments for the technician. Please try again."
+      );
     }
 
     const formatUpdatedRecord = {
@@ -362,7 +396,7 @@ class VehicleProcessingRecordService {
         );
       }
 
-      const validStatuses = ["PROCESSING", "READY_FOR_PICKUP"];
+      const validStatuses = ["READY_FOR_PICKUP"];
       if (!validStatuses.includes(record.status)) {
         throw new ConflictError(
           `Cannot complete record with status ${
@@ -373,31 +407,39 @@ class VehicleProcessingRecordService {
         );
       }
 
+      const guaranteeCases = await this.#guaranteeCaseRepository.findByRecordId(
+        { vehicleProcessingRecordId },
+        transaction
+      );
+
+      if (!guaranteeCases || guaranteeCases.length === 0) {
+        throw new NotFoundError("No guarantee cases found for this record");
+      }
+
+      for (const gc of guaranteeCases) {
+        if (gc.status !== "DIAGNOSED") {
+          throw new ConflictError(
+            `Cannot complete record because guarantee case with ID ${gc.guaranteeCaseId} is in status ${gc.status}. All guarantee cases must be DIAGNOSED before completing the record.`
+          );
+        }
+      }
+
       const allCaseLines =
         await this.#caselineRepository.findByProcessingRecordId(
           { vehicleProcessingRecordId },
-          transaction
+          transaction,
+          Transaction.LOCK.UPDATE
         );
 
-      const completableStatuses = [
-        "COMPLETED",
-        "REJECTED_BY_OUT_OF_WARRANTY",
-        "REJECTED_BY_TECH",
-        "REJECTED_BY_CUSTOMER",
-        "CANCELLED",
-      ];
-
-      const incompleteCaseLines = allCaseLines.filter(
-        (cl) => !completableStatuses.includes(cl.status)
-      );
-
-      if (incompleteCaseLines.length > 0) {
-        const statusList = incompleteCaseLines
-          .map((cl) => `CaseLine ${cl.id}: ${cl.status}`)
-          .join(", ");
-        throw new ConflictError(
-          `Cannot complete record. ${incompleteCaseLines.length} caseline(s) are not completed: ${statusList}`
-        );
+      for (const caseLine of allCaseLines) {
+        if (
+          caseLine.status !== "COMPLETED" &&
+          caseLine.status !== "CANCELLED"
+        ) {
+          throw new ConflictError(
+            `Cannot complete record because case line with ID ${caseLine.id} is in status ${caseLine.status}. All case lines must be COMPLETED or CANCELLED before completing the record.`
+          );
+        }
       }
 
       const completedRecord =
@@ -580,6 +622,50 @@ class VehicleProcessingRecordService {
         "You can only assign technicians from your own service center."
       );
     }
+  };
+
+  getServiceHistory = async ({ vin, companyId, page, limit, statusFilter }) => {
+    const offset = (page - 1) * limit;
+
+    const rawResult = await db.sequelize.transaction(async (transaction) => {
+      const vehicle = await this.#vehicleRepository.findByVinAndCompany({
+        vin: vin,
+        companyId: companyId,
+      });
+
+      if (!vehicle) {
+        throw new NotFoundError("Vehicle not found");
+      }
+
+      const recorsdsByVin =
+        await this.#vehicleProcessingRecordRepository.getServiceHistoryByVin(
+          {
+            vin: vin,
+            statusFilter,
+            limit,
+            offset,
+          },
+          transaction
+        );
+
+      return { recorsdsByVin, vehicle };
+    });
+
+    const { vehicle, recorsdsByVin } = rawResult;
+
+    const formatResult = {
+      vehicle: vehicle,
+      serviceHistory: recorsdsByVin.map((record) => ({
+        ...record,
+        createdAt: formatUTCtzHCM(record?.createdAt),
+        checkInDate: formatUTCtzHCM(record?.checkInDate),
+        checkOutDate: record?.checkOutDate
+          ? formatUTCtzHCM(record?.checkOutDate)
+          : null,
+      })),
+    };
+
+    return formatResult;
   };
 }
 
