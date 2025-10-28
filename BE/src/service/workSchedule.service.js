@@ -165,7 +165,6 @@ class WorkScheduleService {
   async uploadSchedulesFromExcel({ fileBuffer, managerId }) {
     const parseResult = await this.parseExcelFile(fileBuffer, managerId);
 
-    // Nếu có lỗi, trả về để frontend hiển thị
     if (parseResult.errorCount > 0) {
       return {
         success: false,
