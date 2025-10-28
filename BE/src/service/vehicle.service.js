@@ -11,10 +11,12 @@ import { Transaction } from "sequelize";
 class VehicleService {
   #vehicleRepository;
   #customerService;
+  #componentRepository;
 
-  constructor({ vehicleRepository, customerService }) {
+  constructor({ vehicleRepository, customerService, componentRepository }) {
     this.#vehicleRepository = vehicleRepository;
     this.#customerService = customerService;
+    this.#componentRepository = componentRepository;
   }
 
   getVehicleProfile = async ({ vin, companyId }, option = null) => {

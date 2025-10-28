@@ -153,7 +153,7 @@ class CustomerService {
       );
     }
 
-    const existingCustomer = await this.customerRepository.findCustomerById(
+    const existingCustomer = await this.#customerRepository.findCustomerById(
       {
         id: id,
       },

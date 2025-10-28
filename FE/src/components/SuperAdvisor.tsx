@@ -91,6 +91,7 @@ interface WarrantyRecord {
   purchaseDate?: string;
   cases?: CaseNote[];
   status: 'pending' | 'in-progress' | 'completed';
+  rawStatus?: string; // Store actual API status
   createdAt: string;
 }
 
@@ -158,6 +159,20 @@ const SuperAdvisor = () => {
   const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
   const [hasSearchedCustomer, setHasSearchedCustomer] = useState(false);
+  const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+  const [editCustomerForm, setEditCustomerForm] = useState({
+    fullName: '',
+    phone: '',
+    email: '',
+    address: ''
+  });
+  const [isUpdatingCustomer, setIsUpdatingCustomer] = useState(false);
+
+  // Caseline dialog states
+  const [showCaselineDialog, setShowCaselineDialog] = useState(false);
+  const [selectedRecordForCaseline, setSelectedRecordForCaseline] = useState<WarrantyRecord | null>(null);
+  const [caselines, setCaselines] = useState<any[]>([]);
+  const [isLoadingCaselines, setIsLoadingCaselines] = useState(false);
 
   // Warranty dialog states
   const [showWarrantyDialog, setShowWarrantyDialog] = useState(false);
@@ -171,7 +186,9 @@ const SuperAdvisor = () => {
     odometer: '',
     purchaseDate: '',
     customerName: '',
-    cases: []
+    cases: [],
+    visitorFullName: '',
+    visitorPhone: ''
   });
   const [warrantyRecordCaseText, setWarrantyRecordCaseText] = useState('');
   const [isCreatingRecord, setIsCreatingRecord] = useState(false);
@@ -193,10 +210,12 @@ const SuperAdvisor = () => {
   const [editRecord, setEditRecord] = useState({
     vinNumber: '',
     odometer: '',
-    customerName: '',
+    visitorFullName: '', // Visitor name from visitorInfo
+    visitorPhone: '', // Visitor phone from visitorInfo
     cases: [] as CaseNote[],
     purchaseDate: '',
-    status: 'pending' as 'pending' | 'in-progress' | 'completed'
+    status: 'pending' as 'pending' | 'in-progress' | 'completed',
+    rawStatus: 'CHECKED_IN' // Store actual API status
   });
 
   // Transform form data to API format
@@ -218,20 +237,23 @@ const SuperAdvisor = () => {
     record.vinNumber && record.odometer && record.cases.length > 0;
 
   const mapApiStatus = (apiStatus: string): 'pending' | 'in-progress' | 'completed' => {
-    if (['IN_DIAGNOSIS', 'PENDING'].includes(apiStatus)) return 'pending';
-    if (['IN_PROGRESS', 'ASSIGNED'].includes(apiStatus)) return 'in-progress';
-    if (['COMPLETED', 'RESOLVED'].includes(apiStatus)) return 'completed';
+    // Pending statuses
+    if (['CHECKED_IN', 'IN_DIAGNOSIS', 'WAITING_CUSTOMER_APPROVAL'].includes(apiStatus)) return 'pending';
+    // In-progress statuses
+    if (['PROCESSING', 'READY_FOR_PICKUP'].includes(apiStatus)) return 'in-progress';
+    // Completed statuses
+    if (['COMPLETED', 'CANCELLED'].includes(apiStatus)) return 'completed';
+    // Default fallback
     return 'pending';
   };
 
   // Transform API processing records to WarrantyRecord format
   const transformProcessingRecords = (apiRecords: any[]): WarrantyRecord[] => {
     return apiRecords.map((record, index) => ({
-      id: record.id || `record-${index}`,
+      id: record.vehicleProcessingRecordId || record.id || `record-${index}`,
       vinNumber: record.vin || '',
       customerName: record.customerName || 
                    record.vehicle?.owner?.fullName || 
-                   record.mainTechnician?.name || 
                    record.owner?.fullName ||
                    record.customer?.fullName ||
                    record.vehicle?.customer?.fullName ||
@@ -242,15 +264,22 @@ const SuperAdvisor = () => {
         text: gCase.contentGuarantee || '',
         createdAt: gCase.createdAt || new Date().toISOString()
       })) || [],
-      status: mapApiStatus(record.status || 'IN_DIAGNOSIS'),
-      createdAt: record.createdAt || new Date().toISOString()
+      status: mapApiStatus(record.status || 'CHECKED_IN'),
+      rawStatus: record.status || 'CHECKED_IN', // Store original API status
+      createdAt: record.checkInDate || record.createdAt || new Date().toISOString()
     }));
   };
 
   // Load processing records from API
   const loadProcessingRecords = async () => {
     try {
+      const token = localStorage.getItem('ev_warranty_token');
+      console.log('🔑 Current token:', token);
+      
       const response = await fetchProcessingRecords();
+      
+      console.log('📡 API Response:', response);
+      console.log('📊 Records data:', response.data);
       
       if (response.status === 'success' && response.data?.records?.records) {
         // API returns nested structure: data.records.records
@@ -541,7 +570,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      const response = await axios.get(`http://localhost:3000/api/v1/customers/phone/${customerSearchPhone.trim()}`, {
+      const response = await axios.get(`http://localhost:3000/api/v1/customers?phone=${customerSearchPhone.trim()}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -549,10 +578,10 @@ const SuperAdvisor = () => {
       });
 
       if (response.data && response.data.status === 'success') {
-        // Try to get customer from different possible paths
-        const customer = response.data.data?.customer || response.data.customer;
+        // API returns customer object directly in data.customer
+        const customer = response.data.data?.customer;
         
-        if (customer) {
+        if (customer && customer.id) {
           setFoundCustomer(customer);
           
           // Fill all 4 fields with found customer data
@@ -630,6 +659,149 @@ const SuperAdvisor = () => {
         description: 'An error occurred while searching for customer. You can enter new customer information.',
         variant: 'default'
       });
+    }
+  };
+
+  // Handle Enter key press for search fields
+  const handleVinSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (searchMode === 'customer') {
+        handleSearchCustomer();
+      }
+    }
+  };
+
+  const handlePhoneSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSearchCustomerByPhone();
+    }
+  };
+
+  const handleWarrantyPhoneSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSearchCustomerByPhone();
+    }
+  };
+
+  const handleRegisterVehicleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (newVehicleVin.trim()) {
+        handleRegisterNewVehicle();
+      }
+    }
+  };
+
+  // Handle edit customer info
+  const handleEditCustomer = () => {
+    setIsEditingCustomer(true);
+    setEditCustomerForm({
+      fullName: foundCustomer?.fullName || '',
+      phone: foundCustomer?.phone || '',
+      email: foundCustomer?.email || '',
+      address: foundCustomer?.address || ''
+    });
+  };
+
+  const handleCancelEditCustomer = () => {
+    setIsEditingCustomer(false);
+    setEditCustomerForm({
+      fullName: '',
+      phone: '',
+      email: '',
+      address: ''
+    });
+  };
+
+  const handleUpdateCustomer = async () => {
+    if (!foundCustomer?.id) {
+      toast({
+        title: 'Error',
+        description: 'Customer ID not found',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Validate phone number (10 digits)
+    if (editCustomerForm.phone && !/^\d{10}$/.test(editCustomerForm.phone)) {
+      toast({
+        title: 'Error',
+        description: 'Phone number must be exactly 10 digits',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsUpdatingCustomer(true);
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      
+      // Build request body with only changed fields
+      const updateData: any = {};
+      
+      if (editCustomerForm.fullName.trim() !== foundCustomer.fullName) {
+        updateData.fullName = editCustomerForm.fullName.trim();
+      }
+      if (editCustomerForm.phone.trim() !== foundCustomer.phone) {
+        updateData.phone = editCustomerForm.phone.trim();
+      }
+      if (editCustomerForm.email.trim() !== foundCustomer.email) {
+        updateData.email = editCustomerForm.email.trim();
+      }
+      if (editCustomerForm.address.trim() !== foundCustomer.address) {
+        updateData.address = editCustomerForm.address.trim();
+      }
+
+      // Only send request if there are changes
+      if (Object.keys(updateData).length === 0) {
+        toast({
+          title: 'No Changes',
+          description: 'No changes detected',
+        });
+        setIsEditingCustomer(false);
+        setIsUpdatingCustomer(false);
+        return;
+      }
+
+      const response = await axios.patch(
+        `http://localhost:3000/api/v1/customers/${foundCustomer.id}`,
+        updateData,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.data && response.data.status === 'success') {
+        // Update foundCustomer with new data
+        setFoundCustomer({
+          ...foundCustomer,
+          ...updateData
+        });
+
+        toast({
+          title: 'Success',
+          description: 'Customer information updated successfully!',
+        });
+
+        setIsEditingCustomer(false);
+      }
+    } catch (error: any) {
+      console.error('Error updating customer:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to update customer information',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsUpdatingCustomer(false);
     }
   };
 
@@ -757,7 +929,9 @@ const SuperAdvisor = () => {
       odometer: vehicleOdometer,
       purchaseDate: vehicle.purchaseDate,
       customerName: foundCustomer.fullName || foundCustomer.name,
-      cases: []
+      cases: [],
+      visitorFullName: foundCustomer.fullName || foundCustomer.name || '',
+      visitorPhone: foundCustomer.phone || ''
     });
     
     // Close warranty dialog and open create dialog
@@ -809,37 +983,50 @@ const SuperAdvisor = () => {
       return;
     }
 
+    // Validate visitor info from form inputs
+    if (!warrantyRecordForm.visitorFullName?.trim() || !warrantyRecordForm.visitorPhone?.trim()) {
+      toast({
+        title: 'Error',
+        description: 'Visitor name and phone are required',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Validate phone number format (10 digits)
+    if (!/^\d{10}$/.test(warrantyRecordForm.visitorPhone.trim())) {
+      toast({
+        title: 'Error',
+        description: 'Phone number must be exactly 10 digits',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setIsCreatingRecord(true);
 
     try {
-      // Prepare data for createProcessingRecord API
+      // Prepare data for createProcessingRecord API with visitor info from form
       const apiData = {
         vin: warrantyRecordForm.vin,
         odometer: parseInt(warrantyRecordForm.odometer),
         guaranteeCases: warrantyRecordForm.cases.map(caseItem => ({
           contentGuarantee: caseItem.text
-        }))
+        })),
+        visitorInfo: {
+          fullName: warrantyRecordForm.visitorFullName.trim(),
+          phone: warrantyRecordForm.visitorPhone.trim()
+        }
       };
       
       // Call API to create processing record
       const response = await createProcessingRecord(apiData);
     
-      // Create new record object for local state
-      const newRecordForState: WarrantyRecord = {
-        id: response.data?.id || `temp-${Date.now()}`,
-        vinNumber: warrantyRecordForm.vin,
-        customerName: warrantyRecordForm.customerName,
-        odometer: parseInt(warrantyRecordForm.odometer),
-        cases: warrantyRecordForm.cases,
-        status: 'pending',
-        createdAt: new Date().toISOString()
-      };
-      
-      // Add to local state immediately for better UX
-      setRecords(prev => [newRecordForState, ...prev]);
+      // Refresh the records list from server to get complete data
+      await loadProcessingRecords();
       
       // Reset forms and close dialogs
-      setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [] });
+      setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '' });
       setWarrantyRecordCaseText('');
       setShowCreateWarrantyDialog(false);
       setVehicleWarrantyStatus(null);
@@ -971,40 +1158,17 @@ const SuperAdvisor = () => {
         });
 
       } 
-      // Case 2: Registering new vehicle with existing customer (found via phone search)
+      // Case 2: Registering vehicle with existing customer (found via phone search)
       else if (foundCustomer && foundCustomer.id) {
-        // If customer info has been edited, update customer first
-        const customerChanged = 
-          ownerForm.fullName.trim() !== foundCustomer.fullName ||
-          ownerForm.email.trim() !== foundCustomer.email ||
-          ownerForm.phone.trim() !== foundCustomer.phone ||
-          ownerForm.address.trim() !== foundCustomer.address;
-
-        if (customerChanged) {
-          // Update customer info via PATCH /customers/{id}
-          await axios.patch(`http://localhost:3000/api/v1/customers/${foundCustomer.id}`, {
-            fullName: ownerForm.fullName.trim(),
-            email: ownerForm.email.trim(),
-            phone: ownerForm.phone.trim(),
-            address: ownerForm.address.trim()
-          }, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-        }
-
-        // Register vehicle with ownerId only
+        // Register vehicle using PATCH /vehicles/{VIN} with customerId only
         const requestBody = {
-          ownerId: foundCustomer.id,
+          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
           licensePlate: vehicleSearchResult.licensePlate.trim(),
           purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString(),
-          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-          placeOfManufacture: vehicleSearchResult.placeOfManufacture || ''
+          customerId: foundCustomer.id
         };
 
-        const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
+        const response = await axios.patch(`http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}`, requestBody, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -1012,7 +1176,7 @@ const SuperAdvisor = () => {
         });
 
         if (response.data && response.data.status === 'success') {
-          const updatedVehicle = response.data.data.vehicle;
+          const updatedVehicle = response.data.data?.vehicle || response.data.data;
           setVehicleSearchResult(prev => prev ? ({
             ...prev,
             owner: updatedVehicle.owner,
@@ -1022,19 +1186,17 @@ const SuperAdvisor = () => {
 
           toast({
             title: 'Success',
-            description: customerChanged 
-              ? 'Customer updated and vehicle registered successfully!'
-              : 'Vehicle registered to existing customer successfully!',
+            description: 'Vehicle registered to existing customer successfully!',
           });
         }
       }
       // Case 3: Have form data but no customer ID - Search by phone or create new
       else {
         // Try to find customer by phone first
-        let customerId = null;
+        let customerIdToUse = null;
         
         try {
-          const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers/phone/${ownerForm.phone.trim()}`, {
+          const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers?phone=${ownerForm.phone.trim()}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
@@ -1042,65 +1204,50 @@ const SuperAdvisor = () => {
           });
 
           if (searchResponse.data && searchResponse.data.status === 'success') {
-            const customer = searchResponse.data.data?.customer || searchResponse.data.customer;
+            // API returns customer object directly in data.customer
+            const customer = searchResponse.data.data?.customer;
+            
             if (customer && customer.id) {
-              customerId = customer.id;
-              
-              // Update customer info with new data
-              await axios.patch(`http://localhost:3000/api/v1/customers/${customerId}`, {
-                fullName: ownerForm.fullName.trim(),
-                email: ownerForm.email.trim(),
-                phone: ownerForm.phone.trim(),
-                address: ownerForm.address.trim()
-              }, {
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json'
-                }
-              });
+              customerIdToUse = customer.id;
             }
           }
         } catch (searchError) {
-          console.log('Customer not found by phone, will create new');
+          // Customer not found, will create new
         }
 
-        // If customer not found, create new one
-        if (!customerId) {
-          const createResponse = await axios.post(`http://localhost:3000/api/v1/customers/`, {
+        // Prepare request body
+        const requestBody: any = {
+          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
+          licensePlate: vehicleSearchResult.licensePlate.trim(),
+          purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString()
+        };
+
+        // Use customerId if customer exists, otherwise include customer object for new customer
+        if (customerIdToUse) {
+          requestBody.customerId = customerIdToUse;
+        } else {
+          requestBody.customer = {
             fullName: ownerForm.fullName.trim(),
             email: ownerForm.email.trim(),
             phone: ownerForm.phone.trim(),
             address: ownerForm.address.trim()
-          }, {
+          };
+        }
+
+        // Register vehicle with PATCH /vehicles/{VIN}
+        const response = await axios.patch(
+          `http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}`,
+          requestBody,
+          {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
             }
-          });
-
-          if (createResponse.data?.status === 'success') {
-            customerId = createResponse.data.data.customer.id;
-          } else {
-            throw new Error('Failed to create customer');
           }
-        }
-
-        // Register vehicle with the customer ID
-        const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, {
-          ownerId: customerId,
-          licensePlate: vehicleSearchResult.licensePlate.trim(),
-          purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString(),
-          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-          placeOfManufacture: vehicleSearchResult.placeOfManufacture || ''
-        }, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
+        );
 
         if (response.data && response.data.status === 'success') {
-          const updatedVehicle = response.data.data.vehicle;
+          const updatedVehicle = response.data.data?.vehicle || response.data.data;
           setVehicleSearchResult(prev => prev ? ({
             ...prev,
             owner: updatedVehicle.owner,
@@ -1110,7 +1257,9 @@ const SuperAdvisor = () => {
 
           toast({
             title: 'Success',
-            description: 'Customer and vehicle information saved successfully!',
+            description: customerIdToUse 
+              ? 'Vehicle registered to existing customer successfully!'
+              : 'New customer created and vehicle registered successfully!',
           });
         }
       }
@@ -1431,26 +1580,120 @@ const SuperAdvisor = () => {
       odometer: odometer,
       purchaseDate: vehicleSearchResult.purchaseDate || '',
       customerName: vehicleSearchResult.owner.fullName,
-      cases: []
+      cases: [],
+      visitorFullName: vehicleSearchResult.owner.fullName || '',
+      visitorPhone: vehicleSearchResult.owner.phone || ''
     });
     
     // Open create dialog
     setShowCreateWarrantyDialog(true);
   };
 
-  const handleEditRecord = (record: WarrantyRecord) => {
+  const handleEditRecord = async (record: WarrantyRecord) => {
     console.log('📝 Opening edit dialog for record:', record);
     console.log('📋 Cases in record:', record.cases);
+    console.log('📊 Status - mapped:', record.status, 'raw:', record.rawStatus);
     
     setSelectedRecord(record);
-    setEditRecord({
-      vinNumber: record.vinNumber,
-      odometer: record.odometer.toString(),
-      customerName: record.customerName,
-      cases: record.cases || [],
-      purchaseDate: record.purchaseDate || '',
-      status: record.status
-    });
+    
+    // Fetch full record details to get visitorInfo
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'Authentication token not found',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      const response = await fetch(`http://localhost:3000/api/v1/processing-records/${record.id}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.status === 'success' && result.data?.record) {
+        const recordData = result.data.record;
+        
+        console.log('🔍 Full API record data:', recordData);
+        console.log('� Vehicle object:', recordData.vehicle);
+        console.log('�👤 Customer fields:', {
+          customerName: recordData.customerName,
+          vehicleOwner: recordData.vehicle?.owner,
+          vehicleCustomer: recordData.vehicle?.customer,
+          owner: recordData.owner,
+          customer: recordData.customer,
+          createdByStaff: recordData.createdByStaff
+        });
+        
+        // Get customer name from API response
+        // Note: processing-record API doesn't include vehicle owner, need to call vehicle API separately
+        let apiCustomerName = 'Unknown Customer';
+        
+        try {
+          const vehicleResponse = await fetch(`http://localhost:3000/api/v1/vehicles/${recordData.vin}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          const vehicleResult = await vehicleResponse.json();
+          console.log('🚗 Vehicle details from vehicle API:', vehicleResult);
+          
+          if (vehicleResult.status === 'success' && vehicleResult.data?.vehicle?.owner) {
+            apiCustomerName = vehicleResult.data.vehicle.owner.fullName || 'Unknown Customer';
+            console.log('✅ Found customer name from vehicle API:', apiCustomerName);
+          }
+        } catch (vehicleError) {
+          console.error('❌ Error fetching vehicle details:', vehicleError);
+        }
+        
+        setEditRecord({
+          vinNumber: record.vinNumber,
+          odometer: record.odometer.toString(),
+          visitorFullName: recordData.visitorInfo?.fullName || '',
+          visitorPhone: recordData.visitorInfo?.phone || '',
+          cases: record.cases || [],
+          purchaseDate: record.purchaseDate || '',
+          status: record.status,
+          rawStatus: record.rawStatus || 'CHECKED_IN'
+        });
+      } else {
+        // Fallback to record data without visitorInfo
+        setEditRecord({
+          vinNumber: record.vinNumber,
+          odometer: record.odometer.toString(),
+          visitorFullName: '',
+          visitorPhone: '',
+          cases: record.cases || [],
+          purchaseDate: record.purchaseDate || '',
+          status: record.status,
+          rawStatus: record.rawStatus || 'CHECKED_IN'
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching record details:', error);
+      // Fallback to record data without visitorInfo
+      setEditRecord({
+        vinNumber: record.vinNumber,
+        odometer: record.odometer.toString(),
+        visitorFullName: '',
+        visitorPhone: '',
+        cases: record.cases || [],
+        purchaseDate: record.purchaseDate || '',
+        status: record.status,
+        rawStatus: record.rawStatus || 'CHECKED_IN'
+        });
+    }
+    
     setIsEditMode(true);
   };
 
@@ -1486,7 +1729,8 @@ const SuperAdvisor = () => {
           odometer: parseInt(editRecord.odometer),
           cases: editRecord.cases,
           purchaseDate: editRecord.purchaseDate,
-          status: editRecord.status
+          status: editRecord.status,
+          rawStatus: editRecord.rawStatus
         };
       }
       return record;
@@ -1516,6 +1760,106 @@ const SuperAdvisor = () => {
         {config.text}
       </Badge>
     );
+  };
+
+  // Get badge for raw API status
+  const getRawStatusBadge = (rawStatus?: string) => {
+    if (!rawStatus) return null;
+
+    const statusConfig = {
+      'CHECKED_IN': { text: 'Checked In', class: 'bg-gray-100 text-gray-800' },
+      'IN_DIAGNOSIS': { text: 'In Diagnosis', class: 'bg-yellow-100 text-yellow-800' },
+      'WAITING_CUSTOMER_APPROVAL': { text: 'Waiting Approval', class: 'bg-orange-100 text-orange-800' },
+      'PROCESSING': { text: 'Processing', class: 'bg-blue-100 text-blue-800' },
+      'READY_FOR_PICKUP': { text: 'Ready for Pickup', class: 'bg-purple-100 text-purple-800' },
+      'COMPLETED': { text: 'Completed', class: 'bg-green-100 text-green-800' },
+      'CANCELLED': { text: 'Cancelled', class: 'bg-red-100 text-red-800' }
+    };
+
+    const config = statusConfig[rawStatus as keyof typeof statusConfig];
+    if (!config) {
+      return <Badge className="bg-gray-100 text-gray-800">{rawStatus}</Badge>;
+    }
+
+    return (
+      <Badge className={config.class}>
+        {config.text}
+      </Badge>
+    );
+  };
+
+  // Handle view caselines
+  const handleViewCaselines = async (record: WarrantyRecord) => {
+    setSelectedRecordForCaseline(record);
+    setShowCaselineDialog(true);
+    setIsLoadingCaselines(true);
+    setCaselines([]);
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'Authentication token not found',
+          variant: 'destructive'
+        });
+        setIsLoadingCaselines(false);
+        return;
+      }
+
+      // Fetch record details with caselines
+      const response = await fetch(`http://localhost:3000/api/v1/processing-records/${record.id}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.status === 'success' && result.data?.record) {
+        const recordData = result.data.record;
+        const allCaselines: any[] = [];
+
+        // Extract caselines from all guarantee cases
+        if (recordData.guaranteeCases && Array.isArray(recordData.guaranteeCases)) {
+          recordData.guaranteeCases.forEach((guaranteeCase: any) => {
+            if (guaranteeCase.caseLines && Array.isArray(guaranteeCase.caseLines)) {
+              guaranteeCase.caseLines.forEach((caseline: any) => {
+                allCaselines.push({
+                  ...caseline,
+                  guaranteeCaseId: guaranteeCase.guaranteeCaseId,
+                  contentGuarantee: guaranteeCase.contentGuarantee
+                });
+              });
+            }
+          });
+        }
+
+        setCaselines(allCaselines);
+
+        if (allCaselines.length === 0) {
+          toast({
+            title: 'No Caselines',
+            description: 'This record has no caselines yet. Technician needs to create them.',
+            variant: 'default'
+          });
+        }
+      } else {
+        throw new Error('Failed to fetch record details');
+      }
+
+      setIsLoadingCaselines(false);
+    } catch (error) {
+      console.error('Error fetching caselines:', error);
+      setIsLoadingCaselines(false);
+      toast({
+        title: 'Error',
+        description: 'Failed to load caselines',
+        variant: 'destructive'
+      });
+    }
   };
 
   return (
@@ -1608,6 +1952,13 @@ const SuperAdvisor = () => {
                         setSearchVin(e.target.value);
                       }
                     }}
+                    onKeyPress={(e) => {
+                      if (searchMode === 'phone') {
+                        handlePhoneSearchKeyPress(e);
+                      } else {
+                        handleVinSearchKeyPress(e);
+                      }
+                    }}
                     maxLength={searchMode === 'phone' ? 10 : undefined}
                   />
                 </div>
@@ -1668,10 +2019,18 @@ const SuperAdvisor = () => {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell>{getStatusBadge(record.status)}</TableCell>
+                        <TableCell>{getRawStatusBadge(record.rawStatus)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex gap-2 justify-end">
-                           
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleViewCaselines(record)}
+                              className="text-blue-600 hover:bg-blue-50"
+                            >
+                              <FileText className="h-4 w-4 mr-1" />
+                              View Caselines
+                            </Button>
                             <Button
                               variant="outline"
                               size="sm"
@@ -2058,6 +2417,7 @@ const SuperAdvisor = () => {
                               const numericValue = e.target.value.replace(/[^0-9]/g, '');
                               setCustomerSearchPhone(numericValue);
                             }}
+                            onKeyPress={handleWarrantyPhoneSearchKeyPress}
                             className="bg-white"
                           />
                         </div>
@@ -2212,19 +2572,54 @@ const SuperAdvisor = () => {
                 <div className="space-y-6">
                   {/* Customer Information */}
                   <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-purple-800 mb-4 flex items-center">
-                      <User className="mr-2 h-5 w-5" />
-                      Customer Information
-                    </h3>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-purple-800 flex items-center">
+                        <User className="mr-2 h-5 w-5" />
+                        Customer Information
+                      </h3>
+                      {!isEditingCustomer ? (
+                        <Button
+                          onClick={handleEditCustomer}
+                          size="sm"
+                          variant="outline"
+                          className="border-purple-300 text-purple-700 hover:bg-purple-100"
+                        >
+                          <Edit className="h-4 w-4 mr-2" />
+                          Edit
+                        </Button>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handleUpdateCustomer}
+                            size="sm"
+                            disabled={isUpdatingCustomer}
+                            className="bg-green-600 hover:bg-green-700"
+                          >
+                            <Save className="h-4 w-4 mr-2" />
+                            {isUpdatingCustomer ? 'Saving...' : 'Save'}
+                          </Button>
+                          <Button
+                            onClick={handleCancelEditCustomer}
+                            size="sm"
+                            variant="outline"
+                            disabled={isUpdatingCustomer}
+                            className="border-gray-300"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                     <div className="grid gap-4">
                       {/* Full Name */}
                       <div className="grid md:grid-cols-3 gap-2 items-center">
                         <Label className="font-medium text-gray-700">Full Name:</Label>
                         <div className="md:col-span-2">
                           <Input
-                            value={foundCustomer.fullName || ''}
-                            disabled
-                            className="bg-gray-100"
+                            value={isEditingCustomer ? editCustomerForm.fullName : (foundCustomer.fullName || '')}
+                            onChange={(e) => isEditingCustomer && setEditCustomerForm({ ...editCustomerForm, fullName: e.target.value })}
+                            disabled={!isEditingCustomer}
+                            className={isEditingCustomer ? "bg-white" : "bg-gray-100"}
                           />
                         </div>
                       </div>
@@ -2234,9 +2629,16 @@ const SuperAdvisor = () => {
                         <Label className="font-medium text-gray-700">Phone Number:</Label>
                         <div className="md:col-span-2">
                           <Input
-                            value={foundCustomer.phone || ''}
-                            disabled
-                            className="bg-gray-100 font-mono"
+                            value={isEditingCustomer ? editCustomerForm.phone : (foundCustomer.phone || '')}
+                            onChange={(e) => {
+                              if (isEditingCustomer) {
+                                const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
+                                setEditCustomerForm({ ...editCustomerForm, phone: numericValue });
+                              }
+                            }}
+                            disabled={!isEditingCustomer}
+                            maxLength={10}
+                            className={isEditingCustomer ? "bg-white font-mono" : "bg-gray-100 font-mono"}
                           />
                         </div>
                       </div>
@@ -2246,9 +2648,11 @@ const SuperAdvisor = () => {
                         <Label className="font-medium text-gray-700">Email:</Label>
                         <div className="md:col-span-2">
                           <Input
-                            value={foundCustomer.email || ''}
-                            disabled
-                            className="bg-gray-100"
+                            value={isEditingCustomer ? editCustomerForm.email : (foundCustomer.email || '')}
+                            onChange={(e) => isEditingCustomer && setEditCustomerForm({ ...editCustomerForm, email: e.target.value })}
+                            disabled={!isEditingCustomer}
+                            type="email"
+                            className={isEditingCustomer ? "bg-white" : "bg-gray-100"}
                           />
                         </div>
                       </div>
@@ -2258,9 +2662,10 @@ const SuperAdvisor = () => {
                         <Label className="font-medium text-gray-700">Address:</Label>
                         <div className="md:col-span-2">
                           <Input
-                            value={foundCustomer.address || ''}
-                            disabled
-                            className="bg-gray-100"
+                            value={isEditingCustomer ? editCustomerForm.address : (foundCustomer.address || '')}
+                            onChange={(e) => isEditingCustomer && setEditCustomerForm({ ...editCustomerForm, address: e.target.value })}
+                            disabled={!isEditingCustomer}
+                            className={isEditingCustomer ? "bg-white" : "bg-gray-100"}
                           />
                         </div>
                       </div>
@@ -2279,20 +2684,28 @@ const SuperAdvisor = () => {
                           <div key={vehicle?.vin || index} className="bg-white border border-blue-200 rounded p-4">
                             <div className="grid md:grid-cols-2 gap-3 mb-4">
                               <div>
-                                <span className="text-sm font-medium text-gray-600">VIN:</span>
-                                <p className="text-sm font-mono">{vehicle?.vin || 'N/A'}</p>
+                                <span className="text-sm font-medium text-gray-600">VIN: </span>
+                                <span className="text-sm font-mono">{vehicle?.vin || 'N/A'}</span>
                               </div>
                               <div>
-                                <span className="text-sm font-medium text-gray-600">Model:</span>
-                                <p className="text-sm">{typeof vehicle?.model === 'string' ? vehicle.model : vehicle?.model?.name || 'N/A'}</p>
+                                <span className="text-sm font-medium text-gray-600">Model: </span>
+                                <span className="text-sm">{vehicle?.model?.modelName || 'N/A'}</span>
                               </div>
                               <div>
-                                <span className="text-sm font-medium text-gray-600">License Plate:</span>
-                                <p className="text-sm">{typeof vehicle?.licensePlate === 'string' ? vehicle.licensePlate : 'N/A'}</p>
+                                <span className="text-sm font-medium text-gray-600">License Plate: </span>
+                                <span className="text-sm">{vehicle?.licensePlate || 'N/A'}</span>
                               </div>
                               <div>
-                                <span className="text-sm font-medium text-gray-600">Purchase Date:</span>
-                                <p className="text-sm">{typeof vehicle?.purchaseDate === 'string' ? vehicle.purchaseDate : vehicle?.purchaseDate ? new Date(vehicle.purchaseDate).toLocaleDateString() : 'N/A'}</p>
+                                <span className="text-sm font-medium text-gray-600">Purchase Date: </span>
+                                <span className="text-sm">
+                                  {vehicle?.purchaseDate 
+                                    ? new Date(vehicle.purchaseDate).toLocaleDateString('en-GB', {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        year: 'numeric'
+                                      }).split('/').join('/')
+                                    : 'N/A'}
+                                </span>
                               </div>
                             </div>
 
@@ -2357,6 +2770,7 @@ const SuperAdvisor = () => {
                         <Input
                           value={newVehicleVin}
                           onChange={(e) => setNewVehicleVin(e.target.value.toUpperCase())}
+                          onKeyPress={handleRegisterVehicleKeyPress}
                           placeholder="Enter VIN number"
                           className="mt-1 font-mono"
                         />
@@ -2546,17 +2960,25 @@ const SuperAdvisor = () => {
                 />
               </div>
 
-              
               <div className="grid gap-2">
-                <Label htmlFor="edit-customerName">Customer Name</Label>
+                <Label htmlFor="edit-visitorFullName">Visitor Full Name</Label>
                 <Input
-                  id="edit-customerName"
-                  value={editRecord.customerName}
+                  id="edit-visitorFullName"
+                  value={editRecord.visitorFullName}
                   readOnly
                   className="bg-muted/50 cursor-default"
                 />
               </div>
 
+              <div className="grid gap-2">
+                <Label htmlFor="edit-visitorPhone">Visitor Phone</Label>
+                <Input
+                  id="edit-visitorPhone"
+                  value={editRecord.visitorPhone}
+                  readOnly
+                  className="bg-muted/50 cursor-default font-mono"
+                />
+              </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="edit-odometer">Odometer (km)</Label>
@@ -2573,13 +2995,21 @@ const SuperAdvisor = () => {
                 <Label htmlFor="edit-status">Status *</Label>
                 <select
                   id="edit-status"
-                  value={editRecord.status}
-                  onChange={(e) => setEditRecord({ ...editRecord, status: e.target.value as 'pending' | 'in-progress' | 'completed' })}
+                  value={editRecord.rawStatus}
+                  onChange={(e) => setEditRecord({ 
+                    ...editRecord, 
+                    rawStatus: e.target.value,
+                    status: mapApiStatus(e.target.value)
+                  })}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <option value="pending">Pending</option>
-                  <option value="in-progress">In Progress</option>
-                  <option value="completed">Completed</option>
+                  <option value="CHECKED_IN">Checked In</option>
+                  <option value="IN_DIAGNOSIS">In Diagnosis</option>
+                  <option value="WAITING_CUSTOMER_APPROVAL">Waiting Customer Approval</option>
+                  <option value="PROCESSING">Processing</option>
+                  <option value="READY_FOR_PICKUP">Ready for Pickup</option>
+                  <option value="COMPLETED">Completed</option>
+                  <option value="CANCELLED">Cancelled</option>
                 </select>
               </div>
 
@@ -3021,6 +3451,36 @@ const SuperAdvisor = () => {
               />
             </div>
 
+            {/* Visitor Full Name - Editable */}
+            <div className="grid gap-2">
+              <Label htmlFor="visitor-fullname">Visitor Full Name *</Label>
+              <Input
+                id="visitor-fullname"
+                value={warrantyRecordForm.visitorFullName}
+                onChange={(e) => setWarrantyRecordForm(prev => ({ ...prev, visitorFullName: e.target.value }))}
+                placeholder="Enter visitor's full name"
+                className="border-green-300 focus:border-green-500"
+              />
+            </div>
+
+            {/* Visitor Phone - Editable */}
+            <div className="grid gap-2">
+              <Label htmlFor="visitor-phone">Visitor Phone *</Label>
+              <Input
+                id="visitor-phone"
+                type="tel"
+                value={warrantyRecordForm.visitorPhone}
+                onChange={(e) => {
+                  const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
+                  setWarrantyRecordForm(prev => ({ ...prev, visitorPhone: numericValue }));
+                }}
+                placeholder="Enter 10-digit phone number"
+                className="border-green-300 focus:border-green-500"
+                maxLength={10}
+              />
+              <p className="text-xs text-muted-foreground">Phone number must be exactly 10 digits</p>
+            </div>
+
             {/* Cases Section */}
             <div className="grid gap-2">
               <div className="flex items-center justify-between">
@@ -3094,7 +3554,7 @@ const SuperAdvisor = () => {
               variant="outline" 
               onClick={() => {
                 setShowCreateWarrantyDialog(false);
-                setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [] });
+                setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '' });
                 setWarrantyRecordCaseText('');
               }}
             >
@@ -3102,11 +3562,138 @@ const SuperAdvisor = () => {
             </Button>
             <Button 
               onClick={handleSubmitWarrantyRecord}
-              disabled={warrantyRecordForm.cases.length === 0 || isCreatingRecord}
+              disabled={warrantyRecordForm.cases.length === 0 || isCreatingRecord || !warrantyRecordForm.visitorFullName.trim() || !warrantyRecordForm.visitorPhone.trim()}
               className="bg-blue-600 hover:bg-blue-700"
             >
               <Plus className="h-4 w-4 mr-2" />
               {isCreatingRecord ? 'Creating...' : 'Save Record'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Caselines Dialog */}
+      <Dialog open={showCaselineDialog} onOpenChange={setShowCaselineDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <FileText className="h-5 w-5" />
+              <span>View Caselines</span>
+            </DialogTitle>
+            <DialogDescription>
+              {selectedRecordForCaseline && (
+                <>
+                  VIN: <span className="font-mono font-semibold">{selectedRecordForCaseline.vinNumber}</span> - 
+                  Odometer: <span className="font-semibold">{selectedRecordForCaseline.odometer} km</span>
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            {isLoadingCaselines ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <span className="ml-3 text-muted-foreground">Loading caselines...</span>
+              </div>
+            ) : caselines.length === 0 ? (
+              <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-lg">
+                <FileText className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-gray-600 font-medium">No Caselines Found</p>
+                <p className="text-sm text-gray-500 mt-1">
+                  This record has no caselines yet. The technician needs to create them.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {caselines.map((caseline, index) => (
+                  <div key={caseline.id || index} className="border rounded-lg p-4 bg-gray-50">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-sm">
+                          Caseline #{index + 1}
+                        </Badge>
+                        <Badge className={
+                          caseline.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                          caseline.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
+                          caseline.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                          caseline.status === 'REJECTED_BY_TECH' ? 'bg-red-100 text-red-800' :
+                          caseline.status === 'REJECTED_BY_CUSTOMER' ? 'bg-orange-100 text-orange-800' :
+                          'bg-gray-100 text-gray-800'
+                        }>
+                          {caseline.status || 'N/A'}
+                        </Badge>
+                        {caseline.warrantyStatus && (
+                          <Badge className={
+                            caseline.warrantyStatus === 'UNDER_WARRANTY' ? 'bg-green-100 text-green-800' :
+                            'bg-red-100 text-red-800'
+                          }>
+                            {caseline.warrantyStatus === 'UNDER_WARRANTY' ? 'Under Warranty' : 'Out of Warranty'}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3">
+                      {/* Guarantee Case Info */}
+                      {caseline.contentGuarantee && (
+                        <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                          <Label className="text-xs text-blue-700 font-semibold">Related Case:</Label>
+                          <p className="text-sm text-blue-900 mt-1">{caseline.contentGuarantee}</p>
+                        </div>
+                      )}
+
+                      {/* Diagnosis Text */}
+                      {caseline.diagnosisText && (
+                        <div>
+                          <Label className="text-xs text-gray-600 font-semibold">Diagnosis:</Label>
+                          <p className="text-sm mt-1 text-gray-800">{caseline.diagnosisText}</p>
+                        </div>
+                      )}
+
+                      {/* Correction Text */}
+                      {caseline.correctionText && (
+                        <div>
+                          <Label className="text-xs text-gray-600 font-semibold">Correction:</Label>
+                          <p className="text-sm mt-1 text-gray-800">{caseline.correctionText}</p>
+                        </div>
+                      )}
+
+                      {/* Quantity */}
+                      {caseline.quantity && (
+                        <div>
+                          <Label className="text-xs text-gray-600 font-semibold">Quantity:</Label>
+                          <p className="text-sm mt-1 text-gray-800">{caseline.quantity}</p>
+                        </div>
+                      )}
+
+                      {/* Rejection Reason */}
+                      {caseline.rejectionReason && (
+                        <div className="bg-red-50 border border-red-200 rounded p-3">
+                          <Label className="text-xs text-red-700 font-semibold">Rejection Reason:</Label>
+                          <p className="text-sm text-red-900 mt-1">{caseline.rejectionReason}</p>
+                        </div>
+                      )}
+
+                      {/* Technician Info */}
+                      <div className="flex gap-4 text-xs text-gray-500">
+                        {caseline.diagnosticTechId && (
+                          <span>Diagnostic Tech ID: {caseline.diagnosticTechId}</span>
+                        )}
+                        {caseline.repairTechId && (
+                          <span>Repair Tech ID: {caseline.repairTechId}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCaselineDialog(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

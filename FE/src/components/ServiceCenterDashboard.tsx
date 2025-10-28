@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasPermission } from "@/utils/permissions";
+import { API_BASE_URL } from "@/config/api";
 import {
   Car,
   User,
@@ -296,7 +297,7 @@ const ServiceCenterDashboard = () => {
 
   // Fetch records for a specific status (moved outside useEffect to be reusable)
   const fetchForStatus = async (status: string) => {
-    const url = `http://localhost:3000/api/v1/processing-records?status=${status}`;
+    const url = `${API_BASE_URL}/processing-records?status=${status}`;
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) return [] as WarrantyClaim[];
     try {
@@ -381,7 +382,7 @@ const ServiceCenterDashboard = () => {
         return [] as Technician[];
       }
       try {
-        const url = status ? `http://localhost:3000/api/v1/users/technicians?status=${status}` : `http://localhost:3000/api/v1/users/technicians`;
+        const url = status ? `${API_BASE_URL}/users/technicians?status=${status}` : `${API_BASE_URL}/users/technicians`;
         const res = await axios.get(url, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -445,7 +446,7 @@ const ServiceCenterDashboard = () => {
 
       // Call backend API to assign technician
       const response = await axios.patch(
-        `http://localhost:3000/api/v1/processing-records/${claim.recordId}/assignment`,
+        `${API_BASE_URL}/processing-records/${claim.recordId}/assignment`,
         { technicianId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -552,7 +553,7 @@ const ServiceCenterDashboard = () => {
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('ev_warranty_token');
       const response = await axios.post(
-        `http://localhost:3000/api/v1/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/allocate-stock`,
+        `${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/allocate-stock`,
         {},
         {
           headers: {
@@ -591,7 +592,7 @@ const ServiceCenterDashboard = () => {
       return;
     }
     try {
-      const url = status ? `http://localhost:3000/api/v1/users/technicians?status=${status}` : `http://localhost:3000/api/v1/users/technicians`;
+      const url = status ? `${API_BASE_URL}/users/technicians?status=${status}` : `${API_BASE_URL}/users/technicians`;
       const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
       const records = res.data?.data || [];
       const mapped: Technician[] = records.map((t: any) => {
