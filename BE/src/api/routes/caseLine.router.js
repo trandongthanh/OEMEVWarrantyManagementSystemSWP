@@ -10,6 +10,7 @@ import {
   caseLineSchema,
   getCaseLineByIdParamsSchema,
   getAllCaselinesQuerySchema,
+  getCaselineByIdParamsSchema,
 } from "../../validators/caseLine.validator.js";
 import {
   attachCompanyContext,
