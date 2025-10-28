@@ -190,21 +190,34 @@ class VehicleProcessingRecordService {
 
       oldTechnicianId = existingRecord?.mainTechnician?.userId;
 
+      if (oldTechnicianId === technicianId) {
+        throw new ConflictError(
+          "Technician is already assigned to this record as main technician"
+        );
+      }
+
       const guaranteeCaseIds = existingRecord?.guaranteeCases.map(
         (gc) => gc?.guaranteeCaseId
       );
 
-      const isAlreadyAssigned =
-        await this.#workScheduleRepository.getMySchedule({
-          technicianId: technicianId,
-          workDate: dayjs().format("YYYY-MM-DD"),
-        });
+      const schedule = await this.#workScheduleRepository.getMySchedule({
+        technicianId: technicianId,
+        workDate: dayjs().format("YYYY-MM-DD"),
+      });
 
-      if (isAlreadyAssigned.status !== "AVAILABLE") {
-        throw new ConflictError("Technician is not available on the work date");
+      if (!schedule) {
+        throw new ConflictError(
+          "Technician does not have a work schedule for today. Please create a schedule first."
+        );
       }
 
-      if (oldTechnicianId !== technicianId && oldTechnicianId) {
+      if (schedule.status !== "AVAILABLE") {
+        throw new ConflictError(
+          `Technician is not available on the work date. Current status: ${schedule.status}`
+        );
+      }
+
+      if (oldTechnicianId && oldTechnicianId !== technicianId) {
         const affectedRows =
           await this.#taskAssignmentRepository.cancelAssignmentsByGuaranteeCaseIds(
             {
@@ -214,7 +227,9 @@ class VehicleProcessingRecordService {
           );
 
         if (affectedRows === 0) {
-          throw new Error("No assignments were cancelled");
+          throw new ConflictError(
+            `No active assignments found for old technician ${oldTechnicianId}. Data may be inconsistent or assignments were already cancelled.`
+          );
         }
       }
 
@@ -254,6 +269,12 @@ class VehicleProcessingRecordService {
 
     if (updatedGuaranteeCases === 0) {
       throw new Error("Guarantee cases were not updated.");
+    }
+
+    if (!newTaskAssignments || newTaskAssignments.length === 0) {
+      throw new Error(
+        "Failed to create task assignments for the technician. Please try again."
+      );
     }
 
     const formatUpdatedRecord = {
