@@ -1095,6 +1095,44 @@ class CaseLineService {
 
     return componentIds;
   };
+
+  deleteCaseline = async ({ caselineId, userId, roleName, serviceCenterId, companyId }) => {
+    return await db.sequelize.transaction(async (transaction) => {
+      const caseline = await this.#caselineRepository.findById(
+        caselineId,
+        transaction,
+        Transaction.LOCK.UPDATE
+      );
+
+      if (!caseline) {
+        throw new NotFoundError("Caseline not found");
+      }
+
+      const isDiagnosticTech = caseline.diagnosticTechnician?.userId === userId;
+      const isRepairTech = caseline.repairTechnician?.userId === userId;
+      const isLeadTechnician = caseline.guaranteeCase && (caseline.guaranteeCase.leadTechId === userId);
+
+      
+      if (roleName === "service_center_technician") {
+        if (!isDiagnosticTech && !isRepairTech && !isLeadTechnician) {
+          throw new ForbiddenError(
+            "User does not have permission to delete this caseline"
+          );
+        }
+      }
+
+      const deleted = await this.#caselineRepository.deleteCaseline(
+        caselineId,
+        transaction
+      );
+
+      if (!deleted) {
+        throw new ConflictError("Failed to delete caseline");
+      }
+
+      return { deleted: true };
+    });
+  };
 }
 
 export default CaseLineService;
