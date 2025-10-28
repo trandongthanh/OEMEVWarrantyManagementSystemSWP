@@ -314,7 +314,7 @@ router.patch(
 router.patch(
   "/:id/complete-diagnosis",
   authentication,
-  authorizationByRole(["service_center_manager", "service_center_staff"]),
+  authorizationByRole(["service_center_technician"]),
   attachCompanyContext,
   async (req, res, next) => {
     const vehicleProcessingRecordController = req.container.resolve(

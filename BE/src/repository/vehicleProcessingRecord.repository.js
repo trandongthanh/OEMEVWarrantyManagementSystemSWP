@@ -185,6 +185,15 @@ class VehicleProcessingRecordRepository {
                 "diagnosticTechId",
                 "quantity",
               ],
+
+              include: [
+                {
+                  model: TypeComponent,
+                  as: "typeComponent",
+                  attributes: ["typeComponentId", "name", "category"],
+                  required: false,
+                },
+              ],
               required: false,
             },
           ],
@@ -270,6 +279,7 @@ class VehicleProcessingRecordRepository {
         {
           model: GuaranteeCase,
           as: "guaranteeCases",
+          separate: true,
           attributes: [
             "guaranteeCaseId",
             "status",
@@ -281,6 +291,7 @@ class VehicleProcessingRecordRepository {
             {
               model: CaseLine,
               as: "caseLines",
+              separate: true,
               attributes: [
                 "id",
                 "typeComponentId",
@@ -293,7 +304,15 @@ class VehicleProcessingRecordRepository {
                 "diagnosticTechId",
                 "quantity",
               ],
-              required: false,
+
+              include: [
+                {
+                  model: TypeComponent,
+                  as: "typeComponent",
+                  attributes: ["typeComponentId", "name", "category"],
+                  required: false,
+                },
+              ],
             },
           ],
         },
@@ -380,7 +399,7 @@ class VehicleProcessingRecordRepository {
     transaction = null
   ) => {
     const [rowEffect] = await VehicleProcessingRecord.update(
-      { status, completedDate: checkOutDate },
+      { status, checkOutDate: checkOutDate },
       {
         where: { vehicleProcessingRecordId },
         transaction,
@@ -399,6 +418,75 @@ class VehicleProcessingRecordRepository {
     );
 
     return updatedRecord ? updatedRecord.toJSON() : null;
+  };
+
+  getServiceHistoryByVin = async (
+    { vin, statusFilter, limit, offset },
+    transaction = null
+  ) => {
+    const records = await VehicleProcessingRecord.findAll({
+      where: {
+        vin,
+        ...(statusFilter ? { status: statusFilter } : {}),
+      },
+      attributes: [
+        "vehicleProcessingRecordId",
+        "vin",
+        "checkInDate",
+        "checkOutDate",
+        "odometer",
+        "status",
+        "visitorInfo",
+      ],
+      include: [
+        {
+          model: GuaranteeCase,
+          as: "guaranteeCases",
+          attributes: ["guaranteeCaseId", "status", "contentGuarantee"],
+          required: false,
+
+          include: [
+            {
+              model: CaseLine,
+              as: "caseLines",
+              attributes: [
+                "id",
+                "diagnosisText",
+                "correctionText",
+                "warrantyStatus",
+                "status",
+                "rejectionReason",
+                "repairTechId",
+                "diagnosticTechId",
+                "quantity",
+                "name",
+              ],
+
+              include: [
+                {
+                  model: TypeComponent,
+                  as: "typeComponent",
+                  attributes: ["typeComponentId", "name", "category"],
+                  required: false,
+                },
+              ],
+              required: false,
+            },
+          ],
+        },
+      ],
+
+      order: [["checkInDate", "DESC"]],
+      limit,
+      offset,
+      transaction,
+    });
+
+    if (!records.length) {
+      return [];
+    }
+
+    return records.map((r) => r.toJSON());
   };
 }
 

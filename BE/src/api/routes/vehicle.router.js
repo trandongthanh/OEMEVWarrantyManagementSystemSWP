@@ -767,4 +767,358 @@ router.post(
   }
 );
 
+/**
+ * @swagger
+ * /vehicles/{vin}/components:
+ *   get:
+ *     summary: Get all components installed on vehicle
+ *     description: Retrieve a list of all components that are currently installed or have been installed on the vehicle, including their warranty status
+ *     tags: [Vehicle]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: vin
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Vehicle Identification Number
+ *         example: "VF34ABC123456789A"
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [INSTALLED, REMOVED, DEFECTIVE, ALL]
+ *           default: INSTALLED
+ *         description: Filter components by status
+ *         example: "INSTALLED"
+ *     responses:
+ *       200:
+ *         description: Components list retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vehicle:
+ *                       type: object
+ *                       properties:
+ *                         vin:
+ *                           type: string
+ *                           example: "VF34ABC123456789A"
+ *                         licensePlate:
+ *                           type: string
+ *                           example: "30A-12345"
+ *                         model:
+ *                           type: string
+ *                           example: "VF e34"
+ *                     components:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           componentId:
+ *                             type: string
+ *                             format: uuid
+ *                           serialNumber:
+ *                             type: string
+ *                             example: "BMS-INSTALLED-VF34ABC123456789A"
+ *                           typeComponent:
+ *                             type: object
+ *                             properties:
+ *                               typeComponentId:
+ *                                 type: string
+ *                                 format: uuid
+ *                               name:
+ *                                 type: string
+ *                                 example: "Bộ Quản Lý Pin BMS"
+ *                               sku:
+ *                                 type: string
+ *                                 example: "BMS-CTRL-01"
+ *                               category:
+ *                                 type: string
+ *                                 example: "HIGH_VOLTAGE_BATTERY"
+ *                               price:
+ *                                 type: number
+ *                                 example: 45000000
+ *                           status:
+ *                             type: string
+ *                             enum: [INSTALLED, REMOVED, DEFECTIVE]
+ *                             example: "INSTALLED"
+ *                           installedAt:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2023-06-01T00:00:00.000Z"
+ *                           removedAt:
+ *                             type: string
+ *                             format: date-time
+ *                             nullable: true
+ *                             example: null
+ *                           warrantyInfo:
+ *                             type: object
+ *                             properties:
+ *                               hasWarranty:
+ *                                 type: boolean
+ *                                 example: true
+ *                               isActive:
+ *                                 type: boolean
+ *                                 example: true
+ *                               endDate:
+ *                                 type: string
+ *                                 format: date-time
+ *                               daysRemaining:
+ *                                 type: integer
+ *                     totalComponents:
+ *                       type: integer
+ *                       example: 5
+ *                     installedCount:
+ *                       type: integer
+ *                       example: 4
+ *                     removedCount:
+ *                       type: integer
+ *                       example: 1
+ *       404:
+ *         description: Vehicle not found
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ */
+router.get(
+  "/:vin/components",
+  authentication,
+  authorizationByRole([
+    "service_center_staff",
+    "service_center_manager",
+    "service_center_technician",
+  ]),
+  attachCompanyContext,
+  async (req, res, next) => {
+    const vehicleController = req.container.resolve("vehicleController");
+    await vehicleController.getVehicleComponents(req, res, next);
+  }
+);
+
+/**
+ * @swagger
+ * /vehicles/{vin}/service-history:
+ *   get:
+ *     summary: Get vehicle service and warranty history
+ *     description: Retrieve complete service history including all processing records, guarantee cases, and repairs performed on the vehicle
+ *     tags: [Vehicle]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: vin
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Vehicle Identification Number
+ *         example: "VF34ABC123456789A"
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number for pagination
+ *         example: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 50
+ *           default: 10
+ *         description: Number of records per page
+ *         example: 10
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [CHECKED_IN, IN_DIAGNOSIS, WAITING_FOR_PARTS, PAID, IN_REPAIR, COMPLETED, CANCELLED]
+ *         description: Filter by processing record status
+ *     responses:
+ *       200:
+ *         description: Service history retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vehicle:
+ *                       type: object
+ *                       properties:
+ *                         vin:
+ *                           type: string
+ *                           example: "VF34ABC123456789A"
+ *                         licensePlate:
+ *                           type: string
+ *                           example: "30A-12345"
+ *                         model:
+ *                           type: string
+ *                           example: "VF e34"
+ *                         owner:
+ *                           type: object
+ *                           properties:
+ *                             fullName:
+ *                               type: string
+ *                               example: "Nguyễn Văn An"
+ *                             phone:
+ *                               type: string
+ *                     serviceHistory:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           vehicleProcessingRecordId:
+ *                             type: string
+ *                             format: uuid
+ *                           checkInDate:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2024-01-15T08:30:00.000Z"
+ *                           checkOutDate:
+ *                             type: string
+ *                             format: date-time
+ *                             nullable: true
+ *                             example: "2024-01-18T16:00:00.000Z"
+ *                           odometer:
+ *                             type: integer
+ *                             example: 25000
+ *                           status:
+ *                             type: string
+ *                             example: "COMPLETED"
+ *                           serviceCenter:
+ *                             type: object
+ *                             properties:
+ *                               name:
+ *                                 type: string
+ *                                 example: "VinFast SC Hà Nội"
+ *                               address:
+ *                                 type: string
+ *                           mainTechnician:
+ *                             type: object
+ *                             nullable: true
+ *                             properties:
+ *                               name:
+ *                                 type: string
+ *                                 example: "Lê Văn Cường"
+ *                               userId:
+ *                                 type: string
+ *                                 format: uuid
+ *                           guaranteeCases:
+ *                             type: array
+ *                             items:
+ *                               type: object
+ *                               properties:
+ *                                 guaranteeCaseId:
+ *                                   type: string
+ *                                   format: uuid
+ *                                 caseNumber:
+ *                                   type: string
+ *                                   example: "GC-2024-001"
+ *                                 contentGuarantee:
+ *                                   type: string
+ *                                   example: "Kiểm tra và thay pin cao áp"
+ *                                 status:
+ *                                   type: string
+ *                                   example: "COMPLETED"
+ *                                 caseLines:
+ *                                   type: array
+ *                                   items:
+ *                                     type: object
+ *                                     properties:
+ *                                       caseLineId:
+ *                                         type: string
+ *                                         format: uuid
+ *                                       diagnosisText:
+ *                                         type: string
+ *                                         example: "Pin cao áp bị suy giảm dung lượng"
+ *                                       correctionText:
+ *                                         type: string
+ *                                         example: "Thay thế pin cao áp mới"
+ *                                       warrantyStatus:
+ *                                         type: string
+ *                                         enum: [ELIGIBLE, INELIGIBLE]
+ *                                         example: "ELIGIBLE"
+ *                                       status:
+ *                                         type: string
+ *                                         example: "REPAIR_COMPLETED"
+ *                                       componentUsed:
+ *                                         type: object
+ *                                         nullable: true
+ *                                         properties:
+ *                                           name:
+ *                                             type: string
+ *                                           quantity:
+ *                                             type: integer
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         currentPage:
+ *                           type: integer
+ *                           example: 1
+ *                         totalPages:
+ *                           type: integer
+ *                           example: 3
+ *                         totalRecords:
+ *                           type: integer
+ *                           example: 25
+ *                         limit:
+ *                           type: integer
+ *                           example: 10
+ *                     summary:
+ *                       type: object
+ *                       properties:
+ *                         totalVisits:
+ *                           type: integer
+ *                           example: 25
+ *                         completedVisits:
+ *                           type: integer
+ *                           example: 23
+ *                         totalCases:
+ *                           type: integer
+ *                           example: 45
+ *                         eligibleCases:
+ *                           type: integer
+ *                           example: 38
+ *                         ineligibleCases:
+ *                           type: integer
+ *                           example: 7
+ *       404:
+ *         description: Vehicle not found
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ */
+router.get(
+  "/:vin/service-history",
+  authentication,
+  authorizationByRole([
+    "service_center_staff",
+    "service_center_manager",
+    "service_center_technician",
+  ]),
+  attachCompanyContext,
+  async (req, res, next) => {
+    const vehicleController = req.container.resolve("vehicleController");
+    await vehicleController.getServiceHistory(req, res, next);
+  }
+);
+
 export default router;
