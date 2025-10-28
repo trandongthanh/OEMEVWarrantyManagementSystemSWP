@@ -96,7 +96,7 @@ class VehicleProcessingRecordRepository {
       where: {
         vin,
         status: {
-          [Op.ne]: "completed",
+          [Op.ne]: "COMPLETED",
         },
       },
       transaction: transaction,

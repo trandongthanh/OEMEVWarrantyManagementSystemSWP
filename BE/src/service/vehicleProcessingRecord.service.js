@@ -432,12 +432,16 @@ class VehicleProcessingRecordService {
         );
 
       for (const caseLine of allCaseLines) {
-        if (
-          caseLine.status !== "COMPLETED" &&
-          caseLine.status !== "CANCELLED"
-        ) {
+        const finalStatuses = [
+          "COMPLETED",
+          "CANCELLED",
+          "REJECTED_BY_OUT_OF_WARRANTY",
+          "REJECTED_BY_TECH",
+          "REJECTED_BY_CUSTOMER",
+        ];
+        if (!finalStatuses.includes(caseLine.status)) {
           throw new ConflictError(
-            `Cannot complete record because case line with ID ${caseLine.id} is in status ${caseLine.status}. All case lines must be COMPLETED or CANCELLED before completing the record.`
+            `Cannot complete record because case line with ID ${caseLine.id} is in status ${caseLine.status}. All case lines must be in a final state (${finalStatuses.join(", ")}) before completing the record.`
           );
         }
       }
@@ -491,12 +495,15 @@ class VehicleProcessingRecordService {
         const caseLines = guaranteeCase.caseLines || [];
 
         for (const caseLine of caseLines) {
-          if (
-            caseLine.status !== "DRAFT" ||
-            caseLine.status !== "REJECTED_BY_OUT_OF_WARRANTY" ||
-            caseLine.status !== "REJECTED_BY_TECH"
-          ) {
-            throw new BadRequestError("Case line is not in diagnosable status");
+          const validStatuses = [
+            "DRAFT",
+            "REJECTED_BY_OUT_OF_WARRANTY",
+            "REJECTED_BY_TECH",
+          ];
+          if (!validStatuses.includes(caseLine.status)) {
+            throw new BadRequestError(
+              `Case line ${caseLine.id} has invalid status ${caseLine.status}. Must be one of: ${validStatuses.join(", ")}`
+            );
           }
         }
       }
