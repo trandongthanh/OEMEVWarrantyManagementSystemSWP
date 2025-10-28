@@ -449,8 +449,12 @@ class VehicleProcessingRecordService {
         const caseLines = guaranteeCase.caseLines || [];
 
         for (const caseLine of caseLines) {
-          if (caseLine.status !== "DRAFT") {
-            throw new BadRequestError("Case line is not in diagnosis");
+          if (
+            caseLine.status !== "DRAFT" ||
+            caseLine.status !== "REJECTED_BY_OUT_OF_WARRANTY" ||
+            caseLine.status !== "REJECTED_BY_TECH"
+          ) {
+            throw new BadRequestError("Case line is not in diagnosable status");
           }
         }
       }
