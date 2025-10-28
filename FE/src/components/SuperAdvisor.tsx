@@ -158,6 +158,14 @@ const SuperAdvisor = () => {
   const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
   const [hasSearchedCustomer, setHasSearchedCustomer] = useState(false);
+  const [isEditingCustomer, setIsEditingCustomer] = useState(false);
+  const [editCustomerForm, setEditCustomerForm] = useState({
+    fullName: '',
+    phone: '',
+    email: '',
+    address: ''
+  });
+  const [isUpdatingCustomer, setIsUpdatingCustomer] = useState(false);
 
   // Warranty dialog states
   const [showWarrantyDialog, setShowWarrantyDialog] = useState(false);
@@ -541,7 +549,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      const response = await axios.get(`http://localhost:3000/api/v1/customers/phone/${customerSearchPhone.trim()}`, {
+      const response = await axios.get(`http://localhost:3000/api/v1/customers?phone=${customerSearchPhone.trim()}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -549,10 +557,10 @@ const SuperAdvisor = () => {
       });
 
       if (response.data && response.data.status === 'success') {
-        // Try to get customer from different possible paths
-        const customer = response.data.data?.customer || response.data.customer;
+        // API returns customer object directly in data.customer
+        const customer = response.data.data?.customer;
         
-        if (customer) {
+        if (customer && customer.id) {
           setFoundCustomer(customer);
           
           // Fill all 4 fields with found customer data
@@ -630,6 +638,149 @@ const SuperAdvisor = () => {
         description: 'An error occurred while searching for customer. You can enter new customer information.',
         variant: 'default'
       });
+    }
+  };
+
+  // Handle Enter key press for search fields
+  const handleVinSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (searchMode === 'customer') {
+        handleSearchCustomer();
+      }
+    }
+  };
+
+  const handlePhoneSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSearchCustomerByPhone();
+    }
+  };
+
+  const handleWarrantyPhoneSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSearchCustomerByPhone();
+    }
+  };
+
+  const handleRegisterVehicleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (newVehicleVin.trim()) {
+        handleRegisterNewVehicle();
+      }
+    }
+  };
+
+  // Handle edit customer info
+  const handleEditCustomer = () => {
+    setIsEditingCustomer(true);
+    setEditCustomerForm({
+      fullName: foundCustomer?.fullName || '',
+      phone: foundCustomer?.phone || '',
+      email: foundCustomer?.email || '',
+      address: foundCustomer?.address || ''
+    });
+  };
+
+  const handleCancelEditCustomer = () => {
+    setIsEditingCustomer(false);
+    setEditCustomerForm({
+      fullName: '',
+      phone: '',
+      email: '',
+      address: ''
+    });
+  };
+
+  const handleUpdateCustomer = async () => {
+    if (!foundCustomer?.id) {
+      toast({
+        title: 'Error',
+        description: 'Customer ID not found',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Validate phone number (10 digits)
+    if (editCustomerForm.phone && !/^\d{10}$/.test(editCustomerForm.phone)) {
+      toast({
+        title: 'Error',
+        description: 'Phone number must be exactly 10 digits',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsUpdatingCustomer(true);
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      
+      // Build request body with only changed fields
+      const updateData: any = {};
+      
+      if (editCustomerForm.fullName.trim() !== foundCustomer.fullName) {
+        updateData.fullName = editCustomerForm.fullName.trim();
+      }
+      if (editCustomerForm.phone.trim() !== foundCustomer.phone) {
+        updateData.phone = editCustomerForm.phone.trim();
+      }
+      if (editCustomerForm.email.trim() !== foundCustomer.email) {
+        updateData.email = editCustomerForm.email.trim();
+      }
+      if (editCustomerForm.address.trim() !== foundCustomer.address) {
+        updateData.address = editCustomerForm.address.trim();
+      }
+
+      // Only send request if there are changes
+      if (Object.keys(updateData).length === 0) {
+        toast({
+          title: 'No Changes',
+          description: 'No changes detected',
+        });
+        setIsEditingCustomer(false);
+        setIsUpdatingCustomer(false);
+        return;
+      }
+
+      const response = await axios.patch(
+        `http://localhost:3000/api/v1/customers/${foundCustomer.id}`,
+        updateData,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.data && response.data.status === 'success') {
+        // Update foundCustomer with new data
+        setFoundCustomer({
+          ...foundCustomer,
+          ...updateData
+        });
+
+        toast({
+          title: 'Success',
+          description: 'Customer information updated successfully!',
+        });
+
+        setIsEditingCustomer(false);
+      }
+    } catch (error: any) {
+      console.error('Error updating customer:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to update customer information',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsUpdatingCustomer(false);
     }
   };
 
@@ -971,40 +1122,17 @@ const SuperAdvisor = () => {
         });
 
       } 
-      // Case 2: Registering new vehicle with existing customer (found via phone search)
+      // Case 2: Registering vehicle with existing customer (found via phone search)
       else if (foundCustomer && foundCustomer.id) {
-        // If customer info has been edited, update customer first
-        const customerChanged = 
-          ownerForm.fullName.trim() !== foundCustomer.fullName ||
-          ownerForm.email.trim() !== foundCustomer.email ||
-          ownerForm.phone.trim() !== foundCustomer.phone ||
-          ownerForm.address.trim() !== foundCustomer.address;
-
-        if (customerChanged) {
-          // Update customer info via PATCH /customers/{id}
-          await axios.patch(`http://localhost:3000/api/v1/customers/${foundCustomer.id}`, {
-            fullName: ownerForm.fullName.trim(),
-            email: ownerForm.email.trim(),
-            phone: ownerForm.phone.trim(),
-            address: ownerForm.address.trim()
-          }, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-        }
-
-        // Register vehicle with ownerId only
+        // Register vehicle using PATCH /vehicles/{VIN} with customerId only
         const requestBody = {
-          ownerId: foundCustomer.id,
+          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
           licensePlate: vehicleSearchResult.licensePlate.trim(),
           purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString(),
-          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-          placeOfManufacture: vehicleSearchResult.placeOfManufacture || ''
+          customerId: foundCustomer.id
         };
 
-        const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
+        const response = await axios.patch(`http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}`, requestBody, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -1012,7 +1140,7 @@ const SuperAdvisor = () => {
         });
 
         if (response.data && response.data.status === 'success') {
-          const updatedVehicle = response.data.data.vehicle;
+          const updatedVehicle = response.data.data?.vehicle || response.data.data;
           setVehicleSearchResult(prev => prev ? ({
             ...prev,
             owner: updatedVehicle.owner,
@@ -1022,19 +1150,17 @@ const SuperAdvisor = () => {
 
           toast({
             title: 'Success',
-            description: customerChanged 
-              ? 'Customer updated and vehicle registered successfully!'
-              : 'Vehicle registered to existing customer successfully!',
+            description: 'Vehicle registered to existing customer successfully!',
           });
         }
       }
       // Case 3: Have form data but no customer ID - Search by phone or create new
       else {
         // Try to find customer by phone first
-        let customerId = null;
+        let customerIdToUse = null;
         
         try {
-          const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers/phone/${ownerForm.phone.trim()}`, {
+          const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers?phone=${ownerForm.phone.trim()}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
@@ -1042,65 +1168,50 @@ const SuperAdvisor = () => {
           });
 
           if (searchResponse.data && searchResponse.data.status === 'success') {
-            const customer = searchResponse.data.data?.customer || searchResponse.data.customer;
+            // API returns customer object directly in data.customer
+            const customer = searchResponse.data.data?.customer;
+            
             if (customer && customer.id) {
-              customerId = customer.id;
-              
-              // Update customer info with new data
-              await axios.patch(`http://localhost:3000/api/v1/customers/${customerId}`, {
-                fullName: ownerForm.fullName.trim(),
-                email: ownerForm.email.trim(),
-                phone: ownerForm.phone.trim(),
-                address: ownerForm.address.trim()
-              }, {
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json'
-                }
-              });
+              customerIdToUse = customer.id;
             }
           }
         } catch (searchError) {
-          console.log('Customer not found by phone, will create new');
+          // Customer not found, will create new
         }
 
-        // If customer not found, create new one
-        if (!customerId) {
-          const createResponse = await axios.post(`http://localhost:3000/api/v1/customers/`, {
+        // Prepare request body
+        const requestBody: any = {
+          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
+          licensePlate: vehicleSearchResult.licensePlate.trim(),
+          purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString()
+        };
+
+        // Use customerId if customer exists, otherwise include customer object for new customer
+        if (customerIdToUse) {
+          requestBody.customerId = customerIdToUse;
+        } else {
+          requestBody.customer = {
             fullName: ownerForm.fullName.trim(),
             email: ownerForm.email.trim(),
             phone: ownerForm.phone.trim(),
             address: ownerForm.address.trim()
-          }, {
+          };
+        }
+
+        // Register vehicle with PATCH /vehicles/{VIN}
+        const response = await axios.patch(
+          `http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}`,
+          requestBody,
+          {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
             }
-          });
-
-          if (createResponse.data?.status === 'success') {
-            customerId = createResponse.data.data.customer.id;
-          } else {
-            throw new Error('Failed to create customer');
           }
-        }
-
-        // Register vehicle with the customer ID
-        const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, {
-          ownerId: customerId,
-          licensePlate: vehicleSearchResult.licensePlate.trim(),
-          purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString(),
-          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-          placeOfManufacture: vehicleSearchResult.placeOfManufacture || ''
-        }, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
+        );
 
         if (response.data && response.data.status === 'success') {
-          const updatedVehicle = response.data.data.vehicle;
+          const updatedVehicle = response.data.data?.vehicle || response.data.data;
           setVehicleSearchResult(prev => prev ? ({
             ...prev,
             owner: updatedVehicle.owner,
@@ -1110,7 +1221,9 @@ const SuperAdvisor = () => {
 
           toast({
             title: 'Success',
-            description: 'Customer and vehicle information saved successfully!',
+            description: customerIdToUse 
+              ? 'Vehicle registered to existing customer successfully!'
+              : 'New customer created and vehicle registered successfully!',
           });
         }
       }
@@ -1608,6 +1721,13 @@ const SuperAdvisor = () => {
                         setSearchVin(e.target.value);
                       }
                     }}
+                    onKeyPress={(e) => {
+                      if (searchMode === 'phone') {
+                        handlePhoneSearchKeyPress(e);
+                      } else {
+                        handleVinSearchKeyPress(e);
+                      }
+                    }}
                     maxLength={searchMode === 'phone' ? 10 : undefined}
                   />
                 </div>
@@ -2058,6 +2178,7 @@ const SuperAdvisor = () => {
                               const numericValue = e.target.value.replace(/[^0-9]/g, '');
                               setCustomerSearchPhone(numericValue);
                             }}
+                            onKeyPress={handleWarrantyPhoneSearchKeyPress}
                             className="bg-white"
                           />
                         </div>
@@ -2212,19 +2333,54 @@ const SuperAdvisor = () => {
                 <div className="space-y-6">
                   {/* Customer Information */}
                   <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold text-purple-800 mb-4 flex items-center">
-                      <User className="mr-2 h-5 w-5" />
-                      Customer Information
-                    </h3>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-purple-800 flex items-center">
+                        <User className="mr-2 h-5 w-5" />
+                        Customer Information
+                      </h3>
+                      {!isEditingCustomer ? (
+                        <Button
+                          onClick={handleEditCustomer}
+                          size="sm"
+                          variant="outline"
+                          className="border-purple-300 text-purple-700 hover:bg-purple-100"
+                        >
+                          <Edit className="h-4 w-4 mr-2" />
+                          Edit
+                        </Button>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handleUpdateCustomer}
+                            size="sm"
+                            disabled={isUpdatingCustomer}
+                            className="bg-green-600 hover:bg-green-700"
+                          >
+                            <Save className="h-4 w-4 mr-2" />
+                            {isUpdatingCustomer ? 'Saving...' : 'Save'}
+                          </Button>
+                          <Button
+                            onClick={handleCancelEditCustomer}
+                            size="sm"
+                            variant="outline"
+                            disabled={isUpdatingCustomer}
+                            className="border-gray-300"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                     <div className="grid gap-4">
                       {/* Full Name */}
                       <div className="grid md:grid-cols-3 gap-2 items-center">
                         <Label className="font-medium text-gray-700">Full Name:</Label>
                         <div className="md:col-span-2">
                           <Input
-                            value={foundCustomer.fullName || ''}
-                            disabled
-                            className="bg-gray-100"
+                            value={isEditingCustomer ? editCustomerForm.fullName : (foundCustomer.fullName || '')}
+                            onChange={(e) => isEditingCustomer && setEditCustomerForm({ ...editCustomerForm, fullName: e.target.value })}
+                            disabled={!isEditingCustomer}
+                            className={isEditingCustomer ? "bg-white" : "bg-gray-100"}
                           />
                         </div>
                       </div>
@@ -2234,9 +2390,16 @@ const SuperAdvisor = () => {
                         <Label className="font-medium text-gray-700">Phone Number:</Label>
                         <div className="md:col-span-2">
                           <Input
-                            value={foundCustomer.phone || ''}
-                            disabled
-                            className="bg-gray-100 font-mono"
+                            value={isEditingCustomer ? editCustomerForm.phone : (foundCustomer.phone || '')}
+                            onChange={(e) => {
+                              if (isEditingCustomer) {
+                                const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
+                                setEditCustomerForm({ ...editCustomerForm, phone: numericValue });
+                              }
+                            }}
+                            disabled={!isEditingCustomer}
+                            maxLength={10}
+                            className={isEditingCustomer ? "bg-white font-mono" : "bg-gray-100 font-mono"}
                           />
                         </div>
                       </div>
@@ -2246,9 +2409,11 @@ const SuperAdvisor = () => {
                         <Label className="font-medium text-gray-700">Email:</Label>
                         <div className="md:col-span-2">
                           <Input
-                            value={foundCustomer.email || ''}
-                            disabled
-                            className="bg-gray-100"
+                            value={isEditingCustomer ? editCustomerForm.email : (foundCustomer.email || '')}
+                            onChange={(e) => isEditingCustomer && setEditCustomerForm({ ...editCustomerForm, email: e.target.value })}
+                            disabled={!isEditingCustomer}
+                            type="email"
+                            className={isEditingCustomer ? "bg-white" : "bg-gray-100"}
                           />
                         </div>
                       </div>
@@ -2258,9 +2423,10 @@ const SuperAdvisor = () => {
                         <Label className="font-medium text-gray-700">Address:</Label>
                         <div className="md:col-span-2">
                           <Input
-                            value={foundCustomer.address || ''}
-                            disabled
-                            className="bg-gray-100"
+                            value={isEditingCustomer ? editCustomerForm.address : (foundCustomer.address || '')}
+                            onChange={(e) => isEditingCustomer && setEditCustomerForm({ ...editCustomerForm, address: e.target.value })}
+                            disabled={!isEditingCustomer}
+                            className={isEditingCustomer ? "bg-white" : "bg-gray-100"}
                           />
                         </div>
                       </div>
@@ -2279,20 +2445,28 @@ const SuperAdvisor = () => {
                           <div key={vehicle?.vin || index} className="bg-white border border-blue-200 rounded p-4">
                             <div className="grid md:grid-cols-2 gap-3 mb-4">
                               <div>
-                                <span className="text-sm font-medium text-gray-600">VIN:</span>
-                                <p className="text-sm font-mono">{vehicle?.vin || 'N/A'}</p>
+                                <span className="text-sm font-medium text-gray-600">VIN: </span>
+                                <span className="text-sm font-mono">{vehicle?.vin || 'N/A'}</span>
                               </div>
                               <div>
-                                <span className="text-sm font-medium text-gray-600">Model:</span>
-                                <p className="text-sm">{typeof vehicle?.model === 'string' ? vehicle.model : vehicle?.model?.name || 'N/A'}</p>
+                                <span className="text-sm font-medium text-gray-600">Model: </span>
+                                <span className="text-sm">{vehicle?.model?.modelName || 'N/A'}</span>
                               </div>
                               <div>
-                                <span className="text-sm font-medium text-gray-600">License Plate:</span>
-                                <p className="text-sm">{typeof vehicle?.licensePlate === 'string' ? vehicle.licensePlate : 'N/A'}</p>
+                                <span className="text-sm font-medium text-gray-600">License Plate: </span>
+                                <span className="text-sm">{vehicle?.licensePlate || 'N/A'}</span>
                               </div>
                               <div>
-                                <span className="text-sm font-medium text-gray-600">Purchase Date:</span>
-                                <p className="text-sm">{typeof vehicle?.purchaseDate === 'string' ? vehicle.purchaseDate : vehicle?.purchaseDate ? new Date(vehicle.purchaseDate).toLocaleDateString() : 'N/A'}</p>
+                                <span className="text-sm font-medium text-gray-600">Purchase Date: </span>
+                                <span className="text-sm">
+                                  {vehicle?.purchaseDate 
+                                    ? new Date(vehicle.purchaseDate).toLocaleDateString('en-GB', {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        year: 'numeric'
+                                      }).split('/').join('/')
+                                    : 'N/A'}
+                                </span>
                               </div>
                             </div>
 
@@ -2357,6 +2531,7 @@ const SuperAdvisor = () => {
                         <Input
                           value={newVehicleVin}
                           onChange={(e) => setNewVehicleVin(e.target.value.toUpperCase())}
+                          onKeyPress={handleRegisterVehicleKeyPress}
                           placeholder="Enter VIN number"
                           className="mt-1 font-mono"
                         />
