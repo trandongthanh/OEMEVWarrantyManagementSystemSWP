@@ -10,7 +10,6 @@ import {
   caseLineSchema,
   getCaseLineByIdParamsSchema,
   getAllCaselinesQuerySchema,
-  getCaselineByIdParamsSchema,
 } from "../../validators/caseLine.validator.js";
 import {
   attachCompanyContext,
@@ -840,29 +839,10 @@ router.get(
     "service_center_manager",
   ]),
   attachCompanyContext,
-  // Use the params schema that only requires caselineId (no caseId)
-  validate(getCaselineByIdParamsSchema, "params"),
+  validate(getCaseLineByIdParamsSchema, "params"),
   async (req, res, next) => {
     const caseLineController = req.container.resolve("caseLineController");
     await caseLineController.getCaseLineById(req, res, next);
-  }
-);
-
-// Delete a caseline by id
-router.delete(
-  "/:caselineId",
-  authentication,
-  authorizationByRole([
-    "service_center_technician",
-    "service_center_staff",
-    "service_center_manager",
-  ]),
-  attachCompanyContext,
-  // Deleting only needs the caselineId param; ensure validator matches that
-  validate(getCaselineByIdParamsSchema, "params"),
-  async (req, res, next) => {
-    const caseLineController = req.container.resolve("caseLineController");
-    await caseLineController.deleteCaseline(req, res, next);
   }
 );
 

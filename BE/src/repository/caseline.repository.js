@@ -370,7 +370,8 @@ class CaseLineRepository {
 
   findByProcessingRecordId = async (
     { vehicleProcessingRecordId },
-    transaction = null
+    transaction = null,
+    lock = null
   ) => {
     const caseLines = await CaseLine.findAll({
       include: [
@@ -382,6 +383,7 @@ class CaseLineRepository {
         },
       ],
       transaction,
+      lock: lock,
     });
 
     return caseLines.map((cl) => cl.toJSON());

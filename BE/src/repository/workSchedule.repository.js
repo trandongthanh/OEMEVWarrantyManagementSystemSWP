@@ -229,6 +229,17 @@ class WorkScheduleRepository {
 
     return schedule !== null;
   }
+
+  async getMySchedule({ technicianId, workDate }) {
+    const schedule = await WorkSchedule.findOne({
+      where: {
+        technicianId,
+        workDate,
+      },
+    });
+
+    return schedule ? schedule.toJSON() : null;
+  }
 }
 
 export default WorkScheduleRepository;
