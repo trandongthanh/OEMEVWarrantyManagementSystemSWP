@@ -1725,7 +1725,7 @@ const SuperAdvisor = () => {
         return {
           ...record,
           vinNumber: editRecord.vinNumber.toUpperCase(),
-          customerName: editRecord.customerName,
+          visitorFullName: editRecord.visitorFullName,
           odometer: parseInt(editRecord.odometer),
           cases: editRecord.cases,
           purchaseDate: editRecord.purchaseDate,
