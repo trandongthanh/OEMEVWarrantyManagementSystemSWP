@@ -59,13 +59,11 @@ class WarehouseService {
         };
       });
 
-    const typeComponentsUnderWarranty =
-      typeComponentWarranties
-        .filter(
-          ({ duration, mileage }) =>
-            duration === "ACTIVE" && mileage === "ACTIVE"
-        )
-        .map(({ typeComponentId }) => typeComponentId);
+    const typeComponentsUnderWarranty = typeComponentWarranties
+      .filter(
+        ({ duration, mileage }) => duration === "ACTIVE" && mileage === "ACTIVE"
+      )
+      .map(({ typeComponentId }) => typeComponentId);
 
     for (const typeComponent of typeComponents) {
       if (typeComponentsUnderWarranty.includes(typeComponent.typeComponentId)) {
