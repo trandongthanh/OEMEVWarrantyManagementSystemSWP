@@ -609,7 +609,8 @@ class CaseLineService {
     serviceCenterId,
   }) => {
     return await db.sequelize.transaction(async (transaction) => {
-      const caseline = await this.#caselineRepository.findById(
+      // Use the detailed lookup so related associations (diagnosticTechnician, etc.) are present
+      const caseline = await this.#caselineRepository.findDetailById(
         caselineId,
         transaction,
         Transaction.LOCK.UPDATE
@@ -896,7 +897,9 @@ class CaseLineService {
       // If user is a technician, ensure they are the diagnostic tech who created it
       // NOTE: technicians are allowed to delete caselines in any status per request
       if (roleName === "service_center_technician") {
-        if (caseline.diagnosticTechnician.userId !== userId) {
+        // defensive: diagnosticTechnician may be null/missing in some DB rows; handle gracefully
+        const diagTechUserId = caseline.diagnosticTechnician && caseline.diagnosticTechnician.userId ? caseline.diagnosticTechnician.userId : null;
+        if (!diagTechUserId || diagTechUserId !== userId) {
           throw new ForbiddenError("You are not allowed to delete this caseline");
         }
       }
