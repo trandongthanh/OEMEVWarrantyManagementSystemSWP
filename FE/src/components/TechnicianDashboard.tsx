@@ -1,4 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
+
+// Defensive: ensure a module-scoped fallback for any leftover dev-only variable
+// (some HMR edits previously added/removed pickup UI and a variable named
+// `reservationIdInput` accidentally; declare it here to avoid ReferenceError
+// during development while we fully remove any stale usage).
+let reservationIdInput: string | undefined;
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -190,6 +196,8 @@ const TechnicianDashboard = ({
   });
   const [isLoadingRecords, setIsLoadingRecords] = useState(false);
   const [recordsError, setRecordsError] = useState<string | null>(null);
+  const [consecutiveRecordErrors, setConsecutiveRecordErrors] = useState<number>(0);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState<boolean>(true);
 
   // Processing Records View states
   const [selectedRecord, setSelectedRecord] = useState<ProcessingRecord | null>(null);
@@ -449,6 +457,13 @@ const TechnicianDashboard = ({
         ...prev,
         IN_DIAGNOSIS: normalized
       }));
+      // reset consecutive error counter on success and ensure auto-refresh is enabled
+      try {
+        setConsecutiveRecordErrors(0);
+        setAutoRefreshEnabled(true);
+      } catch (e) {
+        // ignore
+      }
       
       console.log('💾 State updated with records');
 
@@ -535,16 +550,24 @@ const TechnicianDashboard = ({
         console.error('❌ Error while preloading case-lines after records fetch:', err);
       }
     } catch (error) {
-      console.error('❌ Error fetching records:', error);
-      if (error instanceof Error) {
-        console.error('❌ Error message:', error.message);
-        console.error('❌ Error stack:', error.stack);
-      }
-      setRecordsError(error instanceof Error ? error.message : "Failed to fetch records");
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to fetch records",
-        variant: "destructive"
+      // Downgrade noisy logs: keep a concise warning and let backoff mechanism surface to user
+      console.warn('Warning: failed to fetch processing records (see backoff/retry state)', error instanceof Error ? error.message : error);
+      const errMsg = error instanceof Error ? error.message : "Failed to fetch records";
+      setRecordsError(errMsg);
+      // increment consecutive failures and pause auto-refresh if threshold reached
+      setConsecutiveRecordErrors(prev => {
+        const next = prev + 1;
+        const threshold = 3;
+        if (next >= threshold) {
+          setAutoRefreshEnabled(false);
+          // notify user once when threshold reached (toast created here)
+          toast({
+            title: "Auto-refresh paused",
+            description: `Auto-refresh paused after ${next} consecutive failures. Click Retry to fetch now.`,
+            variant: "destructive"
+          });
+        }
+        return next;
       });
     } finally {
       setIsLoadingRecords(false);
@@ -872,14 +895,14 @@ const TechnicianDashboard = ({
   // Auto refresh data every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      if (user && !isLoading) {
+      if (user && !isLoading && autoRefreshEnabled) {
         console.log('Auto refreshing processing records...');
         fetchProcessingRecords();
       }
     }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
-  }, [user, isLoading, fetchProcessingRecords]);
+  }, [user, isLoading, fetchProcessingRecords, autoRefreshEnabled]);
 
   // Fetch case lines when guarantee case is selected
   useEffect(() => {
@@ -1289,6 +1312,7 @@ const TechnicianDashboard = ({
       </header>
 
       <div className="container mx-auto px-6 py-6">
+      
         <Tabs defaultValue="processing-records" className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="processing-records">Processing Records</TabsTrigger>
@@ -1301,6 +1325,35 @@ const TechnicianDashboard = ({
           <TabsContent value="processing-records">
             <div className="space-y-6">
               {/* Processing Records Table */}
+              {!autoRefreshEnabled && (
+                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-yellow-800">Auto-refresh paused after multiple consecutive errors. Click Retry to fetch now.</div>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={async () => {
+                        try {
+                          // reset counters and attempt an immediate fetch
+                          setConsecutiveRecordErrors(0);
+                          setAutoRefreshEnabled(true);
+                          await fetchProcessingRecords();
+                        } catch (err) {
+                          console.error('Retry fetch failed', err);
+                          toast({ title: 'Retry failed', description: 'Could not fetch records. Please try again.', variant: 'destructive' });
+                        }
+                      }}>
+                        Retry
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => {
+                        setConsecutiveRecordErrors(0);
+                        setAutoRefreshEnabled(true);
+                        toast({ title: 'Auto-refresh resumed', description: 'Auto-refresh has been re-enabled.' });
+                      }}>
+                        Resume
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <Card>
                 <CardHeader>
                   <CardTitle>Processing Records</CardTitle>
