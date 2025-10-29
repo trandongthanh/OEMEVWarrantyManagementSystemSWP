@@ -1,5 +1,6 @@
 import { useAuth } from '@/contexts/AuthContext';
 import ServiceCenterDashboard from '@/components/ServiceCenterDashboard';
+import PartsCoordinatorDashboard from '@/components/PartsCoordinatorDashboard';
 import ManufacturerDashboard from '@/components/ManufacturerDashboard';
 import TechnicianDashboard from '@/components/TechnicianDashboard';
 import WarrantyDashboard from '@/components/WarrantyDashboard';
@@ -13,6 +14,11 @@ const Dashboard = () => {
 	// Route to appropriate dashboard based on user role
 	if (user.role === "service_center_manager") {
 		return <ServiceCenterDashboard />;
+	}
+
+	// Parts coordinator at service center should see the parts coordinator dashboard
+	if (user.role === "parts_coordinator_service_center") {
+		return <PartsCoordinatorDashboard />;
 	}
 
 	if (user.role === "service_center_technician") {
