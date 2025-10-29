@@ -26,11 +26,21 @@ interface TransferRequest {
   status: string;
 }
 
+interface Technician {
+  id: string;
+  name: string;
+  username?: string;
+  service_center_id?: string;
+}
+
 const PartsCoordinatorDashboard: React.FC = () => {
   const { getToken } = useAuth();
   const [stocks, setStocks] = useState<StockRow[]>([]);
   const [transferRequests, setTransferRequests] = useState<TransferRequest[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [selectedTech, setSelectedTech] = useState<string | null>(null);
+  const [assignTargetId, setAssignTargetId] = useState<string>('');
 
   useEffect(() => {
     // Lightweight initial load: try to fetch inventory & requests from API if token exists.
@@ -100,6 +110,31 @@ const PartsCoordinatorDashboard: React.FC = () => {
     };
 
     load();
+
+    // also fetch technicians for this service center (best-effort)
+    const loadTechs = async () => {
+      try {
+        const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+        if (!token) return setTechnicians([]);
+        const res = await axios.get('http://localhost:3000/api/v1/users?role=technician&limit=200', { headers: { Authorization: `Bearer ${token}` } });
+        const data = (((res.data as Record<string, unknown>)?.data) as unknown[]) || [];
+        const techs = data.map((u) => {
+          const obj = u as Record<string, unknown>;
+          return {
+            id: String(obj['id'] ?? obj['user_id'] ?? obj['uuid'] ?? obj['userId'] ?? obj['userId'] ?? Date.now()),
+            name: String(obj['name'] ?? obj['fullName'] ?? obj['username'] ?? 'Technician'),
+            username: obj['username'] ? String(obj['username']) : undefined,
+            service_center_id: obj['service_center_id'] ? String(obj['service_center_id']) : undefined
+          } as Technician;
+        });
+        setTechnicians(techs);
+      } catch (err) {
+        // ignore; keep empty list
+        setTechnicians([]);
+      }
+    };
+
+    loadTechs();
 
     return () => { cancelled = true; };
   }, [getToken]);
@@ -180,6 +215,40 @@ const PartsCoordinatorDashboard: React.FC = () => {
       setTransferRequests(transfersData);
     } catch (err) {
       console.warn('refreshTransfers failed', err);
+    }
+  };
+
+  const assignToTechnician = async () => {
+    if (!assignTargetId) return alert('Please enter the processing/caseline id to assign');
+    if (!selectedTech) return alert('Please select a technician');
+    try {
+      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+      if (!token) return alert('Authentication required');
+
+      // Try assignment endpoint. Adjust path/body if your backend expects different fields.
+      const body = { technicianId: selectedTech };
+      // first try processing-records assignment
+      try {
+        const res = await axios.patch(
+          `http://localhost:3000/api/v1/processing-records/${assignTargetId}/assignment`,
+          body,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        alert('Assigned: ' + (res.data?.message || 'OK'));
+      } catch (innerErr) {
+        // fallback: try case-line allocation endpoint
+        const res2 = await axios.post(
+          `http://localhost:3000/api/v1/case-lines/${assignTargetId}/allocate-stock`,
+          { technicianId: selectedTech },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        alert('Assigned via allocate endpoint: ' + (res2.data?.message || 'OK'));
+      }
+
+      // refresh relevant lists
+      refreshTransfers();
+    } catch (err: unknown) {
+      alert('Assign failed: ' + getErrorMessage(err));
     }
   };
 
@@ -287,6 +356,47 @@ const PartsCoordinatorDashboard: React.FC = () => {
                     ))}
                   </TableBody>
                 </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Assign to Technician</CardTitle>
+              <CardDescription>Select a technician and assign a processing record or caseline</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Technician</label>
+                  <select
+                    value={selectedTech ?? ''}
+                    onChange={(e) => setSelectedTech(e.target.value || null)}
+                    className="rounded-md border px-3 py-2"
+                  >
+                    <option value="">-- Select technician --</option>
+                    {technicians.map(t => (
+                      <option key={t.id} value={t.id}>{t.name}{t.username ? ` (${t.username})` : ''}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium">Processing record / Caseline ID</label>
+                  <input
+                    value={assignTargetId}
+                    onChange={(e) => setAssignTargetId(e.target.value)}
+                    placeholder="Enter processing-record id or caseline id"
+                    className="rounded-md border px-3 py-2"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="default" onClick={assignToTechnician}>Assign</Button>
+                  <Button size="sm" variant="outline" onClick={() => { setAssignTargetId(''); setSelectedTech(null); }}>Reset</Button>
+                </div>
+
+                <div className="text-xs text-muted-foreground">Tip: paste the processing-record id from the case or the caseline id to allocate stock and assign.</div>
               </div>
             </CardContent>
           </Card>
