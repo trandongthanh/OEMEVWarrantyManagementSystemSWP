@@ -2,15 +2,15 @@ const { sequelize } = require("../models/index.cjs");
 
 /**
  * SEEDER: TẠO XE KHÔNG CÓ CHỦ (Vehicles Without Owner)
- * 
+ *
  * Mục đích: Tạo xe đã sản xuất xong, đã lắp đủ components theo chuẩn WarrantyComponent
  * của model, nhưng chưa bán cho khách hàng (ownerId = null, purchaseDate = null)
- * 
+ *
  * Trường hợp thực tế:
  * - Xe trong showroom chờ bán
  * - Xe mới từ nhà máy về đại lý
  * - Xe demo/test drive
- * 
+ *
  * Quy tắc:
  * 1. ownerId = null (chưa có chủ)
  * 2. purchaseDate = null (chưa bán)
@@ -21,7 +21,9 @@ const { sequelize } = require("../models/index.cjs");
 
 async function seedVehiclesWithoutOwner() {
   try {
-    console.log("🚗 Bắt đầu tạo xe KHÔNG CÓ CHỦ với components đã lắp đặt...\n");
+    console.log(
+      "🚗 Bắt đầu tạo xe KHÔNG CÓ CHỦ với components đã lắp đặt...\n"
+    );
 
     // ========================================
     // 1. LẤY DỮ LIỆU CƠ BẢN
@@ -31,7 +33,9 @@ async function seedVehiclesWithoutOwner() {
     });
 
     if (!vehicleCompany) {
-      throw new Error("❌ Không tìm thấy VehicleCompany. Chạy seeder chính trước!");
+      throw new Error(
+        "❌ Không tìm thấy VehicleCompany. Chạy seeder chính trước!"
+      );
     }
 
     // Lấy tất cả vehicle models
@@ -55,9 +59,9 @@ async function seedVehiclesWithoutOwner() {
     // 2. LẤY WARRANTY COMPONENT CHO TỪNG MODEL
     // ========================================
     console.log("📋 Load WarrantyComponent cho từng model...");
-    
+
     const warrantyComponentsByModel = {};
-    
+
     for (const model of vehicleModels) {
       const warrantyComps = await sequelize.models.WarrantyComponent.findAll({
         where: { vehicleModelId: model.vehicleModelId },
@@ -69,9 +73,11 @@ async function seedVehiclesWithoutOwner() {
           },
         ],
       });
-      
+
       warrantyComponentsByModel[model.vehicleModelName] = warrantyComps;
-      console.log(`  ✓ ${model.vehicleModelName}: ${warrantyComps.length} components`);
+      console.log(
+        `  ✓ ${model.vehicleModelName}: ${warrantyComps.length} components`
+      );
     }
 
     console.log("");
@@ -84,7 +90,7 @@ async function seedVehiclesWithoutOwner() {
       // === VF e34 (Phổ biến, giá rẻ) - 8 xe ===
       {
         model: "VF e34",
-        vin: "VFE34STK2025000001",
+        vin: "VFE34STK202500001",
         plate: null, // Chưa đăng ký biển
         mfgDate: "2025-10-15",
         location: "Showroom Hà Nội",
@@ -92,7 +98,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF e34",
-        vin: "VFE34STK2025000002",
+        vin: "VFE34STK202500002",
         plate: null,
         mfgDate: "2025-10-18",
         location: "Showroom TP.HCM",
@@ -100,7 +106,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF e34",
-        vin: "VFE34STK2025000003",
+        vin: "VFE34STK202500003",
         plate: null,
         mfgDate: "2025-10-20",
         location: "Kho Hải Phòng",
@@ -108,7 +114,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF e34",
-        vin: "VFE34STK2025000004",
+        vin: "VFE34STK202500004",
         plate: null,
         mfgDate: "2025-10-22",
         location: "Showroom Hà Nội",
@@ -116,7 +122,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF e34",
-        vin: "VFE34STK2025000005",
+        vin: "VFE34STK202500005",
         plate: null,
         mfgDate: "2025-10-23",
         location: "Showroom TP.HCM",
@@ -124,7 +130,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF e34",
-        vin: "VFE34STK2025000006",
+        vin: "VFE34STK202500006",
         plate: null,
         mfgDate: "2025-10-24",
         location: "Showroom Đà Nẵng",
@@ -132,7 +138,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF e34",
-        vin: "VFE34STK2025000007",
+        vin: "VFE34STK202500007",
         plate: null,
         mfgDate: "2025-10-25",
         location: "Test Drive - Hà Nội",
@@ -140,7 +146,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF e34",
-        vin: "VFE34STK2025000008",
+        vin: "VFE34STK202500008",
         plate: "TEST-001", // Xe test drive có biển tạm
         mfgDate: "2025-09-01",
         location: "Test Drive - TP.HCM",
@@ -150,7 +156,7 @@ async function seedVehiclesWithoutOwner() {
       // === VF 5 Plus (Phổ biến, phân khúc A) - 6 xe ===
       {
         model: "VF 5 Plus",
-        vin: "VF5PSSTK2025000001",
+        vin: "VF5PSSTK202500001",
         plate: null,
         mfgDate: "2025-10-10",
         location: "Showroom Hà Nội",
@@ -158,7 +164,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF 5 Plus",
-        vin: "VF5PSSTK2025000002",
+        vin: "VF5PSSTK202500002",
         plate: null,
         mfgDate: "2025-10-12",
         location: "Showroom TP.HCM",
@@ -166,7 +172,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF 5 Plus",
-        vin: "VF5PSSTK2025000003",
+        vin: "VF5PSSTK202500003",
         plate: null,
         mfgDate: "2025-10-16",
         location: "Kho Hải Phòng",
@@ -174,7 +180,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF 5 Plus",
-        vin: "VF5PSSTK2025000004",
+        vin: "VF5PSSTK202500004",
         plate: null,
         mfgDate: "2025-10-19",
         location: "Showroom Cần Thơ",
@@ -182,7 +188,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF 5 Plus",
-        vin: "VF5PSSTK2025000005",
+        vin: "VF5PSSTK202500005",
         plate: null,
         mfgDate: "2025-10-21",
         location: "Showroom Hà Nội",
@@ -190,7 +196,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF 5 Plus",
-        vin: "VF5PSSTK2025000006",
+        vin: "VF5PSSTK202500006",
         plate: "TEST-002",
         mfgDate: "2025-09-15",
         location: "Test Drive - Đà Nẵng",
@@ -200,7 +206,7 @@ async function seedVehiclesWithoutOwner() {
       // === VF 8 (Cao cấp hơn) - 5 xe ===
       {
         model: "VF 8",
-        vin: "VF8XSSTK2025000001",
+        vin: "VF8XSSTK202500001",
         plate: null,
         mfgDate: "2025-10-05",
         location: "Showroom Hà Nội Premium",
@@ -208,7 +214,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF 8",
-        vin: "VF8XSSTK2025000002",
+        vin: "VF8XSSTK202500002",
         plate: null,
         mfgDate: "2025-10-08",
         location: "Showroom TP.HCM Premium",
@@ -216,7 +222,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF 8",
-        vin: "VF8XSSTK2025000003",
+        vin: "VF8XSSTK202500003",
         plate: null,
         mfgDate: "2025-10-14",
         location: "Kho Hải Phòng",
@@ -224,7 +230,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF 8",
-        vin: "VF8XSSTK2025000004",
+        vin: "VF8XSSTK202500004",
         plate: null,
         mfgDate: "2025-10-17",
         location: "Showroom Hà Nội Premium",
@@ -232,7 +238,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF 8",
-        vin: "VF8XSSTK2025000005",
+        vin: "VF8XSSTK202500005",
         plate: "TEST-003",
         mfgDate: "2025-08-20",
         location: "Test Drive - TP.HCM",
@@ -242,7 +248,7 @@ async function seedVehiclesWithoutOwner() {
       // === VF 9 (Cao cấp nhất, ít hơn) - 3 xe ===
       {
         model: "VF 9",
-        vin: "VF9XXSTK2025000001",
+        vin: "VF9XXSTK202500001",
         plate: null,
         mfgDate: "2025-10-01",
         location: "Showroom Hà Nội Flagship",
@@ -250,7 +256,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF 9",
-        vin: "VF9XXSTK2025000002",
+        vin: "VF9XXSTK202500002",
         plate: null,
         mfgDate: "2025-10-11",
         location: "Showroom TP.HCM Flagship",
@@ -258,7 +264,7 @@ async function seedVehiclesWithoutOwner() {
       },
       {
         model: "VF 9",
-        vin: "VF9XXSTK2025000003",
+        vin: "VF9XXSTK202500003",
         plate: "TEST-004",
         mfgDate: "2025-08-10",
         location: "Test Drive - Hà Nội",
@@ -282,7 +288,7 @@ async function seedVehiclesWithoutOwner() {
 
     for (const vehData of vehiclesWithoutOwnerData) {
       const model = modelsMap[vehData.model];
-      
+
       if (!model) {
         console.warn(`⚠️  Không tìm thấy model ${vehData.model}, bỏ qua...`);
         continue;
@@ -319,8 +325,10 @@ async function seedVehiclesWithoutOwner() {
         const quantity = wc.quantity || 1;
 
         for (let i = 1; i <= quantity; i++) {
-          const serial = `${typeComp.sku}-STOCK-${vehData.vin}-${String(i).padStart(2, "0")}`;
-          
+          const serial = `${typeComp.sku}-STOCK-${vehData.vin}-${String(
+            i
+          ).padStart(2, "0")}`;
+
           await sequelize.models.Component.findOrCreate({
             where: { serialNumber: serial },
             defaults: {
@@ -339,7 +347,9 @@ async function seedVehiclesWithoutOwner() {
       }
 
       console.log(
-        `  ✅ ${vehData.model} - VIN: ${vehData.vin.slice(-6)} | ${vehicleCompCount} components | ${vehData.location}`
+        `  ✅ ${vehData.model} - VIN: ${vehData.vin.slice(
+          -6
+        )} | ${vehicleCompCount} components | ${vehData.location}`
       );
     }
 
@@ -353,7 +363,7 @@ async function seedVehiclesWithoutOwner() {
 
     // Đếm số lượng components IN_WAREHOUSE cho mỗi warehouse + typeComponent
     const stockCounts = {};
-    
+
     const allComponentsInWarehouse = await sequelize.models.Component.findAll({
       where: { status: "IN_WAREHOUSE" },
       attributes: ["warehouseId", "typeComponentId"],
@@ -395,7 +405,9 @@ async function seedVehiclesWithoutOwner() {
 
     console.log(`   ✓ Đã tạo ${stockCreated} Stock entries mới`);
     console.log(`   ✓ Đã cập nhật ${stockUpdated} Stock entries`);
-    console.log(`   ✓ Tổng: ${Object.keys(stockCounts).length} Stock entries được đồng bộ`);
+    console.log(
+      `   ✓ Tổng: ${Object.keys(stockCounts).length} Stock entries được đồng bộ`
+    );
 
     // ========================================
     // 6. TÓM TẮT
@@ -407,7 +419,9 @@ async function seedVehiclesWithoutOwner() {
     console.log(`   🚗 Tổng số xe tạo mới: ${createdVehicles.length}`);
     console.log(`   ⚙️  Tổng components lắp đặt: ${totalInstalledComponents}`);
     console.log(
-      `   📍 Trung bình: ${Math.round(totalInstalledComponents / createdVehicles.length)} components/xe`
+      `   📍 Trung bình: ${Math.round(
+        totalInstalledComponents / createdVehicles.length
+      )} components/xe`
     );
 
     console.log("\n📋 PHÂN LOẠI:");
@@ -427,9 +441,13 @@ async function seedVehiclesWithoutOwner() {
     console.log("   ✓ purchaseDate = NULL (chưa bán)");
     console.log("   ✓ dateOfManufacture = có giá trị (đã sản xuất)");
     console.log("   ✓ Components: status = 'INSTALLED'");
-    console.log("   ✓ Components lắp đặt 100% theo WarrantyComponent của model");
+    console.log(
+      "   ✓ Components lắp đặt 100% theo WarrantyComponent của model"
+    );
     console.log("   ✓ Xe phân bố ở showroom, kho, và test drive");
-    console.log("   ✓ Stock.quantityInStock = SỐ THỰC TẾ components IN_WAREHOUSE");
+    console.log(
+      "   ✓ Stock.quantityInStock = SỐ THỰC TẾ components IN_WAREHOUSE"
+    );
 
     console.log("\n🎯 SỬ DỤNG:");
     console.log("   → Xe trong showroom để khách hàng xem");
@@ -457,7 +475,9 @@ if (require.main === module) {
   seedVehiclesWithoutOwner()
     .then((result) => {
       console.log("✨ Seeding xe không có chủ hoàn tất!");
-      console.log(`✅ Đã tạo ${result.vehiclesCreated} xe với ${result.componentsInstalled} components`);
+      console.log(
+        `✅ Đã tạo ${result.vehiclesCreated} xe với ${result.componentsInstalled} components`
+      );
       process.exit(0);
     })
     .catch((error) => {
