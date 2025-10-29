@@ -6,13 +6,15 @@ class ComponentReservationsController {
 
   pickupReservedComponent = async (req, res, next) => {
     const { reservationId } = req.params;
-    const { serviceCenterId, userId } = req.user;
+    const { serviceCenterId } = req.user;
+
+    const { pickedUpByTechId } = req.body;
 
     const updatedReservation =
       await this.#componentReservationsService.pickupReservedComponent({
         reservationId,
         serviceCenterId,
-        pickedUpByTechId: userId,
+        pickedUpByTechId: pickedUpByTechId,
       });
 
     res.status(200).json({
@@ -44,7 +46,6 @@ class ComponentReservationsController {
 
   returnReservedComponent = async (req, res, next) => {
     const { reservationId } = req.params;
-    const { serviceCenterId, userId } = req.user;
     const { serialNumber } = req.body;
 
     const result =
