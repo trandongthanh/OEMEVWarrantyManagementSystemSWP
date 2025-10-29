@@ -29,6 +29,19 @@ const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'attach_parts',
     'view_claim_details'
   ],
+  // Backend has a role named `parts_coordinator_service_center` (seeders). Map it to same permissions as service_center_staff
+  parts_coordinator_service_center: [
+    'create_claim',
+    'register_vehicle',
+    'add_customer',
+    'validate_warranty',
+    'assign_technicians',
+    'submit_to_manufacturer',
+    'manage_campaigns',
+    'view_all_claims',
+    'attach_parts',
+    'view_claim_details'
+  ],
   service_center_manager: [
     'create_claim',
     'register_vehicle',

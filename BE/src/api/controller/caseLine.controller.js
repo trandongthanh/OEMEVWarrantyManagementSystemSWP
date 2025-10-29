@@ -218,6 +218,34 @@ class CaseLineController {
     });
   };
 
+  // Delete a caseline by id
+  deleteCaseline = async (req, res, next) => {
+    const { caselineId } = req.params;
+    const { userId, roleName, serviceCenterId } = req.user;
+    const { companyId } = req;
+
+    const result = await this.#caseLineService.deleteCaseline({
+      caselineId,
+      userId,
+      roleName,
+      serviceCenterId,
+      companyId,
+    });
+
+    if (!result) {
+      return res.status(404).json({
+        status: "error",
+        message: "Case line not found or cannot be deleted",
+      });
+    }
+
+    res.status(200).json({
+      status: "success",
+      message: "Case line deleted successfully",
+      data: result,
+    });
+  };
+
   markRepairCompleted = async (req, res, next) => {
     const { caselineId } = req.params;
 
@@ -242,6 +270,24 @@ class CaseLineController {
       message: "Repair marked as completed successfully",
       data: result,
     });
+  };
+
+  deleteCaseLine = async (req, res, next) => {
+    const { caselineId } = req.params;
+    const { userId, roleName, serviceCenterId } = req.user;
+
+    const result = await this.#caseLineService.deleteCaseLine({
+      caselineId,
+      userId,
+      roleName,
+      serviceCenterId,
+    });
+
+    if (!result) {
+      return res.status(500).json({ status: "error", message: "Failed to delete case line" });
+    }
+
+    res.status(200).json({ status: "success", message: "Case line deleted" });
   };
 }
 
