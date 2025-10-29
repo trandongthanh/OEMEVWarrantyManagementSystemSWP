@@ -8,6 +8,7 @@ const {
   Vehicle,
   GuaranteeCase,
   CaseLine,
+  VehicleCompany,
   TypeComponent,
 } = db;
 
@@ -116,7 +117,6 @@ class VehicleProcessingRecordRepository {
     lock = null
   ) => {
     let whereCondition = {};
-    const isTech = roleName === "service_center_technician";
 
     if (roleName === "service_center_technician") {
       whereCondition = {
@@ -160,6 +160,15 @@ class VehicleProcessingRecordRepository {
               model: VehicleModel,
               as: "model",
               attributes: [["vehicle_model_name", "name"], "vehicleModelId"],
+
+              include: [
+                {
+                  model: VehicleCompany,
+                  as: "company",
+                  attributes: ["vehicleCompanyId", "name"],
+                  required: true,
+                },
+              ],
             },
           ],
         },
