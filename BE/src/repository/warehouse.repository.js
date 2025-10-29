@@ -332,6 +332,18 @@ class WareHouseRepository {
 
     return stock ? stock.toJSON() : null;
   };
+
+  findById = async ({ warehouseId }, transaction = null, lock = null) => {
+    const warehouse = await Warehouse.findOne({
+      where: {
+        warehouseId: warehouseId,
+      },
+      transaction: transaction,
+      lock: lock,
+    });
+
+    return warehouse ? warehouse.toJSON() : null;
+  };
 }
 
 export default WareHouseRepository;
