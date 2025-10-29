@@ -13,6 +13,9 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCircle, Save, Clock, FileText } from 'lucide-react';
 
+// API Base URL
+const API_BASE_URL = 'http://localhost:3000/api/v1';
+
 // API service function for creating processing record
 const createProcessingRecord = async (recordData: {
   vin: string;
@@ -21,7 +24,7 @@ const createProcessingRecord = async (recordData: {
 }) => {
   const token = localStorage.getItem("ev_warranty_token");
   
-  const response = await fetch('http://localhost:3000/api/v1/processing-records', {
+  const response = await fetch(`${API_BASE_URL}/processing-records`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -44,7 +47,7 @@ const createProcessingRecord = async (recordData: {
 const fetchProcessingRecords = async () => {
   const token = localStorage.getItem("ev_warranty_token");
   
-  const response = await fetch('http://localhost:3000/api/v1/processing-records', {
+  const response = await fetch(`${API_BASE_URL}/processing-records`, {
     method: 'GET',
     headers: {
       'Accept': 'application/json',
@@ -359,7 +362,7 @@ const SuperAdvisor = () => {
       return;
     }
 
-    const url = `http://localhost:3000/api/v1/vehicles/${vin}/warranty?odometer=${odometer}`;
+    const url = `${API_BASE_URL}/vehicles/${vin}/warranty?odometer=${odometer}`;
     
     const response = await fetch(url, {
       method: "GET",
@@ -456,7 +459,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      const apiUrl = `http://localhost:3000/api/v1/vehicles/${vin}`;
+      const apiUrl = `${API_BASE_URL}/vehicles/${vin}`;
 
       // Search vehicle by VIN
       const response = await axios.get(apiUrl, {
@@ -570,7 +573,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      const response = await axios.get(`http://localhost:3000/api/v1/customers?phone=${customerSearchPhone.trim()}`, {
+      const response = await axios.get(`${API_BASE_URL}/customers?phone=${customerSearchPhone.trim()}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -769,7 +772,7 @@ const SuperAdvisor = () => {
       }
 
       const response = await axios.patch(
-        `http://localhost:3000/api/v1/customers/${foundCustomer.id}`,
+        `${API_BASE_URL}/customers/${foundCustomer.id}`,
         updateData,
         {
           headers: {
@@ -823,7 +826,7 @@ const SuperAdvisor = () => {
       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
       
       const response = await axios.post(
-        `http://localhost:3000/api/v1/vehicles/${vehicle.vin}/warranty/preview`,
+        `${API_BASE_URL}/vehicles/${vehicle.vin}/warranty/preview`,
         {
           odometer: parseInt(vehicleOdometer),
           purchaseDate: vehicle.purchaseDate
@@ -1114,7 +1117,7 @@ const SuperAdvisor = () => {
         const customerId = vehicleSearchResult.owner.id;
         
         // Update customer information with 4 fields + customer ID
-        await axios.patch(`http://localhost:3000/api/v1/customers/${customerId}`, {
+        await axios.patch(`${API_BASE_URL}/customers/${customerId}`, {
           fullName: ownerForm.fullName.trim(),
           email: ownerForm.email.trim(),
           phone: ownerForm.phone.trim(),
@@ -1127,7 +1130,7 @@ const SuperAdvisor = () => {
         });
 
         // Also update vehicle's license plate via vehicle endpoint
-        await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, {
+        await axios.patch(`${API_BASE_URL}/vehicle/${vehicleSearchResult.vin}/update-owner`, {
           ownerId: customerId,
           licensePlate: vehicleSearchResult.licensePlate.trim(),
           purchaseDate: vehicleSearchResult.purchaseDate,
@@ -1168,7 +1171,7 @@ const SuperAdvisor = () => {
           customerId: foundCustomer.id
         };
 
-        const response = await axios.patch(`http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}`, requestBody, {
+        const response = await axios.patch(`${API_BASE_URL}/vehicles/${vehicleSearchResult.vin}`, requestBody, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
