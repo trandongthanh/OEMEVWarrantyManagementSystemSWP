@@ -1147,9 +1147,9 @@ const ServiceCenterDashboard = () => {
                                                   </Badge>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
-                                                  {/* Show Allocate button if CUSTOMER_APPROVED and NOT out of stock */}
-                                                  {/* Only show if status is still CUSTOMER_APPROVED (not yet allocated) */}
-                                                  {line.status === 'CUSTOMER_APPROVED' && hasPermission(user, 'attach_parts') && !outOfStockCaseLines.has(line.id) && (
+                                                  {/* Show Allocate button only when record is PROCESSING and case line is CUSTOMER_APPROVED */}
+                                                  {/* Components can only be allocated when all case lines are approved/rejected and record moves to PROCESSING */}
+                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && hasPermission(user, 'attach_parts') && !outOfStockCaseLines.has(line.id) && (
                                                     <Button
                                                       size="sm"
                                                       variant="default"
@@ -1160,8 +1160,8 @@ const ServiceCenterDashboard = () => {
                                                       Allocate
                                                     </Button>
                                                   )}
-                                                  {/* Show Request button if CUSTOMER_APPROVED but out of stock */}
-                                                  {line.status === 'CUSTOMER_APPROVED' && outOfStockCaseLines.has(line.id) && hasPermission(user, 'attach_parts') && (
+                                                  {/* Show Request button if record is PROCESSING, case line is CUSTOMER_APPROVED but out of stock */}
+                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && outOfStockCaseLines.has(line.id) && hasPermission(user, 'attach_parts') && (
                                                     <Button
                                                       size="sm"
                                                       variant="outline"
