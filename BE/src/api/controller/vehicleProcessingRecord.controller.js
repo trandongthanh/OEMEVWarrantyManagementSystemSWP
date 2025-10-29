@@ -107,6 +107,20 @@ class VehicleProcessingRecordController {
     const vin = record?.vehicle?.vin;
     const odometer = record?.odometer;
 
+    if (!modelId || !vin) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Record must have vehicle with model information",
+      });
+    }
+
+    if (odometer === null || odometer === undefined) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Record must have odometer reading",
+      });
+    }
+
     const components =
       await this.#warehouseService.searchCompatibleComponentsInStock({
         serviceCenterId: serviceCenterId,
