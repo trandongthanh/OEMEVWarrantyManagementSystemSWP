@@ -508,7 +508,8 @@ class CaseLineService {
     userId,
   }) => {
     const rawResult = await db.sequelize.transaction(async (transaction) => {
-      const caseline = await this.#caselineRepository.findById(
+      // Use a lightweight lookup that doesn't require deep associations which may be missing
+      const caseline = await this.#caselineRepository.findSimpleById(
         caselineId,
         transaction,
         Transaction.LOCK.UPDATE
@@ -876,6 +877,62 @@ class CaseLineService {
     return rawResult;
   };
 
+  /**
+   * Delete a caseline. Technicians can delete their own DRAFT caselines.
+   * Service center staff/manager can delete a caseline if no reservations/assignments exist.
+   */
+  deleteCaseLine = async ({ caselineId, userId, roleName, serviceCenterId }) => {
+    const rawResult = await db.sequelize.transaction(async (transaction) => {
+      const caseline = await this.#caselineRepository.findById(
+        caselineId,
+        transaction,
+        Transaction.LOCK.UPDATE
+      );
+
+      if (!caseline) {
+        throw new NotFoundError("Caseline not found");
+      }
+
+      // If user is a technician, ensure they are the diagnostic tech who created it
+      // NOTE: technicians are allowed to delete caselines in any status per request
+      if (roleName === "service_center_technician") {
+        if (caseline.diagnosticTechnician.userId !== userId) {
+          throw new ForbiddenError("You are not allowed to delete this caseline");
+        }
+      }
+
+      // Ensure there are no component reservations or task assignments that block deletion
+      const reservations = await this.#componentReservationRepository.findByCaselineId(
+        caselineId,
+        transaction
+      );
+
+      // repository returns a single reservation or null
+      if (reservations) {
+        throw new ConflictError("Cannot delete caseline with component reservations");
+      }
+
+      const assignment = await this.#taskAssignmentRepository.findByCaselineId(
+        caselineId,
+        transaction
+      );
+
+      if (assignment) {
+        throw new ConflictError("Cannot delete caseline with task assignment");
+      }
+
+      const deleted = await this.#caselineRepository.deleteById(caselineId, transaction);
+
+      if (!deleted) {
+        throw new ConflictError("Failed to delete caseline");
+      }
+
+      return true;
+    });
+
+    return rawResult;
+  };
+
   #formatConfirmedCaseline = (caselines) => {
     return caselines.map((cl) => ({
       caselineId: cl.id,
@@ -1094,44 +1151,6 @@ class CaseLineService {
     );
 
     return componentIds;
-  };
-
-  deleteCaseline = async ({ caselineId, userId, roleName, serviceCenterId, companyId }) => {
-    return await db.sequelize.transaction(async (transaction) => {
-      const caseline = await this.#caselineRepository.findById(
-        caselineId,
-        transaction,
-        Transaction.LOCK.UPDATE
-      );
-
-      if (!caseline) {
-        throw new NotFoundError("Caseline not found");
-      }
-
-      const isDiagnosticTech = caseline.diagnosticTechnician?.userId === userId;
-      const isRepairTech = caseline.repairTechnician?.userId === userId;
-      const isLeadTechnician = caseline.guaranteeCase && (caseline.guaranteeCase.leadTechId === userId);
-
-      
-      if (roleName === "service_center_technician") {
-        if (!isDiagnosticTech && !isRepairTech && !isLeadTechnician) {
-          throw new ForbiddenError(
-            "User does not have permission to delete this caseline"
-          );
-        }
-      }
-
-      const deleted = await this.#caselineRepository.deleteCaseline(
-        caselineId,
-        transaction
-      );
-
-      if (!deleted) {
-        throw new ConflictError("Failed to delete caseline");
-      }
-
-      return { deleted: true };
-    });
   };
 }
 

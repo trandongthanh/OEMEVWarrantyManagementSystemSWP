@@ -271,6 +271,24 @@ class CaseLineController {
       data: result,
     });
   };
+
+  deleteCaseLine = async (req, res, next) => {
+    const { caselineId } = req.params;
+    const { userId, roleName, serviceCenterId } = req.user;
+
+    const result = await this.#caseLineService.deleteCaseLine({
+      caselineId,
+      userId,
+      roleName,
+      serviceCenterId,
+    });
+
+    if (!result) {
+      return res.status(500).json({ status: "error", message: "Failed to delete case line" });
+    }
+
+    res.status(200).json({ status: "success", message: "Case line deleted" });
+  };
 }
 
 export default CaseLineController;

@@ -1,7 +1,9 @@
 class VehicleController {
   #vehicleService;
-  constructor({ vehicleService }) {
+  #vehicleProcessingRecordService;
+  constructor({ vehicleService, vehicleProcessingRecordService }) {
     this.#vehicleService = vehicleService;
+    this.#vehicleProcessingRecordService = vehicleProcessingRecordService;
   }
 
   getVehicle = async (req, res, next) => {
@@ -115,6 +117,65 @@ class VehicleController {
         vehicle: vehicle,
       },
     });
+  };
+
+  getVehicleComponents = async (req, res, next) => {
+    try {
+      const { vin } = req.params;
+      const { status = "INSTALLED" } = req.query;
+      const { companyId } = req;
+
+      const componentsData = await this.#vehicleService.getVehicleComponents({
+        vin,
+        companyId,
+        status: status,
+      });
+
+      if (!componentsData) {
+        return res.status(404).json({
+          status: "error",
+          message: `Vehicle not found`,
+        });
+      }
+
+      return res.status(200).json({
+        status: "success",
+        data: componentsData,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getServiceHistory = async (req, res, next) => {
+    try {
+      const { vin } = req.params;
+      const { page = 1, limit = 10, status } = req.query;
+      const { companyId } = req;
+
+      const serviceHistory =
+        await this.#vehicleProcessingRecordService.getServiceHistory({
+          vin,
+          companyId,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          statusFilter: status,
+        });
+
+      if (!serviceHistory) {
+        return res.status(404).json({
+          status: "error",
+          message: `Vehicle not found`,
+        });
+      }
+
+      return res.status(200).json({
+        status: "success",
+        data: serviceHistory,
+      });
+    } catch (error) {
+      next(error);
+    }
   };
 }
 
