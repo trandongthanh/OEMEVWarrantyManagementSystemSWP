@@ -70,6 +70,31 @@ class CaseLineRepository {
     return caseLine ? caseLine.toJSON() : null;
   };
 
+  /**
+   * Lightweight find by id for operations like delete where deep associations are not required
+   */
+  findSimpleById = async (caseLineId, transaction = null, lock = null) => {
+    const caseLine = await CaseLine.findOne({
+      include: [
+        {
+          model: User,
+          as: "diagnosticTechnician",
+          attributes: ["userId"],
+        },
+        {
+          model: User,
+          as: "repairTechnician",
+          attributes: ["userId"],
+        },
+      ],
+      where: { id: caseLineId },
+      transaction: transaction,
+      lock: lock,
+    });
+
+    return caseLine ? caseLine.toJSON() : null;
+  };
+
   bulkUpdateStatusByIds = async (
     { caseLineIds, status },
     transaction = null,
@@ -286,6 +311,7 @@ class CaseLineRepository {
     const where = {};
     const guaranteeCaseWhere = {};
     const vehicleProcessingRecordWhere = {};
+    const serviceCenterWhere = {};
 
     if (status) where.status = status;
     if (warrantyStatus) where.warrantyStatus = warrantyStatus;
@@ -297,7 +323,7 @@ class CaseLineRepository {
         vehicleProcessingRecordId;
     }
     if (serviceCenterId) {
-      vehicleProcessingRecordWhere.serviceCenterId = serviceCenterId;
+      serviceCenterWhere.serviceCenterId = serviceCenterId;
     }
 
     const { count, rows } = await CaseLine.findAndCountAll({
@@ -316,16 +342,25 @@ class CaseLineRepository {
             {
               model: VehicleProcessingRecord,
               as: "vehicleProcessingRecord",
-              attributes: [
-                "vehicleProcessingRecordId",
-                "vin",
-                "serviceCenterId",
-              ],
+              attributes: ["vehicleProcessingRecordId", "vin"],
               where:
                 Object.keys(vehicleProcessingRecordWhere).length > 0
                   ? vehicleProcessingRecordWhere
                   : undefined,
               required: true,
+
+              include: [
+                {
+                  model: User,
+                  as: "createdByStaff",
+                  attributes: ["userId", "serviceCenterId"],
+                  where:
+                    Object.keys(serviceCenterWhere).length > 0
+                      ? serviceCenterWhere
+                      : undefined,
+                  required: true,
+                },
+              ],
             },
           ],
         },
@@ -387,6 +422,19 @@ class CaseLineRepository {
     });
 
     return caseLines.map((cl) => cl.toJSON());
+  };
+
+  /**
+   * Delete case line by id
+   * Returns number of rows deleted (0/1)
+   */
+  deleteById = async (caselineId, transaction = null) => {
+    const deleted = await CaseLine.destroy({
+      where: { id: caselineId },
+      transaction: transaction,
+    });
+
+    return deleted; // number of rows deleted
   };
 }
 

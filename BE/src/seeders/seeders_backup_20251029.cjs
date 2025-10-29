@@ -231,17 +231,6 @@ async function seedDatabase() {
     });
     typeComponents.battVF9 = battVF9;
 
-    const [battVF5Plus] = await sequelize.models.TypeComponent.findOrCreate({
-      where: { sku: "BAT-HV-60KWH-VF5PLUS" },
-      defaults: {
-        name: "Pin Cao Áp 60kWh (VF 5 Plus)",
-        price: 320000000,
-        sku: "BAT-HV-60KWH-VF5PLUS",
-        category: "HIGH_VOLTAGE_BATTERY",
-      },
-    });
-    typeComponents.battVF5Plus = battVF5Plus;
-
     const [bms] = await sequelize.models.TypeComponent.findOrCreate({
       where: { sku: "BMS-CTRL-GEN3" },
       defaults: {
@@ -504,7 +493,7 @@ async function seedDatabase() {
     });
     typeComponents.camera360 = camera360;
 
-    console.log("✅ TypeComponent: 23 components covering đủ 10 categories (thêm battVF5Plus)");
+    console.log("✅ TypeComponent: 22 components covering đủ 10 categories");
 
     // ========================================
     // 7. TẠO TYPECOMPONENTBYCOMPANY - LIÊN KẾT NHÀ CUNG CẤP
@@ -516,7 +505,6 @@ async function seedDatabase() {
       typeComponents.battVFe34,
       typeComponents.battVF8,
       typeComponents.battVF9,
-      typeComponents.battVF5Plus,
       typeComponents.bms,
     ]) {
       await sequelize.models.TypeComponentByCompany.findOrCreate({
@@ -868,11 +856,11 @@ async function seedDatabase() {
       ],
       vf5Plus: [
         {
-          comp: typeComponents.battVF5Plus,
+          comp: typeComponents.battVFe34,
           qty: 1,
           duration: 84,
           mileage: 160000,
-        },
+        }, // Dùng chung pin với e34
         { comp: typeComponents.bms, qty: 1, duration: 84, mileage: 160000 },
         {
           comp: typeComponents.motor110,
@@ -1400,134 +1388,72 @@ async function seedDatabase() {
 
     // Định nghĩa số lượng component trong từng kho
     const stockConfig = [
-      // Kho Trung Tâm - MỌI TypeComponent đều có, số lượng LỚN NHẤT
+      // Kho Trung Tâm - Số lượng lớn, đủ mọi loại
       {
         wh: warehouses.central,
         comps: [
-          // === BATTERIES - TẤT CẢ ===
           { type: typeComponents.battVFe34, qty: 30 },
           { type: typeComponents.battVF8, qty: 20 },
           { type: typeComponents.battVF9, qty: 15 },
-          { type: typeComponents.battVF5Plus, qty: 25 }, // ⭐ THÊM MỚI
           { type: typeComponents.bms, qty: 80 },
-          
-          // === MOTORS ===
           { type: typeComponents.motor110, qty: 40 },
           { type: typeComponents.motor150, qty: 25 },
           { type: typeComponents.motor300, qty: 15 },
-          
-          // === CHARGING ===
           { type: typeComponents.inverter, qty: 60 },
           { type: typeComponents.onboardCharger, qty: 50 },
           { type: typeComponents.chargingPort, qty: 50 },
-          
-          // === THERMAL ===
           { type: typeComponents.coolingSystem, qty: 40 },
           { type: typeComponents.heatPump, qty: 30 },
-          
-          // === LOW VOLTAGE ===
           { type: typeComponents.battery12v, qty: 100 },
           { type: typeComponents.dcConverter, qty: 50 },
-          
-          // === BRAKING ===
           { type: typeComponents.brakingSystem, qty: 40 },
           { type: typeComponents.brakePads, qty: 80 },
-          
-          // === STEERING ===
           { type: typeComponents.suspension, qty: 25 },
           { type: typeComponents.steering, qty: 40 },
-          
-          // === HVAC ===
           { type: typeComponents.hvacSystem, qty: 40 },
-          { type: typeComponents.airFilter, qty: 100 }, // ⭐ TĂNG - tiêu hao cao
-          
-          // === DISPLAY ===
           { type: typeComponents.display10, qty: 35 },
           { type: typeComponents.display15, qty: 30 },
-          
-          // === ADAS ===
           { type: typeComponents.adasSystem, qty: 25 },
           { type: typeComponents.camera360, qty: 40 },
-          
-          // === BODY - THÊM MỚI ⭐ ===
-          { type: typeComponents.bodyPanel, qty: 30 },
-          { type: typeComponents.windshield, qty: 40 },
         ],
       },
-      // Kho Chính HN - Components PHỔ BIẾN, số lượng TRUNG BÌNH
+      // Kho Chính HN - Số lượng trung bình
       {
         wh: warehouses.hn1,
         comps: [
-          // Batteries phổ biến ở HN (VF e34, VF 8 chủ lực)
-          { type: typeComponents.battVFe34, qty: 20 }, // ⭐ TĂNG từ 15
-          { type: typeComponents.battVF8, qty: 12 }, // ⭐ TĂNG từ 10
-          { type: typeComponents.battVF5Plus, qty: 8 }, // ⭐ THÊM MỚI
-          { type: typeComponents.bms, qty: 35 }, // ⭐ TĂNG từ 30
-          
-          // Motors phổ biến
-          { type: typeComponents.motor110, qty: 15 }, // ⭐ TĂNG từ 12
-          { type: typeComponents.motor150, qty: 10 }, // ⭐ THÊM MỚI
-          
-          // Essential components
+          { type: typeComponents.battVFe34, qty: 15 },
+          { type: typeComponents.battVF8, qty: 10 },
+          { type: typeComponents.bms, qty: 30 },
+          { type: typeComponents.motor110, qty: 12 },
           { type: typeComponents.inverter, qty: 20 },
-          { type: typeComponents.onboardCharger, qty: 15 },
-          { type: typeComponents.chargingPort, qty: 15 }, // ⭐ THÊM MỚI
-          { type: typeComponents.battery12v, qty: 50 }, // ⭐ TĂNG từ 40
-          { type: typeComponents.brakePads, qty: 40 }, // ⭐ TĂNG từ 30
-          { type: typeComponents.brakingSystem, qty: 10 }, // ⭐ THÊM MỚI
-          { type: typeComponents.steering, qty: 10 }, // ⭐ THÊM MỚI
-          
-          // Display
+          { type: typeComponents.battery12v, qty: 40 },
+          { type: typeComponents.brakePads, qty: 30 },
           { type: typeComponents.display10, qty: 15 },
           { type: typeComponents.display15, qty: 12 },
-          
-          // Consumables
-          { type: typeComponents.airFilter, qty: 35 }, // ⭐ THÊM MỚI
-          { type: typeComponents.windshield, qty: 12 }, // ⭐ THÊM MỚI (HN nhiều tai nạn)
         ],
       },
-      // Kho Phụ HN - Chỉ components TIÊU HAO NHANH & BACKUP
+      // Kho Phụ HN - Số lượng nhỏ, chủ yếu phụ tùng thay thế thường xuyên
       {
         wh: warehouses.hn2,
         comps: [
-          { type: typeComponents.bms, qty: 20 }, // ⭐ TĂNG từ 15 - backup quan trọng
-          { type: typeComponents.battery12v, qty: 40 }, // ⭐ TĂNG từ 30
-          { type: typeComponents.brakePads, qty: 50 }, // ⭐ TĂNG từ 40
-          { type: typeComponents.airFilter, qty: 60 }, // ⭐ TĂNG từ 50
-          { type: typeComponents.dcConverter, qty: 10 }, // ⭐ THÊM MỚI
+          { type: typeComponents.bms, qty: 15 },
+          { type: typeComponents.battery12v, qty: 30 },
+          { type: typeComponents.brakePads, qty: 40 },
+          { type: typeComponents.airFilter, qty: 50 },
         ],
       },
-      // Kho Chính HCM - VF 5 Plus phổ biến hơn ở HCM
+      // Kho Chính HCM - Số lượng trung bình
       {
         wh: warehouses.hcm1,
         comps: [
-          // Batteries (VF 5 Plus ưu tiên cao ở HCM)
-          { type: typeComponents.battVFe34, qty: 15 }, // ⭐ TĂNG từ 12
-          { type: typeComponents.battVF5Plus, qty: 20 }, // ⭐ THÊM MỚI - phổ biến nhất HCM
-          { type: typeComponents.battVF8, qty: 10 }, // ⭐ TĂNG từ 8
-          { type: typeComponents.bms, qty: 30 }, // ⭐ TĂNG từ 25
-          
-          // Motors
-          { type: typeComponents.motor110, qty: 18 }, // ⭐ TĂNG từ 10 - VF 5 Plus dùng
-          { type: typeComponents.motor150, qty: 8 }, // ⭐ THÊM MỚI
-          
-          // Essential
+          { type: typeComponents.battVFe34, qty: 12 },
+          { type: typeComponents.battVF8, qty: 8 },
+          { type: typeComponents.bms, qty: 25 },
+          { type: typeComponents.motor110, qty: 10 },
           { type: typeComponents.inverter, qty: 15 },
-          { type: typeComponents.onboardCharger, qty: 12 },
-          { type: typeComponents.chargingPort, qty: 12 }, // ⭐ THÊM MỚI
-          { type: typeComponents.battery12v, qty: 45 }, // ⭐ TĂNG từ 35
-          { type: typeComponents.brakePads, qty: 35 }, // ⭐ TĂNG từ 25
-          { type: typeComponents.brakingSystem, qty: 8 }, // ⭐ THÊM MỚI
-          { type: typeComponents.steering, qty: 8 }, // ⭐ THÊM MỚI
-          
-          // Display (nhiều VF 5 Plus & VF e34 dùng màn 10 inch)
-          { type: typeComponents.display10, qty: 18 }, // ⭐ TĂNG từ 12
-          { type: typeComponents.display15, qty: 10 },
-          
-          // Consumables & Body
-          { type: typeComponents.airFilter, qty: 30 }, // ⭐ THÊM MỚI
-          { type: typeComponents.windshield, qty: 15 }, // ⭐ THÊM MỚI (HCM giao thông đông)
-          { type: typeComponents.bodyPanel, qty: 10 }, // ⭐ THÊM MỚI
+          { type: typeComponents.battery12v, qty: 35 },
+          { type: typeComponents.brakePads, qty: 25 },
+          { type: typeComponents.display10, qty: 12 },
         ],
       },
     ];
@@ -1619,158 +1545,6 @@ async function seedDatabase() {
     );
 
     // ========================================
-    // 16. TẠO VEHICLES WITHOUT OWNER (Xe showroom/test drive/stock)
-    // ========================================
-    console.log("\n🚗 Tạo xe KHÔNG CÓ CHỦ (showroom/demo/stock)...");
-
-    const vehiclesWithoutOwnerData = [
-      // === VF e34 (Phổ biến, giá rẻ) - 8 xe ===
-      { model: "VF e34", vin: "VFE34STK2025000001", plate: null, mfgDate: "2025-10-15", color: "Trắng Ngọc Trai" },
-      { model: "VF e34", vin: "VFE34STK2025000002", plate: null, mfgDate: "2025-10-18", color: "Đỏ Ruby" },
-      { model: "VF e34", vin: "VFE34STK2025000003", plate: null, mfgDate: "2025-10-20", color: "Xanh Dương" },
-      { model: "VF e34", vin: "VFE34STK2025000004", plate: null, mfgDate: "2025-10-22", color: "Đen" },
-      { model: "VF e34", vin: "VFE34STK2025000005", plate: null, mfgDate: "2025-10-24", color: "Bạc" },
-      { model: "VF e34", vin: "VFE34STK2025000006", plate: null, mfgDate: "2025-10-25", color: "Trắng Ngọc Trai" },
-      { model: "VF e34", vin: "VFE34STK2025000007", plate: "TEST-001", mfgDate: "2025-08-10", color: "Đỏ Ruby" },
-      { model: "VF e34", vin: "VFE34STK2025000008", plate: "TEST-002", mfgDate: "2025-09-05", color: "Xanh Navy" },
-
-      // === VF 5 Plus (Phân khúc A, phổ biến) - 6 xe ===
-      { model: "VF 5 Plus", vin: "VF5PLSTK2025000001", plate: null, mfgDate: "2025-10-12", color: "Đỏ Cherry" },
-      { model: "VF 5 Plus", vin: "VF5PLSTK2025000002", plate: null, mfgDate: "2025-10-16", color: "Trắng" },
-      { model: "VF 5 Plus", vin: "VF5PLSTK2025000003", plate: null, mfgDate: "2025-10-19", color: "Xanh Mint" },
-      { model: "VF 5 Plus", vin: "VF5PLSTK2025000004", plate: null, mfgDate: "2025-10-21", color: "Cam Sunset" },
-      { model: "VF 5 Plus", vin: "VF5PLSTK2025000005", plate: null, mfgDate: "2025-10-23", color: "Vàng" },
-      { model: "VF 5 Plus", vin: "VF5PLSTK2025000006", plate: "DEMO-001", mfgDate: "2025-09-15", color: "Đỏ Cherry" },
-
-      // === VF 8 (Cao cấp hơn) - 5 xe ===
-      { model: "VF 8", vin: "VF8XSSTK2025000001", plate: null, mfgDate: "2025-10-05", color: "Đen Huyền Bí" },
-      { model: "VF 8", vin: "VF8XSSTK2025000002", plate: null, mfgDate: "2025-10-08", color: "Trắng Ngọc Trai" },
-      { model: "VF 8", vin: "VF8XSSTK2025000003", plate: null, mfgDate: "2025-10-14", color: "Xanh Navy" },
-      { model: "VF 8", vin: "VF8XSSTK2025000004", plate: null, mfgDate: "2025-10-17", color: "Bạc Titan" },
-      { model: "VF 8", vin: "VF8XSSTK2025000005", plate: "TEST-003", mfgDate: "2025-08-20", color: "Đỏ Rượu Vang" },
-
-      // === VF 9 (Cao cấp nhất, ít hơn) - 3 xe ===
-      { model: "VF 9", vin: "VF9XXSTK2025000001", plate: null, mfgDate: "2025-10-01", color: "Đen Obsidian" },
-      { model: "VF 9", vin: "VF9XXSTK2025000002", plate: null, mfgDate: "2025-10-11", color: "Trắng Ngọc Trai" },
-      { model: "VF 9", vin: "VF9XXSTK2025000003", plate: "TEST-004", mfgDate: "2025-08-10", color: "Xanh Petrol" },
-    ];
-
-    let vehiclesWithoutOwnerCreated = 0;
-    let componentsInstalledOnStockVehicles = 0;
-
-    for (const vehData of vehiclesWithoutOwnerData) {
-      const model = vehicleModels[vehData.model.toLowerCase().replace(/ /g, "")];
-      
-      if (!model) {
-        console.warn(`⚠️  Model ${vehData.model} không tìm thấy, bỏ qua...`);
-        continue;
-      }
-
-      // Tạo vehicle
-      const [vehicle, created] = await sequelize.models.Vehicle.findOrCreate({
-        where: { vin: vehData.vin },
-        defaults: {
-          vin: vehData.vin,
-          vehicleModelId: model.vehicleModelId,
-          licensePlate: vehData.plate, // null hoặc biển test
-          ownerId: null, // ← KHÔNG CÓ CHỦ
-          purchaseDate: null, // ← CHƯA BÁN
-          dateOfManufacture: new Date(vehData.mfgDate),
-          placeOfManufacture: "Nhà máy Hải Phòng, Việt Nam",
-        },
-      });
-
-      if (!created) {
-        console.log(`  ⏭️  VIN ${vehData.vin} đã tồn tại, bỏ qua`);
-        continue;
-      }
-
-      vehiclesWithoutOwnerCreated++;
-
-      // Lấy WarrantyComponent cho model này
-      const modelKey = Object.keys(vehicleModels).find(
-        (k) => vehicleModels[k].vehicleModelId === model.vehicleModelId
-      );
-      const componentsForModel = vehicleComponentMap[modelKey];
-
-      // Tạo components đã lắp đặt trên xe
-      for (const { comp, qty } of componentsForModel) {
-        for (let i = 1; i <= qty; i++) {
-          const serial = `${comp.sku}-STOCK-${vehData.vin}-${String(i).padStart(2, "0")}`;
-          
-          await sequelize.models.Component.findOrCreate({
-            where: { serialNumber: serial },
-            defaults: {
-              typeComponentId: comp.typeComponentId,
-              serialNumber: serial,
-              status: "INSTALLED", // Đã lắp đặt vào xe
-              vehicleVin: vehicle.vin,
-              installedAt: new Date(vehData.mfgDate), // Lắp từ khi sản xuất
-              warehouseId: null,
-            },
-          });
-
-          componentsInstalledOnStockVehicles++;
-        }
-      }
-
-      console.log(
-        `  ✅ ${vehData.model} - VIN: ${vehData.vin.slice(-6)} | ${componentsForModel.reduce((sum, c) => sum + c.qty, 0)} components | ${vehData.plate || "Chưa đăng ký"}`
-      );
-    }
-
-    console.log(
-      `\n✅ Vehicles Without Owner: ${vehiclesWithoutOwnerCreated} xe với ${componentsInstalledOnStockVehicles} components`
-    );
-
-    // ========================================
-    // 17. STOCK SYNCHRONIZATION - ĐẢM BẢO 100% CHÍNH XÁC
-    // ========================================
-    console.log("\n🔄 Đồng bộ Stock với Components thực tế...");
-
-    // 1. Đếm số lượng components IN_WAREHOUSE thực tế
-    const stockCounts = {};
-    const allComponentsInWarehouse = await sequelize.models.Component.findAll({
-      where: { status: "IN_WAREHOUSE" },
-      attributes: ["warehouseId", "typeComponentId"],
-    });
-
-    for (const comp of allComponentsInWarehouse) {
-      const key = `${comp.warehouseId}_${comp.typeComponentId}`;
-      stockCounts[key] = (stockCounts[key] || 0) + 1;
-    }
-
-    // 2. Cập nhật Stock.quantityInStock
-    let stockUpdated = 0;
-    let stockCreated = 0;
-
-    for (const [key, count] of Object.entries(stockCounts)) {
-      const [warehouseId, typeComponentId] = key.split("_");
-      
-      const [stock, created] = await sequelize.models.Stock.findOrCreate({
-        where: { warehouseId, typeComponentId },
-        defaults: {
-          warehouseId,
-          typeComponentId,
-          quantityInStock: count,
-          quantityReserved: 0,
-        },
-      });
-      
-      if (!created) {
-        await stock.update({ quantityInStock: count });
-        stockUpdated++;
-      } else {
-        stockCreated++;
-      }
-    }
-
-    console.log(`   ✅ Đã tạo ${stockCreated} Stock entries mới`);
-    console.log(`   ✅ Đã cập nhật ${stockUpdated} Stock entries`);
-    console.log(`   ✅ Tổng ${Object.keys(stockCounts).length} Stock entries được đồng bộ`);
-    console.log(`   ✅ Stock.quantityInStock = SỐ THỰC TẾ components IN_WAREHOUSE`);
-
-    // ========================================
     // TÓM TẮT CUỐI CÙNG
     // ========================================
     console.log("\n" + "=".repeat(80));
@@ -1784,38 +1558,28 @@ async function seedDatabase() {
     console.log("   🚗 4 Dòng xe: VF e34, VF 8, VF 9, VF 5 Plus");
     console.log("   🏥 2 Trung tâm dịch vụ (Hà Nội & TP.HCM)");
     console.log("   📦 4 Kho (1 trung tâm + 2 HN + 1 HCM)");
-    console.log("   🔧 23 Loại linh kiện (covering 10 categories) ⭐ +battVF5Plus");
+    console.log("   🔧 22 Loại linh kiện (covering 10 categories)");
     console.log(
-      `   ⚙️  ${totalStockComponents + totalInstalledComponents + componentsInstalledOnStockVehicles} Components:`
+      `   ⚙️  ${totalStockComponents + totalInstalledComponents} Components:`
     );
     console.log(
       `      - ${totalStockComponents} trong kho (status: IN_WAREHOUSE)`
     );
     console.log(
-      `      - ${totalInstalledComponents} đã lắp trên xe CÓ CHỦ (status: INSTALLED)`
-    );
-    console.log(
-      `      - ${componentsInstalledOnStockVehicles} đã lắp trên xe KHÔNG CÓ CHỦ (status: INSTALLED)`
+      `      - ${totalInstalledComponents} đã lắp trên xe (status: INSTALLED)`
     );
     console.log(`   👥 ${allUsers.length} Người dùng (đầy đủ 7 vai trò)`);
     console.log(`   👤 ${customers.length} Khách hàng`);
-    console.log(`   🚙 ${createdVehicles.length + vehiclesWithoutOwnerCreated} Xe:`);
-    console.log(`      💼 ${createdVehicles.length} xe CÓ CHỦ:`);
-    console.log(`         - 4 xe VF e34`);
-    console.log(`         - 3 xe VF 8`);
-    console.log(`         - 2 xe VF 9`);
-    console.log(`         - 3 xe VF 5 Plus`);
-    console.log(`      🏪 ${vehiclesWithoutOwnerCreated} xe KHÔNG CÓ CHỦ (showroom/demo):`);
-    console.log(`         - 8 xe VF e34`);
-    console.log(`         - 6 xe VF 5 Plus`);
-    console.log(`         - 5 xe VF 8`);
-    console.log(`         - 3 xe VF 9`);
+    console.log(`   🚙 ${createdVehicles.length} Xe:`);
+    console.log(`      - 4 xe VF e34`);
+    console.log(`      - 3 xe VF 8`);
+    console.log(`      - 2 xe VF 9`);
+    console.log(`      - 3 xe VF 5 Plus`);
     console.log(
       `   📅 ${allTechs.length * 30} Lịch làm việc (${
         allTechs.length
       } kỹ thuật viên x 30 ngày)`
     );
-    console.log(`   📊 ${Object.keys(stockCounts).length} Stock entries (đồng bộ 100% với components)`);
 
     console.log("\n🔑 TÀI KHOẢN TEST (password: 123456):");
     console.log(
@@ -1829,7 +1593,7 @@ async function seedDatabase() {
 
     console.log("\n💡 QUAN TRỌNG:");
     console.log(
-      "   ✓ Stock.quantityInStock = SỐ COMPONENT THẬT SỰ có status IN_WAREHOUSE (đã đồng bộ)"
+      "   ✓ Stock.quantityInStock = SỐ COMPONENT THẬT SỰ có status IN_WAREHOUSE"
     );
     console.log(
       "   ✓ Mỗi xe có ĐẦY ĐỦ components theo WarrantyComponent của model đó"
@@ -1842,15 +1606,6 @@ async function seedDatabase() {
     );
     console.log(
       "   ✓ WarrantyComponent định nghĩa component NÀO được phép lắp vào model xe NÀO"
-    );
-    console.log(
-      "   ✓ MỌI TypeComponent đều có trong ít nhất 1 kho (realistic distribution)"
-    );
-    console.log(
-      "   ✓ Xe CÓ CHỦ: ownerId != null, purchaseDate != null"
-    );
-    console.log(
-      "   ✓ Xe KHÔNG CÓ CHỦ: ownerId = null, purchaseDate = null (showroom/demo/stock)"
     );
     console.log("=".repeat(80) + "\n");
   } catch (error) {

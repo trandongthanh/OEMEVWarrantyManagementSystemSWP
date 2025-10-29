@@ -13,6 +13,9 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCircle, Save, Clock, FileText } from 'lucide-react';
 
+// API base URL - centralized for easy deployment
+const API_BASE = 'http://localhost:3000/api/v1';
+
 // API service function for creating processing record
 const createProcessingRecord = async (recordData: {
   vin: string;
@@ -173,6 +176,11 @@ const SuperAdvisor = () => {
   const [selectedRecordForCaseline, setSelectedRecordForCaseline] = useState<WarrantyRecord | null>(null);
   const [caselines, setCaselines] = useState<any[]>([]);
   const [isLoadingCaselines, setIsLoadingCaselines] = useState(false);
+  const [selectedCaselineIds, setSelectedCaselineIds] = useState<{
+    approved: string[];
+    rejected: string[];
+  }>({ approved: [], rejected: [] });
+  const [isProcessingCaselines, setIsProcessingCaselines] = useState(false);
 
   // Warranty dialog states
   const [showWarrantyDialog, setShowWarrantyDialog] = useState(false);
@@ -1859,6 +1867,106 @@ const SuperAdvisor = () => {
         description: 'Failed to load caselines',
         variant: 'destructive'
       });
+    }
+  };
+
+  // Toggle caseline selection for approval
+  const handleToggleApprove = (caselineId: string) => {
+    setSelectedCaselineIds(prev => {
+      // Remove from rejected if exists
+      const newRejected = prev.rejected.filter(id => id !== caselineId);
+      
+      // Toggle in approved
+      const isCurrentlyApproved = prev.approved.includes(caselineId);
+      const newApproved = isCurrentlyApproved
+        ? prev.approved.filter(id => id !== caselineId)
+        : [...prev.approved, caselineId];
+      
+      return {
+        approved: newApproved,
+        rejected: newRejected
+      };
+    });
+  };
+
+  // Toggle caseline selection for rejection
+  const handleToggleReject = (caselineId: string) => {
+    setSelectedCaselineIds(prev => {
+      // Remove from approved if exists
+      const newApproved = prev.approved.filter(id => id !== caselineId);
+      
+      // Toggle in rejected
+      const isCurrentlyRejected = prev.rejected.includes(caselineId);
+      const newRejected = isCurrentlyRejected
+        ? prev.rejected.filter(id => id !== caselineId)
+        : [...prev.rejected, caselineId];
+      
+      return {
+        approved: newApproved,
+        rejected: newRejected
+      };
+    });
+  };
+
+  // Submit approve/reject decisions
+  const handleSubmitCaselineDecisions = async () => {
+    if (selectedCaselineIds.approved.length === 0 && selectedCaselineIds.rejected.length === 0) {
+      toast({
+        title: 'No Selection',
+        description: 'Please select caselines to approve or reject',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsProcessingCaselines(true);
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+
+      const response = await fetch(`${API_BASE}/case-lines/approve`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          approvedCaseLineIds: selectedCaselineIds.approved.map(id => ({ id })),
+          rejectedCaseLineIds: selectedCaselineIds.rejected.map(id => ({ id }))
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result.status !== 'success') {
+        throw new Error(result.message || 'Failed to process caselines');
+      }
+
+      toast({
+        title: 'Success',
+        description: `Processed ${selectedCaselineIds.approved.length} approved and ${selectedCaselineIds.rejected.length} rejected caselines`,
+      });
+
+      // Reset selections
+      setSelectedCaselineIds({ approved: [], rejected: [] });
+
+      // Reload caselines
+      if (selectedRecordForCaseline) {
+        await handleViewCaselines(selectedRecordForCaseline);
+      }
+
+    } catch (error) {
+      console.error('Error processing caselines:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to process caselines',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsProcessingCaselines(false);
     }
   };
 
@@ -3605,23 +3713,54 @@ const SuperAdvisor = () => {
                 </p>
               </div>
             ) : (
+              <>
+                {caselines.filter(c => c.status === 'PENDING_APPROVAL').length > 0 && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-start gap-3">
+                      <div className="bg-yellow-100 rounded-full p-2">
+                        <Clock className="h-5 w-5 text-yellow-700" />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-yellow-900 mb-1">
+                          {caselines.filter(c => c.status === 'PENDING_APPROVAL').length} Caseline{caselines.filter(c => c.status === 'PENDING_APPROVAL').length > 1 ? 's' : ''} Awaiting Your Decision
+                        </h4>
+                        <p className="text-sm text-yellow-800">
+                          Review and approve or reject the caselines below. Click the buttons on each caseline, then submit your decisions.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               <div className="space-y-4">
-                {caselines.map((caseline, index) => (
-                  <div key={caseline.id || index} className="border rounded-lg p-4 bg-gray-50">
+                {caselines.map((caseline, index) => {
+                  const isApproved = selectedCaselineIds.approved.includes(caseline.id);
+                  const isRejected = selectedCaselineIds.rejected.includes(caseline.id);
+                  const isPendingApproval = caseline.status === 'PENDING_APPROVAL';
+                  
+                  return (
+                  <div 
+                    key={caseline.id || index} 
+                    className={`border rounded-lg p-4 transition-all ${
+                      isApproved ? 'bg-green-50 border-green-300' :
+                      isRejected ? 'bg-red-50 border-red-300' :
+                      'bg-gray-50'
+                    }`}
+                  >
                     <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" className="text-sm">
                           Caseline #{index + 1}
                         </Badge>
                         <Badge className={
                           caseline.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
                           caseline.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
+                          caseline.status === 'PENDING_APPROVAL' ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' :
                           caseline.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
                           caseline.status === 'REJECTED_BY_TECH' ? 'bg-red-100 text-red-800' :
                           caseline.status === 'REJECTED_BY_CUSTOMER' ? 'bg-orange-100 text-orange-800' :
                           'bg-gray-100 text-gray-800'
                         }>
-                          {caseline.status || 'N/A'}
+                          {caseline.status === 'PENDING_APPROVAL' ? '⏳ PENDING APPROVAL' : caseline.status || 'N/A'}
                         </Badge>
                         {caseline.warrantyStatus && (
                           <Badge className={
@@ -3684,17 +3823,72 @@ const SuperAdvisor = () => {
                           <span>Repair Tech ID: {caseline.repairTechId}</span>
                         )}
                       </div>
+
+                      {/* Approve/Reject Buttons for PENDING_APPROVAL status */}
+                      {caseline.status === 'PENDING_APPROVAL' && (
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant={selectedCaselineIds.approved.includes(caseline.id) ? 'default' : 'outline'}
+                              className={selectedCaselineIds.approved.includes(caseline.id) ? 'bg-green-600 hover:bg-green-700' : 'border-green-600 text-green-700 hover:bg-green-50'}
+                              onClick={() => handleToggleApprove(caseline.id)}
+                            >
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                              {selectedCaselineIds.approved.includes(caseline.id) ? 'Selected for Approval' : 'Approve'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={selectedCaselineIds.rejected.includes(caseline.id) ? 'destructive' : 'outline'}
+                              className={selectedCaselineIds.rejected.includes(caseline.id) ? '' : 'border-red-600 text-red-700 hover:bg-red-50'}
+                              onClick={() => handleToggleReject(caseline.id)}
+                            >
+                              <XCircle className="h-4 w-4 mr-2" />
+                              {selectedCaselineIds.rejected.includes(caseline.id) ? 'Selected for Rejection' : 'Reject'}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
+              </>
             )}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCaselineDialog(false)}>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            {(selectedCaselineIds.approved.length > 0 || selectedCaselineIds.rejected.length > 0) && (
+              <div className="flex-1 text-sm text-muted-foreground">
+                Selected: {selectedCaselineIds.approved.length} approved, {selectedCaselineIds.rejected.length} rejected
+              </div>
+            )}
+            <Button variant="outline" onClick={() => {
+              setShowCaselineDialog(false);
+              setSelectedCaselineIds({ approved: [], rejected: [] });
+            }}>
               Close
             </Button>
+            {(selectedCaselineIds.approved.length > 0 || selectedCaselineIds.rejected.length > 0) && (
+              <Button 
+                onClick={handleSubmitCaselineDecisions}
+                disabled={isProcessingCaselines}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {isProcessingCaselines ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Submit Decisions
+                  </>
+                )}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
