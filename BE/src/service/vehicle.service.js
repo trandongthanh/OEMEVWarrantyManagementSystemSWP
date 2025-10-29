@@ -274,67 +274,65 @@ class VehicleService {
 
     const typeComponents = vehicle?.model?.typeComponents || [];
 
-    const typeComponentsWarrantyFormated = typeComponents.map(
-      (component) => {
-        const warrantyComponent = component?.WarrantyComponent;
+    const typeComponentsWarrantyFormated = typeComponents.map((component) => {
+      const warrantyComponent = component?.WarrantyComponent;
 
-        if (!warrantyComponent) {
-          return {
-            typeComponentId: component.typeComponentId,
-            componentName: component.name,
-            policy: {
-              durationMonths: 0,
-              mileageLimit: 0,
-            },
-            duration: {
-              status: "EXPIRED",
-              endDate: null,
-              remainingDays: 0,
-              overdueDays: 0,
-            },
-            mileage: {
-              status: "EXPIRED",
-              remainingMileage: 0,
-              overdueMileage: 0,
-            },
-          };
-        }
-
-        const checkWarrantyComponent = this.#checkWarrantyStatusByDuration(
-          purchaseDate,
-          warrantyComponent.durationMonth
-        );
-
-        const checkWarrantyByMileage = this.#checkWarrantyStatusByMileage(
-          warrantyComponent.mileageLimit,
-          odometer
-        );
-
+      if (!warrantyComponent) {
         return {
           typeComponentId: component.typeComponentId,
           componentName: component.name,
           policy: {
-            durationMonths: warrantyComponent.durationMonth,
-            mileageLimit: warrantyComponent.mileageLimit,
+            durationMonths: 0,
+            mileageLimit: 0,
           },
           duration: {
-            status: checkWarrantyComponent.status,
-
-            endDate: checkWarrantyComponent.endDate,
-
-            remainingDays: checkWarrantyComponent?.remainingDays ?? 0,
-
-            overdueDays: checkWarrantyComponent?.overdueDays ?? 0,
+            status: "EXPIRED",
+            endDate: null,
+            remainingDays: 0,
+            overdueDays: 0,
           },
           mileage: {
-            status: checkWarrantyByMileage?.status,
-            remainingMileage: checkWarrantyByMileage?.remainingMileage ?? 0,
-
-            overdueMileage: checkWarrantyByMileage?.overdueMileage ?? 0,
+            status: "EXPIRED",
+            remainingMileage: 0,
+            overdueMileage: 0,
           },
         };
       }
-    );
+
+      const checkWarrantyComponent = this.#checkWarrantyStatusByDuration(
+        purchaseDate,
+        warrantyComponent.durationMonth
+      );
+
+      const checkWarrantyByMileage = this.#checkWarrantyStatusByMileage(
+        warrantyComponent.mileageLimit,
+        odometer
+      );
+
+      return {
+        typeComponentId: component.typeComponentId,
+        componentName: component.name,
+        policy: {
+          durationMonths: warrantyComponent.durationMonth,
+          mileageLimit: warrantyComponent.mileageLimit,
+        },
+        duration: {
+          status: checkWarrantyComponent.status,
+
+          endDate: checkWarrantyComponent.endDate,
+
+          remainingDays: checkWarrantyComponent?.remainingDays ?? 0,
+
+          overdueDays: checkWarrantyComponent?.overdueDays ?? 0,
+        },
+        mileage: {
+          status: checkWarrantyByMileage?.status,
+          remainingMileage: checkWarrantyByMileage?.remainingMileage ?? 0,
+
+          overdueMileage: checkWarrantyByMileage?.overdueMileage ?? 0,
+        },
+      };
+    });
 
     const formatVehicle = {
       vin: vehicle?.vin,

@@ -97,6 +97,45 @@ interface TypeComponent {
   updated_at: string;
 }
 
+interface Warehouse {
+  warehouseId: string;
+  name: string;
+  address: string;
+  priority: number;
+  vehicleCompanyId: string | null;
+  serviceCenterId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  service_center_id?: string | null;
+  vehicle_company_id?: string | null;
+}
+
+interface StockTransferRequest {
+  id: string;
+  requestingWarehouseId: string;
+  requestedByUserId: string;
+  approvedByUserId: string | null;
+  rejectedByUserId: string | null;
+  cancelledByUserId: string | null;
+  status: string;
+  rejectionReason: string | null;
+  cancellationReason: string | null;
+  requestedAt: string;
+  receivedByUserId: string | null;
+  approvedAt: string | null;
+  shippedAt: string | null;
+  receivedAt: string | null;
+  rejectedAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  requester?: {
+    userId: string;
+    name: string;
+    serviceCenterId: string;
+  };
+}
+
 // Helper functions moved outside component to prevent re-creation on every render
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat('vi-VN', {
@@ -307,10 +346,40 @@ const ServiceCenterDashboard = () => {
     }
   });
 
+  // Track case lines that have been requested from manufacturer
+  const [requestedFromManufacturer, setRequestedFromManufacturer] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('requestedFromManufacturer');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
   // Technician Records Modal States
   const [showTechnicianRecordsModal, setShowTechnicianRecordsModal] = useState(false);
   const [selectedTechnicianForRecords, setSelectedTechnicianForRecords] = useState<Technician | null>(null);
   const [technicianRecords, setTechnicianRecords] = useState<WarrantyClaim[]>([]);
+
+  // Warehouse States
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
+  const [showWarehouseDetailModal, setShowWarehouseDetailModal] = useState(false);
+  const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
+
+  // Stock Transfer Request States
+  const [showWarehouseSelectionModal, setShowWarehouseSelectionModal] = useState(false);
+  const [pendingStockRequest, setPendingStockRequest] = useState<{
+    caseLineId: string;
+    typeComponentId: string;
+    quantity: number;
+    guaranteeCaseId: string;
+  } | null>(null);
+  const [stockTransferRequests, setStockTransferRequests] = useState<StockTransferRequest[]>([]);
+  const [isLoadingStockRequests, setIsLoadingStockRequests] = useState(false);
+  const [showStockRequestsModal, setShowStockRequestsModal] = useState(false);
+  const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
+  const [showStockRequestDetailModal, setShowStockRequestDetailModal] = useState(false);
 
   const { user, logout, getToken } = useAuth();
 
@@ -386,6 +455,73 @@ const ServiceCenterDashboard = () => {
     setClaimsByStatus(byStatus);
     setWarrantyClaims(byStatus[activeStatus] || []);
     setIsLoadingClaims(false);
+
+    // Clean up requestedFromManufacturer for case lines that backend has updated
+    const allCaseLines = Object.values(byStatus).flat().flatMap(claim => 
+      claim.guaranteeCases.flatMap(gc => gc.caseLines || [])
+    );
+    
+    setRequestedFromManufacturer(prev => {
+      const newSet = new Set(prev);
+      let updated = false;
+      
+      // Remove case lines that are no longer in CUSTOMER_APPROVED status
+      prev.forEach(caseLineId => {
+        const caseLine = allCaseLines.find(cl => cl.id === caseLineId);
+        if (caseLine && caseLine.status !== 'CUSTOMER_APPROVED') {
+          newSet.delete(caseLineId);
+          updated = true;
+        }
+      });
+      
+      if (updated) {
+        localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
+      }
+      
+      return newSet;
+    });
+  };
+
+  // Fetch warehouses
+  const fetchWarehouses = async () => {
+    setIsLoadingWarehouses(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingWarehouses(false);
+      return;
+    }
+    try {
+      const response = await axios.get(`${API_BASE_URL}/warehouses`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const warehouseData = response.data?.data?.warehouses || [];
+      setWarehouses(warehouseData);
+    } catch (error) {
+      console.error('Failed to fetch warehouses:', error);
+    } finally {
+      setIsLoadingWarehouses(false);
+    }
+  };
+
+  // Fetch stock transfer requests
+  const fetchStockTransferRequests = async (status = 'PENDING_APPROVAL') => {
+    setIsLoadingStockRequests(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingStockRequests(false);
+      return;
+    }
+    try {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests?status=${status}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const requestsData = response.data?.data?.stockTransferRequests || [];
+      setStockTransferRequests(requestsData);
+    } catch (error) {
+      console.error('Failed to fetch stock transfer requests:', error);
+    } finally {
+      setIsLoadingStockRequests(false);
+    }
   };
 
   // Load warranty claims and technicians data
@@ -433,6 +569,9 @@ const ServiceCenterDashboard = () => {
 
     // Load technicians from API (AVAILABLE / UNAVAILABLE)
     refreshTechnicians('').then(() => { });
+
+    // Load warehouses
+    fetchWarehouses();
 
     return () => { cancelled = true; };
   }, []);
@@ -567,6 +706,17 @@ const ServiceCenterDashboard = () => {
     setTechnicianRecords([]);
   };
 
+  // View warehouse details
+  const viewWarehouseDetails = (warehouse: Warehouse) => {
+    setSelectedWarehouse(warehouse);
+    setShowWarehouseDetailModal(true);
+  };
+
+  const closeWarehouseDetailModal = () => {
+    setShowWarehouseDetailModal(false);
+    setSelectedWarehouse(null);
+  };
+
   // Allocate component for case line
   const handleAllocateComponent = async (guaranteeCaseId: string, caseLineId: string) => {
     try {
@@ -625,24 +775,92 @@ const ServiceCenterDashboard = () => {
     }
   };
 
-  // Request component from manufacturer (API will be added later)
-  const handleRequestFromManufacturer = async (guaranteeCaseId: string, caseLineId: string, componentName: string) => {
+  // Request component from manufacturer - Open warehouse selection modal
+  const handleRequestFromManufacturer = async (
+    guaranteeCaseId: string, 
+    caseLineId: string, 
+    typeComponentId: string,
+    quantity: number
+  ) => {
+    // Store the pending request data
+    setPendingStockRequest({
+      caseLineId,
+      typeComponentId,
+      quantity,
+      guaranteeCaseId
+    });
+    
+    // Open warehouse selection modal
+    setShowWarehouseSelectionModal(true);
+  };
+
+  // Submit stock transfer request after warehouse is selected
+  const submitStockTransferRequest = async (warehouseId: string) => {
+    if (!pendingStockRequest) return;
+
     try {
-      // TODO: Call API to request component from manufacturer
-      // const token = localStorage.getItem('token') || localStorage.getItem('ev_warranty_token');
-      // const response = await axios.post(
-      //   `${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/request-from-manufacturer`,
-      //   {},
-      //   { headers: { 'Authorization': `Bearer ${token}` } }
-      // );
-      
-      alert(`Request sent to manufacturer for component: ${componentName}\n\n(API integration coming soon)`);
-      
-      // Optionally refresh data
-      // await fetchAllStatuses();
+      const token = localStorage.getItem('token') || localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        alert('Authentication required');
+        return;
+      }
+
+      const requestBody = {
+        caselineIds: [pendingStockRequest.caseLineId],
+        items: [
+          {
+            quantityRequested: pendingStockRequest.quantity,
+            typeComponentId: pendingStockRequest.typeComponentId
+          }
+        ],
+        requestingWarehouseId: warehouseId
+      };
+
+      const response = await axios.post(
+        `${API_BASE_URL}/stock-transfer-requests`,
+        requestBody,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+
+      if (response.status === 200 || response.status === 201) {
+        // Remove from out of stock list since request has been sent
+        setOutOfStockCaseLines(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(pendingStockRequest.caseLineId);
+          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
+
+        // Add to requested from manufacturer list to prevent showing allocate button
+        setRequestedFromManufacturer(prev => {
+          const newSet = new Set([...prev, pendingStockRequest.caseLineId]);
+          localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
+
+        alert('Stock transfer request sent successfully!');
+        
+        // Close modal and reset
+        setShowWarehouseSelectionModal(false);
+        setPendingStockRequest(null);
+
+        // Refresh data from backend to get updated status
+        await fetchAllStatuses();
+        await fetchWarehouses();
+        
+        // Refresh claim detail modal with updated data from backend
+        if (selectedClaimForDetail) {
+          const updatedClaims = Object.values(claimsByStatus).flat();
+          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
+          if (updatedClaim) {
+            setSelectedClaimForDetail(updatedClaim);
+          }
+        }
+      }
     } catch (error: any) {
       console.error('Error requesting from manufacturer:', error);
-      alert('Failed to send request to manufacturer. Please try again.');
+      const errorMessage = error.response?.data?.message || 'Failed to send request to manufacturer. Please try again.';
+      alert(errorMessage);
     }
   };
 
@@ -722,9 +940,10 @@ const ServiceCenterDashboard = () => {
         <div className="container mx-auto px-6 py-6">
           {/* Main Content */}
           <Tabs defaultValue="claims" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="claims">Warranty Claims</TabsTrigger>
               <TabsTrigger value="repairs">Technician Management</TabsTrigger>
+              <TabsTrigger value="warehouses">Warehouse Management</TabsTrigger>
             </TabsList>
 
             <TabsContent value="claims" className="space-y-6">
@@ -933,6 +1152,117 @@ const ServiceCenterDashboard = () => {
                         ))}
                       </TableBody>
                     </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="warehouses" className="space-y-6">
+              <Card className="shadow-elegant">
+                <CardHeader>
+                  <div className="flex items-center justify-between w-full">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Package className="h-5 w-5" />
+                        Warehouse Management
+                      </CardTitle>
+                      <CardDescription>View and manage warehouses and inventory</CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant="default" 
+                        size="sm" 
+                        onClick={() => {
+                          fetchStockTransferRequests('PENDING_APPROVAL');
+                          setShowStockRequestsModal(true);
+                        }}
+                      >
+                        <Clock className="h-4 w-4 mr-2" />
+                        View Stock Requests
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={fetchWarehouses}
+                        disabled={isLoadingWarehouses}
+                      >
+                        {isLoadingWarehouses ? 'Loading...' : 'Refresh'}
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {isLoadingWarehouses ? (
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground">Loading warehouses...</p>
+                    </div>
+                  ) : warehouses.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">No warehouses found</p>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="mt-4"
+                        onClick={fetchWarehouses}
+                      >
+                        Load Warehouses
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Address</TableHead>
+                            <TableHead>Priority</TableHead>
+                            <TableHead>Created At</TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {warehouses.map((warehouse) => (
+                            <TableRow key={warehouse.warehouseId}>
+                              <TableCell className="font-medium">
+                                {warehouse.name}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1">
+                                  <MapPin className="h-3 w-3 text-muted-foreground" />
+                                  {warehouse.address}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={warehouse.priority === 1 ? 'default' : warehouse.priority === 2 ? 'secondary' : 'outline'}
+                                  className="text-xs"
+                                >
+                                  Priority {warehouse.priority}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {new Date(warehouse.createdAt).toLocaleDateString('en-US')}
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => viewWarehouseDetails(warehouse)}
+                                >
+                                  View Details
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                  <div className="mt-6">
+                    <p className="text-sm text-muted-foreground">
+                      Showing {warehouses.length} warehouse{warehouses.length !== 1 ? 's' : ''}
+                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -1149,7 +1479,8 @@ const ServiceCenterDashboard = () => {
                                                 <div className="flex items-center gap-1.5">
                                                   {/* Show Allocate button only when record is PROCESSING and case line is CUSTOMER_APPROVED */}
                                                   {/* Components can only be allocated when all case lines are approved/rejected and record moves to PROCESSING */}
-                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && hasPermission(user, 'attach_parts') && !outOfStockCaseLines.has(line.id) && (
+                                                  {/* Don't show if already requested from manufacturer */}
+                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && hasPermission(user, 'attach_parts') && !outOfStockCaseLines.has(line.id) && !requestedFromManufacturer.has(line.id) && (
                                                     <Button
                                                       size="sm"
                                                       variant="default"
@@ -1161,18 +1492,31 @@ const ServiceCenterDashboard = () => {
                                                     </Button>
                                                   )}
                                                   {/* Show Request button if record is PROCESSING, case line is CUSTOMER_APPROVED but out of stock */}
-                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && outOfStockCaseLines.has(line.id) && hasPermission(user, 'attach_parts') && (
+                                                  {/* Don't show if already requested */}
+                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && outOfStockCaseLines.has(line.id) && !requestedFromManufacturer.has(line.id) && hasPermission(user, 'attach_parts') && line.typeComponent && (
                                                     <Button
                                                       size="sm"
                                                       variant="outline"
-                                                      onClick={() => handleRequestFromManufacturer(gc.guaranteeCaseId, line.id, line.typeComponent?.name || 'Component')}
+                                                      onClick={() => handleRequestFromManufacturer(
+                                                        gc.guaranteeCaseId, 
+                                                        line.id, 
+                                                        line.typeComponent.typeComponentId,
+                                                        line.quantity
+                                                      )}
                                                       className="bg-orange-600 hover:bg-orange-700 text-white border-orange-600 text-xs h-6 px-2"
                                                     >
                                                       <AlertCircle className="h-3 w-3 mr-1" />
                                                       Request from Manufacturer
                                                     </Button>
                                                   )}
-                                                  {/* Show status badge if already allocated */}
+                                                  {/* Show "Requested" badge if request has been sent but backend hasn't updated yet */}
+                                                  {requestedFromManufacturer.has(line.id) && line.status === 'CUSTOMER_APPROVED' && (
+                                                    <Badge variant="outline" className="text-xs bg-yellow-50 border-yellow-400 text-yellow-700">
+                                                      <Clock className="h-3 w-3 mr-1" />
+                                                      Requested - Pending
+                                                    </Badge>
+                                                  )}
+                                                  {/* Show status badge if already allocated or backend has updated status */}
                                                   {line.status !== 'CUSTOMER_APPROVED' && line.status !== 'DRAFT' && line.status !== 'PENDING_APPROVAL' && (
                                                     <Badge variant="success" className="text-xs">
                                                       ✓ {getDisplayStatus(line.status)}
@@ -1507,6 +1851,479 @@ const ServiceCenterDashboard = () => {
 
             <div className="flex justify-end gap-2 pt-4">
               <Button variant="outline" onClick={closeTechnicianRecordsModal}>
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Warehouse Detail Modal */}
+        <Dialog open={showWarehouseDetailModal} onOpenChange={setShowWarehouseDetailModal}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-blue-600" />
+                Warehouse Details
+              </DialogTitle>
+              <DialogDescription>
+                Complete information about the warehouse
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedWarehouse && (
+              <div className="space-y-6 mt-4">
+                {/* Basic Information */}
+                <Card className="shadow-md border">
+                  <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-900/20 pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+                        <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      Basic Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Warehouse ID</label>
+                          <p className="font-mono text-sm font-semibold mt-0.5">{selectedWarehouse.warehouseId}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Name</label>
+                          <p className="text-sm font-medium mt-0.5">{selectedWarehouse.name}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <MapPin className="h-3 w-3" />
+                            Address
+                          </label>
+                          <p className="text-sm font-medium mt-0.5">{selectedWarehouse.address}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Priority</label>
+                          <div className="mt-1">
+                            <Badge 
+                              variant={selectedWarehouse.priority === 1 ? 'default' : selectedWarehouse.priority === 2 ? 'secondary' : 'outline'}
+                              className="text-xs"
+                            >
+                              Priority {selectedWarehouse.priority}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Service Center ID</label>
+                          <p className="font-mono text-sm mt-0.5">{selectedWarehouse.serviceCenterId || selectedWarehouse.service_center_id || '-'}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Vehicle Company ID</label>
+                          <p className="font-mono text-sm mt-0.5">{selectedWarehouse.vehicleCompanyId || selectedWarehouse.vehicle_company_id || '-'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Timestamps */}
+                <Card className="shadow-md border">
+                  <CardHeader className="bg-gradient-to-r from-green-50 to-transparent dark:from-green-900/20 pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <div className="p-2 bg-green-100 dark:bg-green-900/40 rounded-lg">
+                        <Clock className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      </div>
+                      Timestamps
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                        <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                          <Calendar className="h-3 w-3" />
+                          Created At
+                        </label>
+                        <p className="text-sm font-medium mt-0.5">
+                          {new Date(selectedWarehouse.createdAt).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                      <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                        <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                          <Calendar className="h-3 w-3" />
+                          Updated At
+                        </label>
+                        <p className="text-sm font-medium mt-0.5">
+                          {new Date(selectedWarehouse.updatedAt).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={closeWarehouseDetailModal}>
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Warehouse Selection Modal for Stock Transfer Request */}
+        <Dialog open={showWarehouseSelectionModal} onOpenChange={setShowWarehouseSelectionModal}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-orange-600" />
+                Select Warehouse for Stock Transfer Request
+              </DialogTitle>
+              <DialogDescription>
+                Choose the warehouse that will request the component from the manufacturer
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 mt-4">
+              {pendingStockRequest && (
+                <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+                  <CardContent className="p-4">
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                        Request Details:
+                      </p>
+                      <div className="text-sm text-blue-800 dark:text-blue-200">
+                        <p>• Component ID: <span className="font-mono">{pendingStockRequest.typeComponentId}</span></p>
+                        <p>• Quantity: <span className="font-semibold">{pendingStockRequest.quantity}</span></p>
+                        <p>• Case Line ID: <span className="font-mono text-xs">{pendingStockRequest.caseLineId}</span></p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <div>
+                <h4 className="font-medium text-sm mb-3">Available Warehouses:</h4>
+                {warehouses.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No warehouses available</p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-4"
+                      onClick={fetchWarehouses}
+                    >
+                      Load Warehouses
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 max-h-[400px] overflow-y-auto">
+                    {warehouses.map((warehouse) => (
+                      <Card 
+                        key={warehouse.warehouseId} 
+                        className="p-4 cursor-pointer transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20 border-2 hover:border-blue-400"
+                        onClick={() => submitStockTransferRequest(warehouse.warehouseId)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h5 className="font-semibold">{warehouse.name}</h5>
+                              <Badge 
+                                variant={warehouse.priority === 1 ? 'default' : warehouse.priority === 2 ? 'secondary' : 'outline'}
+                                className="text-xs"
+                              >
+                                Priority {warehouse.priority}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <MapPin className="h-3 w-3" />
+                              <span>{warehouse.address}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 font-mono">
+                              ID: {warehouse.warehouseId}
+                            </p>
+                          </div>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              submitStockTransferRequest(warehouse.warehouseId);
+                            }}
+                          >
+                            Select
+                          </Button>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowWarehouseSelectionModal(false);
+                  setPendingStockRequest(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Stock Transfer Requests Modal */}
+        <Dialog open={showStockRequestsModal} onOpenChange={setShowStockRequestsModal}>
+          <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-blue-600" />
+                Stock Transfer Requests
+              </DialogTitle>
+              <DialogDescription>
+                View all pending stock transfer requests from warehouses
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 mt-4">
+              {isLoadingStockRequests ? (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground">Loading requests...</p>
+                </div>
+              ) : stockTransferRequests.length === 0 ? (
+                <div className="text-center py-8">
+                  <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No pending stock transfer requests</p>
+                </div>
+              ) : (
+                <div className="rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Requester</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Requested At</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {stockTransferRequests.map((request) => (
+                        <TableRow key={request.id}>
+                          <TableCell>
+                            <p className="font-medium text-sm">{request.requester?.name || 'Unknown'}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Service Center: {request.requester?.serviceCenterId || 'N/A'}
+                            </p>
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant={
+                                request.status === 'PENDING_APPROVAL' ? 'outline' :
+                                request.status === 'APPROVED' ? 'default' :
+                                request.status === 'REJECTED' ? 'destructive' :
+                                'secondary'
+                              }
+                              className="text-xs"
+                            >
+                              {request.status.replace(/_/g, ' ')}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {new Date(request.requestedAt).toLocaleString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedStockRequest(request);
+                                setShowStockRequestDetailModal(true);
+                              }}
+                            >
+                              View Details
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              <div className="text-sm text-muted-foreground">
+                Showing {stockTransferRequests.length} request{stockTransferRequests.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowStockRequestsModal(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Stock Transfer Request Detail Modal */}
+        <Dialog open={showStockRequestDetailModal} onOpenChange={setShowStockRequestDetailModal}>
+          <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-blue-600" />
+                Stock Transfer Request Details
+              </DialogTitle>
+              <DialogDescription>
+                Complete information about the stock transfer request
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedStockRequest && (
+              <div className="space-y-6 mt-4">
+                {/* Request Information */}
+                <Card className="shadow-md border">
+                  <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-900/20 pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+                        <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      Request Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Request ID</label>
+                          <p className="font-mono text-sm mt-0.5">{selectedStockRequest.id}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
+                          <div className="mt-1">
+                            <Badge 
+                              variant={
+                                selectedStockRequest.status === 'PENDING_APPROVAL' ? 'outline' :
+                                selectedStockRequest.status === 'APPROVED' ? 'default' :
+                                selectedStockRequest.status === 'REJECTED' ? 'destructive' :
+                                'secondary'
+                              }
+                            >
+                              {selectedStockRequest.status.replace(/_/g, ' ')}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Requesting Warehouse ID</label>
+                          <p className="font-mono text-sm mt-0.5">{selectedStockRequest.requestingWarehouseId}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Requester</label>
+                          <p className="font-medium text-sm mt-0.5">{selectedStockRequest.requester?.name || 'Unknown'}</p>
+                          <p className="font-mono text-xs text-muted-foreground mt-1">
+                            User ID: {selectedStockRequest.requestedByUserId}
+                          </p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <Calendar className="h-3 w-3" />
+                            Requested At
+                          </label>
+                          <p className="text-sm mt-0.5">
+                            {new Date(selectedStockRequest.requestedAt).toLocaleString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                        {selectedStockRequest.approvedAt && (
+                          <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                            <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                              <CheckCircle className="h-3 w-3" />
+                              Approved At
+                            </label>
+                            <p className="text-sm mt-0.5">
+                              {new Date(selectedStockRequest.approvedAt).toLocaleString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        )}
+                        {selectedStockRequest.rejectedAt && (
+                          <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                            <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                              <XCircle className="h-3 w-3" />
+                              Rejected At
+                            </label>
+                            <p className="text-sm mt-0.5">
+                              {new Date(selectedStockRequest.rejectedAt).toLocaleString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {selectedStockRequest.rejectionReason && (
+                      <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-md border border-red-200">
+                        <label className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase">Rejection Reason</label>
+                        <p className="text-sm text-red-900 dark:text-red-100 mt-1">{selectedStockRequest.rejectionReason}</p>
+                      </div>
+                    )}
+                    {selectedStockRequest.cancellationReason && (
+                      <div className="mt-4 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-md border border-orange-200">
+                        <label className="text-xs font-semibold text-orange-700 dark:text-orange-400 uppercase">Cancellation Reason</label>
+                        <p className="text-sm text-orange-900 dark:text-orange-100 mt-1">{selectedStockRequest.cancellationReason}</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowStockRequestDetailModal(false);
+                  setSelectedStockRequest(null);
+                }}
+              >
                 Close
               </Button>
             </div>
