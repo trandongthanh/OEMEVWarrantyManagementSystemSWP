@@ -9,6 +9,15 @@ class TypeComponentRepository {
       transaction: transaction,
     });
   };
+
+  findAll = async (transaction = null) => {
+    const typeComponents = await TypeComponent.findAll({
+      attributes: ["typeComponentId", "sku", "name", "price", "category"],
+      transaction: transaction,
+    });
+
+    return typeComponents ? typeComponents.map(tc => tc.toJSON()) : [];
+  };
 }
 
 export default TypeComponentRepository;

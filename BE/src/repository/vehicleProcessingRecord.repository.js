@@ -224,9 +224,9 @@ class VehicleProcessingRecordRepository {
     const techWhere = isTech
       ? {
           [Op.or]: [
-            { "$guaranteeCases.caseLines.diagnosticTechId$": userId },
-            { "$guaranteeCases.caseLines.repairTechId$": userId },
-            { "$guaranteeCases.leadTechId$": userId },
+            { "$guaranteeCases.caseLines.diagnostic_tech_id$": userId },
+            { "$guaranteeCases.caseLines.repair_tech_id$": userId },
+            { "$guaranteeCases.lead_tech_id$": userId },
             { mainTechnicianId: userId },
           ],
         }

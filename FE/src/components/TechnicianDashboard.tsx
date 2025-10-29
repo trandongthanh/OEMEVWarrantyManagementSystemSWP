@@ -614,7 +614,15 @@ const TechnicianDashboard = ({
       console.log('Created case lines response:', data);
       
       const newCaseLines = data.data?.caseLines || [];
-      setCreatedCaseLines(prev => [...prev, ...newCaseLines]);
+      // Merge and dedupe by caseLineId to avoid duplicates
+      setCreatedCaseLines(prev => {
+        const map = new Map<string, CaseLineResponse>();
+        prev.forEach(p => map.set(p.caseLineId, p));
+        (newCaseLines as CaseLineResponse[]).forEach((c) => {
+          if (c && c.caseLineId) map.set(c.caseLineId, c);
+        });
+        return Array.from(map.values());
+      });
       
       toast({
         title: "Success",
@@ -757,7 +765,15 @@ const TechnicianDashboard = ({
       // Persist created case lines into normalized state so they survive F5
       if (createdCaseLines && createdCaseLines.length > 0) {
         try {
-          setCreatedCaseLines(prev => [...prev, ...createdCaseLines]);
+          // Merge and dedupe by caseLineId to avoid duplicates and React key warnings
+          setCreatedCaseLines(prev => {
+            const map = new Map<string, CaseLineResponse>();
+            prev.forEach(p => map.set(p.caseLineId, p));
+            createdCaseLines.forEach((c: CaseLineResponse) => {
+              if (c && c.caseLineId) map.set(c.caseLineId, c);
+            });
+            return Array.from(map.values());
+          });
         } catch (err) {
           console.warn('Failed to append created case lines to state', err);
         }
@@ -776,7 +792,11 @@ const TechnicianDashboard = ({
         status: createdCaseLines[0].status === 'pending' ? 'submitted' : 'approved'
       };
 
-      setCaseLines(prev => [...prev, newCaseLine]);
+      // Ensure no duplicate caseLine IDs in UI list
+      setCaseLines(prev => {
+        const exists = prev.some(c => c.id === newCaseLine.id);
+        return exists ? prev : [...prev, newCaseLine];
+      });
 
       // Safely compute a short id suffix for the toast (backend may vary response shape)
       const createdIdSuffix =
@@ -833,7 +853,9 @@ const TechnicianDashboard = ({
         });
         
         await fetchProcessingRecords();
-        await fetchComponents(); // Fetch components if needed
+        // Do not fetch global /components on init to avoid 404 noisy logs when backend
+        // doesn't expose that endpoint. Components are fetched when needed (e.g. when
+        // opening Create Issue Diagnosis modal via fetchCompatibleComponents).
       } else {
         console.log('❌ No user found, cannot fetch data');
         toast({
@@ -864,14 +886,18 @@ const TechnicianDashboard = ({
     const loadCaseLines = async () => {
       if (selectedGuaranteeCase) {
         console.log('Loading case lines for selected guarantee case...');
-        const caseLines = await fetchCaseLinesForCase(selectedGuaranteeCase.guaranteeCaseId);
-        if (caseLines.length > 0) {
-          setCreatedCaseLines(prev => {
-            // Merge và deduplicate case lines
-            const existing = prev.filter(cl => cl.guaranteeCaseId !== selectedGuaranteeCase.guaranteeCaseId);
-            return [...existing, ...caseLines];
-          });
-        }
+          const caseLines = await fetchCaseLinesForCase(selectedGuaranteeCase.guaranteeCaseId);
+          if (caseLines.length > 0) {
+            // Merge into createdCaseLines and dedupe by caseLineId to avoid duplicates
+            setCreatedCaseLines(prev => {
+              const map = new Map<string, CaseLineResponse>();
+              prev.forEach(p => map.set(p.caseLineId, p));
+              (caseLines as CaseLineResponse[]).forEach((c) => {
+                if (c && c.caseLineId) map.set(c.caseLineId, c);
+              });
+              return Array.from(map.values());
+            });
+          }
       }
     };
 
@@ -1025,7 +1051,12 @@ const TechnicianDashboard = ({
       setCaseLines(prev => prev.filter(caseLine => caseLine.id !== caseLineToRemove));
 
       // Also remove from createdCaseLines normalized state if present
-      setCreatedCaseLines(prev => prev.filter(cl => (cl.caseLineId ?? cl.caseLineId) !== caseLineToRemove));
+      setCreatedCaseLines(prev => prev.filter(cl => {
+        type MaybeCL = { caseLineId?: string; id?: string };
+        const typed = (cl as unknown) as MaybeCL;
+        const id = typed.caseLineId ?? typed.id ?? '';
+        return id !== caseLineToRemove;
+      }));
 
       toast({
         title: "Issue Diagnosis Removed",
