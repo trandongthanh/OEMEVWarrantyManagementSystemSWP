@@ -357,10 +357,8 @@ class VehicleProcessingRecordService {
     limit,
     status,
   }) => {
-    // Defensive: if serviceCenterId is missing, return empty result instead of throwing
     if (!serviceCenterId) {
-      console.warn('Warning: getAllRecords called without serviceCenterId, returning empty result');
-      return { records: [], recordsCount: 0, total: 0 };
+      throw new BadRequestError("serviceCenterId is required");
     }
 
     const offset = (page - 1) * limit;
@@ -368,25 +366,20 @@ class VehicleProcessingRecordService {
     const limitNumber = parseInt(limit);
     const offsetNumber = parseInt(offset);
 
-    try {
-      const records = await this.#vehicleProcessingRecordRepository.findAll({
-        serviceCenterId: serviceCenterId,
-        limit: limitNumber,
-        offset: offsetNumber,
-        status: status,
-        userId: userId,
-        roleName: roleName,
-      });
+    const records = await this.#vehicleProcessingRecordRepository.findAll({
+      serviceCenterId: serviceCenterId,
+      limit: limitNumber,
+      offset: offsetNumber,
+      status: status,
+      userId: userId,
+      roleName: roleName,
+    });
 
-      if (!records || (Array.isArray(records) && records.length === 0) || (records.records && records.records.length === 0)) {
-        return { records: [], recordsCount: 0, total: 0 };
-      }
-
-      return records;
-    } catch (err) {
-      console.error('Error in VehicleProcessingRecordService.getAllRecords:', err && err.stack ? err.stack : err);
-      return { records: [], recordsCount: 0, total: 0 };
+    if (!records || records.length === 0) {
+      return [];
     }
+
+    return records;
   };
 
   completeRecord = async ({ vehicleProcessingRecordId }) => {
@@ -579,11 +572,11 @@ class VehicleProcessingRecordService {
 
       await this.#notificationService.sendToRoom(roomName, eventName, data);
 
-      return { updatedRecord, updatedGuaranteeCases, updatedCaseLines };
+      return { record, updatedGuaranteeCases, updatedCaseLines };
     });
 
     return {
-      record: rawResult.updatedRecord,
+      record: rawResult.record,
       updatedGuaranteeCases: rawResult.updatedGuaranteeCases,
       updatedCaseLines: rawResult.updatedCaseLines,
     };

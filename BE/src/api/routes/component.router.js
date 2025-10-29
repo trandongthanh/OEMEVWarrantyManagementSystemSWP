@@ -5,52 +5,6 @@ const router = express.Router();
 
 /**
  * @swagger
- * /components:
- *   get:
- *     summary: Get all components
- *     description: Retrieve a list of all type components
- *     tags: [Components]
- *     security:
- *       - BearerAuth: []
- *     responses:
- *       200:
- *         description: List of components retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: "success"
- *                 data:
- *                   type: object
- *                   properties:
- *                     components:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           typeComponentId:
- *                             type: string
- *                             format: uuid
- *                           sku:
- *                             type: string
- *                           name:
- *                             type: string
- *                           price:
- *                             type: number
- *                           category:
- *                             type: string
- */
-router.get("/", authentication, async (req, res, next) => {
-  const componentController = req.container.resolve("componentController");
-
-  return componentController.getAll(req, res, next);
-});
-
-/**
- * @swagger
  * /components/{componentId}/status:
  *   patch:
  *     summary: Update component status

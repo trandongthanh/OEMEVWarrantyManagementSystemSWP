@@ -128,13 +128,13 @@ class ComponentReservationRepository {
   };
 
   findByCaselineId = async (caseLineId, transaction = null, lock = null) => {
-    const reservation = await ComponentReservation.findOne({
+    const reservations = await ComponentReservation.findAll({
       where: { caseLineId },
       transaction: transaction,
       lock: lock,
     });
 
-    return reservation ? reservation.toJSON() : null;
+    return reservations.map((reservation) => reservation.toJSON());
   };
 }
 

@@ -17,8 +17,11 @@ const router = express.Router();
  * @swagger
  * /processing-records:
  *   post:
- *     summary: Create a new vehicle processing record
- *     description: Create a new vehicle processing record with one or more guarantee cases
+ *     summary: Tạo hồ sơ tiếp nhận xe
+ *     description: |-
+ *       Service Center Staff tạo Vehicle Processing Record mới kèm danh sách Guarantee Case.
+ *       Ngay sau khi tạo thành công, backend phát socket `new_record_notification`
+ *       tới phòng `service_center_manager_{serviceCenterId}` với payload `{ message, record }` để quản lý nắm thông tin.
  *     tags: [Vehicle Processing Record]
  *     security:
  *       - BearerAuth: []
@@ -55,6 +58,17 @@ const router = express.Router();
  *                       type: string
  *                       description: Description of the issue or guarantee case
  *                       example: "Xe bị rung nhẹ khi tăng tốc, cần kiểm tra hệ thống truyền động."
+ *               visitorInfo:
+ *                 type: object
+ *                 nullable: true
+ *                 description: Thông tin khách vãng lai (nếu không phải chủ xe)
+ *                 properties:
+ *                   name:
+ *                     type: string
+ *                     example: "Nguyễn Văn A"
+ *                   phone:
+ *                     type: string
+ *                     example: "+84901234567"
  *     responses:
  *       201:
  *         description: Vehicle processing record created successfully
@@ -68,84 +82,36 @@ const router = express.Router();
  *                   example: "success"
  *                 data:
  *                   type: object
+ *                   description: Hồ sơ vừa tạo (được chuẩn hóa thời gian theo HCM)
  *                   properties:
- *                     record:
- *                       type: object
- *                       properties:
- *                         vin:
- *                           type: string
- *                           example: "VIN-NEW-0"
- *                         checkInDate:
- *                           type: string
- *                           format: date-time
- *                           description: Date and time when vehicle checked in
- *                           example: "2025-10-11T15:36:25.000Z"
- *                         odometer:
- *                           type: number
- *                           description: Vehicle odometer reading at check-in
- *                           example: 52340
- *                         status:
- *                           type: string
- *                           description: Current status of the processing record
- *                           example: "processing"
- *                         mainTechnician:
- *                           type: object
- *                           nullable: true
- *                           description: Main technician assigned to this record (if assigned)
- *                           properties:
- *                             userId:
- *                               type: string
- *                               format: uuid
- *                               example: "725d1073-9660-48ae-b970-7c8db76f676d"
- *                             name:
- *                               type: string
- *                               example: "KTV Dương Giao Linh"
- *                         vehicle:
- *                           type: object
- *                           description: Vehicle information
- *                           properties:
- *                             vin:
- *                               type: string
- *                               example: "VIN-NEW-0"
- *                             model:
- *                               type: object
- *                               properties:
- *                                 name:
- *                                   type: string
- *                                   example: "VF 9 Plus"
- *                                 vehicleModelId:
- *                                   type: string
- *                                   format: uuid
- *                                   example: "74b79531-887e-4cb6-a4c8-e2e36fce4b2b"
- *                         guaranteeCases:
- *                           type: array
- *                           description: List of guarantee cases created for this record
- *                           items:
- *                             type: object
- *                             properties:
- *                               guaranteeCaseId:
- *                                 type: string
- *                                 format: uuid
- *                                 example: "110f907d-009d-441f-88ad-f9522ae44d0d"
- *                               status:
- *                                 type: string
- *                                 description: Status of the guarantee case
- *                                 example: "pending_diagnosis"
- *                               contentGuarantee:
- *                                 type: string
- *                                 description: Description of the issue
- *                                 example: "Đèn pha bên trái sáng yếu, cần kiểm tra hệ thống điện."
- *                         createdByStaff:
- *                           type: object
- *                           description: Staff member who created this record
- *                           properties:
- *                             userId:
- *                               type: string
- *                               format: uuid
- *                               example: "82af4858-9298-489f-9f97-9af0cbab68e4"
- *                             name:
- *                               type: string
- *                               example: "SA Tô Mỹ Lệ"
+ *                     vehicleProcessingRecordId:
+ *                       type: string
+ *                       format: uuid
+ *                     vin:
+ *                       type: string
+ *                       example: "VIN-NEW-0"
+ *                     checkInDate:
+ *                       type: string
+ *                       format: date-time
+ *                     odometer:
+ *                       type: number
+ *                       example: 52340
+ *                     status:
+ *                       type: string
+ *                       example: "CHECKED_IN"
+ *                     guaranteeCases:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           guaranteeCaseId:
+ *                             type: string
+ *                             format: uuid
+ *                           contentGuarantee:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                             example: "IN_DIAGNOSIS"
  *       400:
  *         description: Bad request - Invalid input data
  *         content:
@@ -245,11 +211,12 @@ router.patch(
  * @swagger
  * /processing-records/{id}/complete-diagnosis:
  *   patch:
- *     summary: Complete diagnosis phase and transition caselines from DRAFT to PENDING_APPROVAL
- *     description: |
- *       This endpoint marks the diagnosis phase as complete. It validates that all caselines are in DRAFT status,
- *       then transitions them to PENDING_APPROVAL. It also updates the GuaranteeCase status to DIAGNOSED
- *       and the VehicleProcessingRecord status to WAITING_CUSTOMER_APPROVAL.
+ *     summary: Hoàn tất chẩn đoán, chuyển hồ sơ sang chờ khách duyệt
+ *     description: |-
+ *       Cập nhật trạng thái Vehicle Processing Record sang `WAITING_CUSTOMER_APPROVAL`, các Guarantee Case sang `DIAGNOSED`
+ *       và toàn bộ caseline `DRAFT` sang `PENDING_APPROVAL`.
+ *       Sau khi hoàn tất, backend phát socket `vehicleProcessingRecordStatusUpdated`
+ *       tới phòng `service_center_staff_{serviceCenterId}` với payload `{ roomName, record }`.
  *     tags: [Vehicle Processing Record]
  *     security:
  *       - BearerAuth: []
@@ -276,14 +243,12 @@ router.patch(
  *                 data:
  *                   type: object
  *                   properties:
- *                     vehicleProcessingRecordId:
- *                       type: string
- *                       format: uuid
- *                     status:
- *                       type: string
- *                       example: "WAITING_CUSTOMER_APPROVAL"
- *                     guaranteeCases:
+ *                     record:
+ *                       type: object
+ *                       description: Hồ sơ sau khi cập nhật trạng thái và reload chi tiết
+ *                     updatedGuaranteeCases:
  *                       type: array
+ *                       description: Danh sách Guarantee Case đã chuyển sang DIAGNOSED
  *                       items:
  *                         type: object
  *                         properties:
@@ -293,17 +258,18 @@ router.patch(
  *                           status:
  *                             type: string
  *                             example: "DIAGNOSED"
- *                           caseLines:
- *                             type: array
- *                             items:
- *                               type: object
- *                               properties:
- *                                 caseLineId:
- *                                   type: string
- *                                   format: uuid
- *                                 status:
- *                                   type: string
- *                                   example: "PENDING_APPROVAL"
+ *                     updatedCaseLines:
+ *                       type: array
+ *                       description: Caseline vừa chuyển trạng thái sang PENDING_APPROVAL
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           status:
+ *                             type: string
+ *                             example: "PENDING_APPROVAL"
  *       400:
  *         description: Bad request - caselines not in DRAFT status or GuaranteeCase not in IN_DIAGNOSIS
  *       404:
@@ -389,7 +355,11 @@ router.patch(
  * @swagger
  * /processing-records/{id}/assignment:
  *   patch:
- *     summary: Assign a technician to a vehicle processing record
+ *     summary: Giao hồ sơ cho kỹ thuật viên chính
+ *     description: |-
+ *       Service Center Manager gán main technician cho Vehicle Processing Record.
+ *       Nếu có kỹ thuật viên cũ, backend gửi socket `task_unassigned_notification` tới `user_{oldTechnicianId}`.
+ *       Kỹ thuật viên mới nhận socket `new_task_assignment_notification` tại phòng `user_{technicianId}` kèm chi tiết phân công.
  *     tags: [Vehicle Processing Record]
  *     security:
  *       - BearerAuth: []
@@ -429,19 +399,59 @@ router.patch(
  *                   example: "success"
  *                 data:
  *                   type: object
+ *                   description: Thông tin phân công sau khi cập nhật
  *                   properties:
- *                     record:
+ *                     recordId:
+ *                       type: string
+ *                       format: uuid
+ *                     vin:
+ *                       type: string
+ *                     status:
+ *                       type: string
+ *                     technician:
  *                       type: object
+ *                       nullable: true
  *                       properties:
- *                         id:
+ *                         userId:
  *                           type: string
  *                           format: uuid
- *                         assignedTechnicianId:
+ *                         name:
  *                           type: string
- *                           format: uuid
- *                         updatedAt:
- *                           type: string
- *                           format: date-time
+ *                     updatedCases:
+ *                       type: array
+ *                       description: Các guarantee case đã cập nhật lead technician
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           caseId:
+ *                             type: string
+ *                             format: uuid
+ *                           status:
+ *                             type: string
+ *                           leadTech:
+ *                             type: string
+ *                             format: uuid
+ *                     assignments:
+ *                       type: array
+ *                       description: Task assignment mới tạo cho technician
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           assignmentId:
+ *                             type: string
+ *                             format: uuid
+ *                           guaranteeCaseId:
+ *                             type: string
+ *                             format: uuid
+ *                           technicianId:
+ *                             type: string
+ *                             format: uuid
+ *                           taskType:
+ *                             type: string
+ *                             example: "DIAGNOSIS"
+ *                           assignedAt:
+ *                             type: string
+ *                             format: date-time
  *       400:
  *         description: Bad request - Invalid technician ID
  *       401:

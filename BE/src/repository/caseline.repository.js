@@ -49,19 +49,13 @@ class CaseLineRepository {
                 "vin",
                 "createdByStaffId",
               ],
-              // vehicleProcessingRecord may be missing for legacy or incomplete guarantee cases;
-              // make this include optional so we can still find the caseline even when the
-              // parent record is not present.
-              required: false,
+              required: true,
               include: [
                 {
                   model: User,
                   as: "createdByStaff",
-                    attributes: ["userId", "serviceCenterId"],
-                    // createdByStaff may be null in some legacy or incomplete records;
-                    // make this include optional so we can still find the caseline for operations
-                    // like delete where the createdByStaff relation is not strictly required.
-                    required: false,
+                  attributes: ["userId", "serviceCenterId"],
+                  required: true,
                 },
               ],
             },
@@ -275,15 +269,6 @@ class CaseLineRepository {
     return record ? record.toJSON() : null;
   };
 
-  // Simple lookup by primary key without joins (helps when complex includes cause join failures)
-  findSimpleById = async (caseLineId, transaction = null, lock = null) => {
-    const cl = await CaseLine.findByPk(caseLineId, {
-      transaction: transaction,
-      lock: lock,
-    });
-    return cl ? cl.toJSON() : null;
-  };
-
   findAll = async ({
     page = 1,
     limit = 10,
@@ -301,6 +286,7 @@ class CaseLineRepository {
     const where = {};
     const guaranteeCaseWhere = {};
     const vehicleProcessingRecordWhere = {};
+    const serviceCenterWhere = {};
 
     if (status) where.status = status;
     if (warrantyStatus) where.warrantyStatus = warrantyStatus;
@@ -310,6 +296,9 @@ class CaseLineRepository {
     if (vehicleProcessingRecordId) {
       vehicleProcessingRecordWhere.vehicleProcessingRecordId =
         vehicleProcessingRecordId;
+    }
+    if (serviceCenterId) {
+      serviceCenterWhere.serviceCenterId = serviceCenterId;
     }
 
     const { count, rows } = await CaseLine.findAndCountAll({
@@ -328,22 +317,23 @@ class CaseLineRepository {
             {
               model: VehicleProcessingRecord,
               as: "vehicleProcessingRecord",
-              attributes: [
-                "vehicleProcessingRecordId",
-                "vin",
-              ],
+              attributes: ["vehicleProcessingRecordId", "vin"],
               where:
                 Object.keys(vehicleProcessingRecordWhere).length > 0
                   ? vehicleProcessingRecordWhere
                   : undefined,
               required: true,
+
               include: [
                 {
                   model: User,
                   as: "createdByStaff",
                   attributes: ["userId", "serviceCenterId"],
-                  where: serviceCenterId ? { serviceCenterId } : undefined,
-                  required: !!serviceCenterId,
+                  where:
+                    Object.keys(serviceCenterWhere).length > 0
+                      ? serviceCenterWhere
+                      : undefined,
+                  required: true,
                 },
               ],
             },
@@ -367,7 +357,7 @@ class CaseLineRepository {
         {
           model: ComponentReservation,
           as: "reservations",
-          attributes: ["reservationId", "status"],
+          attributes: ["reservationId", "quantityReserved", "status"],
           required: false,
         },
       ],
@@ -390,7 +380,8 @@ class CaseLineRepository {
 
   findByProcessingRecordId = async (
     { vehicleProcessingRecordId },
-    transaction = null
+    transaction = null,
+    lock = null
   ) => {
     const caseLines = await CaseLine.findAll({
       include: [
@@ -402,29 +393,36 @@ class CaseLineRepository {
         },
       ],
       transaction,
+      lock: lock,
     });
 
     return caseLines.map((cl) => cl.toJSON());
   };
 
-  // Delete a caseline and its related reservations (if any)
-  deleteCaseline = async (caselineId, transaction = null) => {
-    // remove any component reservations tied to this caseline first to avoid FK issues
-    try {
-      await ComponentReservation.destroy({
-        where: { caseLineId: caselineId },
-        transaction: transaction,
-      });
+  findPendingApprovalIdsByVehicleProcessingRecordId = async (
+    { vehicleProcessingRecordId },
+    transaction = null,
+    lock = null
+  ) => {
+    const caseLines = await CaseLine.findAll({
+      attributes: ["id"],
+      where: {
+        status: "PENDING_APPROVAL",
+      },
+      include: [
+        {
+          model: GuaranteeCase,
+          as: "guaranteeCase",
+          attributes: [],
+          where: { vehicleProcessingRecordId },
+          required: true,
+        },
+      ],
+      transaction,
+      lock,
+    });
 
-      const deleted = await CaseLine.destroy({
-        where: { id: caselineId },
-        transaction: transaction,
-      });
-
-      return deleted > 0;
-    } catch (err) {
-      throw err;
-    }
+    return caseLines.map((cl) => cl.id ?? cl.toJSON().id);
   };
 }
 
