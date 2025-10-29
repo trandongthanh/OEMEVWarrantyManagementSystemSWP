@@ -237,23 +237,22 @@ class VehicleProcessingRecordRepository {
     userId,
     roleName,
   }) => {
-    const isTech = roleName === "service_center_technician";
-
-    const techWhere = isTech
-      ? {
-          [Op.or]: [
-            { "$guaranteeCases.caseLines.diagnosticTechId$": userId },
-            { "$guaranteeCases.caseLines.repairTechId$": userId },
-            { "$guaranteeCases.leadTechId$": userId },
-            { mainTechnicianId: userId },
-          ],
-        }
-      : {};
+    let whereCondition = {};
+    if (roleName === "service_center_technician") {
+      whereCondition = {
+        [Op.or]: [
+          { "$guaranteeCases.caseLines.diagnostic_tech_id$": userId },
+          { "$guaranteeCases.caseLines.repair_tech_id$": userId },
+          { "$guaranteeCases.lead_tech_id$": userId },
+          { mainTechnicianId: userId },
+        ],
+      };
+    }
 
     const { rows, count } = await VehicleProcessingRecord.findAndCountAll({
       where: {
         ...(status ? { status } : {}),
-        ...techWhere,
+        ...whereCondition,
       },
 
       attributes: [
@@ -288,7 +287,6 @@ class VehicleProcessingRecordRepository {
         {
           model: GuaranteeCase,
           as: "guaranteeCases",
-          separate: true,
           attributes: [
             "guaranteeCaseId",
             "status",
@@ -300,7 +298,6 @@ class VehicleProcessingRecordRepository {
             {
               model: CaseLine,
               as: "caseLines",
-              separate: true,
               attributes: [
                 "id",
                 "typeComponentId",
