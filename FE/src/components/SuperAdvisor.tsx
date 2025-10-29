@@ -13,8 +13,11 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCircle, Save, Clock, FileText } from 'lucide-react';
 
-// API base URL - centralized for easy deployment
-const API_BASE = 'http://localhost:3000/api/v1';
+
+// API Base URL
+const API_BASE_URL = 'http://localhost:3000/api/v1';
+
+
 
 // API service function for creating processing record
 const createProcessingRecord = async (recordData: {
@@ -24,7 +27,7 @@ const createProcessingRecord = async (recordData: {
 }) => {
   const token = localStorage.getItem("ev_warranty_token");
   
-  const response = await fetch('http://localhost:3000/api/v1/processing-records', {
+  const response = await fetch(`${API_BASE_URL}/processing-records`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -47,7 +50,7 @@ const createProcessingRecord = async (recordData: {
 const fetchProcessingRecords = async () => {
   const token = localStorage.getItem("ev_warranty_token");
   
-  const response = await fetch('http://localhost:3000/api/v1/processing-records', {
+  const response = await fetch(`${API_BASE_URL}/processing-records`, {
     method: 'GET',
     headers: {
       'Accept': 'application/json',
@@ -159,6 +162,7 @@ const SuperAdvisor = () => {
 
   // Customer search states
   const [customerSearchPhone, setCustomerSearchPhone] = useState('');
+  const [registrationFlowPhone, setRegistrationFlowPhone] = useState(''); // Phone from Register New Vehicle flow
   const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
   const [foundCustomer, setFoundCustomer] = useState(null);
   const [hasSearchedCustomer, setHasSearchedCustomer] = useState(false);
@@ -367,7 +371,7 @@ const SuperAdvisor = () => {
       return;
     }
 
-    const url = `http://localhost:3000/api/v1/vehicles/${vin}/warranty?odometer=${odometer}`;
+    const url = `${API_BASE_URL}/vehicles/${vin}/warranty?odometer=${odometer}`;
     
     const response = await fetch(url, {
       method: "GET",
@@ -464,7 +468,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      const apiUrl = `http://localhost:3000/api/v1/vehicles/${vin}`;
+      const apiUrl = `${API_BASE_URL}/vehicles/${vin}`;
 
       // Search vehicle by VIN
       const response = await axios.get(apiUrl, {
@@ -477,6 +481,7 @@ const SuperAdvisor = () => {
       if (response.data && response.data.status === 'success' && response.data.data && response.data.data.vehicle) {
         const vehicle = response.data.data.vehicle;
         console.log('🚗 Vehicle data received:', vehicle); // Debug log
+        console.log('👤 Vehicle owner:', vehicle.owner); // Debug owner specifically
         setVehicleSearchResult({
           vin: vehicle.vin,
           dateOfManufacture: vehicle.dateOfManufacture,
@@ -552,8 +557,10 @@ const SuperAdvisor = () => {
     }
   };
 
-  const handleSearchCustomerByPhone = async () => {
-    if (!customerSearchPhone.trim()) {
+  const handleSearchCustomerByPhone = async (phoneToSearch?: string) => {
+    const phoneNumber = phoneToSearch || customerSearchPhone.trim();
+    
+    if (!phoneNumber) {
       toast({
         title: 'Error',
         description: 'Please enter phone number',
@@ -578,7 +585,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      const response = await axios.get(`http://localhost:3000/api/v1/customers?phone=${customerSearchPhone.trim()}`, {
+      const response = await axios.get(`${API_BASE_URL}/customers?phone=${phoneNumber}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -606,13 +613,36 @@ const SuperAdvisor = () => {
           });
           
           setHasSearchedCustomer(true);
+          
+          // Only reset if coming from Register New Vehicle flow (indicated by registrationFlowPhone)
+          if (registrationFlowPhone) {
+            console.log('🔄 Resetting Register New Vehicle flow...');
+            
+            // Reset Register New Vehicle section after successful search
+            setNewVehicleVin('');
+            setRegistrationFlowPhone('');
+            
+            // Reset vehicle search result and warranty info to show only "Check Warranty" button
+            setVehicleSearchResult(null);
+            setWarrantyStatus(null);
+            setWarrantyDetails(null);
+            setOdometer('');
+            setSearchVin('');
+            
+            // Reset selected vehicle for warranty check in customer's vehicle list
+            setSelectedVehicleForWarranty(null);
+            setVehicleOdometer('');
+            setVehicleWarrantyStatus(null);
+          } else {
+            console.log('✅ Regular search - keeping vehicle info intact');
+          }
         } else {
           setFoundCustomer(null);
           
           // Fill only phone number, clear other fields
           setOwnerForm({
             fullName: '',
-            phone: customerSearchPhone.trim(),
+            phone: phoneNumber,
             email: '',
             address: ''
           });
@@ -631,7 +661,7 @@ const SuperAdvisor = () => {
         // Fill only phone number, clear other fields
         setOwnerForm({
           fullName: '',
-          phone: customerSearchPhone.trim(),
+          phone: phoneNumber,
           email: '',
           address: ''
         });
@@ -640,10 +670,10 @@ const SuperAdvisor = () => {
           title: 'Customer Not Found',
           description: 'No customer found with this phone number. You can enter new customer information.',
           variant: 'default'
-        });
-        
-        setHasSearchedCustomer(true);
-      }
+          });
+          
+          setHasSearchedCustomer(true);
+        }
 
       setHasSearchedCustomer(true);
       setIsSearchingCustomer(false);
@@ -657,7 +687,7 @@ const SuperAdvisor = () => {
       // Fill only phone number, clear other fields  
       setOwnerForm({
         fullName: '',
-        phone: customerSearchPhone.trim(),
+        phone: phoneNumber,
         email: '',
         address: ''
       });
@@ -777,7 +807,7 @@ const SuperAdvisor = () => {
       }
 
       const response = await axios.patch(
-        `http://localhost:3000/api/v1/customers/${foundCustomer.id}`,
+        `${API_BASE_URL}/customers/${foundCustomer.id}`,
         updateData,
         {
           headers: {
@@ -831,7 +861,7 @@ const SuperAdvisor = () => {
       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
       
       const response = await axios.post(
-        `http://localhost:3000/api/v1/vehicles/${vehicle.vin}/warranty/preview`,
+        `${API_BASE_URL}/vehicles/${vehicle.vin}/warranty/preview`,
         {
           odometer: parseInt(vehicleOdometer),
           purchaseDate: vehicle.purchaseDate
@@ -891,6 +921,12 @@ const SuperAdvisor = () => {
     }
 
     const vinToSearch = newVehicleVin.trim();
+    
+    // Save the phone from registration flow before switching modes
+    if (customerSearchPhone.trim()) {
+      setRegistrationFlowPhone(customerSearchPhone.trim());
+      console.log('💾 Saved registration flow phone:', customerSearchPhone.trim());
+    }
 
     // Switch to customer mode (Find Vehicle by VIN) and auto search
     setSearchMode('customer');
@@ -905,10 +941,11 @@ const SuperAdvisor = () => {
     setTimeout(async () => {
       try {
         await handleSearchCustomer(vinToSearch);
+        // User will manually enter odometer and click "Check Warranty Policy"
       } catch (error) {
         console.error('Auto search failed:', error);
       }
-    }, 300); // Increase delay to ensure state is updated
+    }, 300);
   };
 
   // Handle create record for warranty-valid vehicle
@@ -1117,57 +1154,19 @@ const SuperAdvisor = () => {
         return;
       }
 
-      // Case 1: Vehicle already has owner - Update customer info via PATCH /customers/{id}
+      // Case 1: Vehicle already has owner - Not allowed to update
+      // Owner information is read-only when vehicle already has an owner
       if (vehicleSearchResult.owner && vehicleSearchResult.owner.id) {
-        const customerId = vehicleSearchResult.owner.id;
-        
-        // Update customer information with 4 fields + customer ID
-        await axios.patch(`http://localhost:3000/api/v1/customers/${customerId}`, {
-          fullName: ownerForm.fullName.trim(),
-          email: ownerForm.email.trim(),
-          phone: ownerForm.phone.trim(),
-          address: ownerForm.address.trim()
-        }, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        // Also update vehicle's license plate via vehicle endpoint
-        await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, {
-          ownerId: customerId,
-          licensePlate: vehicleSearchResult.licensePlate.trim(),
-          purchaseDate: vehicleSearchResult.purchaseDate,
-          dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-          placeOfManufacture: vehicleSearchResult.placeOfManufacture || ''
-        }, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        // Update local state
-        setVehicleSearchResult(prev => prev ? ({
-          ...prev,
-          owner: {
-            ...prev.owner!,
-            fullName: ownerForm.fullName.trim(),
-            email: ownerForm.email.trim(),
-            phone: ownerForm.phone.trim(),
-            address: ownerForm.address.trim()
-          }
-        }) : prev);
-
         toast({
-          title: 'Success',
-          description: 'Customer information updated successfully!',
+          title: 'Not Allowed',
+          description: 'Cannot modify owner information for vehicles that already have an owner',
+          variant: 'destructive'
         });
-
+        return;
       } 
+      
       // Case 2: Registering vehicle with existing customer (found via phone search)
-      else if (foundCustomer && foundCustomer.id) {
+      if (foundCustomer && foundCustomer.id) {
         // Register vehicle using PATCH /vehicles/{VIN} with customerId only
         const requestBody = {
           dateOfManufacture: vehicleSearchResult.dateOfManufacture,
@@ -1176,7 +1175,7 @@ const SuperAdvisor = () => {
           customerId: foundCustomer.id
         };
 
-        const response = await axios.patch(`http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}`, requestBody, {
+        const response = await axios.patch(`${API_BASE_URL}/vehicles/${vehicleSearchResult.vin}`, requestBody, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -1360,7 +1359,7 @@ const SuperAdvisor = () => {
           // Warranty is valid if BOTH duration and odometer are valid
           const isGeneralWarrantyValid = isDurationValid && isMileageValid;
           
-          // Check component warranties
+          // Check component warranties for display purposes only (not blocking)
           const componentWarranties = warrantyData.componentWarranties || [];
           let hasExpiredComponent = false;
           let expiredComponents = [];
@@ -1382,29 +1381,65 @@ const SuperAdvisor = () => {
             }
           }
           
-          // Overall warranty is valid only if general warranty is valid AND no component is expired
-          const isWarrantyValid = isGeneralWarrantyValid && !hasExpiredComponent;
+          // Overall warranty is valid if ONLY general warranty is valid (ignore component expiration)
+          const isWarrantyValid = isGeneralWarrantyValid;
           
           setWarrantyStatus(isWarrantyValid ? 'valid' : 'expired');
 
           if (isWarrantyValid) {
+            const componentWarning = hasExpiredComponent 
+              ? ` Note: ${expiredComponents.length} component(s) have expired warranty.`
+              : ' All components covered.';
+            
             toast({
               title: 'Warranty Active',
-              description: `General warranty valid for ${generalWarranty.duration.remainingDays} more days and ${generalWarranty.mileage.remainingMileage} km. All components covered.`,
+              description: `General warranty valid for ${generalWarranty.duration.remainingDays} more days and ${generalWarranty.mileage.remainingMileage} km.${componentWarning}`,
             });
 
-            if (vehicleSearchResult.owner) {
+            console.log('🚗 Current vehicleSearchResult:', vehicleSearchResult);
+            console.log('👤 vehicleSearchResult.owner:', vehicleSearchResult.owner);
+            console.log('📞 Current customerSearchPhone:', customerSearchPhone);
+            console.log('📞 Saved registrationFlowPhone:', registrationFlowPhone);
+
+            // Check for owner phone from two sources:
+            // 1. If vehicle already has owner (existing customer)
+            // 2. If phone was entered in "Find Customer by Phone" field (new registration flow)
+            let phoneToSearch = null;
+            
+            if (vehicleSearchResult.owner?.phone) {
+              // Vehicle already has owner
+              phoneToSearch = vehicleSearchResult.owner.phone;
               setFoundCustomer(vehicleSearchResult.owner);
+            } else if (registrationFlowPhone) {
+              // Phone was saved from Register New Vehicle flow
+              phoneToSearch = registrationFlowPhone;
+            } else if (customerSearchPhone.trim()) {
+              // Fallback: use current phone in search field
+              phoneToSearch = customerSearchPhone.trim();
+            }
+
+            if (phoneToSearch) {
+              console.log('🔍 Auto-filling customer phone:', phoneToSearch);
+              
+              // Fill customer search phone if not already filled
+              if (!customerSearchPhone.trim()) {
+                setCustomerSearchPhone(phoneToSearch);
+              }
+              
+              // Auto-trigger phone search by passing phone directly
+              setTimeout(async () => {
+                console.log('🔍 Auto-triggering customer search for phone:', phoneToSearch);
+                try {
+                  await handleSearchCustomerByPhone(phoneToSearch);
+                } catch (error) {
+                  console.error('❌ Auto-search failed:', error);
+                }
+              }, 600);
             }
           } else {
             const reasons = [];
             if (!isDurationValid) reasons.push('general warranty time limit exceeded');
             if (!isMileageValid) reasons.push('general warranty odometer limit exceeded');
-            
-            if (hasExpiredComponent) {
-              const componentsList = expiredComponents.map(c => `${c.name} (${c.reason})`).join(', ');
-              reasons.push(`components expired: ${componentsList}`);
-            }
             
             toast({
               title: 'Warranty Expired',
@@ -1733,7 +1768,7 @@ const SuperAdvisor = () => {
         return {
           ...record,
           vinNumber: editRecord.vinNumber.toUpperCase(),
-          customerName: editRecord.customerName,
+          visitorFullName: editRecord.visitorFullName,
           odometer: parseInt(editRecord.odometer),
           cases: editRecord.cases,
           purchaseDate: editRecord.purchaseDate,
@@ -1927,7 +1962,7 @@ const SuperAdvisor = () => {
         throw new Error('Authentication token not found');
       }
 
-      const response = await fetch(`${API_BASE}/case-lines/approve`, {
+      const response = await fetch(`${API_BASE_URL}/case-lines/approve`, {
         method: 'PATCH',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -2080,7 +2115,7 @@ const SuperAdvisor = () => {
                   onClick={
                     searchMode === 'customer'
                       ? () => handleSearchCustomer()
-                      : handleSearchCustomerByPhone
+                      : () => handleSearchCustomerByPhone()
                   }
                 >
                   {searchMode === 'customer' ? 'Find Vehicle' : 'Search Customer'}
@@ -2297,6 +2332,7 @@ const SuperAdvisor = () => {
                                 onClick={handleCheckWarranty}
                                 disabled={isCheckingWarranty || !odometer}
                                 className="flex-1 bg-purple-600 hover:bg-purple-700"
+                                data-action="check-warranty"
                               >
                                 {isCheckingWarranty ? (
                                   <>
@@ -2311,8 +2347,8 @@ const SuperAdvisor = () => {
                                 )}
                               </Button>
                               
-                              {/* Create Record Button - Show after warranty check and if vehicle has owner */}
-                              {warrantyStatus && vehicleSearchResult.owner && (
+                              {/* Create Record Button - Show ONLY when warranty is valid AND vehicle has owner */}
+                              {warrantyStatus === 'valid' && vehicleSearchResult.owner && (
                                 <Button
                                   onClick={handleCreateRecordFromVin}
                                   className="flex-1 bg-green-600 hover:bg-green-700"
@@ -2365,12 +2401,19 @@ const SuperAdvisor = () => {
                                     <div className="bg-blue-50 rounded p-3">
                                       <div className="flex items-center justify-between mb-2">
                                         <span className="text-sm font-medium text-gray-600">Time Coverage</span>
-                                        <Badge variant={(warrantyDetails.generalWarranty?.duration?.status === 'ACTIVE' || warrantyDetails.generalWarranty?.duration?.status === true) ? 'default' : 'destructive'} className="text-xs">
-                                          {(warrantyDetails.generalWarranty?.duration?.status === 'ACTIVE' || warrantyDetails.generalWarranty?.duration?.status === true) ? 'ACTIVE' : 'EXPIRED'}
+                                        <Badge variant={
+                                          ((warrantyDetails.generalWarranty?.duration?.status === 'ACTIVE' || warrantyDetails.generalWarranty?.duration?.status === true) &&
+                                           (warrantyDetails.generalWarranty?.duration?.remainingDays || 0) > 0) 
+                                            ? 'default' 
+                                            : 'destructive'
+                                        } className="text-xs">
+                                          {(warrantyDetails.generalWarranty?.duration?.remainingDays || 0) === 0 
+                                            ? 'EXPIRED' 
+                                            : (warrantyDetails.generalWarranty?.duration?.status === 'ACTIVE' || warrantyDetails.generalWarranty?.duration?.status === true) ? 'ACTIVE' : 'EXPIRED'}
                                         </Badge>
                                       </div>
                                       <div className="space-y-1">
-                                        <p className="text-2xl font-bold text-blue-900">
+                                        <p className={`text-2xl font-bold ${(warrantyDetails.generalWarranty?.duration?.remainingDays || 0) === 0 ? 'text-red-600' : 'text-blue-900'}`}>
                                           {warrantyDetails.generalWarranty?.duration?.remainingDays || 0} days
                                         </p>
                                         <p className="text-xs text-gray-600">
@@ -2387,12 +2430,19 @@ const SuperAdvisor = () => {
                                     <div className="bg-green-50 rounded p-3">
                                       <div className="flex items-center justify-between mb-2">
                                         <span className="text-sm font-medium text-gray-600">Odometer Coverage</span>
-                                        <Badge variant={warrantyDetails.generalWarranty?.mileage?.status === 'ACTIVE' ? 'default' : 'destructive'} className="text-xs">
-                                          {warrantyDetails.generalWarranty?.mileage?.status || 'N/A'}
+                                        <Badge variant={
+                                          (warrantyDetails.generalWarranty?.mileage?.status === 'ACTIVE' && 
+                                           (warrantyDetails.generalWarranty?.mileage?.remainingMileage || 0) > 0) 
+                                            ? 'default' 
+                                            : 'destructive'
+                                        } className="text-xs">
+                                          {(warrantyDetails.generalWarranty?.mileage?.remainingMileage || 0) === 0 
+                                            ? 'EXPIRED' 
+                                            : warrantyDetails.generalWarranty?.mileage?.status || 'N/A'}
                                         </Badge>
                                       </div>
                                       <div className="space-y-1">
-                                        <p className="text-2xl font-bold text-green-900">
+                                        <p className={`text-2xl font-bold ${(warrantyDetails.generalWarranty?.mileage?.remainingMileage || 0) === 0 ? 'text-red-600' : 'text-green-900'}`}>
                                           {warrantyDetails.generalWarranty?.mileage?.remainingMileage?.toLocaleString() || 0} km
                                         </p>
                                         <p className="text-xs text-gray-600">
@@ -2430,32 +2480,45 @@ const SuperAdvisor = () => {
                                     </h4>
                                     <div className="space-y-2">
                                       {warrantyDetails.componentWarranties.map((component: any, index: number) => {
+                                        const isDurationActive = component.duration?.status === 'ACTIVE' || component.duration?.status === true;
+                                        const isMileageActive = component.mileage?.status === 'ACTIVE';
                                         const remainingOdo = component.mileage?.remainingMileage || 0;
-                                        const isInactive = remainingOdo === 0;
+                                        const remainingDays = component.duration?.remainingDays || 0;
+                                        
+                                        // EXPIRED khi: 0 km HOẶC 0 days HOẶC duration/mileage không ACTIVE
+                                        const isExpired = remainingOdo === 0 || remainingDays === 0 || !isDurationActive || !isMileageActive;
+                                        const isActive = !isExpired;
+                                        
+                                        // Xác định màu sắc:
+                                        // EXPIRED = xám nhạt background, chữ đậm hơn
+                                        // ACTIVE = trắng
+                                        let bgColor = isExpired ? 'bg-gray-400' : 'bg-white';
+                                        let borderColor = isExpired ? 'border-gray-500' : 'border-gray-200';
+                                        let textColor = isExpired ? 'text-gray-800' : 'text-gray-800';
                                         
                                         return (
-                                        <div key={index} className="bg-white border border-gray-200 rounded p-3">
+                                        <div key={index} className={`${bgColor} border ${borderColor} rounded p-3`}>
                                           <div className="flex items-center justify-between mb-2">
-                                            <span className="font-medium text-sm text-gray-800">{component.componentName}</span>
+                                            <span className={`font-medium text-sm ${textColor}`}>{component.componentName}</span>
                                             <Badge 
-                                              variant={isInactive ? "destructive" : "outline"} 
-                                              className={`text-xs ${isInactive ? 'bg-red-500 text-white' : ''}`}
+                                              variant={isActive ? "outline" : "destructive"} 
+                                              className={isExpired ? 'bg-red-600 text-white font-semibold' : ''}
                                             >
-                                              {isInactive ? '✗ Inactive' : (component.duration?.status === 'ACTIVE' || component.duration?.status === true) ? '✓ Active' : '✗ Expired'}
+                                              {isExpired ? '✗ EXPIRED' : '✓ ACTIVE'}
                                             </Badge>
                                           </div>
-                                          <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                                          <div className={`grid grid-cols-2 gap-2 text-xs ${isExpired ? 'text-gray-700' : 'text-gray-600'}`}>
                                             <div>
-                                              <span className="text-gray-500">Duration:</span> {component.duration?.remainingDays || 0} days left
+                                              <span className={isExpired ? 'text-gray-800' : 'text-gray-500'}>Duration:</span> {remainingDays} days left
                                             </div>
                                             <div>
-                                              <span className="text-gray-500">Odometer:</span> {remainingOdo.toLocaleString()} km left
+                                              <span className={isExpired ? 'text-gray-800' : 'text-gray-500'}>Odometer:</span> {remainingOdo.toLocaleString()} km left
                                             </div>
                                             <div>
-                                              <span className="text-gray-500">Policy Duration:</span> {component.policy?.durationMonths || 0} months
+                                              <span className={isExpired ? 'text-gray-800' : 'text-gray-500'}>Policy Duration:</span> {component.policy?.durationMonths || 0} months
                                             </div>
                                             <div>
-                                              <span className="text-gray-500">Odometer Limit:</span> {component.policy?.mileageLimit?.toLocaleString() || 0} km
+                                              <span className={isExpired ? 'text-gray-800' : 'text-gray-500'}>Odometer Limit:</span> {component.policy?.mileageLimit?.toLocaleString() || 0} km
                                             </div>
                                           </div>
                                         </div>
@@ -2530,7 +2593,7 @@ const SuperAdvisor = () => {
                           />
                         </div>
                         <Button
-                          onClick={handleSearchCustomerByPhone}
+                          onClick={() => handleSearchCustomerByPhone()}
                           disabled={isSearchingCustomer || !customerSearchPhone.trim()}
                           className="bg-blue-600 hover:bg-blue-700"
                         >
@@ -2593,6 +2656,7 @@ const SuperAdvisor = () => {
                               onChange={(e) => setOwnerForm({ ...ownerForm, fullName: e.target.value })}
                               placeholder="Enter full name"
                               className="bg-white border-green-300 focus:border-green-500"
+                              disabled={!!vehicleSearchResult.owner}
                             />
                           </div>
                         </div>
@@ -2608,8 +2672,9 @@ const SuperAdvisor = () => {
                               placeholder="Enter 10-digit phone number"
                               maxLength={10}
                               className="bg-white border-green-300 focus:border-green-500 font-mono"
+                              disabled={!!vehicleSearchResult.owner}
                             />
-                            {ownerForm.phone && ownerForm.phone.length !== 10 && (
+                            {ownerForm.phone && ownerForm.phone.length !== 10 && !vehicleSearchResult.owner && (
                               <p className="text-xs text-red-500 mt-1">Phone must be exactly 10 digits</p>
                             )}
                           </div>
@@ -2623,6 +2688,7 @@ const SuperAdvisor = () => {
                               onChange={(e) => setOwnerForm({ ...ownerForm, email: e.target.value })}
                               placeholder="Enter email address"
                               className="bg-white border-green-300 focus:border-green-500"
+                              disabled={!!vehicleSearchResult.owner}
                             />
                           </div>
                         </div>
@@ -2634,22 +2700,25 @@ const SuperAdvisor = () => {
                               onChange={(e) => setOwnerForm({ ...ownerForm, address: e.target.value })}
                               placeholder="Enter address"
                               className="bg-white border-green-300 focus:border-green-500"
+                              disabled={!!vehicleSearchResult.owner}
                             />
                           </div>
                         </div>
                       </div>
                       
-                      {/* Save Changes Button */}
-                      <div className="mt-4 pt-4 border-t border-green-200">
-                        <Button 
-                          onClick={handleSaveChanges}
-                          className="w-full bg-green-600 hover:bg-green-700"
-                          size="lg"
-                        >
-                          <Save className="h-4 w-4 mr-2" />
-                          Save Changes
-                        </Button>
-                      </div>
+                      {/* Save Changes Button - Only show if vehicle has no owner */}
+                      {!vehicleSearchResult.owner && (
+                        <div className="mt-4 pt-4 border-t border-green-200">
+                          <Button 
+                            onClick={handleSaveChanges}
+                            className="w-full bg-green-600 hover:bg-green-700"
+                            size="lg"
+                          >
+                            <Save className="h-4 w-4 mr-2" />
+                            Save Changes
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3329,8 +3398,15 @@ const SuperAdvisor = () => {
                       <div className="space-y-1 text-sm">
                         <div className="flex justify-between">
                           <span>Status:</span>
-                          <Badge variant={warrantyDialogData.generalWarranty.duration?.status === 'ACTIVE' ? 'default' : 'destructive'}>
-                            {warrantyDialogData.generalWarranty.duration?.status || 'N/A'}
+                          <Badge variant={
+                            (warrantyDialogData.generalWarranty.duration?.status === 'ACTIVE' && 
+                             (warrantyDialogData.generalWarranty.duration?.remainingDays || 0) > 0) 
+                              ? 'default' 
+                              : 'destructive'
+                          }>
+                            {(warrantyDialogData.generalWarranty.duration?.remainingDays || 0) === 0 
+                              ? 'EXPIRED' 
+                              : warrantyDialogData.generalWarranty.duration?.status || 'N/A'}
                           </Badge>
                         </div>
                         <div className="flex justify-between">
@@ -3349,7 +3425,9 @@ const SuperAdvisor = () => {
                         </div>
                         <div className="flex justify-between">
                           <span>Remaining Days:</span>
-                          <span className="font-medium text-green-600">{warrantyDialogData.generalWarranty.duration?.remainingDays?.toLocaleString() || 0}</span>
+                          <span className={`font-medium ${(warrantyDialogData.generalWarranty.duration?.remainingDays || 0) === 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {warrantyDialogData.generalWarranty.duration?.remainingDays?.toLocaleString() || 0}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -3360,8 +3438,15 @@ const SuperAdvisor = () => {
                       <div className="space-y-1 text-sm">
                         <div className="flex justify-between">
                           <span>Status:</span>
-                          <Badge variant={warrantyDialogData.generalWarranty.mileage?.status === 'ACTIVE' ? 'default' : 'destructive'}>
-                            {warrantyDialogData.generalWarranty.mileage?.status || 'N/A'}
+                          <Badge variant={
+                            (warrantyDialogData.generalWarranty.mileage?.status === 'ACTIVE' && 
+                             (warrantyDialogData.generalWarranty.mileage?.remainingMileage || 0) > 0) 
+                              ? 'default' 
+                              : 'destructive'
+                          }>
+                            {(warrantyDialogData.generalWarranty.mileage?.remainingMileage || 0) === 0 
+                              ? 'EXPIRED' 
+                              : warrantyDialogData.generalWarranty.mileage?.status || 'N/A'}
                           </Badge>
                         </div>
                         <div className="flex justify-between">
@@ -3374,7 +3459,9 @@ const SuperAdvisor = () => {
                         </div>
                         <div className="flex justify-between">
                           <span>Remaining:</span>
-                          <span className="font-medium text-green-600">{warrantyDialogData.generalWarranty.mileage?.remainingMileage?.toLocaleString() || 0} km</span>
+                          <span className={`font-medium ${(warrantyDialogData.generalWarranty.mileage?.remainingMileage || 0) === 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {warrantyDialogData.generalWarranty.mileage?.remainingMileage?.toLocaleString() || 0} km
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -3395,36 +3482,55 @@ const SuperAdvisor = () => {
                       const isDurationActive = component.duration?.status === 'ACTIVE';
                       const isMileageActive = component.mileage?.status === 'ACTIVE';
                       const remainingOdo = component.mileage?.remainingMileage || 0;
-                      const isInactive = remainingOdo === 0;
-                      const isComponentValid = isDurationActive && isMileageActive && !isInactive;
+                      const remainingDays = component.duration?.remainingDays || 0;
+                      
+                      // EXPIRED khi: 0 km HOẶC 0 days HOẶC duration/mileage không ACTIVE
+                      const isExpired = remainingOdo === 0 || remainingDays === 0 || !isDurationActive || !isMileageActive;
+                      const isComponentValid = !isExpired;
+                      
+                      // Xác định màu sắc:
+                      // EXPIRED = xám nhạt background, chữ đỏ
+                      // ACTIVE = xanh
+                      let bgColor = isExpired ? 'bg-gray-400' : 'bg-green-50';
+                      let borderColor = isExpired ? 'border-gray-500' : 'border-green-200';
+                      let textColor = isExpired ? 'text-gray-800' : 'text-gray-800';
                       
                       return (
-                        <div key={component.typeComponentId || index} className={`p-3 rounded-lg border ${isComponentValid ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                          <h4 className="font-medium text-sm mb-2 text-gray-800">
+                        <div key={component.typeComponentId || index} className={`p-3 rounded-lg border ${bgColor} ${borderColor}`}>
+                          <h4 className={`font-medium text-sm mb-2 ${textColor}`}>
                             {component.componentName || `Component ${index + 1}`}
                           </h4>
                           <div className="space-y-1 text-xs">
                             {/* Overall Status */}
                             <div className="flex justify-between mb-2">
-                              <span className="font-medium">Overall:</span>
-                              <Badge variant={isComponentValid ? 'default' : 'destructive'}>
-                                {isInactive ? 'INACTIVE' : isComponentValid ? 'ACTIVE' : 'EXPIRED'}
+                              <span className={`font-medium ${isExpired ? 'text-gray-700' : ''}`}>Overall:</span>
+                              <Badge 
+                                variant={isComponentValid ? 'default' : 'destructive'} 
+                                className={isExpired ? 'bg-red-600 text-white font-semibold' : ''}
+                              >
+                                {isExpired ? '✗ EXPIRED' : '✓ ACTIVE'}
                               </Badge>
                             </div>
 
                             {/* Duration Info */}
                             <div className="flex justify-between">
-                              <span>Duration:</span>
-                              <Badge variant={isDurationActive ? 'default' : 'destructive'}>
-                                {component.duration?.status || 'N/A'}
+                              <span className={isExpired ? 'text-gray-700' : ''}>Duration:</span>
+                              <Badge 
+                                variant={isDurationActive ? 'default' : 'destructive'}
+                                className={isExpired ? 'bg-red-600 text-white font-semibold' : ''}
+                              >
+                                {isDurationActive ? 'ACTIVE' : 'EXPIRED'}
                               </Badge>
                             </div>
                             
                             {/* Mileage Info */}
                             <div className="flex justify-between">
-                              <span>Mileage:</span>
-                              <Badge variant={isMileageActive ? 'default' : 'destructive'}>
-                                {component.mileage?.status || 'N/A'}
+                              <span className={isExpired ? 'text-gray-700' : ''}>Mileage:</span>
+                              <Badge 
+                                variant={isMileageActive ? 'default' : 'destructive'}
+                                className={isExpired ? 'bg-red-600 text-white font-semibold' : ''}
+                              >
+                                {isMileageActive && remainingOdo > 0 ? 'ACTIVE' : 'EXPIRED'}
                               </Badge>
                             </div>
 
@@ -3432,14 +3538,14 @@ const SuperAdvisor = () => {
 
                             {/* Policy Details */}
                             <div className="flex justify-between">
-                              <span>Policy:</span>
-                              <span className="font-medium">{component.policy?.durationMonths || 0}m / {component.policy?.mileageLimit?.toLocaleString() || 'N/A'}km</span>
+                              <span className={isExpired ? 'text-gray-700' : ''}>Policy:</span>
+                              <span className={`font-medium ${isExpired ? 'text-gray-800' : ''}`}>{component.policy?.durationMonths || 0}m / {component.policy?.mileageLimit?.toLocaleString() || 'N/A'}km</span>
                             </div>
 
                             {/* Remaining Details */}
                             <div className="flex justify-between">
-                              <span>Expires:</span>
-                              <span className="text-blue-600 text-xs">{
+                              <span className={isExpired ? 'text-gray-700' : ''}>Expires:</span>
+                              <span className={`text-xs ${isExpired ? 'text-gray-800' : 'text-blue-600'}`}>{
                                 component.duration?.endDate 
                                   ? (typeof component.duration.endDate === 'string' 
                                       ? component.duration.endDate 
@@ -3449,13 +3555,13 @@ const SuperAdvisor = () => {
                             </div>
                             
                             <div className="flex justify-between">
-                              <span>Days left:</span>
-                              <span className="font-medium text-green-600">{component.duration?.remainingDays?.toLocaleString() || 0}</span>
+                              <span className={isExpired ? 'text-gray-700' : ''}>Days left:</span>
+                              <span className={`font-medium ${isExpired ? 'text-gray-800' : remainingDays === 0 ? 'text-red-600' : 'text-green-600'}`}>{remainingDays.toLocaleString()}</span>
                             </div>
                             
                             <div className="flex justify-between">
-                              <span>KM left:</span>
-                              <span className={`font-medium ${remainingOdo === 0 ? 'text-red-600' : 'text-green-600'}`}>
+                              <span className={isExpired ? 'text-gray-700' : ''}>KM left:</span>
+                              <span className={`font-medium ${isExpired ? 'text-gray-800' : remainingOdo === 0 ? 'text-red-600' : 'text-green-600'}`}>
                                 {remainingOdo.toLocaleString()}
                               </span>
                             </div>
