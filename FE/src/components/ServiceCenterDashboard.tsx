@@ -129,10 +129,17 @@ const getStatusBadgeVariant = (status?: string) => {
     case 'CHECKED_IN':
     case 'PENDING_DIAGNOSIS':
       return 'secondary';
+    case 'WAITING_CUSTOMER_APPROVAL':
+    case 'WAITING_FOR_PARTS':
+      return 'outline';
     case 'IN_PROGRESS':
+    case 'IN_DIAGNOSIS':
+    case 'PROCESSING':
+    case 'IN_REPAIR':
       return 'default';
     case 'COMPLETED':
     case 'DELIVERED':
+    case 'PAID':
       return 'success';
     case 'REJECTED':
     case 'CANCELLED':
@@ -146,6 +153,8 @@ const STATUS_LABELS: Record<string, string> = {
   // Processing Record statuses
   CHECKED_IN: 'Checked In',
   IN_DIAGNOSIS: 'In Diagnosis',
+  WAITING_CUSTOMER_APPROVAL: 'Waiting Customer Approval',
+  PROCESSING: 'Processing',
   WAITING_FOR_PARTS: 'Waiting for Parts',
   IN_REPAIR: 'In Repair',
   COMPLETED: 'Completed',
@@ -271,6 +280,8 @@ const ServiceCenterDashboard = () => {
   const STATUSES = [
     'CHECKED_IN',
     'IN_DIAGNOSIS',
+    'WAITING_CUSTOMER_APPROVAL',
+    'PROCESSING',
     'WAITING_FOR_PARTS',
     'IN_REPAIR',
     'COMPLETED',
@@ -286,7 +297,15 @@ const ServiceCenterDashboard = () => {
   const [selectedClaimForDetail, setSelectedClaimForDetail] = useState<WarrantyClaim | null>(null);
 
   // Track case lines with out of stock status
-  const [outOfStockCaseLines, setOutOfStockCaseLines] = useState<Set<string>>(new Set());
+  const [outOfStockCaseLines, setOutOfStockCaseLines] = useState<Set<string>>(() => {
+    // Load from localStorage on mount
+    try {
+      const saved = localStorage.getItem('outOfStockCaseLines');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
 
   // Technician Records Modal States
   const [showTechnicianRecordsModal, setShowTechnicianRecordsModal] = useState(false);
@@ -565,6 +584,15 @@ const ServiceCenterDashboard = () => {
       if (response.status === 200 || response.status === 201) {
         alert('Component allocated successfully!');
 
+        // Remove from out of stock list if it was there
+        setOutOfStockCaseLines(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(caseLineId);
+          // Save to localStorage
+          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
+
         // Refresh all data to ensure UI is up-to-date
         await fetchAllStatuses();
       }
@@ -572,14 +600,49 @@ const ServiceCenterDashboard = () => {
       console.error('Error allocating component:', error);
       const errorMessage = error.response?.data?.message || 'Failed to allocate component. Please try again.';
 
-      // Check if error is due to out of stock
-      if (error.response?.status === 404 && errorMessage.includes('No available stock found')) {
+      // Check if error is 409 Conflict (out of stock)
+      if (error.response?.status === 409) {
         // Mark this case line as out of stock
-        setOutOfStockCaseLines(prev => new Set([...prev, caseLineId]));
+        setOutOfStockCaseLines(prev => {
+          const newSet = new Set([...prev, caseLineId]);
+          // Save to localStorage
+          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
+        alert('⚠️ Out of Stock! No available component in warehouse. Please request from manufacturer.');
+      } else if (error.response?.status === 404 && errorMessage.includes('No available stock found')) {
+        // Also handle 404 as out of stock
+        setOutOfStockCaseLines(prev => {
+          const newSet = new Set([...prev, caseLineId]);
+          // Save to localStorage
+          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
         alert('⚠️ Out of Stock! No available component in warehouse. Please request from manufacturer.');
       } else {
         alert(errorMessage);
       }
+    }
+  };
+
+  // Request component from manufacturer (API will be added later)
+  const handleRequestFromManufacturer = async (guaranteeCaseId: string, caseLineId: string, componentName: string) => {
+    try {
+      // TODO: Call API to request component from manufacturer
+      // const token = localStorage.getItem('token') || localStorage.getItem('ev_warranty_token');
+      // const response = await axios.post(
+      //   `${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/request-from-manufacturer`,
+      //   {},
+      //   { headers: { 'Authorization': `Bearer ${token}` } }
+      // );
+      
+      alert(`Request sent to manufacturer for component: ${componentName}\n\n(API integration coming soon)`);
+      
+      // Optionally refresh data
+      // await fetchAllStatuses();
+    } catch (error: any) {
+      console.error('Error requesting from manufacturer:', error);
+      alert('Failed to send request to manufacturer. Please try again.');
     }
   };
 
@@ -758,14 +821,6 @@ const ServiceCenterDashboard = () => {
                                   {claim.assignedTechnicians.map((tech) => (
                                     <Badge key={tech.id} variant="outline" className="text-xs">
                                       {tech.name}
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="ml-1 h-3 w-3 p-0 hover:bg-red-100"
-                                        onClick={() => removeTechnicianFromCase(claim.vin, tech.id)}
-                                      >
-                                        ×
-                                      </Button>
                                     </Badge>
                                   ))}
                                   {claim.assignedTechnicians.length === 0 && (
@@ -776,8 +831,8 @@ const ServiceCenterDashboard = () => {
                                   )}
                                 </div>
 
-                                {/* Assign Technician Button */}
-                                {hasPermission(user, 'assign_technicians') && (
+                                {/* Assign Technician Button - Only show for CHECKED_IN status */}
+                                {hasPermission(user, 'assign_technicians') && claim.status === 'CHECKED_IN' && (
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -785,7 +840,7 @@ const ServiceCenterDashboard = () => {
                                     onClick={() => openTechnicianAssignmentModal(claim.vin)}
                                   >
                                     <Users className="h-4 w-4 mr-2" />
-                                    Assign Technician
+                                    Assign Technician (Diagnosis)
                                   </Button>
                                 )}
 
@@ -1036,8 +1091,13 @@ const ServiceCenterDashboard = () => {
                                               </div>
                                               <Badge
                                                 variant={getCaseLineStatusVariant(line.status)}
-                                                className={`text-xs px-2 py-0 ${line.status === 'CUSTOMER_APPROVED' ? 'bg-green-600 text-white' : ''
-                                                  }`}
+                                                className={`text-xs px-2 py-0 ${
+                                                  line.status === 'CUSTOMER_APPROVED' 
+                                                    ? 'bg-green-600 text-white' 
+                                                    : line.status === 'REJECTED_BY_CUSTOMER'
+                                                    ? 'bg-red-600 text-white font-semibold'
+                                                    : ''
+                                                }`}
                                               >
                                                 {getDisplayStatus(line.status)}
                                               </Badge>
@@ -1088,6 +1148,7 @@ const ServiceCenterDashboard = () => {
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
                                                   {/* Show Allocate button if CUSTOMER_APPROVED and NOT out of stock */}
+                                                  {/* Only show if status is still CUSTOMER_APPROVED (not yet allocated) */}
                                                   {line.status === 'CUSTOMER_APPROVED' && hasPermission(user, 'attach_parts') && !outOfStockCaseLines.has(line.id) && (
                                                     <Button
                                                       size="sm"
@@ -1099,20 +1160,23 @@ const ServiceCenterDashboard = () => {
                                                       Allocate
                                                     </Button>
                                                   )}
-                                                  {/* Show Request button if out of stock */}
-                                                  {outOfStockCaseLines.has(line.id) && (
+                                                  {/* Show Request button if CUSTOMER_APPROVED but out of stock */}
+                                                  {line.status === 'CUSTOMER_APPROVED' && outOfStockCaseLines.has(line.id) && hasPermission(user, 'attach_parts') && (
                                                     <Button
                                                       size="sm"
                                                       variant="outline"
-                                                      onClick={() => {
-                                                        // TODO: Implement request to manufacturer API
-                                                        alert('Request to Manufacturer feature - Coming soon!');
-                                                      }}
+                                                      onClick={() => handleRequestFromManufacturer(gc.guaranteeCaseId, line.id, line.typeComponent?.name || 'Component')}
                                                       className="bg-orange-600 hover:bg-orange-700 text-white border-orange-600 text-xs h-6 px-2"
                                                     >
                                                       <AlertCircle className="h-3 w-3 mr-1" />
-                                                      Request
+                                                      Request from Manufacturer
                                                     </Button>
+                                                  )}
+                                                  {/* Show status badge if already allocated */}
+                                                  {line.status !== 'CUSTOMER_APPROVED' && line.status !== 'DRAFT' && line.status !== 'PENDING_APPROVAL' && (
+                                                    <Badge variant="success" className="text-xs">
+                                                      ✓ {getDisplayStatus(line.status)}
+                                                    </Badge>
                                                   )}
                                                 </div>
                                               </div>
@@ -1301,14 +1365,6 @@ const ServiceCenterDashboard = () => {
                           {tech.status && (
                             <span className="text-xs text-muted-foreground">{getDisplayStatus(tech.status)}</span>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="ml-2 h-4 w-4 p-0 hover:bg-red-100"
-                            onClick={() => removeTechnicianFromCase(selectedCaseForAssignment, tech.id)}
-                          >
-                            ×
-                          </Button>
                         </div>
                       </Badge>
                     )) || []}
