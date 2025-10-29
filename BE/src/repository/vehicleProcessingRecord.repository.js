@@ -256,7 +256,7 @@ class VehicleProcessingRecordRepository {
       },
 
       attributes: [
-        ["vehicle_processing_record_id", "vehicleProcessingRecordId"],
+        "vehicleProcessingRecordId",
         "vin",
         "checkInDate",
         "odometer",
