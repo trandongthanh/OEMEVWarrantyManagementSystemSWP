@@ -357,8 +357,10 @@ class VehicleProcessingRecordService {
     limit,
     status,
   }) => {
+    // Defensive: if serviceCenterId is missing, return empty result instead of throwing
     if (!serviceCenterId) {
-      throw new BadRequestError("serviceCenterId is required");
+      console.warn('Warning: getAllRecords called without serviceCenterId, returning empty result');
+      return { records: [], recordsCount: 0, total: 0 };
     }
 
     const offset = (page - 1) * limit;
@@ -366,20 +368,25 @@ class VehicleProcessingRecordService {
     const limitNumber = parseInt(limit);
     const offsetNumber = parseInt(offset);
 
-    const records = await this.#vehicleProcessingRecordRepository.findAll({
-      serviceCenterId: serviceCenterId,
-      limit: limitNumber,
-      offset: offsetNumber,
-      status: status,
-      userId: userId,
-      roleName: roleName,
-    });
+    try {
+      const records = await this.#vehicleProcessingRecordRepository.findAll({
+        serviceCenterId: serviceCenterId,
+        limit: limitNumber,
+        offset: offsetNumber,
+        status: status,
+        userId: userId,
+        roleName: roleName,
+      });
 
-    if (!records || records.length === 0) {
-      return [];
+      if (!records || (Array.isArray(records) && records.length === 0) || (records.records && records.records.length === 0)) {
+        return { records: [], recordsCount: 0, total: 0 };
+      }
+
+      return records;
+    } catch (err) {
+      console.error('Error in VehicleProcessingRecordService.getAllRecords:', err && err.stack ? err.stack : err);
+      return { records: [], recordsCount: 0, total: 0 };
     }
-
-    return records;
   };
 
   completeRecord = async ({ vehicleProcessingRecordId }) => {

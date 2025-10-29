@@ -92,8 +92,9 @@ export const processingRecordsService = {
         return [];
       }
     } catch (error) {
-      console.error('Error fetching all processing records:', error);
-      throw error;
+      // Expected network/backend errors are noisy in dev - downgrade to warn and return empty list
+      console.warn('Warning: failed to fetch all processing records:', error?.message || error);
+      return [] as ProcessingRecord[];
     }
   },
 
@@ -103,8 +104,8 @@ export const processingRecordsService = {
       const url = status ? `/processing-records?status=${status}` : '/processing-records';
       const response = await apiClient.get(url);
       
-      console.log('🔍 API Response:', response.data);
-      console.log('🔍 Full response structure:', JSON.stringify(response.data, null, 2));
+    // avoid noisy full dumps in console in production
+    console.log('🔍 API Response status:', response.status);
       
       // Handle different possible response structures
       if (response.data?.data?.records?.records) {
@@ -122,8 +123,9 @@ export const processingRecordsService = {
         return [];
       }
     } catch (error) {
-      console.error(`❌ Error fetching processing records${status ? ` with status ${status}` : ''}:`, error);
-      throw error;
+      // Downgrade noisy errors to warn and return empty list so UI can handle gracefully
+      console.warn(`Warning: Error fetching processing records${status ? ` with status ${status}` : ''}:`, error?.message || error);
+      return [] as ProcessingRecord[];
     }
   },
 

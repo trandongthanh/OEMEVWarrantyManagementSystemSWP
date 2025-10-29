@@ -149,24 +149,44 @@ class VehicleProcessingRecordController {
   };
 
   getAllRecords = async (req, res, next) => {
-    const { roleName, userId, serviceCenterId } = req.user;
-    const { page = 1, limit = 10, status } = req.query;
+    try {
+  const { roleName, userId } = req.user;
+  // Normalize possible service center field names coming from different auth/token shapes
+  const serviceCenterId = req.user.serviceCenterId ?? req.user.serviceCenter ?? req.user.service_center_id ?? null;
+      const { page = 1, limit = 10, status } = req.query;
 
-    const records = await this.#vehicleProcessingRecordService.getAllRecords({
-      serviceCenterId,
-      userId,
-      roleName,
-      page,
-      limit,
-      status,
-    });
+      // Debug logging to help diagnose 500 errors from this endpoint
+      console.log('GET /processing-records called by user:', {
+        id: userId,
+        roleName,
+        serviceCenterId,
+        query: { page, limit, status }
+      });
 
-    res.status(200).json({
-      status: "success",
-      data: {
-        records,
-      },
-    });
+      const records = await this.#vehicleProcessingRecordService.getAllRecords({
+        serviceCenterId,
+        userId,
+        roleName,
+        page,
+        limit,
+        status,
+      });
+
+      res.status(200).json({
+        status: "success",
+        data: {
+          records,
+        },
+      });
+    } catch (err) {
+      // Log the error and the request context for debugging, then pass to error handler
+      console.error('Error in getAllRecords controller for /processing-records', {
+        user: req.user,
+        query: req.query,
+        error: err && err.stack ? err.stack : err,
+      });
+      return next(err);
+    }
   };
 
   completeRecord = async (req, res, next) => {

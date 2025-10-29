@@ -4,8 +4,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Package, Warehouse, ArrowRightCircle, Truck } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { componentReservationService, PickupResponse } from '@/services/componentReservationService';
 
 interface StockRow {
   stock_id: string;
@@ -41,6 +43,16 @@ const PartsCoordinatorDashboard: React.FC = () => {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [selectedTech, setSelectedTech] = useState<string | null>(null);
   const [assignTargetId, setAssignTargetId] = useState<string>('');
+  // Pickup reserved components (for parts coordinator)
+  const [reservationIdInput, setReservationIdInput] = useState<string>('');
+  const [pickupResult, setPickupResult] = useState<PickupResponse | null>(null);
+  const [isPicking, setIsPicking] = useState<boolean>(false);
+  // Install component on vehicle
+  const [installResult, setInstallResult] = useState<Record<string, unknown> | null>(null);
+  const [isInstalling, setIsInstalling] = useState<boolean>(false);
+  // Return old component after replacement
+  const [returnResult, setReturnResult] = useState<Record<string, unknown> | null>(null);
+  const [isReturning, setIsReturning] = useState<boolean>(false);
 
   useEffect(() => {
     // Lightweight initial load: try to fetch inventory & requests from API if token exists.
@@ -286,6 +298,133 @@ const PartsCoordinatorDashboard: React.FC = () => {
             <CardContent>
               <div className="text-2xl font-bold">{Array.from(new Set(stocks.map(s => s.warehouse_name))).length}</div>
               <div className="text-sm text-muted-foreground">Active warehouses</div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Pickup / Install tabs (Parts Coordinator) */}
+        <div className="mb-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Reservation Actions</CardTitle>
+              <CardDescription>Pickup reserved components or install them on vehicle (use reservation id)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue="pickup">
+                <TabsList>
+                  <TabsTrigger value="pickup">Pickup</TabsTrigger>
+                    <TabsTrigger value="install">Install on Vehicle</TabsTrigger>
+                    <TabsTrigger value="return">Return Old Component</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="pickup">
+                  <div className="flex gap-2 items-center">
+                    <input className="rounded-md border px-3 py-2 flex-1" placeholder="Reservation ID" value={reservationIdInput} onChange={(e) => setReservationIdInput(e.target.value)} />
+                    <Button disabled={!reservationIdInput || isPicking} onClick={async () => {
+                      try {
+                        setIsPicking(true);
+                        setPickupResult(null);
+                        const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+                        if (!token) return alert('Authentication required');
+                        const data = await componentReservationService.pickupReservation(reservationIdInput.trim());
+                        setPickupResult(data as PickupResponse);
+                        alert('Pickup success: ' + (data?.reservation?.reservationId ?? 'OK'));
+                      } catch (err) {
+                        console.error('Pickup failed', err);
+                        alert('Pickup failed: ' + (err instanceof Error ? err.message : String(err)));
+                      } finally {
+                        setIsPicking(false);
+                      }
+                    }}>{isPicking ? 'Picking...' : 'Pickup'}</Button>
+                    <Button variant="outline" onClick={() => { setReservationIdInput(''); setPickupResult(null); }}>Reset</Button>
+                  </div>
+
+                  {pickupResult && (
+                    <div className="mt-4">
+                      <h4 className="font-medium">Reservation</h4>
+                      <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(pickupResult.reservation, null, 2)}</pre>
+                      <h4 className="font-medium mt-2">Component</h4>
+                      <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(pickupResult.component, null, 2)}</pre>
+                      {pickupResult.caseLine && (
+                        <>
+                          <h4 className="font-medium mt-2">Case Line</h4>
+                          <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(pickupResult.caseLine, null, 2)}</pre>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="install">
+                  <div className="flex gap-2 items-center">
+                    <input className="rounded-md border px-3 py-2 flex-1" placeholder="Reservation ID" value={reservationIdInput} onChange={(e) => setReservationIdInput(e.target.value)} />
+                    <Button variant="secondary" disabled={!reservationIdInput || isInstalling} onClick={async () => {
+                      try {
+                        setIsInstalling(true);
+                        setInstallResult(null);
+                        const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+                        if (!token) return alert('Authentication required');
+                        const data = await componentReservationService.installComponent(reservationIdInput.trim());
+                        setInstallResult(data as Record<string, unknown>);
+                        alert('Install success: ' + (data?.reservation?.reservationId ?? 'OK'));
+                      } catch (err) {
+                        console.error('Install failed', err);
+                        alert('Install failed: ' + (err instanceof Error ? err.message : String(err)));
+                      } finally {
+                        setIsInstalling(false);
+                      }
+                    }}>{isInstalling ? 'Installing...' : 'Install on Vehicle'}</Button>
+                    <Button variant="outline" onClick={() => { setReservationIdInput(''); setInstallResult(null); }}>Reset</Button>
+                  </div>
+
+                  {installResult && (
+                    <div className="mt-4">
+                      <h4 className="font-medium">Install Result - Reservation</h4>
+                      <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(installResult?.reservation ?? installResult, null, 2)}</pre>
+                      <h4 className="font-medium mt-2">Install Result - Component</h4>
+                      <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(installResult?.component ?? installResult, null, 2)}</pre>
+                      {installResult?.caseLine && (
+                        <>
+                          <h4 className="font-medium mt-2">Install Result - Case Line</h4>
+                          <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(installResult?.caseLine, null, 2)}</pre>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="return">
+                  <div className="flex gap-2 items-center">
+                    <input className="rounded-md border px-3 py-2 flex-1" placeholder="Reservation ID" value={reservationIdInput} onChange={(e) => setReservationIdInput(e.target.value)} />
+                    <Button variant="destructive" disabled={!reservationIdInput || isReturning} onClick={async () => {
+                      try {
+                        setIsReturning(true);
+                        setReturnResult(null);
+                        const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+                        if (!token) return alert('Authentication required');
+                        const data = await componentReservationService.returnComponent(reservationIdInput.trim());
+                        setReturnResult(data as Record<string, unknown>);
+                        alert('Return success: ' + (data?.reservation?.reservationId ?? 'OK'));
+                      } catch (err) {
+                        console.error('Return failed', err);
+                        alert('Return failed: ' + (err instanceof Error ? err.message : String(err)));
+                      } finally {
+                        setIsReturning(false);
+                      }
+                    }}>{isReturning ? 'Returning...' : 'Return Component'}</Button>
+                    <Button variant="outline" onClick={() => { setReservationIdInput(''); setReturnResult(null); }}>Reset</Button>
+                  </div>
+
+                  {returnResult && (
+                    <div className="mt-4">
+                      <h4 className="font-medium">Return Result - Reservation</h4>
+                      <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(returnResult?.reservation ?? returnResult, null, 2)}</pre>
+                      <h4 className="font-medium mt-2">Return Result - Component</h4>
+                      <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(returnResult?.component ?? returnResult, null, 2)}</pre>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </div>
