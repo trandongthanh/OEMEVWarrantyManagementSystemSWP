@@ -240,6 +240,24 @@ class ComponentRepository {
 
     return component ? component.toJSON() : null;
   };
+
+  findComponentsByRequestId = async (
+    { requestId },
+    transaction = null,
+    lock = null
+  ) => {
+    const components = await Component.findAll({
+      where: { requestId: requestId },
+      transaction: transaction,
+      lock: lock,
+    });
+
+    if (!components || components.length === 0) {
+      return [];
+    }
+
+    return components.map((component) => component.toJSON());
+  };
 }
 
 export default ComponentRepository;

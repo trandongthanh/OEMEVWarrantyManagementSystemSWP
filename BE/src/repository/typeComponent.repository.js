@@ -1,22 +1,31 @@
+import { Op } from "sequelize";
 import db from "../models/index.cjs";
 
 const { TypeComponent, VehicleModel, Warehouse } = db;
 
 class TypeComponentRepository {
-  findByPk = async (typeComponentId, transaction) => {
+  findByPk = async (typeComponentId, transaction = null) => {
     return await TypeComponent.findByPk(typeComponentId, {
       attributes: ["name"],
       transaction: transaction,
     });
   };
 
-  findAll = async (transaction = null) => {
-    const typeComponents = await TypeComponent.findAll({
-      attributes: ["typeComponentId", "sku", "name", "price", "category"],
+  findByIds = async (typeComponentIds, transaction = null) => {
+    return await TypeComponent.findAll({
+      where: {
+        typeComponentId: {
+          [Op.in]: typeComponentIds,
+        },
+      },
       transaction: transaction,
     });
+  };
 
-    return typeComponents ? typeComponents.map(tc => tc.toJSON()) : [];
+  bulkCreateTypeComponents = async (typeComponentsData, transaction = null) => {
+    return await TypeComponent.bulkCreate(typeComponentsData, {
+      transaction: transaction,
+    });
   };
 }
 
