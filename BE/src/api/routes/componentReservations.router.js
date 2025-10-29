@@ -1,5 +1,13 @@
 import express from "express";
-import { authentication, authorizationByRole } from "../middleware/index.js";
+import {
+  authentication,
+  authorizationByRole,
+  validate,
+} from "../middleware/index.js";
+import {
+  pickupReservedComponentSchema,
+  returnReservedComponentSchema,
+} from "../../validators/componentReservation.validator.js";
 
 const router = express.Router();
 
@@ -85,6 +93,7 @@ router.patch(
   "/:reservationId/pickup",
   authentication,
   authorizationByRole(["parts_coordinator_service_center"]),
+  validate(pickupReservedComponentSchema, "body"),
   async (req, res, next) => {
     const componentReservationsController = req.container.resolve(
       "componentReservationsController"
@@ -273,6 +282,7 @@ router.patch(
   "/:reservationId/return",
   authentication,
   authorizationByRole(["parts_coordinator_service_center"]),
+  validate(returnReservedComponentSchema, "body"),
   async (req, res, next) => {
     const componentReservationsController = req.container.resolve(
       "componentReservationsController"

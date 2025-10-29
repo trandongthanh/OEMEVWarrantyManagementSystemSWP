@@ -913,7 +913,7 @@ class CaseLineService {
     }
 
     if (reservations.length === 0) {
-      throw new ConflictError("Failed to allocate stock for caseline");
+      throw new ConflictError("No stock available for allocation");
     }
 
     return reservations;
