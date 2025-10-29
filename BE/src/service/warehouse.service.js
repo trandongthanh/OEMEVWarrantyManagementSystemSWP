@@ -21,6 +21,14 @@ class WarehouseService {
       throw new BadRequestError("serviceCenterId, modelId is required");
     }
 
+    if (!vin) {
+      throw new BadRequestError("Vehicle VIN is required");
+    }
+
+    if (odometer === null || odometer === undefined) {
+      throw new BadRequestError("Odometer reading is required");
+    }
+
     if (!searchName) {
       searchName = "";
     }
@@ -40,8 +48,9 @@ class WarehouseService {
       }),
     ]);
 
-    const typeComponentWarranties = vehicleWarranty.componentWarranties
-      ?.filter(({ duration, mileage }) => duration && mileage)
+    const componentWarranties = vehicleWarranty.componentWarranties || [];
+    const typeComponentWarranties = componentWarranties
+      .filter(({ duration, mileage }) => duration && mileage)
       .map((typeComponent) => {
         return {
           typeComponentId: typeComponent.typeComponentId,
@@ -52,11 +61,11 @@ class WarehouseService {
 
     const typeComponentsUnderWarranty =
       typeComponentWarranties
-        ?.filter(
+        .filter(
           ({ duration, mileage }) =>
             duration === "ACTIVE" && mileage === "ACTIVE"
         )
-        .map(({ typeComponentId }) => typeComponentId) || [];
+        .map(({ typeComponentId }) => typeComponentId);
 
     for (const typeComponent of typeComponents) {
       if (typeComponentsUnderWarranty.includes(typeComponent.typeComponentId)) {

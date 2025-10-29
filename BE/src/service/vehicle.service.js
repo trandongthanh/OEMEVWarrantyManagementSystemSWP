@@ -272,9 +272,33 @@ class VehicleService {
       odometer
     );
 
-    const typeComponentsWarrantyFormated = vehicle.model.typeComponents.map(
+    const typeComponents = vehicle?.model?.typeComponents || [];
+
+    const typeComponentsWarrantyFormated = typeComponents.map(
       (component) => {
         const warrantyComponent = component?.WarrantyComponent;
+
+        if (!warrantyComponent) {
+          return {
+            typeComponentId: component.typeComponentId,
+            componentName: component.name,
+            policy: {
+              durationMonths: 0,
+              mileageLimit: 0,
+            },
+            duration: {
+              status: "EXPIRED",
+              endDate: null,
+              remainingDays: 0,
+              overdueDays: 0,
+            },
+            mileage: {
+              status: "EXPIRED",
+              remainingMileage: 0,
+              overdueMileage: 0,
+            },
+          };
+        }
 
         const checkWarrantyComponent = this.#checkWarrantyStatusByDuration(
           purchaseDate,
