@@ -286,6 +286,7 @@ class CaseLineRepository {
     const where = {};
     const guaranteeCaseWhere = {};
     const vehicleProcessingRecordWhere = {};
+    const serviceCenterWhere = {};
 
     if (status) where.status = status;
     if (warrantyStatus) where.warrantyStatus = warrantyStatus;
@@ -297,7 +298,7 @@ class CaseLineRepository {
         vehicleProcessingRecordId;
     }
     if (serviceCenterId) {
-      vehicleProcessingRecordWhere.serviceCenterId = serviceCenterId;
+      serviceCenterWhere.serviceCenterId = serviceCenterId;
     }
 
     const { count, rows } = await CaseLine.findAndCountAll({
@@ -316,16 +317,25 @@ class CaseLineRepository {
             {
               model: VehicleProcessingRecord,
               as: "vehicleProcessingRecord",
-              attributes: [
-                "vehicleProcessingRecordId",
-                "vin",
-                "serviceCenterId",
-              ],
+              attributes: ["vehicleProcessingRecordId", "vin"],
               where:
                 Object.keys(vehicleProcessingRecordWhere).length > 0
                   ? vehicleProcessingRecordWhere
                   : undefined,
               required: true,
+
+              include: [
+                {
+                  model: User,
+                  as: "createdByStaff",
+                  attributes: ["userId", "serviceCenterId"],
+                  where:
+                    Object.keys(serviceCenterWhere).length > 0
+                      ? serviceCenterWhere
+                      : undefined,
+                  required: true,
+                },
+              ],
             },
           ],
         },
