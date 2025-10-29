@@ -333,11 +333,13 @@ class StockTransferRequestService {
         if (!acc[reservation.typeComponentId]) {
           acc[reservation.typeComponentId] = [];
         }
+
         acc[reservation.typeComponentId].push(reservation);
         return acc;
       }, {});
 
       const stockIds = reservations.map((r) => r.stockId);
+
       const stocks = await this.#warehouseRepository.findStocksByIds(
         { stockIds },
         transaction,
@@ -367,6 +369,7 @@ class StockTransferRequestService {
       const allComponentIds = componentCollections.flatMap(
         (c) => c.componentIds
       );
+
       await this.#componentRepository.bulkUpdateStatus(
         {
           componentIds: allComponentIds,
@@ -386,11 +389,11 @@ class StockTransferRequestService {
       }
 
       await this.#warehouseRepository.bulkUpdateStockQuantities(
-        { reservations: stockUpdates },
+        { stockUpdates: stockUpdates },
         transaction
       );
 
-      const reservationIds = reservations.map((r) => r.id);
+      const reservationIds = reservations.map((r) => r.stockId);
       await this.#stockReservationRepository.bulkUpdateStatus(
         { reservationIds, status: "SHIPPED" },
         transaction
@@ -413,7 +416,12 @@ class StockTransferRequestService {
       };
     });
 
-    return rawResult;
+    const { updatedRequest, componentCollections } = rawResult;
+
+    return {
+      updatedRequest,
+      componentCollections,
+    };
   };
 
   receiveStockTransferRequest = async ({
