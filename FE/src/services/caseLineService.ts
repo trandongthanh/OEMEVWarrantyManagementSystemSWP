@@ -65,8 +65,8 @@ export const caseLineService = {
   // Create case lines for a guarantee case
   createCaseLines: async (guaranteeCaseId: string, caseLines: CaseLineRequest[]): Promise<CaseLine[]> => {
     try {
-      console.log('📝 Creating case lines for case:', guaranteeCaseId);
-      console.log('📝 Case lines data:', caseLines);
+      console.debug('Creating case lines for case:', guaranteeCaseId);
+      console.debug('Case lines data length:', caseLines.length);
       
       // Map frontend CaseLineRequest (which uses `componentId`) to backend shape
       // backend validator expects `typeComponentId` in each caseline item
@@ -86,7 +86,7 @@ export const caseLineService = {
         payload
       );
       
-      console.log('✅ Case lines created (raw):', response.data);
+  console.debug('Case lines created (raw):', response.data);
 
       // Normalize response shape: backend may return `id` instead of `caseLineId` and `typeComponentId` instead of `componentId`.
       const rawCaseLines = response.data?.data?.caseLines || [];
@@ -108,10 +108,10 @@ export const caseLineService = {
         updatedAt: cl.updatedAt ?? cl.updated_at ?? null,
       }));
 
-      console.log('✅ Case lines created (normalized):', normalized);
+      console.debug('Case lines created (normalized): %d items', normalized.length);
       return normalized;
     } catch (error) {
-      console.error('❌ Error creating case lines:', error);
+      console.debug('Error creating case lines');
       if (axios.isAxiosError(error)) {
         throw new Error(error.response?.data?.message || 'Failed to create case lines');
       }
@@ -122,16 +122,16 @@ export const caseLineService = {
   // Get all case lines for a guarantee case
   getCaseLines: async (guaranteeCaseId: string): Promise<CaseLine[]> => {
     try {
-      console.log('📡 Fetching case lines for case:', guaranteeCaseId);
+      console.debug('Fetching case lines for case:', guaranteeCaseId);
       
       const response = await apiClient.get<GetCaseLinesResponse>(
         `/guarantee-cases/${guaranteeCaseId}/case-lines`
       );
       
-      console.log('✅ Case lines fetched:', response.data);
+      console.debug('Case lines fetched: %d', response.data?.data?.caseLines?.length ?? 0);
       return response.data.data.caseLines;
     } catch (error) {
-      console.error('❌ Error fetching case lines:', error);
+      console.debug('Error fetching case lines');
       if (axios.isAxiosError(error)) {
         throw new Error(error.response?.data?.message || 'Failed to fetch case lines');
       }
@@ -142,14 +142,24 @@ export const caseLineService = {
   // Delete a case line by ID
   deleteCaseLine: async (caseLineId: string): Promise<boolean> => {
     try {
-      console.log('🗑️ Deleting case line:', caseLineId);
+      console.debug('Deleting case line:', caseLineId);
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        // Avoid calling backend without auth token which causes server-side code to access undefined user
+        throw new Error('Authentication required. Please login before deleting a case line.');
+      }
       const response = await apiClient.delete(`/case-lines/${caseLineId}`);
-      console.log('✅ Delete response:', response.data);
+      console.debug('Delete response status:', response.status);
       return response.data?.status === 'success';
     } catch (error) {
-      console.error('❌ Error deleting case line:', error);
+      console.debug('Error deleting case line');
       if (axios.isAxiosError(error)) {
-        throw new Error(error.response?.data?.message || 'Failed to delete case line');
+        // Prefer a clearer user-facing message when backend fails due to auth/user issues
+        const backendMessage = error.response?.data?.message;
+        if (backendMessage && backendMessage.toString().toLowerCase().includes('userid')) {
+          throw new Error('Delete failed: missing or invalid authentication (userId). Please login again.');
+        }
+        throw new Error(backendMessage || 'Failed to delete case line');
       }
       throw error;
     }

@@ -281,6 +281,52 @@ const TechnicianDashboard = ({
   const [selectedGuaranteeCase, setSelectedGuaranteeCase] = useState<GuaranteeCase | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [createdCaseLines, setCreatedCaseLines] = useState<CaseLineResponse[]>([]);
+  // Helper: robustly extract a canonical caseLineId from various API shapes
+  const extractCaseLineId = React.useCallback((obj: unknown): string | null => {
+    if (!obj || typeof obj !== 'object') return null;
+    const o = obj as Record<string, unknown>;
+    const val = o['caseLineId'] ?? o['id'] ?? o['case_line_id'] ?? o['caseLine_Id'];
+    if (typeof val === 'string' && val.length > 0) return val;
+    if (typeof val === 'number') return String(val);
+    return null;
+  }, []);
+
+  // Helper: normalize various backend shapes into CaseLineResponse (best-effort)
+  const normalizeCaseLineResponse = React.useCallback((raw: unknown): CaseLineResponse | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Record<string, unknown>;
+    const caseLineId = extractCaseLineId(r);
+    if (!caseLineId) return null;
+    const guaranteeCaseId = (r['guaranteeCaseId'] ?? r['guarantee_case_id'] ?? (r['guaranteeCase'] && (r['guaranteeCase'] as Record<string, unknown>)['guaranteeCaseId'])) as string | undefined ?? '';
+    const diagnosisText = (r['diagnosisText'] ?? r['diagnosis_text']) as string | undefined ?? '';
+    const correctionText = (r['correctionText'] ?? r['correction_text']) as string | undefined ?? '';
+    const componentId = (r['componentId'] ?? r['typeComponentId'] ?? r['type_component_id']) as string | null ?? null;
+    const quantity = (typeof r['quantity'] === 'number' ? r['quantity'] as number : Number(r['quantity'] ?? 0)) as number;
+    const warrantyStatus = (r['warrantyStatus'] ?? r['warranty_status']) as string | undefined ?? null;
+    const createdAt = (r['createdAt'] ?? r['created_at']) as string | undefined ?? null;
+    const updatedAt = (r['updatedAt'] ?? r['updated_at']) as string | undefined ?? null;
+    // diagnostic technician may be present as a flat field (diagnosticTechId)
+    // or as a nested object (diagnosticTechnician: { userId }). Read both.
+    const techIdFromFlat = (r['techId'] ?? r['diagnosticTechId'] ?? r['diagnostic_tech_id']) as string | undefined ?? null;
+    const diagObj = r['diagnosticTechnician'] ?? r['diagnostic_technician'] ?? null;
+    const techIdFromNested = diagObj && typeof diagObj === 'object' ? ((diagObj as Record<string, unknown>)['userId'] ?? (diagObj as Record<string, unknown>)['user_id']) as string | undefined ?? null : null;
+
+    const techId = techIdFromFlat || techIdFromNested || null;
+
+    return {
+      caseLineId,
+      guaranteeCaseId,
+      diagnosisText,
+      correctionText,
+      componentId,
+      quantity,
+      warrantyStatus: (warrantyStatus as 'ELIGIBLE' | 'INELIGIBLE' | null),
+      techId,
+      status: (r['status'] as string) ?? null,
+      createdAt,
+      updatedAt,
+    } as CaseLineResponse;
+  }, [extractCaseLineId]);
 
   // Load persisted created case lines from localStorage on mount so UI survives F5
   useEffect(() => {
@@ -343,10 +389,9 @@ const TechnicianDashboard = ({
   // Helper function để lấy token
   const getAuthToken = () => {
     const token = localStorage.getItem('ev_warranty_token');
-    console.log('🔑 Checking token:', token ? `${token.substring(0, 20)}...` : 'No token found');
-    
+    // avoid logging tokens to console; signal auth presence only
     if (!token) {
-      console.error('❌ No authentication token in localStorage');
+      console.debug('No auth token found in localStorage');
       toast({
         title: "Authentication Error",
         description: "No authentication token found. Please login again.",
@@ -361,7 +406,6 @@ const TechnicianDashboard = ({
   const apiCall = useCallback(async (endpoint: string, options: RequestInit = {}) => {
     const token = getAuthToken();
     if (!token) throw new Error('No authentication token');
-
     const defaultHeaders = {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
@@ -375,18 +419,35 @@ const TechnicianDashboard = ({
       }
     };
 
-    console.log(`API Call: ${options.method || 'GET'} ${API_BASE_URL}${endpoint}`);
-    
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-    
-    console.log(`Response: ${response.status} ${response.statusText}`);
+    console.debug(`API Call: ${options.method || 'GET'} ${API_BASE_URL}${endpoint}`);
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+    console.debug(`Response: ${response.status} ${response.statusText}`);
+
+    // If no content, return null to caller
+    if (response.status === 204) return null;
+
+    // Try to parse JSON only when content-type is JSON
+    const contentType = response.headers.get('content-type') || '';
+  let body: unknown = null;
+    if (contentType.includes('application/json')) {
+      try {
+        body = await response.json();
+      } catch (err) {
+        // Parsing failed - treat as null payload but surface a helpful error for non-ok
+        body = null;
+      }
     }
 
-    return response.json();
+    if (!response.ok) {
+      const msgFromBody = (body && typeof body === 'object' && 'message' in (body as Record<string, unknown>)) ? ((body as Record<string, unknown>)['message'] as string) : undefined;
+      const message = msgFromBody || `HTTP ${response.status}: ${response.statusText}`;
+      throw new Error(message);
+    }
+
+    return body;
+  // ignore exhaustive-deps here: normalizeCaseLineResponse is stable and we accept the current behavior
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Fetch all processing records using axios service
@@ -502,48 +563,49 @@ const TechnicianDashboard = ({
 
           const merged = Object.values(dedupMap);
           if (merged.length > 0) {
-            // Merge into createdCaseLines state (avoid duplicates)
-            setCreatedCaseLines(prev => {
-              const existingKeys = new Set(prev.map(p => p.caseLineId));
-              const toAdd = (merged as unknown[]).filter((m: unknown) => {
-                  const mm = m as Record<string, unknown>;
-                  const k = (mm['caseLineId'] ?? mm['id'] ?? mm['case_line_id']) as string | undefined;
-                  return !!k && !existingKeys.has(k);
-                }) as unknown[];
-              // Cast to CaseLineResponse[] for state compatibility (we don't have full typing for external API shape)
-              return [...prev, ...(toAdd as unknown as CaseLineResponse[])];
-            });
+            // Normalize merged items into CaseLineResponse and dedupe reliably
+            const normalized = merged
+              .map(m => normalizeCaseLineResponse(m))
+              .filter((x): x is CaseLineResponse => x !== null);
 
-            // Also surface them in the lightweight caseLines UI list if they match expected fields
-            setCaseLines(prev => {
-              const existing = new Set(prev.map(c => c.id));
-              const toAdd = (merged as unknown[]).map((m: unknown) => {
-                const mm = m as Record<string, unknown>;
-                const id = (mm['caseLineId'] ?? mm['id'] ?? mm['case_line_id']) as string | undefined || '';
-                const caseId = (mm['guaranteeCaseId'] ?? mm['guarantee_case_id'] ?? mm['guaranteeCaseId']) as string | undefined || '';
-                const damageLevel = (mm['damageLevel'] as string) ?? 'N/A';
-                const warrantyStatus = (mm['warrantyStatus'] as string) ?? (mm['warranty_status'] as string) ?? null;
-                const diag = (mm['diagnosisText'] ?? mm['diagnosis_text']) as string | undefined || '';
-                const corr = (mm['correctionText'] ?? mm['correction_text']) as string | undefined || '';
-                const photos = Array.isArray(mm['photos']) ? (mm['photos'] as string[]) : [];
-                const createdAt = (mm['createdAt'] ?? mm['created_at']) as string | undefined || new Date().toLocaleDateString('en-GB');
-                const status = (mm['status'] as string) ?? 'submitted';
+            if (normalized.length > 0) {
+              setCreatedCaseLines(prev => {
+                const map = new Map<string, CaseLineResponse>();
+                prev.forEach(p => map.set(p.caseLineId, p));
+                normalized.forEach(n => map.set(n.caseLineId, n));
+                return Array.from(map.values());
+              });
 
-                return {
-                  id,
-                  caseId,
-                  damageLevel,
-                  repairPossibility: 'N/A',
-                  warrantyDecision: warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
-                  technicianNotes: `${diag} | ${corr}`,
-                  photos,
-                  createdDate: createdAt,
-                  status
-                } as CaseLine;
-              }).filter((c: CaseLine) => c.id && !existing.has(c.id));
+              // Also surface them in the lightweight caseLines UI list if they match expected fields
+              setCaseLines(prev => {
+                const existing = new Set(prev.map(c => c.id));
+                const toAdd = normalized.map((mm) => {
+                  const id = mm.caseLineId || '';
+                  const caseId = mm.guaranteeCaseId || '';
+                  const damageLevel = mm.diagnosisText || 'N/A';
+                  const warrantyStatus = mm.warrantyStatus || null;
+                  const diag = mm.diagnosisText || '';
+                  const corr = mm.correctionText || '';
+                  const photos: string[] = [];
+                  const createdAt = mm.createdAt ?? new Date().toLocaleDateString('en-GB');
+                  const status = (mm.status as string) ?? 'submitted';
 
-              return [...prev, ...toAdd];
-            });
+                  return {
+                    id,
+                    caseId,
+                    damageLevel,
+                    repairPossibility: 'N/A',
+                    warrantyDecision: warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
+                    technicianNotes: `${diag} | ${corr}`,
+                    photos,
+                    createdDate: createdAt,
+                    status
+                  } as CaseLine;
+                }).filter((c: CaseLine) => c.id && !existing.has(c.id));
+
+                return [...prev, ...toAdd];
+              });
+            }
           }
         }
       } catch (err) {
@@ -911,21 +973,28 @@ const TechnicianDashboard = ({
         console.log('Loading case lines for selected guarantee case...');
           const caseLines = await fetchCaseLinesForCase(selectedGuaranteeCase.guaranteeCaseId);
           if (caseLines.length > 0) {
-            // Merge into createdCaseLines and dedupe by caseLineId to avoid duplicates
-            setCreatedCaseLines(prev => {
-              const map = new Map<string, CaseLineResponse>();
-              prev.forEach(p => map.set(p.caseLineId, p));
-              (caseLines as CaseLineResponse[]).forEach((c) => {
-                if (c && c.caseLineId) map.set(c.caseLineId, c);
+            // Normalize server shapes into CaseLineResponse so we have tech owner info
+            const normalized = (caseLines as unknown[])
+              .map(cl => normalizeCaseLineResponse(cl))
+              .filter((x): x is CaseLineResponse => x !== null);
+
+            if (normalized.length > 0) {
+              // Merge into createdCaseLines and dedupe by caseLineId to avoid duplicates
+              setCreatedCaseLines(prev => {
+                const map = new Map<string, CaseLineResponse>();
+                prev.forEach(p => map.set(p.caseLineId, p));
+                normalized.forEach((c) => {
+                  if (c && c.caseLineId) map.set(c.caseLineId, c);
+                });
+                return Array.from(map.values());
               });
-              return Array.from(map.values());
-            });
+            }
           }
       }
     };
 
     loadCaseLines();
-  }, [selectedGuaranteeCase, fetchCaseLinesForCase]);
+  }, [selectedGuaranteeCase, fetchCaseLinesForCase, normalizeCaseLineResponse]);
 
   // Log state changes for debugging
   useEffect(() => {
@@ -1086,7 +1155,7 @@ const TechnicianDashboard = ({
         description: `Case line ${caseLineToRemove.slice(-8)} deleted successfully`,
       });
     } catch (error) {
-      console.error('❌ Failed to delete case line:', error);
+      console.debug('Failed to delete case line:', error instanceof Error ? error.message : error);
       toast({
         title: "Delete Failed",
         description: error instanceof Error ? error.message : 'Failed to delete case line',
@@ -1607,15 +1676,48 @@ const TechnicianDashboard = ({
                               >
                                 <Eye className="h-3 w-3" />
                               </Button>
-                              <Button 
-                                onClick={() => handleRemoveCaseLine(caseLine.id)}
-                                variant="outline" 
-                                size="sm"
-                                title="Remove Issue Diagnosis"
-                                className="text-red-600 hover:text-red-700 hover:border-red-300"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
+
+                              {/* Only show delete when user is allowed to delete this caseline to avoid 403 responses */}
+                              {(() => {
+                                try {
+                                  // find matching created caseline to read owner (createdCaseLines are normalized CaseLineResponse)
+                                  const match = createdCaseLines.find(cl => (cl.caseLineId ?? cl['id'] ?? '') === caseLine.id);
+
+                                  const currentUserRec = user as unknown as Record<string, unknown> | null;
+                                  const currentUserId = currentUserRec ? (currentUserRec['id'] ?? currentUserRec['userId']) as string | undefined : undefined;
+                                  const roleRec = currentUserRec ? (currentUserRec['role'] ?? null) as unknown : null;
+                                  const roleName = roleRec && typeof roleRec === 'object' ? ((roleRec as Record<string, unknown>)['roleName'] ?? (roleRec as string)) as string : (roleRec as string | null);
+
+                                  const diagTechId = match ? (match.techId ?? null) : null;
+
+                                  const canDelete = (() => {
+                                    if (!currentUserId || !roleName) return false;
+                                    if (roleName === 'service_center_technician') {
+                                      return !!diagTechId && diagTechId === currentUserId;
+                                    }
+                                    // other roles allowed in backend rules
+                                    return true;
+                                  })();
+
+                                  if (canDelete) {
+                                    return (
+                                      <Button 
+                                        onClick={() => handleRemoveCaseLine(caseLine.id)}
+                                        variant="outline" 
+                                        size="sm"
+                                        title="Remove Issue Diagnosis"
+                                        className="text-red-600 hover:text-red-700 hover:border-red-300"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    );
+                                  }
+                                } catch (err) {
+                                  console.warn('Failed to determine delete permission for caseline', err);
+                                }
+                                return null;
+                              })()}
+
                               {caseLine.status === 'draft' && (
                                 <Button 
                                   variant="outline" 
@@ -3223,10 +3325,35 @@ const TechnicianDashboard = ({
                         id="componentSearch"
                         value={componentSearchQuery}
                         onChange={(e) => {
-                          setComponentSearchQuery(e.target.value);
-                          // Search components when typing
-                          if (e.target.value.length >= 2) {
-                            searchComponents(e.target.value);
+                          const q = e.target.value;
+                          setComponentSearchQuery(q);
+                          // Search components when typing: prefer fetching compatible components for the selected record
+                          if (q.length >= 2) {
+                            try {
+                              // Try to derive a candidate record id from selectedRecord
+                              const recMap = (selectedRecord as unknown) as Record<string, unknown> | null;
+                              const candidateId = recMap && (
+                                (recMap['recordId'] as string) ||
+                                (recMap['vehicleProcessingRecordId'] as string) ||
+                                (recMap['processing_record_id'] as string) ||
+                                (recMap['id'] as string) || ''
+                              );
+
+                              if (candidateId) {
+                                // Use record-scoped compatible components endpoint (provides more relevant results)
+                                fetchCompatibleComponents(candidateId, q).catch((err) => {
+                                  console.error('Failed to fetch compatible components for search:', err);
+                                  // fallback to generic search if record-scoped endpoint fails
+                                  searchComponents(q).catch(() => setCompatibleComponents([]));
+                                });
+                              } else {
+                                // No selected record / id available — fall back to generic search
+                                searchComponents(q);
+                              }
+                            } catch (err) {
+                              console.error('Error while searching components:', err);
+                              searchComponents(q).catch(() => setCompatibleComponents([]));
+                            }
                           } else {
                             setCompatibleComponents([]);
                           }
