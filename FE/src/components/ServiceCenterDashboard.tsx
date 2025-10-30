@@ -42,6 +42,9 @@ interface Technician {
   workload?: number; // maps to activeTaskCount
   isAvailable: boolean;
   status?: string; // AVAILABLE | UNAVAILABLE
+  specialty?: string;
+  experience?: number;
+  rating?: number;
 }
 
 interface ComponentInfo {
@@ -244,6 +247,7 @@ const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
   PENDING_APPROVAL: 'Pending Approval',
   CUSTOMER_APPROVED: 'Customer Approved',
+  PARTS_AVAILABLE: 'Parts Available',
   REJECTED_BY_OUT_OF_WARRANTY: 'Rejected (Out of Warranty)',
   REJECTED_BY_TECH: 'Rejected by Tech',
   REJECTED_BY_CUSTOMER: 'Rejected by Customer',
@@ -365,29 +369,6 @@ const ServiceCenterDashboard = () => {
   const [selectedClaimForDetail, setSelectedClaimForDetail] = useState<WarrantyClaim | null>(null);
 
   // Track case lines with out of stock status
-  const [outOfStockCaseLines, setOutOfStockCaseLines] = useState<Set<string>>(() => {
-    // Load from localStorage on mount
-    try {
-      const saved = localStorage.getItem('outOfStockCaseLines');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
-
-  // Track case lines that have been requested from manufacturer
-  const [requestedFromManufacturer, setRequestedFromManufacturer] = useState<Set<string>>(() => {
-    try {
-      const saved = localStorage.getItem('requestedFromManufacturer');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
-
-  // Track case lines that have RECEIVED stock from manufacturer
-  const [receivedStockCaseLines, setReceivedStockCaseLines] = useState<Set<string>>(new Set());
-
   // Technician Records Modal States
   const [showTechnicianRecordsModal, setShowTechnicianRecordsModal] = useState(false);
   const [selectedTechnicianForRecords, setSelectedTechnicianForRecords] = useState<Technician | null>(null);
@@ -413,6 +394,13 @@ const ServiceCenterDashboard = () => {
   const [showStockRequestsModal, setShowStockRequestsModal] = useState(false);
   const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
   const [showStockRequestDetailModal, setShowStockRequestDetailModal] = useState(false);
+
+  // Technician assignment for case line states
+  const [showTechnicianSelectionModal, setShowTechnicianSelectionModal] = useState(false);
+  const [selectedCaseLineForTechnician, setSelectedCaseLineForTechnician] = useState<{
+    guaranteeCaseId: string;
+    caseLineId: string;
+  } | null>(null);
 
   const { user, logout, getToken } = useAuth();
 
@@ -489,31 +477,6 @@ const ServiceCenterDashboard = () => {
     setWarrantyClaims(byStatus[activeStatus] || []);
     setIsLoadingClaims(false);
 
-    // Clean up requestedFromManufacturer for case lines that backend has updated
-    const allCaseLines = Object.values(byStatus).flat().flatMap(claim => 
-      claim.guaranteeCases.flatMap(gc => gc.caseLines || [])
-    );
-    
-    setRequestedFromManufacturer(prev => {
-      const newSet = new Set(prev);
-      let updated = false;
-      
-      // Remove case lines that are no longer in CUSTOMER_APPROVED status
-      prev.forEach(caseLineId => {
-        const caseLine = allCaseLines.find(cl => cl.id === caseLineId);
-        if (caseLine && caseLine.status !== 'CUSTOMER_APPROVED') {
-          newSet.delete(caseLineId);
-          updated = true;
-        }
-      });
-      
-      if (updated) {
-        localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
-      }
-      
-      return newSet;
-    });
-    
     // Return byStatus data for immediate use by caller
     return byStatus;
   };
@@ -591,6 +554,12 @@ const ServiceCenterDashboard = () => {
               newMap.set(caselineId, mapping.requestId);
               console.log(`💾 Mapped caselineId ${caselineId} → requestId ${mapping.requestId}`);
             });
+            // Persist mapping to localStorage for durability
+            try {
+              saveCaseLineIdsToLocal(mapping.requestId, mapping.caselineIds);
+            } catch (e) {
+              console.warn('Failed to persist mapping to localStorage:', e);
+            }
           }
         });
         console.log('✅ Total mappings:', newMap.size, 'entries:', Array.from(newMap.entries()));
@@ -678,55 +647,23 @@ const ServiceCenterDashboard = () => {
   useEffect(() => {
     let cancelled = false;
 
-    // Fetch technicians from backend instead of using mock data
-    const fetchTechnicians = async (status = 'AVAILABLE') => {
-      setIsLoadingTechnicians(true);
-      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-      if (!token) {
-        setIsLoadingTechnicians(false);
-        return [] as Technician[];
-      }
-      try {
-        const url = status ? `${API_BASE_URL}/users/technicians?status=${status}` : `${API_BASE_URL}/users/technicians`;
-        const res = await axios.get(url, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const records = res.data?.data || [];
-        const mapped: Technician[] = records.map((t: any) => {
-          // Status is in workSchedule array, not at root level
-          const rawStatus = t.workSchedule?.[0]?.status || t.status || '';
-          const normalizedStatus = String(rawStatus).trim().toUpperCase().replace(/\s+/g, '_') || undefined;
-
-          return {
-            id: t.userId || t.id || String(t.techId || ''),
-            name: t.name || t.fullName || '',
-            workload: t.activeTaskCount,
-            isAvailable: (normalizedStatus || '') === 'AVAILABLE',
-            status: normalizedStatus
-          } as Technician;
-        });
-        setIsLoadingTechnicians(false);
-        return mapped;
-      } catch (err) {
-        console.error('Failed to fetch technicians', err);
-        setIsLoadingTechnicians(false);
-        return [] as Technician[];
-      }
-    };
-
     // Initialize data on mount - ensure claims loaded before fetching stock requests
     const initializeData = async () => {
       try {
         // 1. Fetch all claims first (needed for mapping requestId -> caselineId -> guaranteeCaseId)
+        if (cancelled) return;
         await fetchAllStatuses();
         
         // 2. Load technicians
+        if (cancelled) return;
         await refreshTechnicians('');
         
         // 3. Load warehouses
+        if (cancelled) return;
         await fetchWarehouses();
         
         // 4. Load stock transfer requests and build caselineId → requestId mapping
+        if (cancelled) return;
         await fetchStockTransferRequests();
       } catch (error) {
         console.error('Failed to initialize data:', error);
@@ -843,6 +780,9 @@ const ServiceCenterDashboard = () => {
   const closeTechnicianModal = () => {
     setShowTechnicianModal(false);
     setSelectedCaseForAssignment('');
+    // Refresh data when closing modal
+    fetchAllStatuses();
+    refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
   };
 
   // View technician's assigned records
@@ -866,6 +806,8 @@ const ServiceCenterDashboard = () => {
     setShowTechnicianRecordsModal(false);
     setSelectedTechnicianForRecords(null);
     setTechnicianRecords([]);
+    // Refresh data when closing modal
+    fetchAllStatuses();
   };
 
   // View warehouse details
@@ -877,12 +819,20 @@ const ServiceCenterDashboard = () => {
   const closeWarehouseDetailModal = () => {
     setShowWarehouseDetailModal(false);
     setSelectedWarehouse(null);
+    // Refresh data when closing modal
+    fetchWarehouses();
   };
 
   // Allocate component for case line
   const handleAllocateComponent = async (guaranteeCaseId: string, caseLineId: string) => {
+    console.log('🎯 Allocating component with params:', {
+      guaranteeCaseId,
+      caseLineId,
+      url: `${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/allocate-stock`
+    });
+    
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('ev_warranty_token');
+      const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
       const response = await axios.post(
         `${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/allocate-stock`,
         {},
@@ -894,118 +844,71 @@ const ServiceCenterDashboard = () => {
       );
 
       if (response.status === 200 || response.status === 201) {
+        console.log('✅ Allocation successful!');
         alert('Component allocated successfully!');
-
-        // Remove from out of stock list if it was there
-        setOutOfStockCaseLines(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(caseLineId);
-          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
-          return newSet;
-        });
-
-        // Remove from requested from manufacturer list if it was there
-        setRequestedFromManufacturer(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(caseLineId);
-          localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
-          return newSet;
-        });
-
-        // Remove from received stock case lines if it was there
-        setReceivedStockCaseLines(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(caseLineId);
-          return newSet;
-        });
 
         // Remove from case line to request mapping (allocation successful, no longer need the request reference)
         setCaseLineToRequestMap(prev => {
           const newMap = new Map(prev);
           newMap.delete(caseLineId);
+          // Also update localStorage
+          const currentMap: Record<string, string> = {};
+          newMap.forEach((requestId, clId) => {
+            currentMap[clId] = requestId;
+          });
+          localStorage.setItem('caseLineToRequestMap', JSON.stringify(currentMap));
           return newMap;
         });
 
+        // Clear the mapping from localStorage to ensure clean state
+        const storedMapping = localStorage.getItem('caseLineToRequestMap');
+        if (storedMapping) {
+          try {
+            const mapping = JSON.parse(storedMapping);
+            delete mapping[caseLineId];
+            localStorage.setItem('caseLineToRequestMap', JSON.stringify(mapping));
+          } catch (e) {
+            console.error('Error updating localStorage mapping:', e);
+          }
+        }
+
         // Refresh all data to ensure UI is up-to-date
         await fetchAllStatuses();
+        
+        // Also refresh stock transfer requests to update the mapping
+        await fetchStockTransferRequests();
       }
     } catch (error: any) {
       console.error('Error allocating component:', error);
       const errorMessage = error.response?.data?.message || 'Failed to allocate component. Please try again.';
 
-      // Check if error is 409 Conflict (out of stock)
+      // Check if error is 409 Conflict (out of stock)  
       if (error.response?.status === 409) {
-        console.log('⚠️ Allocation failed - Out of stock (409). Resetting state for case line:', caseLineId);
+        const shouldRequest = window.confirm(
+          `⚠️ Out of Stock!\n\n${errorMessage}\n\nWould you like to request this component from manufacturer?`
+        );
         
-        // Mark this case line as out of stock
-        setOutOfStockCaseLines(prev => {
-          const newSet = new Set([...prev, caseLineId]);
-          // Save to localStorage
-          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
-          console.log('📍 Updated outOfStockCaseLines:', Array.from(newSet));
-          return newSet;
-        });
-        
-        // Remove old mapping so user can create a new request
-        setCaseLineToRequestMap(prev => {
-          const newMap = new Map(prev);
-          newMap.delete(caseLineId);
-          console.log('📍 Removed mapping for case line:', caseLineId);
-          return newMap;
-        });
-        
-        // Remove from requested from manufacturer to allow new request
-        setRequestedFromManufacturer(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(caseLineId);
-          localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
-          console.log('📍 Updated requestedFromManufacturer:', Array.from(newSet));
-          return newSet;
-        });
-        
-        // Force UI refresh
-        setTimeout(() => {
-          console.log('🔄 Force re-render after state updates');
-        }, 100);
-        
-        alert('⚠️ Out of Stock! Stock was not sufficient. Please create a new request from manufacturer.');
-      } else if (error.response?.status === 404 && errorMessage.includes('No available stock found')) {
-        console.log('⚠️ Allocation failed - No stock found (404). Resetting state for case line:', caseLineId);
-        
-        // Also handle 404 as out of stock
-        setOutOfStockCaseLines(prev => {
-          const newSet = new Set([...prev, caseLineId]);
-          // Save to localStorage
-          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
-          console.log('📍 Updated outOfStockCaseLines:', Array.from(newSet));
-          return newSet;
-        });
-        
-        // Remove old mapping so user can create a new request
-        setCaseLineToRequestMap(prev => {
-          const newMap = new Map(prev);
-          newMap.delete(caseLineId);
-          console.log('📍 Removed mapping for case line:', caseLineId);
-          return newMap;
-        });
-        
-        // Remove from requested from manufacturer to allow new request
-        setRequestedFromManufacturer(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(caseLineId);
-          localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
-          console.log('📍 Updated requestedFromManufacturer:', Array.from(newSet));
-          return newSet;
-        });
-        
-        // Force UI refresh
-        setTimeout(() => {
-          console.log('🔄 Force re-render after state updates');
-        }, 100);
-        
-        alert('⚠️ Out of Stock! Stock was not sufficient. Please create a new request from manufacturer.');
+        if (shouldRequest) {
+          // Find the case line to get component info
+          const allCaseLines = Object.values(claimsByStatus)
+            .flat()
+            .flatMap(claim => claim.guaranteeCases.flatMap(gc => gc.caseLines || []));
+          const caseLine = allCaseLines.find(cl => cl.id === caseLineId);
+          
+          if (caseLine && caseLine.typeComponent) {
+            handleRequestFromManufacturer(
+              guaranteeCaseId,
+              caseLineId,
+              caseLine.typeComponent.typeComponentId,
+              caseLine.quantity
+            );
+          } else {
+            alert('Cannot find component information to create request.');
+          }
+        }
       } else {
-        alert(errorMessage);
+        // Show error message for other errors
+        alert(`⚠️ ${errorMessage}`);
       }
     }
   };
@@ -1029,12 +932,59 @@ const ServiceCenterDashboard = () => {
     setShowWarehouseSelectionModal(true);
   };
 
+  // Assign technician to case line
+  const handleAssignTechnicianToCaseLine = async (guaranteeCaseId: string, caseLineId: string, technicianId: string) => {
+    try {
+      const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
+      if (!token) {
+        alert('Authentication required');
+        return;
+      }
+
+      console.log('🔧 Assigning technician to case line:', {
+        guaranteeCaseId,
+        caseLineId,
+        technicianId,
+        url: `${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/assign-technician`
+      });
+
+      const response = await axios.patch(
+        `${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/assign-technician`,
+        { technicianId },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (response.status === 200 || response.status === 201) {
+        console.log('✅ Technician assigned successfully');
+        alert('Technician assigned to case line successfully!');
+        
+        // Close modal
+        setShowTechnicianSelectionModal(false);
+        setSelectedCaseLineForTechnician(null);
+        
+        // Refresh data to update UI
+        await fetchAllStatuses();
+        
+        // Refresh technicians list to update workload
+        await refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
+      }
+    } catch (error: any) {
+      console.error('Error assigning technician to case line:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to assign technician. Please try again.';
+      alert(errorMessage);
+    }
+  };
+
   // Submit stock transfer request after warehouse is selected
   const submitStockTransferRequest = async (warehouseId: string) => {
     if (!pendingStockRequest) return;
 
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('ev_warranty_token');
+      const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
       if (!token) {
         alert('Authentication required');
         return;
@@ -1095,21 +1045,6 @@ const ServiceCenterDashboard = () => {
             }
           }
         }
-        
-        // Remove from out of stock list since request has been sent
-        setOutOfStockCaseLines(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(pendingStockRequest.caseLineId);
-          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
-          return newSet;
-        });
-
-        // Add to requested from manufacturer list to prevent showing allocate button
-        setRequestedFromManufacturer(prev => {
-          const newSet = new Set([...prev, pendingStockRequest.caseLineId]);
-          localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
-          return newSet;
-        });
 
         // Save mapping from caselineId to requestId for "View Request" button
         setCaseLineToRequestMap(prev => {
@@ -1132,6 +1067,8 @@ const ServiceCenterDashboard = () => {
         // Refresh data from backend to get updated status - IMPORTANT: fetch records first
         await fetchAllStatuses();
         await fetchWarehouses();
+        // Refresh stock transfer requests list to include the newly created request
+        await fetchStockTransferRequests();
         
         // Refresh claim detail modal with updated data from backend
         if (selectedClaimForDetail) {
@@ -1556,7 +1493,14 @@ const ServiceCenterDashboard = () => {
         </div>
 
         {/* Claim Detail Modal */}
-        <Dialog open={showClaimDetailModal} onOpenChange={setShowClaimDetailModal}>
+        <Dialog open={showClaimDetailModal} onOpenChange={(open) => {
+          setShowClaimDetailModal(open);
+          // Refresh data when closing modal to ensure latest state
+          if (!open) {
+            fetchAllStatuses();
+            fetchStockTransferRequests();
+          }
+        }}>
           <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
             <DialogHeader className="pb-4 border-b">
               <DialogTitle className="flex items-center gap-2 text-lg">
@@ -1762,115 +1706,22 @@ const ServiceCenterDashboard = () => {
                                                   </Badge>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
-                                                  {/* Show Allocate button if: */}
-                                                  {/* 1. Case line has RECEIVED stock from manufacturer (green button), OR */}
-                                                  {/* 2. Record is PROCESSING and case line is CUSTOMER_APPROVED (blue button - normal allocation) */}
+                                                  {/* Show Allocate button based on case line status: */}
+                                                  {/* 1. PARTS_AVAILABLE - stock received from manufacturer (green button) */}
+                                                  {/* 2. CUSTOMER_APPROVED - first allocation from warehouse (blue button) */}
                                                   {(() => {
-                                                    const hasReceivedStock = receivedStockCaseLines.has(line.id);
-                                                    const canAllocateFromWarehouse = selectedClaimForDetail.status === 'PROCESSING' && 
-                                                                                     !outOfStockCaseLines.has(line.id) && 
-                                                                                     !requestedFromManufacturer.has(line.id);
-                                                    const showAllocateButton = (hasReceivedStock || canAllocateFromWarehouse) && 
-                                                                               line.status === 'CUSTOMER_APPROVED' && 
-                                                                               hasPermission(user, 'attach_parts');
+                                                    const isPartsAvailable = line.status === 'PARTS_AVAILABLE';
+                                                    const isCustomerApproved = line.status === 'CUSTOMER_APPROVED';
                                                     
-                                                    // Debug logging
-                                                    if (line.status === 'CUSTOMER_APPROVED') {
-                                                      console.log(`🔍 Case line ${line.id} check:`, {
-                                                        hasReceivedStock,
-                                                        canAllocateFromWarehouse,
-                                                        showAllocateButton,
-                                                        lineStatus: line.status,
-                                                        recordStatus: selectedClaimForDetail.status,
-                                                        outOfStock: outOfStockCaseLines.has(line.id),
-                                                        requested: requestedFromManufacturer.has(line.id),
-                                                        receivedStockCaseLinesSet: Array.from(receivedStockCaseLines)
-                                                      });
-                                                    }
-                                                    
-                                                    return showAllocateButton ? (
-                                                      <Button
-                                                        size="sm"
-                                                        variant="default"
-                                                        onClick={() => handleAllocateComponent(gc.guaranteeCaseId, line.id)}
-                                                        className={`text-white text-xs h-6 px-2 ${
-                                                          hasReceivedStock 
-                                                            ? 'bg-green-600 hover:bg-green-700' 
-                                                            : 'bg-blue-600 hover:bg-blue-700'
-                                                        }`}
-                                                      >
-                                                        <Package className="h-3 w-3 mr-1" />
-                                                        {hasReceivedStock ? 'Allocate (Stock Received)' : 'Allocate'}
-                                                      </Button>
-                                                    ) : null;
-                                                  })()}
-                                                  
-                                                  {/* Show Request button if record is PROCESSING, case line is CUSTOMER_APPROVED but out of stock */}
-                                                  {/* Don't show if already requested or has active mapping */}
-                                                  {(() => {
-                                                    const shouldShowRequestButton = 
-                                                      selectedClaimForDetail.status === 'PROCESSING' && 
-                                                      line.status === 'CUSTOMER_APPROVED' && 
-                                                      outOfStockCaseLines.has(line.id) && 
-                                                      !requestedFromManufacturer.has(line.id) && 
-                                                      !caseLineToRequestMap.has(line.id) && // Also check mapping
-                                                      hasPermission(user, 'attach_parts') && 
-                                                      line.typeComponent;
-                                                    
-                                                    // Debug log for Request button
-                                                    if (outOfStockCaseLines.has(line.id)) {
-                                                      console.log(`🔧 Request button check for case line ${line.id}:`, {
-                                                        recordStatus: selectedClaimForDetail.status,
-                                                        lineStatus: line.status,
-                                                        outOfStock: outOfStockCaseLines.has(line.id),
-                                                        alreadyRequested: requestedFromManufacturer.has(line.id),
-                                                        hasMapping: caseLineToRequestMap.has(line.id),
-                                                        hasTypeComponent: !!line.typeComponent,
-                                                        hasPermission: hasPermission(user, 'attach_parts'),
-                                                        shouldShow: shouldShowRequestButton
-                                                      });
-                                                    }
-                                                    
-                                                    return shouldShowRequestButton ? (
-                                                      <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        onClick={() => handleRequestFromManufacturer(
-                                                          gc.guaranteeCaseId, 
-                                                          line.id, 
-                                                          line.typeComponent.typeComponentId,
-                                                          line.quantity
-                                                        )}
-                                                        className="bg-orange-600 hover:bg-orange-700 text-white border-orange-600 text-xs h-6 px-2"
-                                                      >
-                                                        <AlertCircle className="h-3 w-3 mr-1" />
-                                                        Request from Manufacturer
-                                                      </Button>
-                                                    ) : null;
-                                                  })()}
-                                                  
-                                                  {/* Show "View Request" or "Allocate Component" button based on request status */}
-                                                  {caseLineToRequestMap.has(line.id) && (() => {
-                                                    const requestId = caseLineToRequestMap.get(line.id);
-                                                    const matchingRequest = stockTransferRequests.find(req => req.id === requestId);
-                                                    const isReceived = matchingRequest?.status === 'RECEIVED';
-                                                    
-                                                    console.log(`🔎 Case line ${line.id} (status: ${line.status}) - hasMapping: true, requestId:`, requestId, 'requestStatus:', matchingRequest?.status);
-                                                    
-                                                    // If request is RECEIVED, show "Allocate Component" button instead
-                                                    if (isReceived) {
+                                                    // Show allocate for PARTS_AVAILABLE (after stock received)
+                                                    if (isPartsAvailable && hasPermission(user, 'attach_parts')) {
+                                                      console.log(`🟢 Case line ${line.id} - PARTS_AVAILABLE, showing allocate button`);
                                                       return (
                                                         <Button
                                                           size="sm"
                                                           variant="default"
-                                                          onClick={() => {
-                                                            // Call allocate API directly (same as normal allocation)
-                                                            // handleAllocateComponent will handle success/failure
-                                                            // - On success: removes mapping automatically
-                                                            // - On failure (out of stock): removes mapping and allows new request
-                                                            handleAllocateComponent(gc.guaranteeCaseId, line.id);
-                                                          }}
-                                                          className="bg-green-600 hover:bg-green-700 text-white border-green-600 text-xs h-6 px-2"
+                                                          onClick={() => handleAllocateComponent(gc.guaranteeCaseId, line.id)}
+                                                          className="bg-green-600 hover:bg-green-700 text-white text-xs h-6 px-2"
                                                         >
                                                           <Package className="h-3 w-3 mr-1" />
                                                           Allocate Component
@@ -1878,7 +1729,35 @@ const ServiceCenterDashboard = () => {
                                                       );
                                                     }
                                                     
-                                                    // Otherwise, show "View Request" button
+                                                    // Show allocate for CUSTOMER_APPROVED (first allocation)
+                                                    if (isCustomerApproved && 
+                                                        selectedClaimForDetail.status === 'PROCESSING' && 
+                                                        hasPermission(user, 'attach_parts')) {
+                                                      console.log(`🔵 Case line ${line.id} - CUSTOMER_APPROVED, showing allocate button`);
+                                                      return (
+                                                        <Button
+                                                          size="sm"
+                                                          variant="default"
+                                                          onClick={() => handleAllocateComponent(gc.guaranteeCaseId, line.id)}
+                                                          className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-6 px-2"
+                                                        >
+                                                          <Package className="h-3 w-3 mr-1" />
+                                                          Allocate Component
+                                                        </Button>
+                                                      );
+                                                    }
+                                                    
+                                                    return null;
+                                                  })()}
+                                                  
+                                                  {/* Show "View Request" button if case line has active stock request (but not PARTS_AVAILABLE yet) */}
+                                                  {caseLineToRequestMap.has(line.id) && line.status !== 'PARTS_AVAILABLE' && (() => {
+                                                    const requestId = caseLineToRequestMap.get(line.id);
+                                                    const matchingRequest = stockTransferRequests.find(req => req.id === requestId);
+                                                    
+                                                    console.log(`🔎 Case line ${line.id} (status: ${line.status}) - hasMapping: true, requestId:`, requestId, 'requestStatus:', matchingRequest?.status);
+                                                    
+                                                    // Show "View Request" button for pending requests
                                                     return (
                                                       <Button
                                                         size="sm"
@@ -1906,21 +1785,76 @@ const ServiceCenterDashboard = () => {
                                                     );
                                                   })()}
                                                   
-                                                  {/* Show "Requested" badge if request has been sent but backend hasn't updated yet */}
-                                                  {requestedFromManufacturer.has(line.id) && line.status === 'CUSTOMER_APPROVED' && (
-                                                    <Badge variant="outline" className="text-xs bg-yellow-50 border-yellow-400 text-yellow-700">
-                                                      <Clock className="h-3 w-3 mr-1" />
-                                                      Requested - Pending
+                                                  {/* Show PARTS_AVAILABLE badge with special styling */}
+                                                  {line.status === 'PARTS_AVAILABLE' && (
+                                                    <Badge variant="outline" className="text-xs bg-green-50 border-green-400 text-green-700">
+                                                      <Package className="h-3 w-3 mr-1" />
+                                                      Parts Available
                                                     </Badge>
                                                   )}
                                                   
-                                                  {/* Show status badge if already allocated or backend has updated status */}
-                                                  {line.status !== 'CUSTOMER_APPROVED' && line.status !== 'DRAFT' && line.status !== 'PENDING_APPROVAL' && (
+                                                  {/* Show status badge for other statuses (not CUSTOMER_APPROVED, PARTS_AVAILABLE, DRAFT, PENDING_APPROVAL) */}
+                                                  {line.status !== 'CUSTOMER_APPROVED' && 
+                                                   line.status !== 'PARTS_AVAILABLE' && 
+                                                   line.status !== 'DRAFT' && 
+                                                   line.status !== 'PENDING_APPROVAL' && (
                                                     <Badge variant="success" className="text-xs">
                                                       ✓ {getDisplayStatus(line.status)}
                                                     </Badge>
                                                   )}
+                                                  
+                                                  {/* Show "Assign Technician" button if status is READY_FOR_REPAIR */}
+                                                  {line.status === 'READY_FOR_REPAIR' && hasPermission(user, 'assign_technicians') && (
+                                                    <Button
+                                                      size="sm"
+                                                      variant="outline"
+                                                      onClick={() => {
+                                                        console.log('👷 Opening technician selection for case line:', {
+                                                          guaranteeCaseId: gc.guaranteeCaseId,
+                                                          caseLineId: line.id
+                                                        });
+                                                        setSelectedCaseLineForTechnician({
+                                                          guaranteeCaseId: gc.guaranteeCaseId,
+                                                          caseLineId: line.id
+                                                        });
+                                                        setShowTechnicianSelectionModal(true);
+                                                      }}
+                                                      className="bg-purple-600 hover:bg-purple-700 text-white border-purple-600 text-xs h-6 px-2"
+                                                    >
+                                                      <User className="h-3 w-3 mr-1" />
+                                                      Assign Technician
+                                                    </Button>
+                                                  )}
                                                 </div>
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          {/* Assigned Repair Technician */}
+                                          {line.repairTechId && (
+                                            <div className="mt-2 p-2 bg-purple-50/80 dark:bg-purple-900/10 rounded border-l-2 border-purple-400">
+                                              <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                  <div className="w-7 h-7 bg-purple-100 dark:bg-purple-900/40 rounded-full flex items-center justify-center">
+                                                    <User className="h-4 w-4 text-purple-600" />
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-xs font-semibold text-purple-700 dark:text-purple-400 mb-0.5">
+                                                      Repair Technician Assigned
+                                                    </p>
+                                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                                      {(() => {
+                                                        const tech = availableTechnicians.find(t => t.id === line.repairTechId);
+                                                        return tech ? tech.name : 'Technician';
+                                                      })()}
+                                                    </p>
+                                                    <p className="text-xs text-muted-foreground font-mono">ID: {line.repairTechId}</p>
+                                                  </div>
+                                                </div>
+                                                <Badge variant="outline" className="text-xs bg-purple-100 border-purple-300 text-purple-700">
+                                                  <User className="h-3 w-3 mr-1" />
+                                                  Assigned
+                                                </Badge>
                                               </div>
                                             </div>
                                           )}
@@ -2381,7 +2315,14 @@ const ServiceCenterDashboard = () => {
         </Dialog>
 
         {/* Warehouse Selection Modal for Stock Transfer Request */}
-        <Dialog open={showWarehouseSelectionModal} onOpenChange={setShowWarehouseSelectionModal}>
+        <Dialog open={showWarehouseSelectionModal} onOpenChange={(open) => {
+          setShowWarehouseSelectionModal(open);
+          // Refresh data when closing modal
+          if (!open) {
+            fetchAllStatuses();
+            fetchStockTransferRequests();
+          }
+        }}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -2485,8 +2426,155 @@ const ServiceCenterDashboard = () => {
           </DialogContent>
         </Dialog>
 
+        {/* Technician Selection Modal for Case Line Assignment */}
+        <Dialog open={showTechnicianSelectionModal} onOpenChange={(open) => {
+          setShowTechnicianSelectionModal(open);
+          if (!open) {
+            setSelectedCaseLineForTechnician(null);
+            // Refresh data when closing modal
+            fetchAllStatuses();
+            refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
+          }
+        }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <User className="h-5 w-5 text-purple-600" />
+                Assign Technician to Case Line
+              </DialogTitle>
+              <DialogDescription>
+                Select a technician to assign to this case line for repair work
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 mt-4">
+              {selectedCaseLineForTechnician && (
+                <Card className="bg-purple-50 dark:bg-purple-900/20 border-purple-200">
+                  <CardContent className="p-4">
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-purple-900 dark:text-purple-100">
+                        Case Line Details:
+                      </p>
+                      <div className="text-sm text-purple-800 dark:text-purple-200">
+                        <p>• Guarantee Case ID: <span className="font-mono text-xs">{selectedCaseLineForTechnician.guaranteeCaseId}</span></p>
+                        <p>• Case Line ID: <span className="font-mono text-xs">{selectedCaseLineForTechnician.caseLineId}</span></p>
+                        <p>• Status: <span className="font-semibold">Ready for Repair</span></p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <div>
+                <h4 className="font-medium text-sm mb-3">Available Technicians:</h4>
+                {availableTechnicians.length === 0 ? (
+                  <div className="text-center py-8">
+                    <User className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No technicians available</p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-4"
+                      onClick={() => refreshTechnicians('AVAILABLE')}
+                    >
+                      Load Technicians
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 max-h-[400px] overflow-y-auto">
+                    {availableTechnicians.map((tech) => (
+                      <Card 
+                        key={tech.id} 
+                        className="p-4 cursor-pointer transition-colors hover:bg-purple-50 dark:hover:bg-purple-900/20 border-2 hover:border-purple-400"
+                        onClick={() => {
+                          if (selectedCaseLineForTechnician) {
+                            handleAssignTechnicianToCaseLine(
+                              selectedCaseLineForTechnician.guaranteeCaseId,
+                              selectedCaseLineForTechnician.caseLineId,
+                              tech.id
+                            );
+                            // Modal will be closed in handleAssignTechnicianToCaseLine after success
+                          }
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/40 rounded-full flex items-center justify-center">
+                                <User className="h-5 w-5 text-purple-600" />
+                              </div>
+                              <div>
+                                <h5 className="font-semibold">{tech.name}</h5>
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  {typeof tech.workload === 'number' && (
+                                    <Badge variant="outline" className="text-xs">
+                                      Active Tasks: {tech.workload}
+                                    </Badge>
+                                  )}
+                                  {tech.status && (
+                                    <Badge 
+                                      variant={tech.status === 'AVAILABLE' ? 'default' : 'secondary'}
+                                      className="text-xs"
+                                    >
+                                      {tech.status}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground font-mono">
+                              ID: {tech.id}
+                            </p>
+                          </div>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="bg-purple-600 hover:bg-purple-700"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (selectedCaseLineForTechnician) {
+                                handleAssignTechnicianToCaseLine(
+                                  selectedCaseLineForTechnician.guaranteeCaseId,
+                                  selectedCaseLineForTechnician.caseLineId,
+                                  tech.id
+                                );
+                                // Modal will be closed in handleAssignTechnicianToCaseLine after success
+                              }
+                            }}
+                          >
+                            Assign
+                          </Button>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowTechnicianSelectionModal(false);
+                  setSelectedCaseLineForTechnician(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Stock Transfer Requests List Modal */}
-        <Dialog open={showStockRequestsModal} onOpenChange={setShowStockRequestsModal}>
+        <Dialog open={showStockRequestsModal} onOpenChange={(open) => {
+          setShowStockRequestsModal(open);
+          if (!open) {
+            // Refresh data when closing modal
+            fetchAllStatuses();
+            fetchStockTransferRequests();
+          }
+        }}>
           <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -2598,7 +2686,15 @@ const ServiceCenterDashboard = () => {
         </Dialog>
 
         {/* Stock Transfer Request Detail Modal */}
-        <Dialog open={showStockRequestDetailModal} onOpenChange={setShowStockRequestDetailModal}>
+        <Dialog open={showStockRequestDetailModal} onOpenChange={(open) => {
+          setShowStockRequestDetailModal(open);
+          if (!open) {
+            setSelectedStockRequest(null);
+            // Refresh data when closing modal
+            fetchAllStatuses();
+            fetchStockTransferRequests();
+          }
+        }}>
           <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
