@@ -1,5 +1,7 @@
 import db from "../models/index.cjs";
 
+const { WarrantyComponent } = db;
+
 class WarrantyComponentRepository {
   createWarrantyComponent = async ({
     vehicleModelId,
@@ -9,7 +11,7 @@ class WarrantyComponentRepository {
     mileageLimit,
     transaction,
   }) => {
-    return db.WarrantyComponent.create(
+    return WarrantyComponent.create(
       {
         vehicleModelId,
         typeComponentId,
@@ -19,6 +21,22 @@ class WarrantyComponentRepository {
       },
       { transaction }
     );
+  };
+
+  bulkCreateWarrantyComponents = async ({
+    warrantyComponents,
+    transaction,
+  }) => {
+    if (!warrantyComponents || warrantyComponents.length === 0) {
+      return [];
+    }
+
+    const created = await WarrantyComponent.bulkCreate(warrantyComponents, {
+      transaction,
+      returning: true,
+    });
+
+    return created.map((record) => record.toJSON());
   };
 }
 

@@ -454,7 +454,11 @@ const PartsManagement = ({ onClose }: PartsManagementProps) => {
 
         <div className="flex justify-between p-6 border-t">
           <Button variant="outline" onClick={() => {
-            isEdit ? setShowEditForm(false) : setShowAddForm(false);
+            if (isEdit) {
+              setShowEditForm(false);
+            } else {
+              setShowAddForm(false);
+            }
             setSelectedPart(null);
             resetForm();
           }}>
@@ -540,7 +544,7 @@ const PartsManagement = ({ onClose }: PartsManagementProps) => {
                             <div className="flex items-center gap-3 mb-2">
                               <h3 className="font-semibold">{part.partName}</h3>
                               <Badge variant="outline">{part.partCode}</Badge>
-                              <Badge variant={stockStatus.color as any}>
+                              <Badge variant={stockStatus.color as React.ComponentProps<typeof Badge>['variant']}>
                                 <StatusIcon className="h-3 w-3 mr-1" />
                                 {stockStatus.text}
                               </Badge>

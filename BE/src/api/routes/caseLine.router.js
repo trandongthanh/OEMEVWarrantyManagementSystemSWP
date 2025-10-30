@@ -15,6 +15,7 @@ import {
   attachCompanyContext,
   authentication,
   authorizationByRole,
+  ensureOtpVerified,
   validate,
 } from "../middleware/index.js";
 
@@ -581,7 +582,8 @@ router.post(
  *   patch:
  *     summary: Phê duyệt/Từ chối danh sách caseline
  *     description: |-
- *       Service Center Staff xử lý caseline đang chờ khách hàng xác nhận. Tất cả caseline thuộc cùng `vehicleProcessingRecord` phải được gửi kèm.
+ *       Service Center Staff xử lý caseline đang chờ khách hàng xác nhận. Trước khi gọi endpoint này, hệ thống yêu cầu khách hàng xác thực OTP qua email.
+ *       Tất cả caseline thuộc cùng `vehicleProcessingRecord` phải được gửi kèm.
  *       Khi toàn bộ caseline được xử lý và hồ sơ chuyển sang trạng thái `PROCESSING`, backend phát socket `vehicleProcessingRecordStatusUpdated`
  *       tới phòng `service_center_staff_{serviceCenterId}` với payload `{ vehicleProcessingRecordId, status }`.
  *     tags: [Case Line]
@@ -593,21 +595,36 @@ router.post(
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - approvedCaseLineIds
+ *               - rejectedCaseLineIds
+ *               - approverEmail
  *             properties:
  *               approvedCaseLineIds:
  *                 type: array
  *                 items:
- *                   type: string
- *                   format: uuid
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
  *                 description: Array of case line IDs to approve
- *                 example: ["770e8400-e29b-41d4-a716-446655440003", "880e8400-e29b-41d4-a716-446655440004"]
+ *                 example: [{ "id": "770e8400-e29b-41d4-a716-446655440003" }]
  *               rejectedCaseLineIds:
  *                 type: array
  *                 items:
- *                   type: string
- *                   format: uuid
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       format: uuid
  *                 description: Array of case line IDs to reject
- *                 example: ["990e8400-e29b-41d4-a716-446655440005"]
+ *                 example: [{ "id": "990e8400-e29b-41d4-a716-446655440005" }]
+ *               approverEmail:
+ *                 type: string
+ *                 format: email
+ *                 description: Email của khách/visitor đã xác thực OTP
+ *                 example: "customer@example.com"
  *     responses:
  *       200:
  *         description: Case lines processed successfully
@@ -655,7 +672,7 @@ router.post(
  *       401:
  *         description: Unauthorized
  *       403:
- *         description: Forbidden - requires service_center_staff role
+ *         description: Forbidden - requires service_center_staff role và OTP đã xác thực
  *       404:
  *         description: One or more case lines not found
  */
@@ -664,6 +681,7 @@ router.patch(
   authentication,
   authorizationByRole(["service_center_staff"]),
   validate(approveCaselineBodySchema, "body"),
+  ensureOtpVerified,
   async (req, res, next) => {
     const caseLineController = req.container.resolve("caseLineController");
     await caseLineController.approveCaseline(req, res, next);

@@ -265,6 +265,10 @@ const options = {
                 fullName: {
                   type: "string",
                 },
+                email: {
+                  type: "string",
+                  format: "email",
+                },
                 phone: {
                   type: "string",
                 },

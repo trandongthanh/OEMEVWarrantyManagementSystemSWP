@@ -200,10 +200,17 @@ const SuperAdvisor = () => {
     customerName: '',
     cases: [],
     visitorFullName: '',
-    visitorPhone: ''
+    customerEmail: ''
   });
   const [warrantyRecordCaseText, setWarrantyRecordCaseText] = useState('');
   const [isCreatingRecord, setIsCreatingRecord] = useState(false);
+
+  // OTP states
+  const [otpCode, setOtpCode] = useState('');
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [otpCountdown, setOtpCountdown] = useState(0);
 
   // Warranty check states
   const [odometer, setOdometer] = useState('');
@@ -223,7 +230,8 @@ const SuperAdvisor = () => {
     vinNumber: '',
     odometer: '',
     visitorFullName: '', // Visitor name from visitorInfo
-    visitorPhone: '', // Visitor phone from visitorInfo
+    visitorPhone: '', // Visitor phone (legacy, keeping for compatibility)
+    customerEmail: '', // Customer email for OTP
     cases: [] as CaseNote[],
     purchaseDate: '',
     status: 'pending' as 'pending' | 'in-progress' | 'completed',
@@ -345,6 +353,24 @@ const SuperAdvisor = () => {
   useEffect(() => {
     loadProcessingRecords();
   }, []);
+
+  // OTP countdown timer
+  useEffect(() => {
+    if (otpCountdown > 0) {
+      const timer = setTimeout(() => {
+        setOtpCountdown(prev => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (otpCountdown === 0 && otpSent) {
+      setOtpSent(false);
+      setOtpCode('');
+      toast({
+        title: 'OTP Expired',
+        description: 'Please request a new OTP code',
+        variant: 'default'
+      });
+    }
+  }, [otpCountdown, otpSent, toast]);
 
   const handleSearchWarranty = async () => {
   try {
@@ -976,7 +1002,7 @@ const SuperAdvisor = () => {
       customerName: foundCustomer.fullName || foundCustomer.name,
       cases: [],
       visitorFullName: foundCustomer.fullName || foundCustomer.name || '',
-      visitorPhone: foundCustomer.phone || ''
+      customerEmail: foundCustomer.email || ''
     });
     
     // Close warranty dialog and open create dialog
@@ -985,6 +1011,101 @@ const SuperAdvisor = () => {
   };
 
   // Handle add case to warranty record form
+  // Handle send OTP to customer email
+  const handleSendOtp = async () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!warrantyRecordForm.customerEmail || !emailRegex.test(warrantyRecordForm.customerEmail)) {
+      toast({
+        title: 'Error',
+        description: 'Please enter a valid email address first',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsSendingOtp(true);
+
+    try {
+      const response = await fetch(`${API_BASE}/mail/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
+        },
+        body: JSON.stringify({
+          email: warrantyRecordForm.customerEmail
+        })
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.status === 'success') {
+        setOtpSent(true);
+        setOtpCountdown(300); // 5 minutes
+        toast({
+          title: 'OTP Sent',
+          description: `OTP code has been sent to ${warrantyRecordForm.customerEmail}. Please check your email inbox.`,
+        });
+      } else {
+        throw new Error(result.message || 'Failed to send OTP');
+      }
+    } catch (error) {
+      console.error('Error sending OTP:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to send OTP. Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  // Handle verify OTP from email
+  const handleVerifyOtp = async () => {
+    if (!otpCode || otpCode.length !== 6) {
+      toast({
+        title: 'Error',
+        description: 'Please enter a valid 6-digit OTP code',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/mail/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
+        },
+        body: JSON.stringify({
+          email: warrantyRecordForm.customerEmail,
+          otp: otpCode
+        })
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.status === 'success' && result.isValid) {
+        setOtpVerified(true);
+        toast({
+          title: 'Success',
+          description: 'OTP verified successfully. You can now create the record.',
+        });
+      } else {
+        throw new Error(result.message || 'Invalid or expired OTP code');
+      }
+    } catch (error) {
+      console.error('Error verifying OTP:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to verify OTP. Please try again.',
+        variant: 'destructive'
+      });
+    }
+  };
+
   const handleAddWarrantyCase = () => {
     if (!warrantyRecordCaseText.trim()) {
       toast({
@@ -1048,6 +1169,16 @@ const SuperAdvisor = () => {
       return;
     }
 
+    // Validate OTP verification - MUST verify OTP before creating record
+    if (!otpVerified) {
+      toast({
+        title: 'OTP Verification Required',
+        description: 'Please send and verify OTP for the phone number before creating record',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setIsCreatingRecord(true);
 
     try {
@@ -1076,6 +1207,12 @@ const SuperAdvisor = () => {
       setShowCreateWarrantyDialog(false);
       setVehicleWarrantyStatus(null);
       setVehicleOdometer('');
+      
+      // Reset OTP states
+      setOtpCode('');
+      setOtpSent(false);
+      setOtpVerified(false);
+      setOtpCountdown(0);
       
       toast({
         title: 'Success',
@@ -3616,7 +3753,16 @@ const SuperAdvisor = () => {
       </Dialog>
 
       {/* Create Warranty Record Dialog */}
-      <Dialog open={showCreateWarrantyDialog} onOpenChange={setShowCreateWarrantyDialog}>
+      <Dialog open={showCreateWarrantyDialog} onOpenChange={(open) => {
+        setShowCreateWarrantyDialog(open);
+        if (!open) {
+          // Reset OTP states when closing dialog
+          setOtpCode('');
+          setOtpSent(false);
+          setOtpVerified(false);
+          setOtpCountdown(0);
+        }
+      }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center space-x-2">
@@ -3677,23 +3823,82 @@ const SuperAdvisor = () => {
               />
             </div>
 
-            {/* Visitor Phone - Editable */}
+            {/* Customer Email - Editable */}
             <div className="grid gap-2">
-              <Label htmlFor="visitor-phone">Visitor Phone *</Label>
-              <Input
-                id="visitor-phone"
-                type="tel"
-                value={warrantyRecordForm.visitorPhone}
-                onChange={(e) => {
-                  const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
-                  setWarrantyRecordForm(prev => ({ ...prev, visitorPhone: numericValue }));
-                }}
-                placeholder="Enter 10-digit phone number"
-                className="border-green-300 focus:border-green-500"
-                maxLength={10}
-              />
-              <p className="text-xs text-muted-foreground">Phone number must be exactly 10 digits</p>
+              <Label htmlFor="customer-email">Customer Email *</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="customer-email"
+                  type="email"
+                  value={warrantyRecordForm.customerEmail}
+                  onChange={(e) => {
+                    setWarrantyRecordForm(prev => ({ ...prev, customerEmail: e.target.value }));
+                    // Reset OTP states when email changes
+                    setOtpSent(false);
+                    setOtpVerified(false);
+                    setOtpCode('');
+                    setOtpCountdown(0);
+                  }}
+                  placeholder="Enter customer email address"
+                  className="flex-1 border-green-300 focus:border-green-500"
+                  disabled={otpVerified}
+                />
+                <Button
+                  type="button"
+                  onClick={handleSendOtp}
+                  disabled={!warrantyRecordForm.customerEmail || isSendingOtp || otpVerified || (otpSent && otpCountdown > 0)}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {isSendingOtp ? 'Sending...' : otpSent && otpCountdown > 0 ? `Resend (${Math.floor(otpCountdown / 60)}:${(otpCountdown % 60).toString().padStart(2, '0')})` : otpVerified ? 'Verified ✓' : 'Send OTP'}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">OTP will be sent to this email address</p>
             </div>
+
+            {/* OTP Verification Section */}
+            {otpSent && !otpVerified && (
+              <div className="grid gap-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="h-4 w-4 text-blue-600" />
+                  <Label htmlFor="otp-code" className="text-blue-900 font-semibold">Enter OTP Code</Label>
+                </div>
+                <p className="text-xs text-blue-700 mb-2">
+                  A 6-digit OTP code has been sent to {warrantyRecordForm.customerEmail}. 
+                  Valid for {Math.floor(otpCountdown / 60)}:{(otpCountdown % 60).toString().padStart(2, '0')} minutes.
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    id="otp-code"
+                    type="text"
+                    value={otpCode}
+                    onChange={(e) => {
+                      const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
+                      setOtpCode(numericValue);
+                    }}
+                    placeholder="Enter 6-digit OTP"
+                    className="flex-1 font-mono text-center text-lg"
+                    maxLength={6}
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleVerifyOtp}
+                    disabled={!otpCode || otpCode.length !== 6}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Verify
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* OTP Verified Success Message */}
+            {otpVerified && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+                <span className="text-sm font-medium text-green-800">Email verified successfully! You can now create the record.</span>
+              </div>
+            )}
 
             {/* Cases Section */}
             <div className="grid gap-2">
@@ -3770,13 +3975,18 @@ const SuperAdvisor = () => {
                 setShowCreateWarrantyDialog(false);
                 setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '' });
                 setWarrantyRecordCaseText('');
+                // Reset OTP states
+                setOtpCode('');
+                setOtpSent(false);
+                setOtpVerified(false);
+                setOtpCountdown(0);
               }}
             >
               Cancel
             </Button>
             <Button 
               onClick={handleSubmitWarrantyRecord}
-              disabled={warrantyRecordForm.cases.length === 0 || isCreatingRecord || !warrantyRecordForm.visitorFullName.trim() || !warrantyRecordForm.visitorPhone.trim()}
+              disabled={warrantyRecordForm.cases.length === 0 || isCreatingRecord || !warrantyRecordForm.visitorFullName.trim() || !warrantyRecordForm.visitorPhone.trim() || !otpVerified}
               className="bg-blue-600 hover:bg-blue-700"
             >
               <Plus className="h-4 w-4 mr-2" />

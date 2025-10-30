@@ -26,6 +26,7 @@ import componentRouter from "./src/api/routes/component.router.js";
 import warehouseRouter from "./src/api/routes/warehouse.router.js";
 import stockTransferRequestRouter from "./src/api/routes/stockTransferRequest.router.js";
 import workScheduleRouter from "./src/api/routes/workSchedule.router.js";
+import mailRouter from "./src/api/routes/mail.router.js";
 
 app.get("/", async (req, res) => {
   res.send("Hello world");
@@ -44,6 +45,7 @@ app.use(`${url}/case-lines`, caseLineRouter);
 app.use(`${url}/reservations`, componentReservationsRouter);
 app.use(`${url}/warehouses`, warehouseRouter);
 app.use(`${url}/components`, componentRouter);
+app.use(`${url}/mail`, mailRouter);
 
 app.use(`${url}/stock-transfer-requests`, stockTransferRequestRouter);
 app.use(`${url}/work-schedules`, workScheduleRouter);

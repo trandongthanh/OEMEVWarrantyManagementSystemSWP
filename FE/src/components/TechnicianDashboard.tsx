@@ -34,7 +34,6 @@ import {
   SearchIcon,
   Plus,
   Car,
-  Trash2,
   Calendar,
   Gauge,
   AlertCircle,
@@ -173,8 +172,7 @@ const TechnicianDashboard = ({
   const [selectedCaseLine, setSelectedCaseLine] = useState<CaseLine | null>(null);
   const [imagePreviewModalOpen, setImagePreviewModalOpen] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string>("");
-  const [confirmRemoveModalOpen, setConfirmRemoveModalOpen] = useState(false);
-  const [caseLineToRemove, setCaseLineToRemove] = useState<string | null>(null);
+  // caseline deletion removed per product request: no UI for removing case lines
   // NOTE: createCaseLineModalOpen is not used - modal exists but no trigger button
 
   const [reportPreviewModalOpen, setReportPreviewModalOpen] = useState(false);
@@ -446,8 +444,6 @@ const TechnicianDashboard = ({
     }
 
     return body;
-  // ignore exhaustive-deps here: normalizeCaseLineResponse is stable and we accept the current behavior
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Fetch all processing records using axios service
@@ -672,61 +668,9 @@ const TechnicianDashboard = ({
     });
   };
 
-  // Create case lines for a guarantee case
-  const createCaseLines = useCallback(async (guaranteeCaseId: string, caseLines: CaseLineRequest[]) => {
-    try {
-      setIsLoading(true);
-      
-      console.log('Creating case lines for case:', guaranteeCaseId);
-      console.log('Case lines data:', caseLines);
-
-      // Map frontend CaseLineRequest (componentId) to backend expected shape (typeComponentId)
-      const payload = {
-        caselines: caseLines.map((cl: CaseLineRequest) => ({
-          diagnosisText: cl.diagnosisText,
-          correctionText: cl.correctionText,
-          typeComponentId: cl.componentId ?? null,
-          quantity: cl.quantity,
-          warrantyStatus: cl.warrantyStatus
-        }))
-      };
-
-      const data = await apiCall(`/guarantee-cases/${guaranteeCaseId}/case-lines`, {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-
-      console.log('Created case lines response:', data);
-      
-      const newCaseLines = data.data?.caseLines || [];
-      // Merge and dedupe by caseLineId to avoid duplicates
-      setCreatedCaseLines(prev => {
-        const map = new Map<string, CaseLineResponse>();
-        prev.forEach(p => map.set(p.caseLineId, p));
-        (newCaseLines as CaseLineResponse[]).forEach((c) => {
-          if (c && c.caseLineId) map.set(c.caseLineId, c);
-        });
-        return Array.from(map.values());
-      });
-      
-      toast({
-        title: "Success",
-        description: `Created ${newCaseLines.length} case line(s) successfully`,
-      });
-      
-      return newCaseLines;
-    } catch (error) {
-      console.error('Error creating case lines:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create case lines",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // NOTE: createCaseLines handled by `caseLineService.createCaseLines` (uses axios POST).
+  // Keep component-side logic (handleCreateIssueDiagnosis) using the service so created
+  // case-lines are persisted to backend and then merged into local state for display.
 
   // Fetch components để hiển thị trong dropdown
   const fetchComponents = useCallback(async () => {
@@ -737,21 +681,29 @@ const TechnicianDashboard = ({
     } catch (error) {
       console.error('Error fetching components:', error);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [apiCall]);
 
   // Fetch case lines đã tạo cho guarantee case
-  const fetchCaseLinesForCase = useCallback(async (guaranteeCaseId: string) => {
+  const fetchCaseLinesForCase = useCallback(async (guaranteeCaseId: string): Promise<unknown[]> => {
     try {
       const data = await apiCall(`/guarantee-cases/${guaranteeCaseId}/case-lines`);
       console.log('Fetched case lines for case:', data);
-      return data.data?.caseLines || [];
+      // Defensive: apiCall may return null (204) or different shapes.
+      if (!data) return [];
+      const asObj = data as unknown as Record<string, unknown>;
+      const nested = asObj['data'];
+      if (nested && typeof nested === 'object') {
+        const list = (nested as Record<string, unknown>)['caseLines'];
+        if (Array.isArray(list)) return list as unknown[];
+      }
+      const direct = asObj['caseLines'];
+      if (Array.isArray(direct)) return direct as unknown[];
+      return [];
     } catch (error) {
       console.error('Error fetching case lines:', error);
       return [];
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [apiCall]);
 
   // Fetch compatible components for a processing record
   const fetchCompatibleComponents = useCallback(async (recordId: string, searchName?: string) => {
@@ -825,7 +777,7 @@ const TechnicianDashboard = ({
       return;
     }
 
-    if (!selectedRecord || !selectedRecord.guaranteeCases || selectedRecord.guaranteeCases.length === 0) {
+  if (!selectedRecord || !selectedRecord.guaranteeCases || (selectedRecord.guaranteeCases?.length ?? 0) === 0) {
       toast({
         title: "Error",
         description: "No guarantee case found for this record",
@@ -840,21 +792,21 @@ const TechnicianDashboard = ({
       
       console.log('🚀 Creating case line for guarantee case:', guaranteeCase.guaranteeCaseId);
 
-      const createdCaseLines = await caseLineService.createCaseLines(
+      const serverCreatedCaseLines = await caseLineService.createCaseLines(
         guaranteeCase.guaranteeCaseId,
         [caseLineForm]
       );
 
-      console.log('✅ Case lines created:', createdCaseLines);
+      console.log('✅ Case lines created:', serverCreatedCaseLines);
 
       // Persist created case lines into normalized state so they survive F5
-      if (createdCaseLines && createdCaseLines.length > 0) {
+      if (serverCreatedCaseLines && serverCreatedCaseLines.length > 0) {
         try {
           // Merge and dedupe by caseLineId to avoid duplicates and React key warnings
           setCreatedCaseLines(prev => {
             const map = new Map<string, CaseLineResponse>();
             prev.forEach(p => map.set(p.caseLineId, p));
-            createdCaseLines.forEach((c: CaseLineResponse) => {
+            serverCreatedCaseLines.forEach((c: CaseLineResponse) => {
               if (c && c.caseLineId) map.set(c.caseLineId, c);
             });
             return Array.from(map.values());
@@ -865,16 +817,16 @@ const TechnicianDashboard = ({
       }
 
       const newCaseLine: CaseLine = {
-        id: createdCaseLines[0].caseLineId,
-        caseId: createdCaseLines[0].guaranteeCaseId,
+        id: serverCreatedCaseLines[0].caseLineId,
+        caseId: serverCreatedCaseLines[0].guaranteeCaseId,
         damageLevel: 'N/A',
         repairPossibility: 'N/A',
-        warrantyDecision: createdCaseLines[0].warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
-        technicianNotes: `${createdCaseLines[0].diagnosisText} | ${createdCaseLines[0].correctionText}`,
+        warrantyDecision: serverCreatedCaseLines[0].warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
+        technicianNotes: `${serverCreatedCaseLines[0].diagnosisText} | ${serverCreatedCaseLines[0].correctionText}`,
         photos: [...uploadedFileUrls],
         photoFiles: [...uploadedFiles],
-        createdDate: new Date(createdCaseLines[0].createdAt).toLocaleDateString('en-GB'),
-        status: createdCaseLines[0].status === 'pending' ? 'submitted' : 'approved'
+        createdDate: new Date(serverCreatedCaseLines[0].createdAt).toLocaleDateString('en-GB'),
+        status: serverCreatedCaseLines[0].status === 'pending' ? 'submitted' : 'approved'
       };
 
       // Ensure no duplicate caseLine IDs in UI list
@@ -1120,51 +1072,6 @@ const TechnicianDashboard = ({
   const handleViewCaseLine = (caseLine: CaseLine) => {
     setSelectedCaseLine(caseLine);
     setViewCaseLineModalOpen(true);
-  };
-
-  // Handle remove case line
-  const handleRemoveCaseLine = (caseLineId: string) => {
-    setCaseLineToRemove(caseLineId);
-    setConfirmRemoveModalOpen(true);
-  };
-
-  // Confirm remove case line (persist deletion to backend)
-  const confirmRemoveCaseLine = async () => {
-    if (!caseLineToRemove) {
-      setConfirmRemoveModalOpen(false);
-      return;
-    }
-
-    try {
-      // Call backend delete endpoint
-      await caseLineService.deleteCaseLine(caseLineToRemove);
-
-      // Remove from local UI state after successful deletion
-      setCaseLines(prev => prev.filter(caseLine => caseLine.id !== caseLineToRemove));
-
-      // Also remove from createdCaseLines normalized state if present
-      setCreatedCaseLines(prev => prev.filter(cl => {
-        type MaybeCL = { caseLineId?: string; id?: string };
-        const typed = (cl as unknown) as MaybeCL;
-        const id = typed.caseLineId ?? typed.id ?? '';
-        return id !== caseLineToRemove;
-      }));
-
-      toast({
-        title: "Issue Diagnosis Removed",
-        description: `Case line ${caseLineToRemove.slice(-8)} deleted successfully`,
-      });
-    } catch (error) {
-      console.debug('Failed to delete case line:', error instanceof Error ? error.message : error);
-      toast({
-        title: "Delete Failed",
-        description: error instanceof Error ? error.message : 'Failed to delete case line',
-        variant: "destructive"
-      });
-    } finally {
-      setConfirmRemoveModalOpen(false);
-      setCaseLineToRemove(null);
-    }
   };
 
   // Mock data - replace with API calls in production
@@ -1459,29 +1366,29 @@ const TechnicianDashboard = ({
                               <div>
                                 <p>{record.vin}</p>
                                 {record.recordId && (
-                                  <p className="text-xs text-muted-foreground">ID: {record.recordId.substring(0, 8)}...</p>
+                                  <p className="text-xs text-muted-foreground">ID: {(record.recordId as string)?.substring?.(0, 8) ?? ''}...</p>
                                 )}
                               </div>
                             </TableCell>
                             <TableCell>
                               <div>
-                                <p className="font-medium">{record.vehicle.model.name}</p>
+                                <p className="font-medium">{record.vehicle?.model?.name ?? 'Unknown model'}</p>
                                 <p className="text-xs text-muted-foreground">
-                                  Model ID: {record.vehicle.model.vehicleModelId.substring(0, 8)}...
+                                  Model ID: {(record.vehicle?.model?.vehicleModelId as string | undefined)?.substring?.(0, 8) ?? 'N/A'}...
                                 </p>
                               </div>
                             </TableCell>
                             <TableCell>
-                              <p className="text-sm">{record.odometer.toLocaleString()} km</p>
+                              <p className="text-sm">{(record.odometer ?? 0).toLocaleString()} km</p>
                             </TableCell>
                             <TableCell className="text-sm">
-                              {formatDate(record.checkInDate)}
+                              {formatDate(record.checkInDate ?? new Date().toISOString())}
                             </TableCell>
                             <TableCell>
                               <div>
-                                <p className="font-medium">{record.mainTechnician.name}</p>
+                                <p className="font-medium">{record.mainTechnician?.name ?? '—'}</p>
                                 <p className="text-xs text-muted-foreground">
-                                  {record.mainTechnician.userId.substring(0, 8)}...
+                                  {(record.mainTechnician?.userId as string | undefined)?.substring?.(0, 8) ?? ''}...
                                 </p>
                               </div>
                             </TableCell>
@@ -1491,7 +1398,7 @@ const TechnicianDashboard = ({
                               </Badge>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline">×{record.guaranteeCases.length}</Badge>
+                              <Badge variant="outline">×{record.guaranteeCases?.length ?? 0}</Badge>
                             </TableCell>
                             <TableCell>
                               <div className="flex gap-1">
@@ -1677,46 +1584,7 @@ const TechnicianDashboard = ({
                                 <Eye className="h-3 w-3" />
                               </Button>
 
-                              {/* Only show delete when user is allowed to delete this caseline to avoid 403 responses */}
-                              {(() => {
-                                try {
-                                  // find matching created caseline to read owner (createdCaseLines are normalized CaseLineResponse)
-                                  const match = createdCaseLines.find(cl => (cl.caseLineId ?? cl['id'] ?? '') === caseLine.id);
-
-                                  const currentUserRec = user as unknown as Record<string, unknown> | null;
-                                  const currentUserId = currentUserRec ? (currentUserRec['id'] ?? currentUserRec['userId']) as string | undefined : undefined;
-                                  const roleRec = currentUserRec ? (currentUserRec['role'] ?? null) as unknown : null;
-                                  const roleName = roleRec && typeof roleRec === 'object' ? ((roleRec as Record<string, unknown>)['roleName'] ?? (roleRec as string)) as string : (roleRec as string | null);
-
-                                  const diagTechId = match ? (match.techId ?? null) : null;
-
-                                  const canDelete = (() => {
-                                    if (!currentUserId || !roleName) return false;
-                                    if (roleName === 'service_center_technician') {
-                                      return !!diagTechId && diagTechId === currentUserId;
-                                    }
-                                    // other roles allowed in backend rules
-                                    return true;
-                                  })();
-
-                                  if (canDelete) {
-                                    return (
-                                      <Button 
-                                        onClick={() => handleRemoveCaseLine(caseLine.id)}
-                                        variant="outline" 
-                                        size="sm"
-                                        title="Remove Issue Diagnosis"
-                                        className="text-red-600 hover:text-red-700 hover:border-red-300"
-                                      >
-                                        <Trash2 className="h-3 w-3" />
-                                      </Button>
-                                    );
-                                  }
-                                } catch (err) {
-                                  console.warn('Failed to determine delete permission for caseline', err);
-                                }
-                                return null;
-                              })()}
+                              {/* Delete removed: no Remove button shown in UI */}
 
                               {caseLine.status === 'draft' && (
                                 <Button 
@@ -2976,47 +2844,7 @@ const TechnicianDashboard = ({
         </DialogContent>
       </Dialog>
 
-      {/* Confirm Remove Case Line Modal */}
-      <Dialog open={confirmRemoveModalOpen} onOpenChange={setConfirmRemoveModalOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader className="pb-4">
-            <DialogTitle className="text-xl font-semibold text-red-600">Remove Issue Diagnosis</DialogTitle>
-            <DialogDescription className="text-base">
-              Are you sure you want to remove this issue diagnosis? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="bg-red-50 p-4 rounded-lg border border-red-200 mb-4">
-            <div className="flex items-center gap-2">
-              <Trash2 className="h-5 w-5 text-red-500" />
-              <div>
-                <p className="font-medium text-red-800">Diagnosis ID:</p>
-                <p className="text-sm text-red-600 font-mono">{caseLineToRemove}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex justify-end gap-3">
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setConfirmRemoveModalOpen(false);
-                setCaseLineToRemove(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button 
-              variant="destructive"
-              onClick={confirmRemoveCaseLine}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Remove Issue Diagnosis
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Confirm remove dialog removed — deletion disabled in UI */}
 
       {/* View Case Modal from Processing Records */}
       <Dialog open={viewCaseModalOpen} onOpenChange={setViewCaseModalOpen}>
@@ -3097,11 +2925,11 @@ const TechnicianDashboard = ({
                 </div>
               </div>
 
-              {selectedRecord.guaranteeCases && selectedRecord.guaranteeCases.length > 0 && (
+              {selectedRecord?.guaranteeCases && (selectedRecord.guaranteeCases?.length ?? 0) > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
                     <FileText className="h-4 w-4" />
-                    Guarantee Cases ({selectedRecord.guaranteeCases.length})
+                    Guarantee Cases ({selectedRecord?.guaranteeCases?.length ?? 0})
                   </div>
                   {selectedRecord.guaranteeCases.map((guaranteeCase, index) => (
                     <div key={guaranteeCase.guaranteeCaseId} className="p-4 bg-white rounded-lg border">
@@ -3161,7 +2989,7 @@ const TechnicianDashboard = ({
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Case ID:</span>
-                      <span className="font-semibold text-blue-600">{selectedRecord.guaranteeCases[0]?.guaranteeCaseId.substring(0, 8) || 'N/A'}</span>
+                      <span className="font-semibold text-blue-600">{(selectedRecord?.guaranteeCases?.[0]?.guaranteeCaseId as string | undefined)?.substring?.(0, 8) ?? 'N/A'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Status:</span>
@@ -3217,7 +3045,7 @@ const TechnicianDashboard = ({
                 </div>
               </div>
 
-              {selectedRecord.guaranteeCases.length > 0 && (
+              { (selectedRecord?.guaranteeCases?.length ?? 0) > 0 && (
                 <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
                   <div className="flex items-center gap-2 mb-3">
                     <div className="bg-orange-500 text-white rounded-full p-1.5">
@@ -3249,7 +3077,7 @@ const TechnicianDashboard = ({
             <DialogTitle>Create Issue Diagnosis</DialogTitle>
             <DialogDescription>
               Create a new issue diagnosis for VIN: {selectedRecord?.vin || 'N/A'}
-              {selectedRecord?.recordId && ` (Record: ${selectedRecord.recordId.substring(0, 8)}...)`}
+              {selectedRecord?.recordId && ` (Record: ${(selectedRecord.recordId as string | undefined)?.substring?.(0, 8) ?? ''}...)`}
             </DialogDescription>
           </DialogHeader>
           

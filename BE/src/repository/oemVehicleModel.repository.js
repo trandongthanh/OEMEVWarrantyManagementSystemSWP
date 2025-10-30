@@ -4,9 +4,11 @@ const { VehicleModel } = db;
 
 class OemVehicleModelRepository {
   createVehicleModel = async (vehicleModelData, transaction = null) => {
-    return await VehicleModel.create(vehicleModelData, {
+    const record = await VehicleModel.create(vehicleModelData, {
       transaction: transaction,
     });
+
+    return record.toJSON();
   };
 }
 
