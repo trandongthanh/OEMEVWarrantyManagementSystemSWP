@@ -641,28 +641,9 @@ const SuperAdvisor = () => {
           
           setHasSearchedCustomer(true);
           
-          // Only reset if coming from Register New Vehicle flow (indicated by registrationFlowPhone)
-          if (registrationFlowPhone) {
-            console.log('🔄 Resetting Register New Vehicle flow...');
-            
-            // Reset Register New Vehicle section after successful search
-            setNewVehicleVin('');
-            setRegistrationFlowPhone('');
-            
-            // Reset vehicle search result and warranty info to show only "Check Warranty" button
-            setVehicleSearchResult(null);
-            setWarrantyStatus(null);
-            setWarrantyDetails(null);
-            setOdometer('');
-            setSearchVin('');
-            
-            // Reset selected vehicle for warranty check in customer's vehicle list
-            setSelectedVehicleForWarranty(null);
-            setVehicleOdometer('');
-            setVehicleWarrantyStatus(null);
-          } else {
-            console.log('✅ Regular search - keeping vehicle info intact');
-          }
+          // Don't reset vehicle info here - user still needs to complete registration
+          // Only keep the registrationFlowPhone marker for later cleanup
+          console.log('✅ Customer found - keeping vehicle info for registration');
         } else {
           setFoundCustomer(null);
           
@@ -1329,6 +1310,13 @@ const SuperAdvisor = () => {
             title: 'Success',
             description: 'Vehicle registered to existing customer successfully!',
           });
+          
+          // Reset Register New Vehicle flow after successful registration
+          if (registrationFlowPhone) {
+            console.log('🔄 Resetting Register New Vehicle flow after successful registration');
+            setNewVehicleVin('');
+            setRegistrationFlowPhone('');
+          }
         }
       }
       // Case 3: Have form data but no customer ID - Search by phone or create new
@@ -1402,6 +1390,13 @@ const SuperAdvisor = () => {
               ? 'Vehicle registered to existing customer successfully!'
               : 'New customer created and vehicle registered successfully!',
           });
+          
+          // Reset Register New Vehicle flow after successful registration
+          if (registrationFlowPhone) {
+            console.log('🔄 Resetting Register New Vehicle flow after successful registration');
+            setNewVehicleVin('');
+            setRegistrationFlowPhone('');
+          }
         }
       }
 
@@ -3514,7 +3509,11 @@ const SuperAdvisor = () => {
                   <div>
                     <span className="font-medium">Purchase Date:</span> {
                       currentVehicleForWarranty?.purchaseDate 
-                        ? new Date(currentVehicleForWarranty.purchaseDate).toLocaleDateString()
+                        ? new Date(currentVehicleForWarranty.purchaseDate).toLocaleDateString('en-GB', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                          })
                         : 'N/A'
                     }
                   </div>
