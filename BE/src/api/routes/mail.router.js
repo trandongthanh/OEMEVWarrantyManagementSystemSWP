@@ -125,6 +125,7 @@ router.post(
  */
 router.post(
   "/otp/verify",
+  authentication,
   authorizationByRole(["service_center_staff", "service_center_technician"]),
   validate(verifyOtpSchema),
 

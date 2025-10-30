@@ -99,7 +99,18 @@ class CaseLineRepository {
 
   findDetailById = async (caselineId, transaction = null, lock = null) => {
     const caseLine = await CaseLine.findOne({
-      attributes: ["id", "warrantyStatus", "status", "updatedAt"],
+      attributes: [
+        "id",
+        "diagnosisText",
+        "correctionText",
+        "typeComponentId",
+        "quantity",
+        "warrantyStatus",
+        "status",
+        "rejectionReason",
+        "evidenceImageUrls",
+        "updatedAt",
+      ],
       include: [
         {
           model: GuaranteeCase,
@@ -155,7 +166,19 @@ class CaseLineRepository {
 
   findByIds = async ({ caseLineIds }, transaction = null, lock = null) => {
     const caseLines = await CaseLine.findAll({
-      attributes: ["id", "warrantyStatus", "status", "updatedAt"],
+      attributes: [
+        "id",
+        "diagnosisText",
+        "correctionText",
+        "typeComponentId",
+        "quantity",
+        "warrantyStatus",
+        "status",
+        "rejectionReason",
+        "evidenceImageUrls",
+        "updatedAt",
+        "evidenceImageUrls",
+      ],
       where: {
         id: {
           [Op.in]: caseLineIds,
@@ -210,24 +233,24 @@ class CaseLineRepository {
       status,
       warrantyStatus,
       rejectionReason,
+      evidenceImageUrls,
     },
     transaction = null
   ) => {
-    const [rowsUpdated] = await CaseLine.update(
-      {
-        diagnosisText,
-        correctionText,
-        typeComponentId,
-        quantity,
-        status,
-        warrantyStatus,
-        rejectionReason,
-      },
-      {
-        where: { id: caselineId },
-        transaction: transaction,
-      }
-    );
+    const updatePayload = {
+      diagnosisText,
+      correctionText,
+      typeComponentId,
+      quantity,
+      status,
+      warrantyStatus,
+      rejectionReason,
+    };
+
+    const [rowsUpdated] = await CaseLine.update(updatePayload, {
+      where: { id: caselineId },
+      transaction: transaction,
+    });
 
     if (rowsUpdated <= 0) {
       return null;
@@ -302,7 +325,7 @@ class CaseLineRepository {
     }
 
     const { count, rows } = await CaseLine.findAndCountAll({
-      where,
+      where: where,
       include: [
         {
           model: GuaranteeCase,

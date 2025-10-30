@@ -6,6 +6,7 @@ export const caseLineSchema = Joi.object({
   typeComponentId: Joi.string().uuid().allow(null),
   quantity: Joi.number().integer().min(0).required(),
   warrantyStatus: Joi.string().valid("ELIGIBLE", "INELIGIBLE").required(),
+  evidenceImageUrls: Joi.array().items(Joi.string().trim()).optional(),
   rejectionReason: Joi.string().allow(null).optional(),
 });
 
@@ -48,6 +49,7 @@ export const updateCaselineBodySchema = Joi.object({
   typeComponentId: Joi.string().uuid({ version: "uuidv4" }).allow(null),
   quantity: Joi.number().integer().min(0).required(),
   warrantyStatus: Joi.string().valid("ELIGIBLE", "INELIGIBLE").required(),
+  evidenceImageUrls: Joi.array().items(Joi.string().trim()).optional(),
   rejectionReason: Joi.string().allow(null).optional(),
 });
 
