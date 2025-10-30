@@ -16,20 +16,19 @@ class OemVehicleModelController {
 
     const { companyId } = req;
 
-    const newVehicleModel =
-      await this.#oemVehicleModelService.createVehicleModel({
-        vehicleModelName,
-        yearOfLaunch,
-        placeOfManufacture,
-        generalWarrantyDuration,
-        generalWarrantyMileage,
-        components,
-        companyId,
-      });
+    const result = await this.#oemVehicleModelService.createVehicleModel({
+      vehicleModelName,
+      yearOfLaunch,
+      placeOfManufacture,
+      generalWarrantyDuration,
+      generalWarrantyMileage,
+      components,
+      companyId,
+    });
 
     res.status(201).json({
       status: "success",
-      data: newVehicleModel,
+      data: result,
     });
   };
 }

@@ -47,13 +47,25 @@ class ComponentRepository {
   };
 
   bulkUpdateStatus = async (
-    { componentIds, status, requestId },
+    { componentIds, status, requestId, warehouseId },
     transaction = null
   ) => {
-    const updateData = { status: status };
+    const updateData = {};
+
+    if (status) {
+      updateData.status = status;
+    }
 
     if (requestId) {
       updateData.requestId = requestId;
+    }
+
+    if (warehouseId) {
+      updateData.warehouseId = warehouseId;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return 0;
     }
 
     const [numberOfAffectedRows] = await Component.update(updateData, {
