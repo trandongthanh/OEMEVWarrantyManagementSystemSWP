@@ -641,28 +641,9 @@ const SuperAdvisor = () => {
           
           setHasSearchedCustomer(true);
           
-          // Only reset if coming from Register New Vehicle flow (indicated by registrationFlowPhone)
-          if (registrationFlowPhone) {
-            console.log('🔄 Resetting Register New Vehicle flow...');
-            
-            // Reset Register New Vehicle section after successful search
-            setNewVehicleVin('');
-            setRegistrationFlowPhone('');
-            
-            // Reset vehicle search result and warranty info to show only "Check Warranty" button
-            setVehicleSearchResult(null);
-            setWarrantyStatus(null);
-            setWarrantyDetails(null);
-            setOdometer('');
-            setSearchVin('');
-            
-            // Reset selected vehicle for warranty check in customer's vehicle list
-            setSelectedVehicleForWarranty(null);
-            setVehicleOdometer('');
-            setVehicleWarrantyStatus(null);
-          } else {
-            console.log('✅ Regular search - keeping vehicle info intact');
-          }
+          // Don't reset vehicle info here - user still needs to complete registration
+          // Only keep the registrationFlowPhone marker for later cleanup
+          console.log('✅ Customer found - keeping vehicle info for registration');
         } else {
           setFoundCustomer(null);
           
@@ -1329,6 +1310,13 @@ const SuperAdvisor = () => {
             title: 'Success',
             description: 'Vehicle registered to existing customer successfully!',
           });
+          
+          // Reset Register New Vehicle flow after successful registration
+          if (registrationFlowPhone) {
+            console.log('🔄 Resetting Register New Vehicle flow after successful registration');
+            setNewVehicleVin('');
+            setRegistrationFlowPhone('');
+          }
         }
       }
       // Case 3: Have form data but no customer ID - Search by phone or create new
@@ -1337,7 +1325,7 @@ const SuperAdvisor = () => {
         let customerIdToUse = null;
         
         try {
-          const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers?phone=${ownerForm.phone.trim()}`, {
+          const searchResponse = await axios.get(`${API_BASE_URL}/customers?phone=${ownerForm.phone.trim()}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
@@ -1377,7 +1365,7 @@ const SuperAdvisor = () => {
 
         // Register vehicle with PATCH /vehicles/{VIN}
         const response = await axios.patch(
-          `http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}`,
+          `${API_BASE_URL}/vehicles/${vehicleSearchResult.vin}`,
           requestBody,
           {
             headers: {
@@ -1402,6 +1390,13 @@ const SuperAdvisor = () => {
               ? 'Vehicle registered to existing customer successfully!'
               : 'New customer created and vehicle registered successfully!',
           });
+          
+          // Reset Register New Vehicle flow after successful registration
+          if (registrationFlowPhone) {
+            console.log('🔄 Resetting Register New Vehicle flow after successful registration');
+            setNewVehicleVin('');
+            setRegistrationFlowPhone('');
+          }
         }
       }
 
@@ -1458,7 +1453,7 @@ const SuperAdvisor = () => {
 
    
       const response = await axios.post(
-        `http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}/warranty/preview`,
+        `${API_BASE_URL}/vehicles/${vehicleSearchResult.vin}/warranty/preview`,
         {
           odometer: parseInt(odometer),
           purchaseDate: vehicleSearchResult.purchaseDate
@@ -1646,7 +1641,7 @@ const SuperAdvisor = () => {
       // First, find or create customer
       let customerData = null;
 
-      const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers/`, {
+      const searchResponse = await axios.get(`${API_BASE_URL}/customers/`, {
         params: {
           phone: ownerForm.phone.trim()
         },
@@ -1660,7 +1655,7 @@ const SuperAdvisor = () => {
         customerData = searchResponse.data.data.customer;
       } else {
         // Create new customer
-        const createResponse = await axios.post(`http://localhost:3000/api/v1/customers/`, {
+        const createResponse = await axios.post(`${API_BASE_URL}/customers/`, {
           fullName: ownerForm.fullName.trim(),
           email: ownerForm.email.trim(),
           phone: ownerForm.phone.trim(),
@@ -1689,7 +1684,7 @@ const SuperAdvisor = () => {
       };
 
       // Register owner to vehicle
-      const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
+      const response = await axios.patch(`${API_BASE_URL}/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -1786,7 +1781,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      const response = await fetch(`http://localhost:3000/api/v1/processing-records/${record.id}`, {
+      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -1815,7 +1810,7 @@ const SuperAdvisor = () => {
         let apiCustomerName = 'Unknown Customer';
         
         try {
-          const vehicleResponse = await fetch(`http://localhost:3000/api/v1/vehicles/${recordData.vin}`, {
+          const vehicleResponse = await fetch(`${API_BASE_URL}/vehicles/${recordData.vin}`, {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -1839,7 +1834,7 @@ const SuperAdvisor = () => {
           odometer: record.odometer.toString(),
           visitorFullName: recordData.visitorInfo?.fullName || '',
           visitorPhone: recordData.visitorInfo?.phone || '',
-          customerEmail: '',
+          customerEmail: recordData.visitorInfo?.email || '',
           cases: record.cases || [],
           purchaseDate: record.purchaseDate || '',
           status: record.status,
@@ -1989,7 +1984,7 @@ const SuperAdvisor = () => {
       }
 
       // Fetch record details with caselines
-      const response = await fetch(`http://localhost:3000/api/v1/processing-records/${record.id}`, {
+      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -3514,7 +3509,11 @@ const SuperAdvisor = () => {
                   <div>
                     <span className="font-medium">Purchase Date:</span> {
                       currentVehicleForWarranty?.purchaseDate 
-                        ? new Date(currentVehicleForWarranty.purchaseDate).toLocaleDateString()
+                        ? new Date(currentVehicleForWarranty.purchaseDate).toLocaleDateString('en-GB', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                          })
                         : 'N/A'
                     }
                   </div>
