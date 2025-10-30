@@ -198,7 +198,7 @@ class WareHouseRepository {
       if (update.quantityReserved) {
         const quantityReserved = Number(update.quantityReserved);
         updateFields.quantityReserved = db.Sequelize.literal(
-          `quantity_reserved - ${quantityReserved}`
+          `quantity_reserved + ${quantityReserved}`
         );
       }
 
@@ -343,6 +343,25 @@ class WareHouseRepository {
     });
 
     return warehouse ? warehouse.toJSON() : null;
+  };
+
+  createStock = async (
+    { warehouseId, typeComponentId, quantityInStock, quantityReserved },
+    transaction = null
+  ) => {
+    const newStock = await Stock.create(
+      {
+        warehouseId,
+        typeComponentId,
+        quantityInStock,
+        quantityReserved,
+      },
+      {
+        transaction,
+      }
+    );
+
+    return newStock ? newStock.toJSON() : null;
   };
 }
 

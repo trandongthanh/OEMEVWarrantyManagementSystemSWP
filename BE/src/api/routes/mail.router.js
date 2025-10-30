@@ -1,13 +1,18 @@
 import express from "express";
-import container from "../../../container.js";
+import { validate } from "../middleware/index.js";
+import {
+  sendOtpSchema,
+  verifyOtpSchema,
+} from "../../validators/mail.validator.js";
 
-const mailRouter = express.Router();
+const router = express.Router();
 
 /**
  * @swagger
- * /api/v1/mail/send:
+ * /mail/otp/send:
  *   post:
- *     summary: Send OTP to email
+ *     summary: Gửi OTP xác thực email
+ *     description: Gửi mã OTP 6 chữ số tới email người dùng. Mã có hiệu lực trong 5 phút.
  *     tags: [Mail]
  *     requestBody:
  *       required: true
@@ -21,29 +26,39 @@ const mailRouter = express.Router();
  *               email:
  *                 type: string
  *                 format: email
- *                 example: customer@example.com
+ *                 example: "visitor@example.com"
  *     responses:
  *       200:
- *         description: OTP sent successfully
+ *         description: OTP đã được gửi thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 message:
+ *                   type: string
+ *                   example: "OTP email sent successfully"
+ *       400:
+ *         description: Thiếu email hoặc email không hợp lệ
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "Email is required"
  */
-mailRouter.post("/send", async (req, res, next) => {
+router.post("/otp/send", validate(sendOtpSchema), async (req, res, next) => {
   try {
-    const { email } = req.body;
-    
-    if (!email) {
-      return res.status(400).json({
-        status: "error",
-        message: "Email is required"
-      });
-    }
-
-    const mailController = container.resolve("mailController");
-    await mailController.sendMail({ email });
-
-    res.status(200).json({
-      status: "success",
-      message: "OTP sent to email successfully"
-    });
+    const mailController = req.container.resolve("mailController");
+    await mailController.sendOtp(req, res);
   } catch (error) {
     next(error);
   }
@@ -51,9 +66,10 @@ mailRouter.post("/send", async (req, res, next) => {
 
 /**
  * @swagger
- * /api/v1/mail/verify:
+ * /mail/otp/verify:
  *   post:
- *     summary: Verify OTP code
+ *     summary: Xác thực OTP cho email
+ *     description: Kiểm tra mã OTP đã gửi. Khi thành công, hệ thống lưu cờ xác thực trong 10 phút để cho phép thao tác tiếp theo.
  *     tags: [Mail]
  *     requestBody:
  *       required: true
@@ -68,43 +84,50 @@ mailRouter.post("/send", async (req, res, next) => {
  *               email:
  *                 type: string
  *                 format: email
+ *                 example: "visitor@example.com"
  *               otp:
  *                 type: string
+ *                 pattern: "^[0-9]{6}$"
  *                 example: "123456"
  *     responses:
  *       200:
- *         description: OTP verified successfully
+ *         description: OTP hợp lệ
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 message:
+ *                   type: string
+ *                   example: "OTP verified successfully"
+ *       400:
+ *         description: Email hoặc OTP thiếu/sai
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "error"
+ *                 message:
+ *                   type: string
+ *                   example: "OTP is invalid or has expired"
  */
-mailRouter.post("/verify", async (req, res, next) => {
-  try {
-    const { email, otp } = req.body;
-
-    if (!email || !otp) {
-      return res.status(400).json({
-        status: "error",
-        message: "Email and OTP are required"
-      });
+router.post(
+  "/otp/verify",
+  validate(verifyOtpSchema),
+  async (req, res, next) => {
+    try {
+      const mailController = req.container.resolve("mailController");
+      await mailController.verifyOtp(req, res);
+    } catch (error) {
+      next(error);
     }
-
-    const mailController = container.resolve("mailController");
-    const isValid = await mailController.verifyMail({ email, otp });
-
-    if (!isValid) {
-      return res.status(400).json({
-        status: "error",
-        message: "Invalid or expired OTP",
-        isValid: false
-      });
-    }
-
-    res.status(200).json({
-      status: "success",
-      message: "OTP verified successfully",
-      isValid: true
-    });
-  } catch (error) {
-    next(error);
   }
-});
+);
 
-export default mailRouter;
+export default router;

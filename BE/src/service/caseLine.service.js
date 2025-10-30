@@ -265,7 +265,12 @@ class CaseLineService {
     };
   };
 
-  allocateStockForCaseline = async ({ caseId, caselineId, userId }) => {
+  allocateStockForCaseline = async ({
+    caseId,
+    caselineId,
+    userId,
+    serviceCenterId,
+  }) => {
     const rawResult = await db.sequelize.transaction(async (transaction) => {
       const { caseline } = await this.#validateCaseLine(
         caselineId,
@@ -276,6 +281,54 @@ class CaseLineService {
         { guaranteeCaseId: caseId },
         transaction
       );
+
+      if (!guaranteeCase) {
+        throw new NotFoundError("Guarantee case not found");
+      }
+
+      const guaranteeCaseIdFromCaseline =
+        caseline.guaranteeCase?.guaranteeCaseId || caseline.guaranteeCaseId;
+
+      if (
+        guaranteeCaseIdFromCaseline &&
+        guaranteeCaseIdFromCaseline !== caseId
+      ) {
+        throw new ConflictError(
+          "Caseline does not belong to the provided guarantee case"
+        );
+      }
+
+      const serviceCenter =
+        guaranteeCase.vehicleProcessingRecord?.createdByStaff?.serviceCenterId;
+
+      if (!serviceCenter) {
+        throw new BadRequestError(
+          "Service center information is missing for the guarantee case"
+        );
+      }
+
+      if (serviceCenter !== serviceCenterId) {
+        throw new ForbiddenError(
+          "User does not have permission to allocate stock for this case line"
+        );
+      }
+
+      const existingReservations =
+        await this.#componentReservationRepository.findByCaselineId(
+          caselineId,
+          transaction,
+          Transaction.LOCK.UPDATE
+        );
+
+      const activeReservation = existingReservations.find((reservation) =>
+        ["RESERVED", "PICKED_UP", "INSTALLED"].includes(reservation.status)
+      );
+
+      if (activeReservation) {
+        throw new ConflictError(
+          "An active reservation already exists for this caseline"
+        );
+      }
 
       const stocks =
         await this.#warehouseRepository.findStocksByTypeComponentOrderByWarehousePriority(
@@ -383,10 +436,14 @@ class CaseLineService {
     rejectedCaseLineIds,
     serviceCenterId,
   }) => {
-    const arrayApproveIds = approvedCaseLineIds?.map((id) => id?.id);
-    const arrayRejectIds = rejectedCaseLineIds?.map((id) => id?.id);
+    const arrayApproveIds = (approvedCaseLineIds ?? []).map((item) => item?.id);
+    const arrayRejectIds = (rejectedCaseLineIds ?? []).map((item) => item?.id);
 
     const arrayIds = [...arrayApproveIds, ...arrayRejectIds];
+
+    if (arrayIds.length === 0) {
+      throw new ConflictError("No caselines provided for approval process");
+    }
 
     const rawResult = await db.sequelize.transaction(async (transaction) => {
       const caselines = await this.#caselineRepository.findByIds(
