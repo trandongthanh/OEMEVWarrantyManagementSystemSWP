@@ -1,5 +1,6 @@
 class MailController {
   #mailService;
+
   constructor({ mailService }) {
     this.#mailService = mailService;
   }
@@ -43,6 +44,7 @@ class MailController {
     return res.status(200).json({
       status: "success",
       message: "OTP verified successfully",
+      isValid: true,
     });
   };
 }
