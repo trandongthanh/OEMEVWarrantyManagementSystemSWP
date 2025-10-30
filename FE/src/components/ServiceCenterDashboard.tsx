@@ -32,7 +32,8 @@ import {
   Package,
   BoxIcon as Box,
   Edit,
-  Trash
+  Trash,
+  Eye
 } from "lucide-react";
 
 interface Technician {
@@ -134,7 +135,48 @@ interface StockTransferRequest {
     name: string;
     serviceCenterId: string;
   };
+  items?: Array<{
+    id: string;
+    quantityRequested: number;
+    quantityApproved: number | null;
+    typeComponentId: string;
+    caselineId?: string; // Add caselineId from backend response
+    typeComponent?: {
+      typeComponentId: string;
+      nameComponent: string;
+      description: string | null;
+    };
+  }>;
+  caseLines?: Array<{
+    id: string;
+    diagnosisText: string;
+    correctionText: string;
+    warrantyStatus: string;
+    status: string;
+    rejectionReason: string | null;
+    quantity: number;
+    typeComponent?: ComponentInfo;
+  }>;
 }
+
+// Helper: Save and recover caselineIds mapping in localStorage
+const saveCaseLineIdsToLocal = (requestId: string, caseLineIds: string[]) => {
+  try {
+    if (!requestId || !Array.isArray(caseLineIds) || caseLineIds.length === 0) return;
+    localStorage.setItem(`stockRequestCaseLines:${requestId}`, JSON.stringify(caseLineIds));
+  } catch (e) {
+    console.warn('Failed to persist stockRequestCaseLines mapping', e);
+  }
+};
+
+const recoverCaseLineIdsFromLocal = (requestId: string): string[] => {
+  try {
+    const raw = localStorage.getItem(`stockRequestCaseLines:${requestId}`);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+};
 
 // Helper functions moved outside component to prevent re-creation on every render
 const formatCurrency = (amount: number) => {
@@ -169,16 +211,13 @@ const getStatusBadgeVariant = (status?: string) => {
     case 'PENDING_DIAGNOSIS':
       return 'secondary';
     case 'WAITING_CUSTOMER_APPROVAL':
-    case 'WAITING_FOR_PARTS':
       return 'outline';
     case 'IN_PROGRESS':
     case 'IN_DIAGNOSIS':
     case 'PROCESSING':
-    case 'IN_REPAIR':
       return 'default';
     case 'COMPLETED':
     case 'DELIVERED':
-    case 'PAID':
       return 'success';
     case 'REJECTED':
     case 'CANCELLED':
@@ -194,10 +233,7 @@ const STATUS_LABELS: Record<string, string> = {
   IN_DIAGNOSIS: 'In Diagnosis',
   WAITING_CUSTOMER_APPROVAL: 'Waiting Customer Approval',
   PROCESSING: 'Processing',
-  WAITING_FOR_PARTS: 'Waiting for Parts',
-  IN_REPAIR: 'In Repair',
   COMPLETED: 'Completed',
-  PAID: 'Paid',
   CANCELLED: 'Cancelled',
 
   // Technician statuses
@@ -266,10 +302,6 @@ const getCaseLineStatusVariant = (status?: string) => {
     case 'REJECTED_BY_CUSTOMER':
     case 'CANCELLED':
       return 'destructive';
-    case 'IN_REPAIR':
-      return 'default';
-    case 'WAITING_FOR_PARTS':
-      return 'secondary';
     default:
       return 'outline';
   }
@@ -321,10 +353,7 @@ const ServiceCenterDashboard = () => {
     'IN_DIAGNOSIS',
     'WAITING_CUSTOMER_APPROVAL',
     'PROCESSING',
-    'WAITING_FOR_PARTS',
-    'IN_REPAIR',
     'COMPLETED',
-    'PAID',
     'CANCELLED'
   ];
   const [claimsByStatus, setClaimsByStatus] = useState<Record<string, WarrantyClaim[]>>({});
@@ -356,6 +385,9 @@ const ServiceCenterDashboard = () => {
     }
   });
 
+  // Track case lines that have RECEIVED stock from manufacturer
+  const [receivedStockCaseLines, setReceivedStockCaseLines] = useState<Set<string>>(new Set());
+
   // Technician Records Modal States
   const [showTechnicianRecordsModal, setShowTechnicianRecordsModal] = useState(false);
   const [selectedTechnicianForRecords, setSelectedTechnicianForRecords] = useState<Technician | null>(null);
@@ -375,6 +407,7 @@ const ServiceCenterDashboard = () => {
     quantity: number;
     guaranteeCaseId: string;
   } | null>(null);
+  const [caseLineToRequestMap, setCaseLineToRequestMap] = useState<Map<string, string>>(new Map()); // Map caselineId -> requestId
   const [stockTransferRequests, setStockTransferRequests] = useState<StockTransferRequest[]>([]);
   const [isLoadingStockRequests, setIsLoadingStockRequests] = useState(false);
   const [showStockRequestsModal, setShowStockRequestsModal] = useState(false);
@@ -480,6 +513,9 @@ const ServiceCenterDashboard = () => {
       
       return newSet;
     });
+    
+    // Return byStatus data for immediate use by caller
+    return byStatus;
   };
 
   // Fetch warehouses
@@ -503,8 +539,8 @@ const ServiceCenterDashboard = () => {
     }
   };
 
-  // Fetch stock transfer requests
-  const fetchStockTransferRequests = async (status = 'PENDING_APPROVAL') => {
+  // Fetch all stock transfer requests
+  const fetchStockTransferRequests = async () => {
     setIsLoadingStockRequests(true);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
@@ -512,15 +548,129 @@ const ServiceCenterDashboard = () => {
       return;
     }
     try {
-      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests?status=${status}`, {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const requestsData = response.data?.data?.stockTransferRequests || [];
+      console.log('📦 Fetched all stock transfer requests:', requestsData);
       setStockTransferRequests(requestsData);
+      
+      // For each request, fetch detail to get caselineId and build mapping
+      console.log('🔄 Building caselineId → requestId mapping...');
+      const mappingPromises = requestsData.map(async (request: StockTransferRequest) => {
+        try {
+          const detailResponse = await axios.get(
+            `${API_BASE_URL}/stock-transfer-requests/${request.id}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          
+          const detailData = detailResponse.data?.data?.stockTransferRequest;
+          if (detailData?.items && Array.isArray(detailData.items)) {
+            return {
+              requestId: request.id,
+              caselineIds: detailData.items
+                .map((item: any) => item.caselineId)
+                .filter(Boolean)
+            };
+          }
+          return null;
+        } catch (err) {
+          console.error(`Failed to fetch detail for request ${request.id}:`, err);
+          return null;
+        }
+      });
+      
+      const mappings = await Promise.all(mappingPromises);
+      
+      // Build the caseLineToRequestMap
+      setCaseLineToRequestMap(prev => {
+        const newMap = new Map(prev);
+        mappings.forEach(mapping => {
+          if (mapping && mapping.caselineIds.length > 0) {
+            mapping.caselineIds.forEach((caselineId: string) => {
+              newMap.set(caselineId, mapping.requestId);
+              console.log(`💾 Mapped caselineId ${caselineId} → requestId ${mapping.requestId}`);
+            });
+          }
+        });
+        console.log('✅ Total mappings:', newMap.size, 'entries:', Array.from(newMap.entries()));
+        return newMap;
+      });
+      
     } catch (error) {
       console.error('Failed to fetch stock transfer requests:', error);
     } finally {
       setIsLoadingStockRequests(false);
+    }
+  };
+
+  // Fetch detailed stock transfer request with case lines
+  const fetchStockTransferRequestDetail = async (requestId: string) => {
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      return null;
+    }
+    try {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests/${requestId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      let detailData = response.data?.data?.stockTransferRequest || null;
+      console.log('📦 Stock Transfer Request Detail:', detailData);
+      console.log('📦 Detail Items:', detailData?.items);
+      
+      // If items don't have caselineId from API, try to recover from localStorage
+      if (detailData && detailData.items) {
+        const recoveredIds = recoverCaseLineIdsFromLocal(requestId);
+        if (recoveredIds.length > 0) {
+          detailData.items.forEach((item: any, idx: number) => {
+            if (!item.caselineId && recoveredIds[idx]) {
+              item.caselineId = recoveredIds[idx];
+            }
+          });
+        }
+      }
+      
+      // Map case line details from existing records data (already loaded via GET all records)
+      if (detailData && detailData.items && detailData.items.length > 0) {
+        // Ensure we have claims data to map caseline -> full case line info
+        let allClaims = Object.values(claimsByStatus).flat();
+        if (allClaims.length === 0) {
+          console.log('⚠️ Claims not loaded yet, fetching now...');
+          const byStatus = await fetchAllStatuses();
+          allClaims = Object.values(byStatus).flat();
+          console.log('✅ Loaded', allClaims.length, 'claims for mapping');
+        }
+        
+        // Map caselineId to full case line data from records
+        const caseLineDetails = detailData.items
+          .filter((item: any) => item.caselineId)
+          .map((item: any) => {
+            // Search through all claims to find matching case line
+            for (const claim of allClaims) {
+              for (const gc of claim.guaranteeCases || []) {
+                const foundCaseLine = gc.caseLines?.find(cl => cl.id === item.caselineId);
+                if (foundCaseLine) {
+                  console.log('✅ Found case line in records:', foundCaseLine);
+                  return foundCaseLine;
+                }
+              }
+            }
+            console.warn('⚠️ Could not find case line in records:', item.caselineId);
+            return null;
+          })
+          .filter(cl => cl !== null);
+        
+        if (caseLineDetails.length > 0) {
+          detailData.caseLines = caseLineDetails;
+          console.log('✅ Mapped', caseLineDetails.length, 'case lines from records data');
+        }
+      }
+      
+      console.log('📦 Final Detail with Case Lines:', detailData);
+      return detailData;
+    } catch (error) {
+      console.error('Failed to fetch stock transfer request detail:', error);
+      return null;
     }
   };
 
@@ -564,14 +714,26 @@ const ServiceCenterDashboard = () => {
       }
     };
 
-    // Fetch all statuses on mount
-    fetchAllStatuses();
+    // Initialize data on mount - ensure claims loaded before fetching stock requests
+    const initializeData = async () => {
+      try {
+        // 1. Fetch all claims first (needed for mapping requestId -> caselineId -> guaranteeCaseId)
+        await fetchAllStatuses();
+        
+        // 2. Load technicians
+        await refreshTechnicians('');
+        
+        // 3. Load warehouses
+        await fetchWarehouses();
+        
+        // 4. Load stock transfer requests and build caselineId → requestId mapping
+        await fetchStockTransferRequests();
+      } catch (error) {
+        console.error('Failed to initialize data:', error);
+      }
+    };
 
-    // Load technicians from API (AVAILABLE / UNAVAILABLE)
-    refreshTechnicians('').then(() => { });
-
-    // Load warehouses
-    fetchWarehouses();
+    initializeData();
 
     return () => { cancelled = true; };
   }, []);
@@ -738,9 +900,30 @@ const ServiceCenterDashboard = () => {
         setOutOfStockCaseLines(prev => {
           const newSet = new Set(prev);
           newSet.delete(caseLineId);
-          // Save to localStorage
           localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
           return newSet;
+        });
+
+        // Remove from requested from manufacturer list if it was there
+        setRequestedFromManufacturer(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(caseLineId);
+          localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
+
+        // Remove from received stock case lines if it was there
+        setReceivedStockCaseLines(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(caseLineId);
+          return newSet;
+        });
+
+        // Remove from case line to request mapping (allocation successful, no longer need the request reference)
+        setCaseLineToRequestMap(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(caseLineId);
+          return newMap;
         });
 
         // Refresh all data to ensure UI is up-to-date
@@ -752,23 +935,75 @@ const ServiceCenterDashboard = () => {
 
       // Check if error is 409 Conflict (out of stock)
       if (error.response?.status === 409) {
+        console.log('⚠️ Allocation failed - Out of stock (409). Resetting state for case line:', caseLineId);
+        
         // Mark this case line as out of stock
         setOutOfStockCaseLines(prev => {
           const newSet = new Set([...prev, caseLineId]);
           // Save to localStorage
           localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          console.log('📍 Updated outOfStockCaseLines:', Array.from(newSet));
           return newSet;
         });
-        alert('⚠️ Out of Stock! No available component in warehouse. Please request from manufacturer.');
+        
+        // Remove old mapping so user can create a new request
+        setCaseLineToRequestMap(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(caseLineId);
+          console.log('📍 Removed mapping for case line:', caseLineId);
+          return newMap;
+        });
+        
+        // Remove from requested from manufacturer to allow new request
+        setRequestedFromManufacturer(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(caseLineId);
+          localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
+          console.log('📍 Updated requestedFromManufacturer:', Array.from(newSet));
+          return newSet;
+        });
+        
+        // Force UI refresh
+        setTimeout(() => {
+          console.log('🔄 Force re-render after state updates');
+        }, 100);
+        
+        alert('⚠️ Out of Stock! Stock was not sufficient. Please create a new request from manufacturer.');
       } else if (error.response?.status === 404 && errorMessage.includes('No available stock found')) {
+        console.log('⚠️ Allocation failed - No stock found (404). Resetting state for case line:', caseLineId);
+        
         // Also handle 404 as out of stock
         setOutOfStockCaseLines(prev => {
           const newSet = new Set([...prev, caseLineId]);
           // Save to localStorage
           localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          console.log('📍 Updated outOfStockCaseLines:', Array.from(newSet));
           return newSet;
         });
-        alert('⚠️ Out of Stock! No available component in warehouse. Please request from manufacturer.');
+        
+        // Remove old mapping so user can create a new request
+        setCaseLineToRequestMap(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(caseLineId);
+          console.log('📍 Removed mapping for case line:', caseLineId);
+          return newMap;
+        });
+        
+        // Remove from requested from manufacturer to allow new request
+        setRequestedFromManufacturer(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(caseLineId);
+          localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
+          console.log('📍 Updated requestedFromManufacturer:', Array.from(newSet));
+          return newSet;
+        });
+        
+        // Force UI refresh
+        setTimeout(() => {
+          console.log('🔄 Force re-render after state updates');
+        }, 100);
+        
+        alert('⚠️ Out of Stock! Stock was not sufficient. Please create a new request from manufacturer.');
       } else {
         alert(errorMessage);
       }
@@ -806,11 +1041,11 @@ const ServiceCenterDashboard = () => {
       }
 
       const requestBody = {
-        caselineIds: [pendingStockRequest.caseLineId],
         items: [
           {
             quantityRequested: pendingStockRequest.quantity,
-            typeComponentId: pendingStockRequest.typeComponentId
+            typeComponentId: pendingStockRequest.typeComponentId,
+            caselineId: pendingStockRequest.caseLineId
           }
         ],
         requestingWarehouseId: warehouseId
@@ -823,6 +1058,44 @@ const ServiceCenterDashboard = () => {
       );
 
       if (response.status === 200 || response.status === 201) {
+        const createdRequestId = response.data?.data?.stockTransferRequest?.newStockTransferRequest?.id ||
+                                 response.data?.data?.stockTransferRequest?.id ||
+                                 response.data?.data?.id;
+        
+        console.log('✅ Stock transfer request created with ID:', createdRequestId);
+        
+        // Fetch the detail to get accurate caselineId from API
+        if (createdRequestId) {
+          try {
+            const detailResponse = await axios.get(
+              `${API_BASE_URL}/stock-transfer-requests/${createdRequestId}`,
+              { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+            
+            const detailData = detailResponse.data?.data?.stockTransferRequest;
+            console.log('📦 Fetched request detail:', detailData);
+            
+            if (detailData?.items && Array.isArray(detailData.items)) {
+              const caselineIds = detailData.items
+                .map((item: any) => item.caselineId)
+                .filter(Boolean);
+              
+              if (caselineIds.length > 0) {
+                saveCaseLineIdsToLocal(createdRequestId, caselineIds);
+                console.log('💾 Saved stock request mapping from detail API:', createdRequestId, '→', caselineIds);
+              }
+            }
+          } catch (err) {
+            console.error('Failed to fetch request detail for mapping:', err);
+            // Fallback to original method
+            const toSave = pendingStockRequest?.caseLineId ? [pendingStockRequest.caseLineId] : [];
+            if (toSave.length > 0) {
+              saveCaseLineIdsToLocal(createdRequestId, toSave);
+              console.log('💾 Saved stock request mapping (fallback):', createdRequestId, '→', toSave);
+            }
+          }
+        }
+        
         // Remove from out of stock list since request has been sent
         setOutOfStockCaseLines(prev => {
           const newSet = new Set(prev);
@@ -838,13 +1111,25 @@ const ServiceCenterDashboard = () => {
           return newSet;
         });
 
+        // Save mapping from caselineId to requestId for "View Request" button
+        setCaseLineToRequestMap(prev => {
+          const newMap = new Map(prev);
+          newMap.set(pendingStockRequest.caseLineId, createdRequestId);
+          console.log('💾 Saved caseLineToRequestMap:', {
+            caseLineId: pendingStockRequest.caseLineId,
+            requestId: createdRequestId,
+            allMappings: Array.from(newMap.entries())
+          });
+          return newMap;
+        });
+
         alert('Stock transfer request sent successfully!');
         
         // Close modal and reset
         setShowWarehouseSelectionModal(false);
         setPendingStockRequest(null);
 
-        // Refresh data from backend to get updated status
+        // Refresh data from backend to get updated status - IMPORTANT: fetch records first
         await fetchAllStatuses();
         await fetchWarehouses();
         
@@ -1173,12 +1458,12 @@ const ServiceCenterDashboard = () => {
                         variant="default" 
                         size="sm" 
                         onClick={() => {
-                          fetchStockTransferRequests('PENDING_APPROVAL');
+                          fetchStockTransferRequests();
                           setShowStockRequestsModal(true);
                         }}
                       >
                         <Clock className="h-4 w-4 mr-2" />
-                        View Stock Requests
+                        View All Requests
                       </Button>
                       <Button 
                         variant="outline" 
@@ -1477,38 +1762,150 @@ const ServiceCenterDashboard = () => {
                                                   </Badge>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
-                                                  {/* Show Allocate button only when record is PROCESSING and case line is CUSTOMER_APPROVED */}
-                                                  {/* Components can only be allocated when all case lines are approved/rejected and record moves to PROCESSING */}
-                                                  {/* Don't show if already requested from manufacturer */}
-                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && hasPermission(user, 'attach_parts') && !outOfStockCaseLines.has(line.id) && !requestedFromManufacturer.has(line.id) && (
-                                                    <Button
-                                                      size="sm"
-                                                      variant="default"
-                                                      onClick={() => handleAllocateComponent(gc.guaranteeCaseId, line.id)}
-                                                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-6 px-2"
-                                                    >
-                                                      <Package className="h-3 w-3 mr-1" />
-                                                      Allocate
-                                                    </Button>
-                                                  )}
+                                                  {/* Show Allocate button if: */}
+                                                  {/* 1. Case line has RECEIVED stock from manufacturer (green button), OR */}
+                                                  {/* 2. Record is PROCESSING and case line is CUSTOMER_APPROVED (blue button - normal allocation) */}
+                                                  {(() => {
+                                                    const hasReceivedStock = receivedStockCaseLines.has(line.id);
+                                                    const canAllocateFromWarehouse = selectedClaimForDetail.status === 'PROCESSING' && 
+                                                                                     !outOfStockCaseLines.has(line.id) && 
+                                                                                     !requestedFromManufacturer.has(line.id);
+                                                    const showAllocateButton = (hasReceivedStock || canAllocateFromWarehouse) && 
+                                                                               line.status === 'CUSTOMER_APPROVED' && 
+                                                                               hasPermission(user, 'attach_parts');
+                                                    
+                                                    // Debug logging
+                                                    if (line.status === 'CUSTOMER_APPROVED') {
+                                                      console.log(`🔍 Case line ${line.id} check:`, {
+                                                        hasReceivedStock,
+                                                        canAllocateFromWarehouse,
+                                                        showAllocateButton,
+                                                        lineStatus: line.status,
+                                                        recordStatus: selectedClaimForDetail.status,
+                                                        outOfStock: outOfStockCaseLines.has(line.id),
+                                                        requested: requestedFromManufacturer.has(line.id),
+                                                        receivedStockCaseLinesSet: Array.from(receivedStockCaseLines)
+                                                      });
+                                                    }
+                                                    
+                                                    return showAllocateButton ? (
+                                                      <Button
+                                                        size="sm"
+                                                        variant="default"
+                                                        onClick={() => handleAllocateComponent(gc.guaranteeCaseId, line.id)}
+                                                        className={`text-white text-xs h-6 px-2 ${
+                                                          hasReceivedStock 
+                                                            ? 'bg-green-600 hover:bg-green-700' 
+                                                            : 'bg-blue-600 hover:bg-blue-700'
+                                                        }`}
+                                                      >
+                                                        <Package className="h-3 w-3 mr-1" />
+                                                        {hasReceivedStock ? 'Allocate (Stock Received)' : 'Allocate'}
+                                                      </Button>
+                                                    ) : null;
+                                                  })()}
+                                                  
                                                   {/* Show Request button if record is PROCESSING, case line is CUSTOMER_APPROVED but out of stock */}
-                                                  {/* Don't show if already requested */}
-                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && outOfStockCaseLines.has(line.id) && !requestedFromManufacturer.has(line.id) && hasPermission(user, 'attach_parts') && line.typeComponent && (
-                                                    <Button
-                                                      size="sm"
-                                                      variant="outline"
-                                                      onClick={() => handleRequestFromManufacturer(
-                                                        gc.guaranteeCaseId, 
-                                                        line.id, 
-                                                        line.typeComponent.typeComponentId,
-                                                        line.quantity
-                                                      )}
-                                                      className="bg-orange-600 hover:bg-orange-700 text-white border-orange-600 text-xs h-6 px-2"
-                                                    >
-                                                      <AlertCircle className="h-3 w-3 mr-1" />
-                                                      Request from Manufacturer
-                                                    </Button>
-                                                  )}
+                                                  {/* Don't show if already requested or has active mapping */}
+                                                  {(() => {
+                                                    const shouldShowRequestButton = 
+                                                      selectedClaimForDetail.status === 'PROCESSING' && 
+                                                      line.status === 'CUSTOMER_APPROVED' && 
+                                                      outOfStockCaseLines.has(line.id) && 
+                                                      !requestedFromManufacturer.has(line.id) && 
+                                                      !caseLineToRequestMap.has(line.id) && // Also check mapping
+                                                      hasPermission(user, 'attach_parts') && 
+                                                      line.typeComponent;
+                                                    
+                                                    // Debug log for Request button
+                                                    if (outOfStockCaseLines.has(line.id)) {
+                                                      console.log(`🔧 Request button check for case line ${line.id}:`, {
+                                                        recordStatus: selectedClaimForDetail.status,
+                                                        lineStatus: line.status,
+                                                        outOfStock: outOfStockCaseLines.has(line.id),
+                                                        alreadyRequested: requestedFromManufacturer.has(line.id),
+                                                        hasMapping: caseLineToRequestMap.has(line.id),
+                                                        hasTypeComponent: !!line.typeComponent,
+                                                        hasPermission: hasPermission(user, 'attach_parts'),
+                                                        shouldShow: shouldShowRequestButton
+                                                      });
+                                                    }
+                                                    
+                                                    return shouldShowRequestButton ? (
+                                                      <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => handleRequestFromManufacturer(
+                                                          gc.guaranteeCaseId, 
+                                                          line.id, 
+                                                          line.typeComponent.typeComponentId,
+                                                          line.quantity
+                                                        )}
+                                                        className="bg-orange-600 hover:bg-orange-700 text-white border-orange-600 text-xs h-6 px-2"
+                                                      >
+                                                        <AlertCircle className="h-3 w-3 mr-1" />
+                                                        Request from Manufacturer
+                                                      </Button>
+                                                    ) : null;
+                                                  })()}
+                                                  
+                                                  {/* Show "View Request" or "Allocate Component" button based on request status */}
+                                                  {caseLineToRequestMap.has(line.id) && (() => {
+                                                    const requestId = caseLineToRequestMap.get(line.id);
+                                                    const matchingRequest = stockTransferRequests.find(req => req.id === requestId);
+                                                    const isReceived = matchingRequest?.status === 'RECEIVED';
+                                                    
+                                                    console.log(`🔎 Case line ${line.id} (status: ${line.status}) - hasMapping: true, requestId:`, requestId, 'requestStatus:', matchingRequest?.status);
+                                                    
+                                                    // If request is RECEIVED, show "Allocate Component" button instead
+                                                    if (isReceived) {
+                                                      return (
+                                                        <Button
+                                                          size="sm"
+                                                          variant="default"
+                                                          onClick={() => {
+                                                            // Call allocate API directly (same as normal allocation)
+                                                            // handleAllocateComponent will handle success/failure
+                                                            // - On success: removes mapping automatically
+                                                            // - On failure (out of stock): removes mapping and allows new request
+                                                            handleAllocateComponent(gc.guaranteeCaseId, line.id);
+                                                          }}
+                                                          className="bg-green-600 hover:bg-green-700 text-white border-green-600 text-xs h-6 px-2"
+                                                        >
+                                                          <Package className="h-3 w-3 mr-1" />
+                                                          Allocate Component
+                                                        </Button>
+                                                      );
+                                                    }
+                                                    
+                                                    // Otherwise, show "View Request" button
+                                                    return (
+                                                      <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={async () => {
+                                                          if (requestId) {
+                                                            console.log('🔍 Fetching request detail for ID:', requestId);
+                                                            // Ensure claims are loaded before fetching request detail
+                                                            if (Object.keys(claimsByStatus).length === 0) {
+                                                              console.log('⚠️ Claims not loaded, fetching now...');
+                                                              await fetchAllStatuses();
+                                                            }
+                                                            const requestDetail = await fetchStockTransferRequestDetail(requestId);
+                                                            if (requestDetail) {
+                                                              setSelectedStockRequest(requestDetail);
+                                                              setShowStockRequestDetailModal(true);
+                                                            }
+                                                          }
+                                                        }}
+                                                        className="text-blue-600 hover:bg-blue-50 border-blue-600 text-xs h-6 px-2"
+                                                      >
+                                                        <Eye className="h-3 w-3 mr-1" />
+                                                        View Request
+                                                      </Button>
+                                                    );
+                                                  })()}
+                                                  
                                                   {/* Show "Requested" badge if request has been sent but backend hasn't updated yet */}
                                                   {requestedFromManufacturer.has(line.id) && line.status === 'CUSTOMER_APPROVED' && (
                                                     <Badge variant="outline" className="text-xs bg-yellow-50 border-yellow-400 text-yellow-700">
@@ -1516,6 +1913,7 @@ const ServiceCenterDashboard = () => {
                                                       Requested - Pending
                                                     </Badge>
                                                   )}
+                                                  
                                                   {/* Show status badge if already allocated or backend has updated status */}
                                                   {line.status !== 'CUSTOMER_APPROVED' && line.status !== 'DRAFT' && line.status !== 'PENDING_APPROVAL' && (
                                                     <Badge variant="success" className="text-xs">
@@ -2087,16 +2485,16 @@ const ServiceCenterDashboard = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Stock Transfer Requests Modal */}
+        {/* Stock Transfer Requests List Modal */}
         <Dialog open={showStockRequestsModal} onOpenChange={setShowStockRequestsModal}>
           <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Clock className="h-5 w-5 text-blue-600" />
-                Stock Transfer Requests
+                All Stock Transfer Requests
               </DialogTitle>
               <DialogDescription>
-                View all pending stock transfer requests from warehouses
+                View all stock transfer requests from warehouses
               </DialogDescription>
             </DialogHeader>
 
@@ -2108,13 +2506,14 @@ const ServiceCenterDashboard = () => {
               ) : stockTransferRequests.length === 0 ? (
                 <div className="text-center py-8">
                   <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No pending stock transfer requests</p>
+                  <p className="text-muted-foreground">No stock transfer requests found</p>
                 </div>
               ) : (
-                <div className="rounded-lg border">
+                <div className="rounded-lg border overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead>Request ID</TableHead>
                         <TableHead>Requester</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Requested At</TableHead>
@@ -2124,10 +2523,13 @@ const ServiceCenterDashboard = () => {
                     <TableBody>
                       {stockTransferRequests.map((request) => (
                         <TableRow key={request.id}>
+                          <TableCell className="font-mono text-xs">
+                            {request.id.substring(0, 8)}...
+                          </TableCell>
                           <TableCell>
                             <p className="font-medium text-sm">{request.requester?.name || 'Unknown'}</p>
                             <p className="text-xs text-muted-foreground">
-                              Service Center: {request.requester?.serviceCenterId || 'N/A'}
+                              SC: {request.requester?.serviceCenterId?.substring(0, 8) || 'N/A'}
                             </p>
                           </TableCell>
                           <TableCell>
@@ -2135,8 +2537,10 @@ const ServiceCenterDashboard = () => {
                               variant={
                                 request.status === 'PENDING_APPROVAL' ? 'outline' :
                                 request.status === 'APPROVED' ? 'default' :
+                                request.status === 'SHIPPED' ? 'secondary' :
+                                request.status === 'RECEIVED' ? 'success' :
                                 request.status === 'REJECTED' ? 'destructive' :
-                                'secondary'
+                                'outline'
                               }
                               className="text-xs"
                             >
@@ -2156,8 +2560,14 @@ const ServiceCenterDashboard = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => {
-                                setSelectedStockRequest(request);
+                              onClick={async () => {
+                                // Fetch full request details including case lines
+                                const detailedRequest = await fetchStockTransferRequestDetail(request.id);
+                                if (detailedRequest) {
+                                  setSelectedStockRequest(detailedRequest);
+                                } else {
+                                  setSelectedStockRequest(request);
+                                }
                                 setShowStockRequestDetailModal(true);
                               }}
                             >
@@ -2313,6 +2723,207 @@ const ServiceCenterDashboard = () => {
                     )}
                   </CardContent>
                 </Card>
+
+                {/* Requested Items */}
+                {selectedStockRequest.items && selectedStockRequest.items.length > 0 && (
+                  <Card className="shadow-md border">
+                    <CardHeader className="bg-gradient-to-r from-purple-50 to-transparent dark:from-purple-900/20 pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <div className="p-2 bg-purple-100 dark:bg-purple-900/40 rounded-lg">
+                          <Package className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        Requested Items ({selectedStockRequest.items.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                      <div className="space-y-3">
+                        {selectedStockRequest.items.map((item, index) => {
+                          // Find component info from case line using caselineId
+                          let componentName = 'Unknown Component';
+                          let componentDescription = '';
+                          let relatedCaseLine = null;
+                          
+                          // First try to find from fetched case lines using caselineId
+                          if (item.caselineId && selectedStockRequest.caseLines) {
+                            relatedCaseLine = selectedStockRequest.caseLines.find(cl => cl.id === item.caselineId);
+                            if (relatedCaseLine?.typeComponent) {
+                              componentName = relatedCaseLine.typeComponent.name;
+                            }
+                          }
+                          
+                          // Fallback to API response if available
+                          if (componentName === 'Unknown Component' && item.typeComponent?.nameComponent) {
+                            componentName = item.typeComponent.nameComponent;
+                            componentDescription = item.typeComponent.description || '';
+                          }
+                          
+                          return (
+                          <div key={item.id} className="p-4 bg-white dark:bg-gray-800 rounded-lg border shadow-sm">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div className="space-y-2">
+                                <div>
+                                  <label className="text-xs font-semibold text-muted-foreground uppercase">Component Name</label>
+                                  <p className="font-medium text-base mt-1">
+                                    {componentName}
+                                  </p>
+                                  {componentDescription && (
+                                    <p className="text-xs text-muted-foreground mt-1">{componentDescription}</p>
+                                  )}
+                                </div>
+                                {item.caselineId && (
+                                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200">
+                                    <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase">
+                                      Case Line ID
+                                    </label>
+                                    <p className="font-mono text-xs text-blue-900 dark:text-blue-100 mt-1">
+                                      {item.caselineId}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-muted-foreground uppercase">Quantity Requested</label>
+                                <p className="font-semibold text-lg mt-1 text-blue-600 dark:text-blue-400">
+                                  {item.quantityRequested}
+                                </p>
+                              </div>
+                              {item.quantityApproved !== null && item.quantityApproved !== undefined && (
+                                <div>
+                                  <label className="text-xs font-semibold text-muted-foreground uppercase">Quantity Approved</label>
+                                  <p className="font-semibold text-lg mt-1 text-green-600 dark:text-green-400">
+                                    {item.quantityApproved}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Case Lines Information */}
+                {selectedStockRequest.caseLines && selectedStockRequest.caseLines.length > 0 && (
+                  <Card className="shadow-md border">
+                    <CardHeader className="bg-gradient-to-r from-green-50 to-transparent dark:from-green-900/20 pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <div className="p-2 bg-green-100 dark:bg-green-900/40 rounded-lg">
+                          <FileText className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        </div>
+                        Related Case Lines ({selectedStockRequest.caseLines.length})
+                        {selectedStockRequest.status === 'RECEIVED' && (
+                          <Badge className="ml-2 bg-green-600">Stock Received - Ready to Allocate</Badge>
+                        )}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                      <div className="space-y-4">
+                        {selectedStockRequest.caseLines.map((caseLine, index) => {
+                          // Find the record this case line belongs to
+                          let relatedRecord: WarrantyClaim | null = null;
+                          for (const status in claimsByStatus) {
+                            const found = claimsByStatus[status].find(claim =>
+                              claim.guaranteeCases?.some(gc =>
+                                gc.caseLines?.some(cl => cl.id === caseLine.id)
+                              )
+                            );
+                            if (found) {
+                              relatedRecord = found;
+                              break;
+                            }
+                          }
+                          
+                          return (
+                          <div 
+                            key={caseLine.id} 
+                            className="p-5 bg-white dark:bg-gray-800 rounded-lg border shadow-sm"
+                          >
+                            <div className="flex items-start justify-between mb-4">
+                              <div className="flex-1 space-y-3">
+                                <div>
+                                  <p className="font-mono text-xs text-muted-foreground mb-2">
+                                    Case Line ID: {caseLine.id}
+                                  </p>
+                                  {relatedRecord && (
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <p className="font-mono text-sm font-semibold text-blue-700 dark:text-blue-400">
+                                          Record: {relatedRecord.recordId}
+                                        </p>
+                                      </div>
+                                      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                                        <span className="font-medium">VIN: {relatedRecord.vin}</span>
+                                        <span>•</span>
+                                        <span>{relatedRecord.model}</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Badge 
+                                    variant={
+                                      caseLine.status === 'CUSTOMER_APPROVED' || caseLine.status === 'READY_FOR_REPAIR' ? 'default' :
+                                      caseLine.status === 'REJECTED_BY_CUSTOMER' ? 'destructive' :
+                                      'outline'
+                                    }
+                                  >
+                                    {caseLine.status.replace(/_/g, ' ')}
+                                  </Badge>
+                                  <Badge 
+                                    variant={
+                                      caseLine.warrantyStatus === 'APPROVED' ? 'default' :
+                                      caseLine.warrantyStatus === 'REJECTED' ? 'destructive' :
+                                      'outline'
+                                    }
+                                  >
+                                    Warranty: {caseLine.warrantyStatus}
+                                  </Badge>
+                                </div>
+                              </div>
+                              {caseLine.typeComponent && (
+                                <div className="text-right ml-4">
+                                  <label className="text-xs font-semibold text-muted-foreground uppercase">Component</label>
+                                  <p className="font-semibold text-base mt-1">{caseLine.typeComponent.name}</p>
+                                  <p className="text-sm text-muted-foreground mt-1">Quantity: {caseLine.quantity}</p>
+                                  {caseLine.typeComponent.category && (
+                                    <p className="text-xs text-muted-foreground mt-1">Category: {caseLine.typeComponent.category}</p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                              <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded">
+                                <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
+                                  <FileText className="h-3 w-3" />
+                                  Diagnosis
+                                </label>
+                                <p className="text-sm mt-1">{caseLine.diagnosisText || 'N/A'}</p>
+                              </div>
+                              <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded">
+                                <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
+                                  <Wrench className="h-3 w-3" />
+                                  Correction
+                                </label>
+                                <p className="text-sm mt-1">{caseLine.correctionText || 'N/A'}</p>
+                              </div>
+                            </div>
+                            
+                            {caseLine.rejectionReason && (
+                              <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 mb-4">
+                                <label className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase">Rejection Reason</label>
+                                <p className="text-sm text-red-900 dark:text-red-100 mt-1">{caseLine.rejectionReason}</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             )}
 
