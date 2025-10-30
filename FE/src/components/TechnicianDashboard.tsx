@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
+import { apiService } from "@/utils/api";
 import { toast } from "@/hooks/use-toast";
 import { processingRecordsService, ProcessingRecord, ProcessingRecordsByStatus } from "@/services/processingRecordsService";
 import { caseLineService, CaseLineRequest } from "@/services/caseLineService";
@@ -86,6 +87,27 @@ interface Task {
   warrantyValid: boolean;
   notes: string;
 }
+
+interface WorkSchedule {
+  scheduleId: string;
+  technicianId: string;
+  workDate: string; // YYYY-MM-DD
+  status: 'AVAILABLE' | 'UNAVAILABLE' | string;
+  notes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  technician_id?: string;
+  technician?: {
+    userId: string;
+    name: string;
+    email?: string;
+  } | null;
+}
+
+type WorkSchedulesResponse = {
+  status?: string;
+  data: WorkSchedule[];
+} | WorkSchedule[];
 
 interface WarrantyCase {
   id: string;
@@ -279,6 +301,10 @@ const TechnicianDashboard = ({
   const [selectedGuaranteeCase, setSelectedGuaranteeCase] = useState<GuaranteeCase | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [createdCaseLines, setCreatedCaseLines] = useState<CaseLineResponse[]>([]);
+  // Work schedules state
+  const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
+  const [isLoadingSchedules, setIsLoadingSchedules] = useState(false);
+  const [schedulesError, setSchedulesError] = useState<string | null>(null);
   // Helper: robustly extract a canonical caseLineId from various API shapes
   const extractCaseLineId = React.useCallback((obj: unknown): string | null => {
     if (!obj || typeof obj !== 'object') return null;
@@ -630,7 +656,7 @@ const TechnicianDashboard = ({
     } finally {
       setIsLoadingRecords(false);
     }
-  }, []);
+  }, [normalizeCaseLineResponse]);
 
   // Helper functions for Processing Records
   const getStatusBadgeVariant = (status: string) => {
@@ -905,6 +931,37 @@ const TechnicianDashboard = ({
 
     initializeData();
   }, [user, fetchProcessingRecords, fetchComponents]);
+
+  // Fetch technician's own schedules
+  const fetchMySchedules = useCallback(async () => {
+    try {
+      setIsLoadingSchedules(true);
+      setSchedulesError(null);
+      const resp = await apiService.get<WorkSchedulesResponse>('/work-schedules/my-schedule');
+      const payload = resp?.data;
+
+      if (Array.isArray(payload)) {
+        setWorkSchedules(payload);
+      } else if (payload && typeof payload === 'object' && 'data' in payload && Array.isArray((payload as { data?: unknown }).data)) {
+        setWorkSchedules((payload as { data: WorkSchedule[] }).data);
+      } else {
+        setWorkSchedules([]);
+      }
+    } catch (err) {
+      console.error('Failed to load work schedules', err);
+      setSchedulesError(err instanceof Error ? err.message : String(err));
+      setWorkSchedules([]);
+    } finally {
+      setIsLoadingSchedules(false);
+    }
+  }, []);
+
+  // Auto-fetch schedules when user is present
+  useEffect(() => {
+    if (user && user.role === 'service_center_technician') {
+      fetchMySchedules();
+    }
+  }, [user, fetchMySchedules]);
 
   // Auto refresh data every 30 seconds
   useEffect(() => {
@@ -1290,11 +1347,10 @@ const TechnicianDashboard = ({
       <div className="container mx-auto px-6 py-6">
       
         <Tabs defaultValue="processing-records" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="processing-records">Processing Records</TabsTrigger>
             <TabsTrigger value="case-lines">Issue Diagnosis</TabsTrigger>
-            <TabsTrigger value="components">Components</TabsTrigger>
-            <TabsTrigger value="staff">Staff Management</TabsTrigger>
+            <TabsTrigger value="work-schedules">Work Schedules</TabsTrigger>
           </TabsList>
 
           {/* Processing Records Tab */}
@@ -1606,181 +1662,72 @@ const TechnicianDashboard = ({
             </Card>
           </TabsContent>
 
-          {/* Components Tab */}
-          <TabsContent value="components" className="space-y-6">
-            {/* Component Search */}
-            <div className="space-y-2">
-              <div className="flex gap-4 items-center">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search components by name or part number..."
-                    value={componentSearch}
-                    onChange={(e) => setComponentSearch(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <Select value={componentCategoryFilter} onValueChange={setComponentCategoryFilter}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="Filter by category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    <SelectItem value="battery">🔋 Battery</SelectItem>
-                    <SelectItem value="motor">⚙️ Motor</SelectItem>
-                    <SelectItem value="paint">🎨 Paint</SelectItem>
-                    <SelectItem value="general">🔧 General</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button variant="outline" onClick={() => {
-                  setComponentSearch("");
-                  setComponentCategoryFilter("all");
-                }}>
-                  <X className="h-4 w-4 mr-1" />
-                  Clear All
-                </Button>
-              </div>
-              
-              {/* Component search hints */}
-                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <span>🔍 Search examples:</span>
-                <Badge variant="outline" className="text-xs">Battery Lithium</Badge>
-                <Badge variant="outline" className="text-xs">BAT-VF8-2024</Badge>
-                <Badge variant="outline" className="text-xs">Motor</Badge>
-                <Badge variant="outline" className="text-xs">Exterior Paint</Badge>
-              </div>
-              
-              {(componentSearch || componentCategoryFilter !== "all") && (
-                <div className="text-sm text-muted-foreground">
-                  Found {filteredComponents.length} component(s)
-                  {componentSearch && ` matching "${componentSearch}"`}
-                  {componentCategoryFilter !== "all" && ` in category "${componentCategoryFilter}"`}
-                </div>
-              )}
-            </div>
-            
+          {/* Work Schedules Tab (replaced Components + Staff Management) */}
+          <TabsContent value="work-schedules" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Component Inventory & Warranty Info</CardTitle>
+                <CardTitle>Work Schedules</CardTitle>
                 <CardDescription>
-                  View available components and their warranty policies
+                  View your assigned work schedules and availability. Use the Work Schedules API to fetch real data.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Component</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Service Center Stock</TableHead>
-                      <TableHead>Manufacturer Stock</TableHead>
-                      <TableHead>Warranty Policy</TableHead>
-                      <TableHead>Requires Vehicle Check</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredComponents.map((component) => (
-                      <TableRow key={component.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {React.createElement(getComponentIcon(component.category), { className: "h-4 w-4" })}
-                            <div>
-                              <p className="font-medium">{component.name}</p>
-                              <p className="text-xs text-muted-foreground">{component.partNumber}</p>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="capitalize">
-                            {component.category}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={component.inStockServiceCenter > 0 ? "default" : "destructive"}>
-                            {component.inStockServiceCenter} units
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={component.inStockManufacturer > 0 ? "default" : "destructive"}>
-                            {component.inStockManufacturer} units
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm">
-                            {component.warrantyMonths && (
-                              <div>{component.warrantyMonths} months</div>
-                            )}
-                            {component.warrantyKm && (
-                              <div>{component.warrantyKm.toLocaleString()} km</div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {component.requiresVehicleCheck ? (
-                            <Badge variant="outline" className="text-red-600">Yes</Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-green-600">No</Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
+                    This tab shows your personal work schedules. Data is fetched from
+                    <code className="ml-2 font-mono">/work-schedules/my-schedule</code>.
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => fetchMySchedules()}>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Refresh
+                    </Button>
+                  </div>
+                </div>
 
-          {/* Staff Management Tab */}
-          <TabsContent value="staff" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Staff Workload & Availability</CardTitle>
-                <CardDescription>
-                  Monitor staff assignments and distribute workload efficiently
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {staffMembers.map((staff) => (
-                    <Card key={staff.id} className="border-2">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-                            <User className="h-5 w-5" />
-                          </div>
-                          <div>
-                            <p className="font-medium">{staff.name}</p>
-                            <p className="text-sm text-muted-foreground">{staff.specialty}</p>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm">Current Workload:</span>
-                            <Badge variant={staff.currentWorkload > 3 ? "destructive" : "default"}>
-                              {staff.currentWorkload} tasks
-                            </Badge>
-                          </div>
-                          
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm">Availability:</span>
-                            <Badge variant={staff.isAvailable ? "default" : "destructive"}>
-                              {staff.isAvailable ? "Available" : "Busy"}
-                            </Badge>
-                          </div>
-                          
-                          <div className="w-full bg-muted rounded-full h-2 mt-2">
-                            <div
-                              className={`h-2 rounded-full transition-all ${
-                                staff.currentWorkload > 3 ? 'bg-red-500' : 'bg-green-500'
-                              }`}
-                              style={{ width: `${Math.min(staff.currentWorkload * 25, 100)}%` }}
-                            />
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                <div className="mt-4">
+                  {isLoadingSchedules ? (
+                    <div className="text-center py-6 text-slate-500">Loading schedules...</div>
+                  ) : schedulesError ? (
+                    <div className="text-center py-6 text-destructive">Error: {schedulesError}</div>
+                  ) : workSchedules.length === 0 ? (
+                    <div className="text-center py-6 text-slate-500">No schedules found</div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Schedule ID</TableHead>
+                          <TableHead>Work Date</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Notes</TableHead>
+                          <TableHead>Technician Name</TableHead>
+                          <TableHead>Technician Email</TableHead>
+                          <TableHead>Technician ID</TableHead>
+                          <TableHead>Created At</TableHead>
+                          <TableHead>Updated At</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {workSchedules.map((s) => (
+                          <TableRow key={s.scheduleId}>
+                            <TableCell className="font-mono text-xs">{s.scheduleId}</TableCell>
+                            <TableCell>{s.workDate}</TableCell>
+                            <TableCell>
+                              <Badge variant={s.status === 'AVAILABLE' ? 'default' : 'destructive'} className="uppercase">
+                                {s.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm">{s.notes ?? '—'}</TableCell>
+                            <TableCell>{s.technician?.name ?? '—'}</TableCell>
+                            <TableCell className="text-sm">{s.technician?.email ?? '—'}</TableCell>
+                            <TableCell className="font-mono text-xs">{s.technicianId ?? s.technician_id ?? '—'}</TableCell>
+                            <TableCell className="text-xs">{s.createdAt ? new Date(s.createdAt).toLocaleString() : '—'}</TableCell>
+                            <TableCell className="text-xs">{s.updatedAt ? new Date(s.updatedAt).toLocaleString() : '—'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
                 </div>
               </CardContent>
             </Card>
