@@ -1,7 +1,14 @@
 import { Op, Transaction } from "sequelize";
 import db from "../models/index.cjs";
 
-const { Warehouse, TypeComponent, VehicleModel, Stock } = db;
+const {
+  Warehouse,
+  TypeComponent,
+  VehicleModel,
+  Stock,
+  ServiceCenter,
+  VehicleCompany,
+} = db;
 
 class WareHouseRepository {
   searchCompatibleComponentsInStock = async ({
@@ -309,6 +316,50 @@ class WareHouseRepository {
   getAllWarehouses = async ({ whereClause = {} } = {}) => {
     const warehouses = await Warehouse.findAll({
       where: whereClause,
+      attributes: [
+        "warehouseId",
+        "name",
+        "address",
+        "priority",
+        "serviceCenterId",
+        "vehicleCompanyId",
+        "createdAt",
+        "updatedAt",
+      ],
+      include: [
+        {
+          model: ServiceCenter,
+          as: "serviceCenter",
+          attributes: ["serviceCenterId", "name", "address"],
+          required: false,
+        },
+        {
+          model: VehicleCompany,
+          as: "company",
+          attributes: ["vehicleCompanyId", "name"],
+          required: false,
+        },
+        {
+          model: Stock,
+          as: "stocks",
+          attributes: [
+            "stockId",
+            "typeComponentId",
+            "quantityInStock",
+            "quantityReserved",
+            "quantityAvailable",
+          ],
+          include: [
+            {
+              model: TypeComponent,
+              as: "typeComponent",
+              attributes: ["typeComponentId", "name", "sku", "category"],
+              required: false,
+            },
+          ],
+          required: false,
+        },
+      ],
       order: [["name", "ASC"]],
     });
 

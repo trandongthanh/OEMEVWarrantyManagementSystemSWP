@@ -557,6 +557,90 @@ const options = {
             },
           },
         },
+        InventorySummary: {
+          type: "object",
+          properties: {
+            warehouseId: {
+              type: "string",
+              format: "uuid",
+            },
+            warehouseName: {
+              type: "string",
+              example: "Kho Trung Tâm Hà Nội",
+            },
+            totalStock: {
+              type: "integer",
+              example: 500,
+              description: "Tổng số lượng tồn kho",
+            },
+            totalReserved: {
+              type: "integer",
+              example: 50,
+              description: "Tổng số lượng đã đặt trước",
+            },
+            totalAvailable: {
+              type: "integer",
+              example: 450,
+              description: "Tổng số lượng khả dụng",
+            },
+          },
+        },
+        InventoryDetail: {
+          type: "object",
+          properties: {
+            stockId: {
+              type: "string",
+              format: "uuid",
+            },
+            warehouseId: {
+              type: "string",
+              format: "uuid",
+            },
+            warehouseName: {
+              type: "string",
+              example: "Kho Trung Tâm Hà Nội",
+            },
+            typeComponentId: {
+              type: "string",
+              format: "uuid",
+            },
+            typeComponentName: {
+              type: "string",
+              example: "Màn Hình LCD 12 inch",
+            },
+            sku: {
+              type: "string",
+              example: "LCD-12-VF34",
+            },
+            category: {
+              type: "string",
+              enum: [
+                "HIGH_VOLTAGE_BATTERY",
+                "POWERTRAIN",
+                "CHARGING_SYSTEM",
+                "THERMAL_MANAGEMENT",
+                "LOW_VOLTAGE_SYSTEM",
+                "BRAKING",
+                "SUSPENSION_STEERING",
+                "HVAC",
+                "BODY_CHASSIS",
+                "INFOTAINMENT_ADAS",
+              ],
+            },
+            quantityInStock: {
+              type: "integer",
+              example: 50,
+            },
+            quantityReserved: {
+              type: "integer",
+              example: 5,
+            },
+            quantityAvailable: {
+              type: "integer",
+              example: 45,
+            },
+          },
+        },
       },
     },
     tags: [
@@ -609,6 +693,11 @@ const options = {
         name: "Warehouse & Stock",
         description:
           "API endpoints quản lý kho - Quản lý tồn kho, stock availability, warehouse info",
+      },
+      {
+        name: "Inventory Management",
+        description:
+          "API endpoints quản lý tồn kho cho parts coordinator - Xem tổng hợp tồn kho, chi tiết theo loại linh kiện, điều chỉnh tồn kho",
       },
       {
         name: "Stock Transfer Requests",
