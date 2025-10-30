@@ -1342,7 +1342,7 @@ const SuperAdvisor = () => {
         let customerIdToUse = null;
         
         try {
-          const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers?phone=${ownerForm.phone.trim()}`, {
+          const searchResponse = await axios.get(`${API_BASE_URL}/customers?phone=${ownerForm.phone.trim()}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
@@ -1382,7 +1382,7 @@ const SuperAdvisor = () => {
 
         // Register vehicle with PATCH /vehicles/{VIN}
         const response = await axios.patch(
-          `http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}`,
+          `${API_BASE_URL}/vehicles/${vehicleSearchResult.vin}`,
           requestBody,
           {
             headers: {
@@ -1463,7 +1463,7 @@ const SuperAdvisor = () => {
 
    
       const response = await axios.post(
-        `http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}/warranty/preview`,
+        `${API_BASE_URL}/vehicles/${vehicleSearchResult.vin}/warranty/preview`,
         {
           odometer: parseInt(odometer),
           purchaseDate: vehicleSearchResult.purchaseDate
@@ -1651,7 +1651,7 @@ const SuperAdvisor = () => {
       // First, find or create customer
       let customerData = null;
 
-      const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers/`, {
+      const searchResponse = await axios.get(`${API_BASE_URL}/customers/`, {
         params: {
           phone: ownerForm.phone.trim()
         },
@@ -1665,7 +1665,7 @@ const SuperAdvisor = () => {
         customerData = searchResponse.data.data.customer;
       } else {
         // Create new customer
-        const createResponse = await axios.post(`http://localhost:3000/api/v1/customers/`, {
+        const createResponse = await axios.post(`${API_BASE_URL}/customers/`, {
           fullName: ownerForm.fullName.trim(),
           email: ownerForm.email.trim(),
           phone: ownerForm.phone.trim(),
@@ -1694,7 +1694,7 @@ const SuperAdvisor = () => {
       };
 
       // Register owner to vehicle
-      const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
+      const response = await axios.patch(`${API_BASE_URL}/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -1791,7 +1791,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      const response = await fetch(`http://localhost:3000/api/v1/processing-records/${record.id}`, {
+      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -1820,7 +1820,7 @@ const SuperAdvisor = () => {
         let apiCustomerName = 'Unknown Customer';
         
         try {
-          const vehicleResponse = await fetch(`http://localhost:3000/api/v1/vehicles/${recordData.vin}`, {
+          const vehicleResponse = await fetch(`${API_BASE_URL}/vehicles/${recordData.vin}`, {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -1994,7 +1994,7 @@ const SuperAdvisor = () => {
       }
 
       // Fetch record details with caselines
-      const response = await fetch(`http://localhost:3000/api/v1/processing-records/${record.id}`, {
+      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
