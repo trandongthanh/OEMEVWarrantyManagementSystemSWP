@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasPermission } from "@/utils/permissions";
+import { API_BASE_URL } from "@/config/api";
 import {
   Car,
   User,
@@ -29,11 +30,9 @@ import {
   DollarSign,
   Tag,
   Package,
-  Warehouse,
   BoxIcon as Box,
   Edit,
-  Trash,
-  ArrowLeft
+  Trash
 } from "lucide-react";
 
 interface Technician {
@@ -41,7 +40,7 @@ interface Technician {
   name: string;
   workload?: number; // maps to activeTaskCount
   isAvailable: boolean;
-  status?: string; // WORKING | DAY_OFF | LEAVE_REQUESTED | LEAVE_APPROVED
+  status?: string; // AVAILABLE | UNAVAILABLE
 }
 
 interface ComponentInfo {
@@ -88,17 +87,6 @@ interface WarrantyClaim {
   issueType: string;
 }
 
-interface Warehouse {
-  warehouse_id: string;
-  name: string;
-  address: string;
-  vehicle_company_id: string;
-  service_center_id: string;
-  priority: number;
-  created_at: string;
-  updated_at: string;
-}
-
 interface TypeComponent {
   type_component_id: string;
   name: string;
@@ -109,28 +97,230 @@ interface TypeComponent {
   updated_at: string;
 }
 
-interface Stock {
-  stock_id: string;
-  warehouse_id: string;
-  type_component_id: string;
-  quantity_in_stock: number;
-  quantity_reserved: number;
-  created_at: string;
-  updated_at: string;
-  // Relations
-  warehouse?: Warehouse;
-  type_component?: TypeComponent;
+interface Warehouse {
+  warehouseId: string;
+  name: string;
+  address: string;
+  priority: number;
+  vehicleCompanyId: string | null;
+  serviceCenterId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  service_center_id?: string | null;
+  vehicle_company_id?: string | null;
 }
+
+interface StockTransferRequest {
+  id: string;
+  requestingWarehouseId: string;
+  requestedByUserId: string;
+  approvedByUserId: string | null;
+  rejectedByUserId: string | null;
+  cancelledByUserId: string | null;
+  status: string;
+  rejectionReason: string | null;
+  cancellationReason: string | null;
+  requestedAt: string;
+  receivedByUserId: string | null;
+  approvedAt: string | null;
+  shippedAt: string | null;
+  receivedAt: string | null;
+  rejectedAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  requester?: {
+    userId: string;
+    name: string;
+    serviceCenterId: string;
+  };
+}
+
+// Helper functions moved outside component to prevent re-creation on every render
+const formatCurrency = (amount: number) => {
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND'
+  }).format(amount);
+};
+
+const formatMileage = (mileage: number) => {
+  return `${mileage.toLocaleString('vi-VN')} km`;
+};
+
+const getPriorityBadgeVariant = (priority: 'Low' | 'Medium' | 'High' | 'Urgent' | undefined) => {
+  switch (priority) {
+    case 'Low':
+      return 'outline';
+    case 'Medium':
+      return 'secondary';
+    case 'High':
+      return 'default';
+    case 'Urgent':
+      return 'destructive';
+    default:
+      return 'outline';
+  }
+};
+
+const getStatusBadgeVariant = (status?: string) => {
+  switch ((status || '').toUpperCase()) {
+    case 'CHECKED_IN':
+    case 'PENDING_DIAGNOSIS':
+      return 'secondary';
+    case 'WAITING_CUSTOMER_APPROVAL':
+    case 'WAITING_FOR_PARTS':
+      return 'outline';
+    case 'IN_PROGRESS':
+    case 'IN_DIAGNOSIS':
+    case 'PROCESSING':
+    case 'IN_REPAIR':
+      return 'default';
+    case 'COMPLETED':
+    case 'DELIVERED':
+    case 'PAID':
+      return 'success';
+    case 'REJECTED':
+    case 'CANCELLED':
+      return 'destructive';
+    default:
+      return 'outline';
+  }
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  // Processing Record statuses
+  CHECKED_IN: 'Checked In',
+  IN_DIAGNOSIS: 'In Diagnosis',
+  WAITING_CUSTOMER_APPROVAL: 'Waiting Customer Approval',
+  PROCESSING: 'Processing',
+  WAITING_FOR_PARTS: 'Waiting for Parts',
+  IN_REPAIR: 'In Repair',
+  COMPLETED: 'Completed',
+  PAID: 'Paid',
+  CANCELLED: 'Cancelled',
+
+  // Technician statuses
+  AVAILABLE: 'Available',
+  UNAVAILABLE: 'Unavailable',
+
+  // CaseLine statuses
+  DRAFT: 'Draft',
+  PENDING_APPROVAL: 'Pending Approval',
+  CUSTOMER_APPROVED: 'Customer Approved',
+  REJECTED_BY_OUT_OF_WARRANTY: 'Rejected (Out of Warranty)',
+  REJECTED_BY_TECH: 'Rejected by Tech',
+  REJECTED_BY_CUSTOMER: 'Rejected by Customer',
+  READY_FOR_REPAIR: 'Ready for Repair',
+
+  // Warranty statuses
+  ELIGIBLE: 'Eligible',
+  INELIGIBLE: 'Ineligible',
+
+  // Component assignment statuses
+  PENDING: 'Pending',
+  RESERVED: 'Reserved',
+  DISPATCHED: 'Dispatched',
+  DELIVERED: 'Delivered',
+
+  // Generic
+  UNKNOWN: 'Unknown'
+};
+
+const getDisplayStatus = (status?: string) => {
+  if (!status) return STATUS_LABELS.UNKNOWN;
+  const key = String(status).trim().toUpperCase().replace(/\s+/g, '_');
+  if (STATUS_LABELS[key]) return STATUS_LABELS[key];
+  // Fallback: convert underscored or dashed words to Title Case
+  return String(status)
+    .replace(/_/g, ' ')
+    .replace(/-/g, ' ')
+    .toLowerCase()
+    .split(' ')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+};
+
+const getTechBadgeVariant = (status?: string) => {
+  switch ((status || '').toUpperCase()) {
+    case 'AVAILABLE':
+      return 'success';
+    case 'UNAVAILABLE':
+      return 'destructive';
+    default:
+      return 'outline';
+  }
+};
+
+const getCaseLineStatusVariant = (status?: string) => {
+  switch ((status || '').toUpperCase()) {
+    case 'CUSTOMER_APPROVED':
+    case 'READY_FOR_REPAIR':
+    case 'COMPLETED':
+      return 'default';
+    case 'PENDING_APPROVAL':
+    case 'DRAFT':
+      return 'secondary';
+    case 'REJECTED_BY_OUT_OF_WARRANTY':
+    case 'REJECTED_BY_TECH':
+    case 'REJECTED_BY_CUSTOMER':
+    case 'CANCELLED':
+      return 'destructive';
+    case 'IN_REPAIR':
+      return 'default';
+    case 'WAITING_FOR_PARTS':
+      return 'secondary';
+    default:
+      return 'outline';
+  }
+};
+
+const formatDate = (dateString: string | null) => {
+  if (!dateString) return "None";
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('vi-VN');
+  } catch {
+    return "None";
+  }
+};
+
+const displayValue = (value: string | null | undefined) => {
+  return value || "---";
+};
+
+const getStatusBadge = (status: string) => {
+  const statusConfig = {
+    pending: { variant: "pending" as const, icon: Clock, text: "Chờ duyệt" },
+    approved: { variant: "approved" as const, icon: CheckCircle, text: "Đã duyệt" },
+    rejected: { variant: "rejected" as const, icon: XCircle, text: "Từ chối" },
+    "in-progress": { variant: "warning" as const, icon: Wrench, text: "Đang sửa" },
+    completed: { variant: "success" as const, icon: CheckCircle, text: "Hoàn thành" }
+  };
+
+  const config = statusConfig[status as keyof typeof statusConfig];
+  if (!config) return null;
+
+  const Icon = config.icon;
+  return (
+    <Badge variant={config.variant}>
+      <Icon className="mr-1 h-3 w-3" />
+      {config.text}
+    </Badge>
+  );
+};
 
 const ServiceCenterDashboard = () => {
   const [warrantyClaims, setWarrantyClaims] = useState<WarrantyClaim[]>([]);
   const [availableTechnicians, setAvailableTechnicians] = useState<Technician[]>([]);
   const [isLoadingClaims, setIsLoadingClaims] = useState<boolean>(false);
-  const [techFilterStatus, setTechFilterStatus] = useState<string>('WORKING');
+  const [techFilterStatus, setTechFilterStatus] = useState<string>('AVAILABLE');
   // Status tabs
   const STATUSES = [
     'CHECKED_IN',
     'IN_DIAGNOSIS',
+    'WAITING_CUSTOMER_APPROVAL',
+    'PROCESSING',
     'WAITING_FOR_PARTS',
     'IN_REPAIR',
     'COMPLETED',
@@ -146,38 +336,200 @@ const ServiceCenterDashboard = () => {
   const [selectedClaimForDetail, setSelectedClaimForDetail] = useState<WarrantyClaim | null>(null);
 
   // Track case lines with out of stock status
-  const [outOfStockCaseLines, setOutOfStockCaseLines] = useState<Set<string>>(new Set());
+  const [outOfStockCaseLines, setOutOfStockCaseLines] = useState<Set<string>>(() => {
+    // Load from localStorage on mount
+    try {
+      const saved = localStorage.getItem('outOfStockCaseLines');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  // Track case lines that have been requested from manufacturer
+  const [requestedFromManufacturer, setRequestedFromManufacturer] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('requestedFromManufacturer');
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
 
   // Technician Records Modal States
   const [showTechnicianRecordsModal, setShowTechnicianRecordsModal] = useState(false);
   const [selectedTechnicianForRecords, setSelectedTechnicianForRecords] = useState<Technician | null>(null);
   const [technicianRecords, setTechnicianRecords] = useState<WarrantyClaim[]>([]);
 
-  // Inventory Management States
+  // Warehouse States
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [typeComponents, setTypeComponents] = useState<TypeComponent[]>([]);
-  const [stocks, setStocks] = useState<Stock[]>([]);
-  const [inventoryView, setInventoryView] = useState<'warehouses' | 'warehouse-detail'>('warehouses');
+  const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
+  const [showWarehouseDetailModal, setShowWarehouseDetailModal] = useState(false);
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
-  const [warehouseStocks, setWarehouseStocks] = useState<Stock[]>([]);
 
-  // CRUD Modal States
-  const [showWarehouseModal, setShowWarehouseModal] = useState(false);
-  const [showComponentModal, setShowComponentModal] = useState(false);
-  const [showStockModal, setShowStockModal] = useState(false);
-  const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null);
-  const [editingComponent, setEditingComponent] = useState<TypeComponent | null>(null);
-  const [editingStock, setEditingStock] = useState<Stock | null>(null);
-  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
+  // Stock Transfer Request States
+  const [showWarehouseSelectionModal, setShowWarehouseSelectionModal] = useState(false);
+  const [pendingStockRequest, setPendingStockRequest] = useState<{
+    caseLineId: string;
+    typeComponentId: string;
+    quantity: number;
+    guaranteeCaseId: string;
+  } | null>(null);
+  const [stockTransferRequests, setStockTransferRequests] = useState<StockTransferRequest[]>([]);
+  const [isLoadingStockRequests, setIsLoadingStockRequests] = useState(false);
+  const [showStockRequestsModal, setShowStockRequestsModal] = useState(false);
+  const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
+  const [showStockRequestDetailModal, setShowStockRequestDetailModal] = useState(false);
 
   const { user, logout, getToken } = useAuth();
+
+  // Fetch records for a specific status (moved outside useEffect to be reusable)
+  const fetchForStatus = async (status: string) => {
+    const url = `${API_BASE_URL}/processing-records?status=${status}`;
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) return [] as WarrantyClaim[];
+    try {
+      const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+      const apiRecords = res.data?.data?.records?.records || [];
+      const mapped: WarrantyClaim[] = apiRecords.map((r: any) => {
+        const mainTech = r.mainTechnician ? [{ 
+          id: r.mainTechnician.userId, 
+          name: r.mainTechnician.name, 
+          isAvailable: false, 
+          workload: typeof r.mainTechnician.activeTaskCount === 'number' ? r.mainTechnician.activeTaskCount : undefined, 
+          status: r.mainTechnician.workSchedule?.[0]?.status || r.mainTechnician.status 
+        }] : [];
+        const cases: GuaranteeCase[] = Array.isArray(r.guaranteeCases) ? r.guaranteeCases.map((gc: any) => ({
+          guaranteeCaseId: gc.guaranteeCaseId || gc.id || '',
+          contentGuarantee: gc.contentGuarantee || '',
+          status: gc.status,
+          caseLines: Array.isArray(gc.caseLines) ? gc.caseLines.map((cl: any) => ({
+            id: cl.id || '',
+            diagnosisText: cl.diagnosisText || '',
+            correctionText: cl.correctionText || '',
+            warrantyStatus: cl.warrantyStatus || '',
+            status: cl.status || '',
+            rejectionReason: cl.rejectionReason || null,
+            repairTechId: cl.repairTechId || null,
+            quantity: cl.quantity || 0,
+            typeComponent: cl.typeComponent ? {
+              typeComponentId: cl.typeComponent.typeComponentId || '',
+              name: cl.typeComponent.name || '',
+              category: cl.typeComponent.category || ''
+            } : undefined
+          })) : []
+        })) : [];
+        const primaryCase = cases.length > 0 ? cases[0] : null;
+        return {
+          recordId: r.vehicleProcessingRecordId || r.recordId || r.processing_record_id || r.id || '',
+          vin: r.vin || r.vehicle?.vin || '',
+          mileage: r.odometer || 0,
+          checkInDate: r.checkInDate || r.check_in_date || new Date().toISOString(),
+          guaranteeCases: cases,
+          assignedTechnicians: mainTech,
+          model: r.vehicle?.model?.name || r.model || '',
+          modelId: r.vehicle?.model?.vehicleModelId || r.vehicle?.model?.id || undefined,
+          serviceCenter: r.createdByStaff?.name || r.serviceCenter || '',
+          createdByStaffId: r.createdByStaff?.userId || r.createdByStaff?.id || undefined,
+          createdByStaffName: r.createdByStaff?.name || undefined,
+          submissionDate: r.createdAt || new Date().toISOString(),
+          estimatedCost: 0,
+          priority: r.priority || undefined,
+          issueType: primaryCase ? primaryCase.contentGuarantee : '',
+          status: r.status || (primaryCase?.status) || status
+        } as WarrantyClaim;
+      });
+      return mapped;
+    } catch (err) {
+      console.error(`Failed to fetch status ${status}`, err);
+      return [] as WarrantyClaim[];
+    }
+  };
+
+  // Fetch all statuses (moved outside useEffect to be reusable)
+  const fetchAllStatuses = async () => {
+    setIsLoadingClaims(true);
+    const results = await Promise.all(STATUSES.map(s => fetchForStatus(s)));
+    const byStatus: Record<string, WarrantyClaim[]> = {};
+    STATUSES.forEach((s, idx) => { byStatus[s] = results[idx] || []; });
+    setClaimsByStatus(byStatus);
+    setWarrantyClaims(byStatus[activeStatus] || []);
+    setIsLoadingClaims(false);
+
+    // Clean up requestedFromManufacturer for case lines that backend has updated
+    const allCaseLines = Object.values(byStatus).flat().flatMap(claim => 
+      claim.guaranteeCases.flatMap(gc => gc.caseLines || [])
+    );
+    
+    setRequestedFromManufacturer(prev => {
+      const newSet = new Set(prev);
+      let updated = false;
+      
+      // Remove case lines that are no longer in CUSTOMER_APPROVED status
+      prev.forEach(caseLineId => {
+        const caseLine = allCaseLines.find(cl => cl.id === caseLineId);
+        if (caseLine && caseLine.status !== 'CUSTOMER_APPROVED') {
+          newSet.delete(caseLineId);
+          updated = true;
+        }
+      });
+      
+      if (updated) {
+        localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
+      }
+      
+      return newSet;
+    });
+  };
+
+  // Fetch warehouses
+  const fetchWarehouses = async () => {
+    setIsLoadingWarehouses(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingWarehouses(false);
+      return;
+    }
+    try {
+      const response = await axios.get(`${API_BASE_URL}/warehouses`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const warehouseData = response.data?.data?.warehouses || [];
+      setWarehouses(warehouseData);
+    } catch (error) {
+      console.error('Failed to fetch warehouses:', error);
+    } finally {
+      setIsLoadingWarehouses(false);
+    }
+  };
+
+  // Fetch stock transfer requests
+  const fetchStockTransferRequests = async (status = 'PENDING_APPROVAL') => {
+    setIsLoadingStockRequests(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingStockRequests(false);
+      return;
+    }
+    try {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests?status=${status}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const requestsData = response.data?.data?.stockTransferRequests || [];
+      setStockTransferRequests(requestsData);
+    } catch (error) {
+      console.error('Failed to fetch stock transfer requests:', error);
+    } finally {
+      setIsLoadingStockRequests(false);
+    }
+  };
 
   // Load warranty claims and technicians data
   useEffect(() => {
     let cancelled = false;
 
     // Fetch technicians from backend instead of using mock data
-    const fetchTechnicians = async (status = 'WORKING') => {
+    const fetchTechnicians = async (status = 'AVAILABLE') => {
       setIsLoadingTechnicians(true);
       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
       if (!token) {
@@ -185,22 +537,22 @@ const ServiceCenterDashboard = () => {
         return [] as Technician[];
       }
       try {
-        const res = await axios.get(`http://localhost:3000/api/v1/users/technicians?status=${status}`, {
+        const url = status ? `${API_BASE_URL}/users/technicians?status=${status}` : `${API_BASE_URL}/users/technicians`;
+        const res = await axios.get(url, {
           headers: { Authorization: `Bearer ${token}` }
         });
         const records = res.data?.data || [];
-        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-        // Map backend technician shape to local Technician interface
         const mapped: Technician[] = records.map((t: any) => {
-          const todaySchedule = t.workSchedule?.find((ws: any) => ws.workDate === today);
-          const techStatus = todaySchedule?.status;
+          // Status is in workSchedule array, not at root level
+          const rawStatus = t.workSchedule?.[0]?.status || t.status || '';
+          const normalizedStatus = String(rawStatus).trim().toUpperCase().replace(/\s+/g, '_') || undefined;
 
           return {
-            id: t.userId,
-            name: t.name,
+            id: t.userId || t.id || String(t.techId || ''),
+            name: t.name || t.fullName || '',
             workload: t.activeTaskCount,
-            isAvailable: techStatus === 'WORKING',
-            status: techStatus
+            isAvailable: (normalizedStatus || '') === 'AVAILABLE',
+            status: normalizedStatus
           } as Technician;
         });
         setIsLoadingTechnicians(false);
@@ -212,396 +564,17 @@ const ServiceCenterDashboard = () => {
       }
     };
 
-    // no local mockClaims; we'll use API as source of truth
-
-    const fetchForStatus = async (status: string) => {
-      const url = `http://localhost:3000/api/v1/processing-records?status=${status}`;
-      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-      if (!token) return [] as WarrantyClaim[];
-      try {
-        const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
-        const apiRecords = res.data?.data?.records?.records || [];
-        const mapped: WarrantyClaim[] = apiRecords.map((r: any) => {
-          const mainTech = r.mainTechnician ? [{ id: r.mainTechnician.userId, name: r.mainTechnician.name, isAvailable: false, workload: typeof r.mainTechnician.activeTaskCount === 'number' ? r.mainTechnician.activeTaskCount : undefined, status: r.mainTechnician.status }] : [];
-          const cases: GuaranteeCase[] = Array.isArray(r.guaranteeCases) ? r.guaranteeCases.map((gc: any) => ({
-            guaranteeCaseId: gc.guaranteeCaseId || gc.id || '',
-            contentGuarantee: gc.contentGuarantee || '',
-            status: gc.status,
-            caseLines: Array.isArray(gc.caseLines) ? gc.caseLines.map((cl: any) => ({
-              id: cl.id || '',
-              diagnosisText: cl.diagnosisText || '',
-              correctionText: cl.correctionText || '',
-              warrantyStatus: cl.warrantyStatus || '',
-              status: cl.status || '',
-              rejectionReason: cl.rejectionReason || null,
-              repairTechId: cl.repairTechId || null,
-              quantity: cl.quantity || 0,
-              typeComponent: cl.typeComponent ? {
-                typeComponentId: cl.typeComponent.typeComponentId || '',
-                name: cl.typeComponent.name || '',
-                category: cl.typeComponent.category || ''
-              } : undefined
-            })) : []
-          })) : [];
-          const primaryCase = cases.length > 0 ? cases[0] : null;
-          return {
-            recordId: r.vehicleProcessingRecordId || r.recordId || r.processing_record_id || r.id || '',
-            vin: r.vin || r.vehicle?.vin || '',
-            mileage: r.odometer || 0,
-            checkInDate: r.checkInDate || r.check_in_date || new Date().toISOString(),
-            guaranteeCases: cases,
-            assignedTechnicians: mainTech,
-            model: r.vehicle?.model?.name || r.model || '',
-            modelId: r.vehicle?.model?.vehicleModelId || r.vehicle?.model?.id || undefined,
-            serviceCenter: r.createdByStaff?.name || r.serviceCenter || '',
-            createdByStaffId: r.createdByStaff?.userId || r.createdByStaff?.id || undefined,
-            createdByStaffName: r.createdByStaff?.name || undefined,
-            submissionDate: r.createdAt || new Date().toISOString(),
-            estimatedCost: 0,
-            priority: r.priority || undefined,
-            issueType: primaryCase ? primaryCase.contentGuarantee : '',
-            status: r.status || (primaryCase?.status) || status
-          } as WarrantyClaim;
-        });
-        return mapped;
-      } catch (err) {
-        console.error(`Failed to fetch status ${status}`, err);
-        return [] as WarrantyClaim[];
-      }
-    };
-
-    const fetchAllStatuses = async () => {
-      setIsLoadingClaims(true);
-      const results = await Promise.all(STATUSES.map(s => fetchForStatus(s)));
-      const byStatus: Record<string, WarrantyClaim[]> = {};
-      STATUSES.forEach((s, idx) => { byStatus[s] = results[idx] || []; });
-      setClaimsByStatus(byStatus);
-      setWarrantyClaims(byStatus[activeStatus] || []);
-      setIsLoadingClaims(false);
-    };
-
+    // Fetch all statuses on mount
     fetchAllStatuses();
 
-    // Load technicians from API (fetch all statuses on mount so DAY_OFF entries are included)
+    // Load technicians from API (AVAILABLE / UNAVAILABLE)
     refreshTechnicians('').then(() => { });
 
-    const mockWarehouses: Warehouse[] = [
-      {
-        warehouse_id: '1',
-        name: 'Main Parts Warehouse',
-        address: '123 Industrial Street, Ho Chi Minh City',
-        vehicle_company_id: 'vc1',
-        service_center_id: 'sc1',
-        priority: 1,
-        created_at: '2025-01-15',
-        updated_at: '2025-01-15'
-      },
-      {
-        warehouse_id: '2',
-        name: 'Emergency Stock Center',
-        address: '456 Supply Road, Hanoi',
-        vehicle_company_id: 'vc1',
-        service_center_id: 'sc2',
-        priority: 2,
-        created_at: '2025-02-01',
-        updated_at: '2025-02-01'
-      }
-    ];
-
-    const mockTypeComponents: TypeComponent[] = [
-      {
-        type_component_id: '1',
-        name: 'EV Battery Pack 75kWh',
-        price: 15000,
-        sku: 'BAT-EV-75K',
-        category: 'Battery',
-        created_at: '2025-01-10',
-        updated_at: '2025-01-10'
-      },
-      {
-        type_component_id: '2',
-        name: 'Electric Motor Controller',
-        price: 3500,
-        sku: 'MOT-CTL-001',
-        category: 'Motor',
-        created_at: '2025-01-12',
-        updated_at: '2025-01-12'
-      },
-      {
-        type_component_id: '3',
-        name: 'Brake Pad Set',
-        price: 250,
-        sku: 'BRK-PAD-STD',
-        category: 'Brakes',
-        created_at: '2025-01-14',
-        updated_at: '2025-01-14'
-      }
-    ];
-
-    const mockStocks: Stock[] = [
-      {
-        stock_id: '1',
-        warehouse_id: '1',
-        type_component_id: '1',
-        quantity_in_stock: 15,
-        quantity_reserved: 3,
-        created_at: '2025-01-15',
-        updated_at: '2025-10-07',
-        warehouse: mockWarehouses[0],
-        type_component: mockTypeComponents[0]
-      },
-      {
-        stock_id: '2',
-        warehouse_id: '1',
-        type_component_id: '2',
-        quantity_in_stock: 25,
-        quantity_reserved: 5,
-        created_at: '2025-01-15',
-        updated_at: '2025-10-07',
-        warehouse: mockWarehouses[0],
-        type_component: mockTypeComponents[1]
-      },
-      {
-        stock_id: '3',
-        warehouse_id: '2',
-        type_component_id: '3',
-        quantity_in_stock: 100,
-        quantity_reserved: 20,
-        created_at: '2025-02-01',
-        updated_at: '2025-10-07',
-        warehouse: mockWarehouses[1],
-        type_component: mockTypeComponents[2]
-      }
-    ];
-
-    setWarehouses(mockWarehouses);
-    setTypeComponents(mockTypeComponents);
-    setStocks(mockStocks);
+    // Load warehouses
+    fetchWarehouses();
 
     return () => { cancelled = true; };
   }, []);
-
-  // Inventory Management Helper Functions
-  const handleViewWarehouseDetail = (warehouse: Warehouse) => {
-    setSelectedWarehouse(warehouse);
-    // Get stocks for this specific warehouse with component info
-    const warehouseSpecificStocks = stocks.filter(stock => stock.warehouse_id === warehouse.warehouse_id);
-    setWarehouseStocks(warehouseSpecificStocks);
-    setInventoryView('warehouse-detail');
-  };
-
-  const handleBackToWarehouses = () => {
-    setSelectedWarehouse(null);
-    setWarehouseStocks([]);
-    setInventoryView('warehouses');
-  };
-
-  // CRUD Handlers for Warehouse
-  const handleCreateWarehouse = () => {
-    setModalMode('create');
-    setEditingWarehouse(null);
-    setShowWarehouseModal(true);
-  };
-
-  const handleEditWarehouse = (warehouse: Warehouse) => {
-    setModalMode('edit');
-    setEditingWarehouse(warehouse);
-    setShowWarehouseModal(true);
-  };
-
-  const handleDeleteWarehouse = (warehouseId: string) => {
-    if (window.confirm('Are you sure you want to delete this warehouse? This will also delete all associated stock records.')) {
-      setWarehouses(prev => prev.filter(w => w.warehouse_id !== warehouseId));
-      setStocks(prev => prev.filter(s => s.warehouse_id !== warehouseId));
-      alert('Warehouse deleted successfully!');
-    }
-  };
-
-  const handleSaveWarehouse = (warehouseData: Partial<Warehouse>) => {
-    if (modalMode === 'create') {
-      const newWarehouse: Warehouse = {
-        warehouse_id: Date.now().toString(),
-        name: warehouseData.name || '',
-        address: warehouseData.address || '',
-        vehicle_company_id: warehouseData.vehicle_company_id || 'vc1',
-        service_center_id: warehouseData.service_center_id || 'sc1',
-        priority: warehouseData.priority || 1,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      setWarehouses(prev => [...prev, newWarehouse]);
-      alert('Warehouse created successfully!');
-    } else {
-      setWarehouses(prev => prev.map(w =>
-        w.warehouse_id === editingWarehouse?.warehouse_id
-          ? { ...w, ...warehouseData, updated_at: new Date().toISOString() }
-          : w
-      ));
-      alert('Warehouse updated successfully!');
-    }
-    setShowWarehouseModal(false);
-  };
-
-  // CRUD Handlers for Component
-  const handleCreateComponent = () => {
-    setModalMode('create');
-    setEditingComponent(null);
-    setShowComponentModal(true);
-  };
-
-  const handleEditComponent = (component: TypeComponent) => {
-    setModalMode('edit');
-    setEditingComponent(component);
-    setShowComponentModal(true);
-  };
-
-  const handleDeleteComponent = (componentId: string) => {
-    if (window.confirm('Are you sure you want to delete this component? This will also delete all associated stock records.')) {
-      setTypeComponents(prev => prev.filter(c => c.type_component_id !== componentId));
-      setStocks(prev => prev.filter(s => s.type_component_id !== componentId));
-      alert('Component deleted successfully!');
-    }
-  };
-
-  const handleSaveComponent = (componentData: Partial<TypeComponent>) => {
-    if (modalMode === 'create') {
-      const newComponent: TypeComponent = {
-        type_component_id: Date.now().toString(),
-        name: componentData.name || '',
-        price: componentData.price || 0,
-        sku: componentData.sku || '',
-        category: componentData.category || '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      setTypeComponents(prev => [...prev, newComponent]);
-      alert('Component created successfully!');
-    } else {
-      setTypeComponents(prev => prev.map(c =>
-        c.type_component_id === editingComponent?.type_component_id
-          ? { ...c, ...componentData, updated_at: new Date().toISOString() }
-          : c
-      ));
-      // Update stock relations
-      setStocks(prev => prev.map(s =>
-        s.type_component_id === editingComponent?.type_component_id
-          ? { ...s, type_component: { ...s.type_component!, ...componentData, updated_at: new Date().toISOString() } }
-          : s
-      ));
-      alert('Component updated successfully!');
-    }
-    setShowComponentModal(false);
-  };
-
-  // CRUD Handlers for Stock
-  const handleCreateStock = () => {
-    setModalMode('create');
-    setEditingStock(null);
-    setShowStockModal(true);
-  };
-
-  const handleEditStock = (stock: Stock) => {
-    setModalMode('edit');
-    setEditingStock(stock);
-    setShowStockModal(true);
-  };
-
-  const handleDeleteStock = (stockId: string) => {
-    if (window.confirm('Are you sure you want to delete this stock record?')) {
-      setStocks(prev => prev.filter(s => s.stock_id !== stockId));
-      // Update warehouse stocks if in detail view
-      if (selectedWarehouse) {
-        setWarehouseStocks(prev => prev.filter(s => s.stock_id !== stockId));
-      }
-      alert('Stock record deleted successfully!');
-    }
-  };
-
-  const handleSaveStock = (stockData: Partial<Stock>) => {
-    if (modalMode === 'create') {
-      const selectedWarehouseForStock = selectedWarehouse || warehouses[0];
-      const targetWarehouseId = stockData.warehouse_id || selectedWarehouseForStock.warehouse_id;
-      const targetComponentId = stockData.type_component_id || '';
-
-      // Check for duplicate warehouse-component combination
-      const existingStock = stocks.find(s =>
-        s.warehouse_id === targetWarehouseId &&
-        s.type_component_id === targetComponentId
-      );
-
-      if (existingStock) {
-        const warehouse = warehouses.find(w => w.warehouse_id === targetWarehouseId);
-        const component = typeComponents.find(c => c.type_component_id === targetComponentId);
-        alert(`Stock record already exists for "${component?.name}" in "${warehouse?.name}". Please edit the existing record instead of creating a new one.`);
-        return;
-      }
-
-      const selectedComponent = typeComponents.find(c => c.type_component_id === targetComponentId);
-
-      const newStock: Stock = {
-        stock_id: Date.now().toString(),
-        warehouse_id: targetWarehouseId,
-        type_component_id: targetComponentId,
-        quantity_in_stock: stockData.quantity_in_stock || 0,
-        quantity_reserved: stockData.quantity_reserved || 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        warehouse: warehouses.find(w => w.warehouse_id === targetWarehouseId),
-        type_component: selectedComponent
-      };
-      setStocks(prev => [...prev, newStock]);
-      // Update warehouse stocks if in detail view
-      if (selectedWarehouse && newStock.warehouse_id === selectedWarehouse.warehouse_id) {
-        setWarehouseStocks(prev => [...prev, newStock]);
-      }
-      alert('Stock created successfully!');
-    } else {
-      // For edit mode, check for duplicates but exclude current record
-      const targetWarehouseId = stockData.warehouse_id || editingStock?.warehouse_id;
-      const targetComponentId = stockData.type_component_id || editingStock?.type_component_id;
-
-      const existingStock = stocks.find(s =>
-        s.warehouse_id === targetWarehouseId &&
-        s.type_component_id === targetComponentId &&
-        s.stock_id !== editingStock?.stock_id
-      );
-
-      if (existingStock) {
-        const warehouse = warehouses.find(w => w.warehouse_id === targetWarehouseId);
-        const component = typeComponents.find(c => c.type_component_id === targetComponentId);
-        alert(`Stock record already exists for "${component?.name}" in "${warehouse?.name}". Cannot update to duplicate combination.`);
-        return;
-      }
-
-      setStocks(prev => prev.map(s =>
-        s.stock_id === editingStock?.stock_id
-          ? { ...s, ...stockData, updated_at: new Date().toISOString() }
-          : s
-      ));
-      // Update warehouse stocks if in detail view
-      if (selectedWarehouse) {
-        setWarehouseStocks(prev => prev.map(s =>
-          s.stock_id === editingStock?.stock_id
-            ? { ...s, ...stockData, updated_at: new Date().toISOString() }
-            : s
-        ));
-      }
-      alert('Stock updated successfully!');
-    }
-    setShowStockModal(false);
-  };
-
-  // Helper functions for warranty claims
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('vi-VN', {
-      style: 'currency',
-      currency: 'VND'
-    }).format(amount);
-  };
-
-  const formatMileage = (mileage: number) => {
-    return `${mileage.toLocaleString('vi-VN')} km`;
-  };
 
   const assignTechnicianToCase = async (vin: string, technicianId: string) => {
     const technician = availableTechnicians.find(t => t.id === technicianId);
@@ -631,76 +604,20 @@ const ServiceCenterDashboard = () => {
 
       // Call backend API to assign technician
       const response = await axios.patch(
-        `http://localhost:3000/api/v1/processing-records/${claim.recordId}/assignment`,
+        `${API_BASE_URL}/processing-records/${claim.recordId}/assignment`,
         { technicianId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
       if (response.data?.status === 'success') {
         alert(`Technician ${technician.name} assigned successfully!`);
+        
+        // Close modal
+        setShowTechnicianModal(false);
+        setSelectedCaseForAssignment('');
 
-        // Refresh data from API to get latest state
-        const url = `http://localhost:3000/api/v1/processing-records?status=${activeStatus}`;
-        try {
-          const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
-          const apiRecords = res.data?.data?.records?.records || [];
-          const mapped: WarrantyClaim[] = apiRecords.map((r: any) => {
-            const mainTech = r.mainTechnician ? [{ id: r.mainTechnician.userId, name: r.mainTechnician.name, isAvailable: false, workload: typeof r.mainTechnician.activeTaskCount === 'number' ? r.mainTechnician.activeTaskCount : undefined, status: r.mainTechnician.status }] : [];
-            const cases: GuaranteeCase[] = Array.isArray(r.guaranteeCases) ? r.guaranteeCases.map((gc: any) => ({
-              guaranteeCaseId: gc.guaranteeCaseId || gc.id || '',
-              contentGuarantee: gc.contentGuarantee || '',
-              status: gc.status,
-              caseLines: Array.isArray(gc.caseLines) ? gc.caseLines.map((cl: any) => ({
-                id: cl.id || '',
-                diagnosisText: cl.diagnosisText || '',
-                correctionText: cl.correctionText || '',
-                warrantyStatus: cl.warrantyStatus || '',
-                status: cl.status || '',
-                rejectionReason: cl.rejectionReason || null,
-                repairTechId: cl.repairTechId || null,
-                quantity: cl.quantity || 0,
-                typeComponent: cl.typeComponent ? {
-                  typeComponentId: cl.typeComponent.typeComponentId || '',
-                  name: cl.typeComponent.name || '',
-                  category: cl.typeComponent.category || ''
-                } : undefined
-              })) : []
-            })) : [];
-            const primaryCase = cases.length > 0 ? cases[0] : null;
-            return {
-              recordId: r.vehicleProcessingRecordId || r.recordId || r.processing_record_id || r.id || '',
-              vin: r.vin || r.vehicle?.vin || '',
-              mileage: r.odometer || 0,
-              checkInDate: r.checkInDate || r.check_in_date || new Date().toISOString(),
-              guaranteeCases: cases,
-              assignedTechnicians: mainTech,
-              model: r.vehicle?.model?.name || r.model || '',
-              modelId: r.vehicle?.model?.vehicleModelId || r.vehicle?.model?.id || undefined,
-              serviceCenter: r.createdByStaff?.name || r.serviceCenter || '',
-              createdByStaffId: r.createdByStaff?.userId || r.createdByStaff?.id || undefined,
-              createdByStaffName: r.createdByStaff?.name || undefined,
-              submissionDate: r.createdAt || new Date().toISOString(),
-              estimatedCost: 0,
-              priority: r.priority || undefined,
-              issueType: primaryCase ? primaryCase.contentGuarantee : '',
-              status: r.status || (primaryCase?.status) || activeStatus
-            } as WarrantyClaim;
-          });
-
-          // Update state with new data
-          setWarrantyClaims(mapped);
-          setClaimsByStatus(prev => ({ ...prev, [activeStatus]: mapped }));
-
-          // Update the selected claim detail if modal is open
-          if (selectedClaimForDetail) {
-            const updatedClaim = mapped.find(c => c.vin === selectedClaimForDetail.vin);
-            if (updatedClaim) {
-              setSelectedClaimForDetail(updatedClaim);
-            }
-          }
-        } catch (err) {
-          console.error('Failed to refresh data after assignment', err);
-        }
+        // Refresh all data to ensure UI is up-to-date
+        await fetchAllStatuses();
 
         // Refresh technicians list to update workload
         await refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
@@ -743,80 +660,6 @@ const ServiceCenterDashboard = () => {
         const bw = b.workload || 0;
         return aw - bw;
       });
-  };
-
-  const getPriorityBadgeVariant = (priority: WarrantyClaim['priority']) => {
-    switch (priority) {
-      case 'Low':
-        return 'outline';
-      case 'Medium':
-        return 'secondary';
-      case 'High':
-        return 'default';
-      case 'Urgent':
-        return 'destructive';
-      default:
-        return 'outline';
-    }
-  };
-
-  const getStatusBadgeVariant = (status?: string) => {
-    switch ((status || '').toUpperCase()) {
-      case 'CHECKED_IN':
-      case 'PENDING_DIAGNOSIS':
-        return 'secondary';
-      case 'IN_PROGRESS':
-        return 'default';
-      case 'COMPLETED':
-      case 'DELIVERED':
-        return 'success';
-      case 'REJECTED':
-      case 'CANCELLED':
-        return 'destructive';
-      default:
-        return 'outline';
-    }
-  };
-
-  // Friendly display labels for various status codes (claims, technicians, components)
-  const STATUS_LABELS: Record<string, string> = {
-    // Claim statuses
-    CHECKED_IN: 'Checked In',
-    IN_DIAGNOSIS: 'In Diagnosis',
-    WAITING_FOR_PARTS: 'Waiting for Parts',
-    IN_REPAIR: 'In Repair',
-    COMPLETED: 'Completed',
-    PAID: 'Paid',
-    CANCELLED: 'Cancelled',
-
-    // Technician statuses
-    WORKING: 'Working',
-    LEAVE_REQUESTED: 'Leave Requested',
-    LEAVE_APPROVED: 'Leave Approved',
-    DAY_OFF: 'Day Off',
-
-    // Component assignment statuses (uppercase keys)
-    PENDING: 'Pending',
-    RESERVED: 'Reserved',
-    DISPATCHED: 'Dispatched',
-    DELIVERED: 'Delivered',
-
-    // Generic
-    UNKNOWN: 'Unknown'
-  };
-
-  const getDisplayStatus = (status?: string) => {
-    if (!status) return STATUS_LABELS.UNKNOWN;
-    const key = String(status).trim().toUpperCase().replace(/\s+/g, '_');
-    if (STATUS_LABELS[key]) return STATUS_LABELS[key];
-    // Fallback: convert underscored or dashed words to Title Case
-    return String(status)
-      .replace(/_/g, ' ')
-      .replace(/-/g, ' ')
-      .toLowerCase()
-      .split(' ')
-      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(' ');
   };
 
   const handleViewClaimDetail = (vin: string) => {
@@ -863,12 +706,23 @@ const ServiceCenterDashboard = () => {
     setTechnicianRecords([]);
   };
 
+  // View warehouse details
+  const viewWarehouseDetails = (warehouse: Warehouse) => {
+    setSelectedWarehouse(warehouse);
+    setShowWarehouseDetailModal(true);
+  };
+
+  const closeWarehouseDetailModal = () => {
+    setShowWarehouseDetailModal(false);
+    setSelectedWarehouse(null);
+  };
+
   // Allocate component for case line
   const handleAllocateComponent = async (guaranteeCaseId: string, caseLineId: string) => {
     try {
       const token = localStorage.getItem('token') || localStorage.getItem('ev_warranty_token');
       const response = await axios.post(
-        `http://localhost:3000/api/v1/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/allocate-stock`,
+        `${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/allocate-stock`,
         {},
         {
           headers: {
@@ -880,79 +734,40 @@ const ServiceCenterDashboard = () => {
       if (response.status === 200 || response.status === 201) {
         alert('Component allocated successfully!');
 
-        // Refresh data for current status
-        const url = `http://localhost:3000/api/v1/processing-records?status=${activeStatus}`;
-        if (token) {
-          try {
-            const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
-            const apiRecords = res.data?.data?.records?.records || [];
-            const mapped: WarrantyClaim[] = apiRecords.map((r: any) => {
-              const mainTech = r.mainTechnician ? [{ id: r.mainTechnician.userId, name: r.mainTechnician.name, isAvailable: false, workload: typeof r.mainTechnician.activeTaskCount === 'number' ? r.mainTechnician.activeTaskCount : undefined, status: r.mainTechnician.status }] : [];
-              const cases: GuaranteeCase[] = Array.isArray(r.guaranteeCases) ? r.guaranteeCases.map((gc: any) => ({
-                guaranteeCaseId: gc.guaranteeCaseId || gc.id || '',
-                contentGuarantee: gc.contentGuarantee || '',
-                status: gc.status,
-                caseLines: Array.isArray(gc.caseLines) ? gc.caseLines.map((cl: any) => ({
-                  id: cl.id || '',
-                  diagnosisText: cl.diagnosisText || '',
-                  correctionText: cl.correctionText || '',
-                  warrantyStatus: cl.warrantyStatus || '',
-                  status: cl.status || '',
-                  rejectionReason: cl.rejectionReason || null,
-                  repairTechId: cl.repairTechId || null,
-                  quantity: cl.quantity || 0,
-                  typeComponent: cl.typeComponent ? {
-                    typeComponentId: cl.typeComponent.typeComponentId || '',
-                    name: cl.typeComponent.name || '',
-                    category: cl.typeComponent.category || ''
-                  } : undefined
-                })) : []
-              })) : [];
-              const primaryCase = cases.length > 0 ? cases[0] : null;
-              return {
-                recordId: r.vehicleProcessingRecordId || r.recordId || r.processing_record_id || r.id || '',
-                vin: r.vin || r.vehicle?.vin || '',
-                mileage: r.odometer || 0,
-                checkInDate: r.checkInDate || r.check_in_date || new Date().toISOString(),
-                guaranteeCases: cases,
-                assignedTechnicians: mainTech,
-                model: r.vehicle?.model?.name || r.model || '',
-                modelId: r.vehicle?.model?.vehicleModelId || r.vehicle?.model?.id || undefined,
-                serviceCenter: r.createdByStaff?.name || r.serviceCenter || '',
-                createdByStaffId: r.createdByStaff?.userId || r.createdByStaff?.id || undefined,
-                createdByStaffName: r.createdByStaff?.name || undefined,
-                submissionDate: r.createdAt || new Date().toISOString(),
-                estimatedCost: 0,
-                priority: r.priority || undefined,
-                issueType: primaryCase ? primaryCase.contentGuarantee : '',
-                status: r.status || (primaryCase?.status) || activeStatus
-              } as WarrantyClaim;
-            });
+        // Remove from out of stock list if it was there
+        setOutOfStockCaseLines(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(caseLineId);
+          // Save to localStorage
+          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
 
-            // Update state with new data
-            setWarrantyClaims(mapped);
-            setClaimsByStatus(prev => ({ ...prev, [activeStatus]: mapped }));
-
-            // Update the selected claim detail if modal is open
-            if (selectedClaimForDetail) {
-              const updatedClaim = mapped.find(c => c.vin === selectedClaimForDetail.vin);
-              if (updatedClaim) {
-                setSelectedClaimForDetail(updatedClaim);
-              }
-            }
-          } catch (err) {
-            console.error('Failed to refresh data after allocation', err);
-          }
-        }
+        // Refresh all data to ensure UI is up-to-date
+        await fetchAllStatuses();
       }
     } catch (error: any) {
       console.error('Error allocating component:', error);
       const errorMessage = error.response?.data?.message || 'Failed to allocate component. Please try again.';
 
-      // Check if error is due to out of stock
-      if (error.response?.status === 404 && errorMessage.includes('No available stock found')) {
+      // Check if error is 409 Conflict (out of stock)
+      if (error.response?.status === 409) {
         // Mark this case line as out of stock
-        setOutOfStockCaseLines(prev => new Set([...prev, caseLineId]));
+        setOutOfStockCaseLines(prev => {
+          const newSet = new Set([...prev, caseLineId]);
+          // Save to localStorage
+          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
+        alert('⚠️ Out of Stock! No available component in warehouse. Please request from manufacturer.');
+      } else if (error.response?.status === 404 && errorMessage.includes('No available stock found')) {
+        // Also handle 404 as out of stock
+        setOutOfStockCaseLines(prev => {
+          const newSet = new Set([...prev, caseLineId]);
+          // Save to localStorage
+          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
         alert('⚠️ Out of Stock! No available component in warehouse. Please request from manufacturer.');
       } else {
         alert(errorMessage);
@@ -960,8 +775,97 @@ const ServiceCenterDashboard = () => {
     }
   };
 
+  // Request component from manufacturer - Open warehouse selection modal
+  const handleRequestFromManufacturer = async (
+    guaranteeCaseId: string, 
+    caseLineId: string, 
+    typeComponentId: string,
+    quantity: number
+  ) => {
+    // Store the pending request data
+    setPendingStockRequest({
+      caseLineId,
+      typeComponentId,
+      quantity,
+      guaranteeCaseId
+    });
+    
+    // Open warehouse selection modal
+    setShowWarehouseSelectionModal(true);
+  };
+
+  // Submit stock transfer request after warehouse is selected
+  const submitStockTransferRequest = async (warehouseId: string) => {
+    if (!pendingStockRequest) return;
+
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        alert('Authentication required');
+        return;
+      }
+
+      const requestBody = {
+        caselineIds: [pendingStockRequest.caseLineId],
+        items: [
+          {
+            quantityRequested: pendingStockRequest.quantity,
+            typeComponentId: pendingStockRequest.typeComponentId
+          }
+        ],
+        requestingWarehouseId: warehouseId
+      };
+
+      const response = await axios.post(
+        `${API_BASE_URL}/stock-transfer-requests`,
+        requestBody,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+
+      if (response.status === 200 || response.status === 201) {
+        // Remove from out of stock list since request has been sent
+        setOutOfStockCaseLines(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(pendingStockRequest.caseLineId);
+          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
+
+        // Add to requested from manufacturer list to prevent showing allocate button
+        setRequestedFromManufacturer(prev => {
+          const newSet = new Set([...prev, pendingStockRequest.caseLineId]);
+          localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
+
+        alert('Stock transfer request sent successfully!');
+        
+        // Close modal and reset
+        setShowWarehouseSelectionModal(false);
+        setPendingStockRequest(null);
+
+        // Refresh data from backend to get updated status
+        await fetchAllStatuses();
+        await fetchWarehouses();
+        
+        // Refresh claim detail modal with updated data from backend
+        if (selectedClaimForDetail) {
+          const updatedClaims = Object.values(claimsByStatus).flat();
+          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
+          if (updatedClaim) {
+            setSelectedClaimForDetail(updatedClaim);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Error requesting from manufacturer:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to send request to manufacturer. Please try again.';
+      alert(errorMessage);
+    }
+  };
+
   // Refresh technicians (callable from UI)
-  const refreshTechnicians = async (status = 'WORKING') => {
+  const refreshTechnicians = async (status = 'AVAILABLE') => {
     setIsLoadingTechnicians(true);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
@@ -969,15 +873,14 @@ const ServiceCenterDashboard = () => {
       return;
     }
     try {
-      const url = status ? `http://localhost:3000/api/v1/users/technicians?status=${status}` : `http://localhost:3000/api/v1/users/technicians`;
+      const url = status ? `${API_BASE_URL}/users/technicians?status=${status}` : `${API_BASE_URL}/users/technicians`;
       const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
       const records = res.data?.data || [];
-      const today = new Date().toISOString().slice(0, 10);
       const mapped: Technician[] = records.map((t: any) => {
-        const schedule = Array.isArray(t.workSchedule) ? t.workSchedule : [];
-        const todayEntry = schedule.find((ws: any) => ws.workDate === today) || schedule[schedule.length - 1];
-        const statusToday = todayEntry?.status || (t.status || undefined);
-        const normalizedStatus = String(statusToday || '').trim().toUpperCase().replace(/\s+/g, '_') || undefined;
+        // Status is in workSchedule array, not at root level
+        const rawStatus = t.workSchedule?.[0]?.status || t.status || '';
+        const normalizedStatus = String(rawStatus).trim().toUpperCase().replace(/\s+/g, '_') || undefined;
+
         return {
           id: t.userId || t.id || String(t.techId || ''),
           name: t.name || t.fullName || t.username || '',
@@ -985,7 +888,7 @@ const ServiceCenterDashboard = () => {
           experience: t.experience || t.yearsOfExperience || undefined,
           rating: t.rating || undefined,
           workload: t.activeTaskCount || t.workload || t.currentLoad || undefined,
-          isAvailable: (normalizedStatus || '') === 'WORKING',
+          isAvailable: (normalizedStatus || '') === 'AVAILABLE',
           status: normalizedStatus
         } as Technician;
       });
@@ -995,58 +898,6 @@ const ServiceCenterDashboard = () => {
     } finally {
       setIsLoadingTechnicians(false);
     }
-  };
-
-  const getTechBadgeVariant = (status?: string) => {
-    switch ((status || '').toUpperCase()) {
-      case 'WORKING':
-        return 'success';
-      case 'LEAVE_REQUESTED':
-        return 'secondary';
-      case 'LEAVE_APPROVED':
-        return 'default';
-      case 'DAY_OFF':
-        return 'destructive';
-      default:
-        return 'outline';
-    }
-  };
-
-  // Helper function to format date
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return "None";
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('vi-VN');
-    } catch {
-      return "None";
-    }
-  };
-
-  // Helper function to display value or "---" for null
-  const displayValue = (value: string | null | undefined) => {
-    return value || "---";
-  };
-
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      pending: { variant: "pending" as const, icon: Clock, text: "Chờ duyệt" },
-      approved: { variant: "approved" as const, icon: CheckCircle, text: "Đã duyệt" },
-      rejected: { variant: "rejected" as const, icon: XCircle, text: "Từ chối" },
-      "in-progress": { variant: "warning" as const, icon: Wrench, text: "Đang sửa" },
-      completed: { variant: "success" as const, icon: CheckCircle, text: "Hoàn thành" }
-    };
-
-    const config = statusConfig[status as keyof typeof statusConfig];
-    if (!config) return null;
-
-    const Icon = config.icon;
-    return (
-      <Badge variant={config.variant}>
-        <Icon className="mr-1 h-3 w-3" />
-        {config.text}
-      </Badge>
-    );
   };
 
   return (
@@ -1091,10 +942,8 @@ const ServiceCenterDashboard = () => {
           <Tabs defaultValue="claims" className="space-y-6">
             <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="claims">Warranty Claims</TabsTrigger>
-              {hasPermission(user, 'register_vehicle') && (
-                <TabsTrigger value="vehicles">Inventory Management</TabsTrigger>
-              )}
               <TabsTrigger value="repairs">Technician Management</TabsTrigger>
+              <TabsTrigger value="warehouses">Warehouse Management</TabsTrigger>
             </TabsList>
 
             <TabsContent value="claims" className="space-y-6">
@@ -1117,8 +966,10 @@ const ServiceCenterDashboard = () => {
                         variant={s === activeStatus ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => {
-                          setActiveStatus(s);
-                          setWarrantyClaims(claimsByStatus[s] || []);
+                          if (s !== activeStatus) {
+                            setActiveStatus(s);
+                            setWarrantyClaims(claimsByStatus[s] || []);
+                          }
                         }}
                         className="border-dashed"
                       >
@@ -1189,14 +1040,6 @@ const ServiceCenterDashboard = () => {
                                   {claim.assignedTechnicians.map((tech) => (
                                     <Badge key={tech.id} variant="outline" className="text-xs">
                                       {tech.name}
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="ml-1 h-3 w-3 p-0 hover:bg-red-100"
-                                        onClick={() => removeTechnicianFromCase(claim.vin, tech.id)}
-                                      >
-                                        ×
-                                      </Button>
                                     </Badge>
                                   ))}
                                   {claim.assignedTechnicians.length === 0 && (
@@ -1207,8 +1050,8 @@ const ServiceCenterDashboard = () => {
                                   )}
                                 </div>
 
-                                {/* Assign Technician Button */}
-                                {hasPermission(user, 'assign_technicians') && (
+                                {/* Assign Technician Button - Only show for CHECKED_IN status */}
+                                {hasPermission(user, 'assign_technicians') && claim.status === 'CHECKED_IN' && (
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -1216,7 +1059,7 @@ const ServiceCenterDashboard = () => {
                                     onClick={() => openTechnicianAssignmentModal(claim.vin)}
                                   >
                                     <Users className="h-4 w-4 mr-2" />
-                                    Assign Technician
+                                    Assign Technician (Diagnosis)
                                   </Button>
                                 )}
 
@@ -1247,328 +1090,6 @@ const ServiceCenterDashboard = () => {
               </Card>
             </TabsContent>
 
-            <TabsContent value="vehicles" className="space-y-6">
-              <Card className="shadow-elegant">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Package className="h-5 w-5" />
-                    Inventory Management
-                  </CardTitle>
-                  <CardDescription>
-                    Manage warehouses, components, and stock levels across service centers
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {/* Warehouses List View */}
-                  {inventoryView === 'warehouses' && (
-                    <div className="space-y-6">
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <h3 className="text-2xl font-bold">Warehouses</h3>
-                          <p className="text-muted-foreground">Manage your inventory warehouses</p>
-                        </div>
-                        <Button variant="gradient" onClick={handleCreateWarehouse}>
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add Warehouse
-                        </Button>
-                      </div>
-
-                      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                        {warehouses.map((warehouse) => {
-                          const warehouseStockCount = stocks.filter(s => s.warehouse_id === warehouse.warehouse_id).length;
-                          const totalComponents = stocks.filter(s => s.warehouse_id === warehouse.warehouse_id)
-                            .reduce((sum, stock) => sum + stock.quantity_in_stock, 0);
-
-                          return (
-                            <Card key={warehouse.warehouse_id} className="hover:shadow-lg transition-all duration-200 cursor-pointer border-2 hover:border-primary/50">
-                              <CardHeader className="pb-3">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                                      <Warehouse className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                                    </div>
-                                    <div>
-                                      <CardTitle className="text-lg">{warehouse.name}</CardTitle>
-                                      <Badge variant="outline" className="text-xs mt-1">
-                                        Priority {warehouse.priority}
-                                      </Badge>
-                                    </div>
-                                  </div>
-                                </div>
-                              </CardHeader>
-                              <CardContent>
-                                <div className="space-y-3">
-                                  <div className="flex items-start gap-2">
-                                    <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
-                                    <p className="text-sm text-muted-foreground line-clamp-2">
-                                      {warehouse.address}
-                                    </p>
-                                  </div>
-
-                                  <div className="grid grid-cols-2 gap-4 pt-3 border-t">
-                                    <div className="text-center">
-                                      <div className="text-2xl font-bold text-primary">{warehouseStockCount}</div>
-                                      <div className="text-xs text-muted-foreground">Component Types</div>
-                                    </div>
-                                    <div className="text-center">
-                                      <div className="text-2xl font-bold text-green-600">{totalComponents}</div>
-                                      <div className="text-xs text-muted-foreground">Total Items</div>
-                                    </div>
-                                  </div>
-
-                                  <div className="flex gap-2">
-                                    <Button
-                                      className="flex-1"
-                                      variant="outline"
-                                      onClick={() => handleViewWarehouseDetail(warehouse)}
-                                    >
-                                      <Package className="h-4 w-4 mr-2" />
-                                      View Inventory
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleEditWarehouse(warehouse);
-                                      }}
-                                    >
-                                      <Edit className="h-4 w-4" />
-                                    </Button>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDeleteWarehouse(warehouse.warehouse_id);
-                                      }}
-                                    >
-                                      <Trash className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          );
-                        })}
-                      </div>
-
-                      {warehouses.length === 0 && (
-                        <div className="text-center py-16">
-                          <Warehouse className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                          <h3 className="text-lg font-semibold text-muted-foreground mb-2">No warehouses found</h3>
-                          <p className="text-muted-foreground mb-6">Create your first warehouse to start managing inventory</p>
-                          <Button variant="gradient" onClick={handleCreateWarehouse}>
-                            <Plus className="h-4 w-4 mr-2" />
-                            Create Warehouse
-                          </Button>
-                        </div>
-                      )}
-
-                      {/* Floating Component Management Button */}
-                      <div className="fixed bottom-6 right-6 z-40">
-                        <Button
-                          variant="gradient"
-                          size="lg"
-                          className="rounded-full shadow-lg"
-                          onClick={handleCreateComponent}
-                          title="Add New Component Type"
-                        >
-                          <Box className="h-5 w-5 mr-2" />
-                          Add Component
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Warehouse Detail View */}
-                  {inventoryView === 'warehouse-detail' && selectedWarehouse && (
-                    <div className="space-y-6">
-                      {/* Header with Back Button */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <Button variant="outline" onClick={handleBackToWarehouses}>
-                            <ArrowLeft className="h-4 w-4 mr-2" />
-                            Back to Warehouses
-                          </Button>
-                          <div>
-                            <h3 className="text-2xl font-bold flex items-center gap-3">
-                              <Warehouse className="h-6 w-6 text-primary" />
-                              {selectedWarehouse.name}
-                            </h3>
-                            <p className="text-muted-foreground flex items-center gap-2 mt-1">
-                              <MapPin className="h-4 w-4" />
-                              {selectedWarehouse.address}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button variant="outline" onClick={() => handleEditWarehouse(selectedWarehouse!)}>
-                            <Edit className="h-4 w-4 mr-2" />
-                            Edit Warehouse
-                          </Button>
-                          <Button variant="gradient" onClick={handleCreateStock}>
-                            <Plus className="h-4 w-4 mr-2" />
-                            Add Stock
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Warehouse Stats */}
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <Card>
-                          <CardContent className="p-4 text-center">
-                            <div className="text-2xl font-bold text-primary">{warehouseStocks.length}</div>
-                            <div className="text-sm text-muted-foreground">Component Types</div>
-                          </CardContent>
-                        </Card>
-                        <Card>
-                          <CardContent className="p-4 text-center">
-                            <div className="text-2xl font-bold text-green-600">
-                              {warehouseStocks.reduce((sum, stock) => sum + stock.quantity_in_stock, 0)}
-                            </div>
-                            <div className="text-sm text-muted-foreground">Total Stock</div>
-                          </CardContent>
-                        </Card>
-                        <Card>
-                          <CardContent className="p-4 text-center">
-                            <div className="text-2xl font-bold text-amber-600">
-                              {warehouseStocks.reduce((sum, stock) => sum + stock.quantity_reserved, 0)}
-                            </div>
-                            <div className="text-sm text-muted-foreground">Reserved</div>
-                          </CardContent>
-                        </Card>
-                        <Card>
-                          <CardContent className="p-4 text-center">
-                            <div className="text-2xl font-bold text-blue-600">
-                              {warehouseStocks.reduce((sum, stock) => sum + (stock.quantity_in_stock - stock.quantity_reserved), 0)}
-                            </div>
-                            <div className="text-sm text-muted-foreground">Available</div>
-                          </CardContent>
-                        </Card>
-                      </div>
-
-                      {/* Components Inventory Table */}
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="flex items-center gap-2">
-                            <Box className="h-5 w-5" />
-                            Inventory Details
-                          </CardTitle>
-                          <CardDescription>
-                            Components and stock levels in this warehouse
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="rounded-lg border">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Component</TableHead>
-                                  <TableHead>SKU</TableHead>
-                                  <TableHead>Category</TableHead>
-                                  <TableHead>Unit Price</TableHead>
-                                  <TableHead>In Stock</TableHead>
-                                  <TableHead>Reserved</TableHead>
-                                  <TableHead>Available</TableHead>
-                                  <TableHead>Value</TableHead>
-                                  <TableHead>Actions</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {warehouseStocks.length === 0 ? (
-                                  <TableRow>
-                                    <TableCell colSpan={9} className="text-center py-8">
-                                      <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                                      <p className="text-muted-foreground">No components in this warehouse</p>
-                                    </TableCell>
-                                  </TableRow>
-                                ) : (
-                                  warehouseStocks.map((stock) => {
-                                    const component = stock.type_component;
-                                    const available = stock.quantity_in_stock - stock.quantity_reserved;
-                                    const totalValue = stock.quantity_in_stock * (component?.price || 0);
-
-                                    return (
-                                      <TableRow key={stock.stock_id} className="hover:bg-muted/50">
-                                        <TableCell>
-                                          <div className="flex items-center gap-3">
-                                            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-md">
-                                              <Box className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                                            </div>
-                                            <div>
-                                              <div className="font-medium">{component?.name || 'Unknown'}</div>
-                                              <div className="text-sm text-muted-foreground">
-                                                Updated {new Date(stock.updated_at).toLocaleDateString('en-US')}
-                                              </div>
-                                            </div>
-                                          </div>
-                                        </TableCell>
-                                        <TableCell className="font-mono text-sm">
-                                          {component?.sku || '---'}
-                                        </TableCell>
-                                        <TableCell>
-                                          <Badge variant="outline">{component?.category || '---'}</Badge>
-                                        </TableCell>
-                                        <TableCell className="font-semibold">
-                                          ${component?.price?.toLocaleString() || '0'}
-                                        </TableCell>
-                                        <TableCell>
-                                          <Badge variant="secondary" className="font-mono">
-                                            {stock.quantity_in_stock}
-                                          </Badge>
-                                        </TableCell>
-                                        <TableCell>
-                                          <Badge variant="outline" className="font-mono">
-                                            {stock.quantity_reserved}
-                                          </Badge>
-                                        </TableCell>
-                                        <TableCell>
-                                          <Badge
-                                            variant={available > 0 ? 'default' : 'destructive'}
-                                            className="font-mono"
-                                          >
-                                            {available}
-                                          </Badge>
-                                        </TableCell>
-                                        <TableCell className="font-semibold text-green-600">
-                                          ${totalValue.toLocaleString()}
-                                        </TableCell>
-                                        <TableCell>
-                                          <div className="flex space-x-2">
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => handleEditStock(stock)}
-                                              title="Edit Stock"
-                                            >
-                                              <Edit className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              onClick={() => handleDeleteStock(stock.stock_id)}
-                                              title="Delete Stock"
-                                            >
-                                              <Trash className="h-4 w-4" />
-                                            </Button>
-                                          </div>
-                                        </TableCell>
-                                      </TableRow>
-                                    );
-                                  })
-                                )}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
             <TabsContent value="repairs" className="space-y-6">
               <Card className="shadow-elegant">
                 <CardHeader>
@@ -1583,13 +1104,13 @@ const ServiceCenterDashboard = () => {
                 <CardContent>
                   {/* Status tabs for technicians */}
                   <div className="mb-4 flex items-center gap-2 flex-wrap">
-                    {['WORKING', 'LEAVE_REQUESTED', 'LEAVE_APPROVED', 'DAY_OFF', 'ALL'].map(s => {
-                      const count = s === 'ALL' ? availableTechnicians.length : availableTechnicians.filter(t => (t.status || (t.isAvailable ? 'WORKING' : 'OFF')) === s).length;
+                    {['AVAILABLE', 'UNAVAILABLE', 'ALL'].map(s => {
+                      const count = s === 'ALL' ? availableTechnicians.length : availableTechnicians.filter(t => (t.status || (t.isAvailable ? 'AVAILABLE' : 'UNAVAILABLE')) === s).length;
                       return (
                         <Button
                           key={s}
                           size="sm"
-                          variant={s === (typeof techFilterStatus !== 'undefined' ? techFilterStatus : 'WORKING') ? 'default' : 'outline'}
+                          variant={s === (typeof techFilterStatus !== 'undefined' ? techFilterStatus : 'AVAILABLE') ? 'default' : 'outline'}
                           onClick={() => setTechFilterStatus(s)}
                         >
                           {getDisplayStatus(s)} ({count})
@@ -1609,13 +1130,13 @@ const ServiceCenterDashboard = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {(techFilterStatus && techFilterStatus !== 'ALL' ? availableTechnicians.filter(t => (t.status || (t.isAvailable ? 'WORKING' : 'OFF')) === techFilterStatus) : availableTechnicians).map(tech => (
+                        {(techFilterStatus && techFilterStatus !== 'ALL' ? availableTechnicians.filter(t => (t.status || (t.isAvailable ? 'AVAILABLE' : 'UNAVAILABLE')) === techFilterStatus) : availableTechnicians).map(tech => (
                           <TableRow key={tech.id}>
                             <TableCell>{tech.name}</TableCell>
                             <TableCell>{typeof tech.workload === 'number' ? tech.workload : '-'}</TableCell>
                             <TableCell>
                               <Badge variant={tech.isAvailable ? 'success' : 'outline'} className="text-xs">
-                                {getDisplayStatus(tech.status || (tech.isAvailable ? 'WORKING' : 'OFF'))}
+                                {getDisplayStatus(tech.status || (tech.isAvailable ? 'AVAILABLE' : 'UNAVAILABLE'))}
                               </Badge>
                             </TableCell>
                             <TableCell>
@@ -1631,6 +1152,117 @@ const ServiceCenterDashboard = () => {
                         ))}
                       </TableBody>
                     </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="warehouses" className="space-y-6">
+              <Card className="shadow-elegant">
+                <CardHeader>
+                  <div className="flex items-center justify-between w-full">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Package className="h-5 w-5" />
+                        Warehouse Management
+                      </CardTitle>
+                      <CardDescription>View and manage warehouses and inventory</CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant="default" 
+                        size="sm" 
+                        onClick={() => {
+                          fetchStockTransferRequests('PENDING_APPROVAL');
+                          setShowStockRequestsModal(true);
+                        }}
+                      >
+                        <Clock className="h-4 w-4 mr-2" />
+                        View Stock Requests
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={fetchWarehouses}
+                        disabled={isLoadingWarehouses}
+                      >
+                        {isLoadingWarehouses ? 'Loading...' : 'Refresh'}
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {isLoadingWarehouses ? (
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground">Loading warehouses...</p>
+                    </div>
+                  ) : warehouses.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">No warehouses found</p>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="mt-4"
+                        onClick={fetchWarehouses}
+                      >
+                        Load Warehouses
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Address</TableHead>
+                            <TableHead>Priority</TableHead>
+                            <TableHead>Created At</TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {warehouses.map((warehouse) => (
+                            <TableRow key={warehouse.warehouseId}>
+                              <TableCell className="font-medium">
+                                {warehouse.name}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1">
+                                  <MapPin className="h-3 w-3 text-muted-foreground" />
+                                  {warehouse.address}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={warehouse.priority === 1 ? 'default' : warehouse.priority === 2 ? 'secondary' : 'outline'}
+                                  className="text-xs"
+                                >
+                                  Priority {warehouse.priority}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {new Date(warehouse.createdAt).toLocaleDateString('en-US')}
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => viewWarehouseDetails(warehouse)}
+                                >
+                                  View Details
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                  <div className="mt-6">
+                    <p className="text-sm text-muted-foreground">
+                      Showing {warehouses.length} warehouse{warehouses.length !== 1 ? 's' : ''}
+                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -1788,15 +1420,14 @@ const ServiceCenterDashboard = () => {
                                                 {lineIdx + 1}
                                               </div>
                                               <Badge
-                                                variant={
-                                                  line.status === 'CUSTOMER_APPROVED' ? 'default' :
-                                                    line.status === 'PENDING_APPROVAL' ? 'secondary' :
-                                                      line.status === 'READY_FOR_REPAIR' ? 'default' :
-                                                        line.status === 'REJECTED_BY_CUSTOMER' ? 'destructive' :
-                                                          'outline'
-                                                }
-                                                className={`text-xs px-2 py-0 ${line.status === 'CUSTOMER_APPROVED' ? 'bg-green-600 text-white' : ''
-                                                  }`}
+                                                variant={getCaseLineStatusVariant(line.status)}
+                                                className={`text-xs px-2 py-0 ${
+                                                  line.status === 'CUSTOMER_APPROVED' 
+                                                    ? 'bg-green-600 text-white' 
+                                                    : line.status === 'REJECTED_BY_CUSTOMER'
+                                                    ? 'bg-red-600 text-white font-semibold'
+                                                    : ''
+                                                }`}
                                               >
                                                 {getDisplayStatus(line.status)}
                                               </Badge>
@@ -1846,8 +1477,10 @@ const ServiceCenterDashboard = () => {
                                                   </Badge>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
-                                                  {/* Show Allocate button if CUSTOMER_APPROVED and NOT out of stock */}
-                                                  {line.status === 'CUSTOMER_APPROVED' && hasPermission(user, 'attach_parts') && !outOfStockCaseLines.has(line.id) && (
+                                                  {/* Show Allocate button only when record is PROCESSING and case line is CUSTOMER_APPROVED */}
+                                                  {/* Components can only be allocated when all case lines are approved/rejected and record moves to PROCESSING */}
+                                                  {/* Don't show if already requested from manufacturer */}
+                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && hasPermission(user, 'attach_parts') && !outOfStockCaseLines.has(line.id) && !requestedFromManufacturer.has(line.id) && (
                                                     <Button
                                                       size="sm"
                                                       variant="default"
@@ -1858,20 +1491,36 @@ const ServiceCenterDashboard = () => {
                                                       Allocate
                                                     </Button>
                                                   )}
-                                                  {/* Show Request button if out of stock */}
-                                                  {outOfStockCaseLines.has(line.id) && (
+                                                  {/* Show Request button if record is PROCESSING, case line is CUSTOMER_APPROVED but out of stock */}
+                                                  {/* Don't show if already requested */}
+                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && outOfStockCaseLines.has(line.id) && !requestedFromManufacturer.has(line.id) && hasPermission(user, 'attach_parts') && line.typeComponent && (
                                                     <Button
                                                       size="sm"
                                                       variant="outline"
-                                                      onClick={() => {
-                                                        // TODO: Implement request to manufacturer API
-                                                        alert('Request to Manufacturer feature - Coming soon!');
-                                                      }}
+                                                      onClick={() => handleRequestFromManufacturer(
+                                                        gc.guaranteeCaseId, 
+                                                        line.id, 
+                                                        line.typeComponent.typeComponentId,
+                                                        line.quantity
+                                                      )}
                                                       className="bg-orange-600 hover:bg-orange-700 text-white border-orange-600 text-xs h-6 px-2"
                                                     >
                                                       <AlertCircle className="h-3 w-3 mr-1" />
-                                                      Request
+                                                      Request from Manufacturer
                                                     </Button>
+                                                  )}
+                                                  {/* Show "Requested" badge if request has been sent but backend hasn't updated yet */}
+                                                  {requestedFromManufacturer.has(line.id) && line.status === 'CUSTOMER_APPROVED' && (
+                                                    <Badge variant="outline" className="text-xs bg-yellow-50 border-yellow-400 text-yellow-700">
+                                                      <Clock className="h-3 w-3 mr-1" />
+                                                      Requested - Pending
+                                                    </Badge>
+                                                  )}
+                                                  {/* Show status badge if already allocated or backend has updated status */}
+                                                  {line.status !== 'CUSTOMER_APPROVED' && line.status !== 'DRAFT' && line.status !== 'PENDING_APPROVAL' && (
+                                                    <Badge variant="success" className="text-xs">
+                                                      ✓ {getDisplayStatus(line.status)}
+                                                    </Badge>
                                                   )}
                                                 </div>
                                               </div>
@@ -2035,7 +1684,7 @@ const ServiceCenterDashboard = () => {
                 </DialogDescription>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => refreshTechnicians('WORKING')}>
+                <Button variant="outline" size="sm" onClick={() => refreshTechnicians('AVAILABLE')}>
                   Refresh
                 </Button>
                 {isLoadingTechnicians && (
@@ -2060,14 +1709,6 @@ const ServiceCenterDashboard = () => {
                           {tech.status && (
                             <span className="text-xs text-muted-foreground">{getDisplayStatus(tech.status)}</span>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="ml-2 h-4 w-4 p-0 hover:bg-red-100"
-                            onClick={() => removeTechnicianFromCase(selectedCaseForAssignment, tech.id)}
-                          >
-                            ×
-                          </Button>
                         </div>
                       </Badge>
                     )) || []}
@@ -2123,70 +1764,6 @@ const ServiceCenterDashboard = () => {
                 </div>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Warehouse CRUD Modal */}
-        <Dialog open={showWarehouseModal} onOpenChange={setShowWarehouseModal}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>
-                {modalMode === 'create' ? 'Add New Warehouse' : 'Edit Warehouse'}
-              </DialogTitle>
-              <DialogDescription>
-                {modalMode === 'create' ? 'Create a new warehouse for inventory management' : 'Update warehouse information'}
-              </DialogDescription>
-            </DialogHeader>
-            <WarehouseForm
-              warehouse={editingWarehouse}
-              mode={modalMode}
-              onSave={handleSaveWarehouse}
-              onCancel={() => setShowWarehouseModal(false)}
-            />
-          </DialogContent>
-        </Dialog>
-
-        {/* Component CRUD Modal */}
-        <Dialog open={showComponentModal} onOpenChange={setShowComponentModal}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>
-                {modalMode === 'create' ? 'Add New Component' : 'Edit Component'}
-              </DialogTitle>
-              <DialogDescription>
-                {modalMode === 'create' ? 'Create a new component type' : 'Update component information'}
-              </DialogDescription>
-            </DialogHeader>
-            <ComponentForm
-              component={editingComponent}
-              mode={modalMode}
-              onSave={handleSaveComponent}
-              onCancel={() => setShowComponentModal(false)}
-            />
-          </DialogContent>
-        </Dialog>
-
-        {/* Stock CRUD Modal */}
-        <Dialog open={showStockModal} onOpenChange={setShowStockModal}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>
-                {modalMode === 'create' ? 'Add New Stock' : 'Edit Stock'}
-              </DialogTitle>
-              <DialogDescription>
-                {modalMode === 'create' ? 'Add stock for a component' : 'Update stock quantities'}
-              </DialogDescription>
-            </DialogHeader>
-            <StockForm
-              stock={editingStock}
-              warehouses={warehouses}
-              components={typeComponents}
-              selectedWarehouse={selectedWarehouse}
-              existingStocks={stocks}
-              mode={modalMode}
-              onSave={handleSaveStock}
-              onCancel={() => setShowStockModal(false)}
-            />
           </DialogContent>
         </Dialog>
 
@@ -2279,352 +1856,481 @@ const ServiceCenterDashboard = () => {
             </div>
           </DialogContent>
         </Dialog>
-      </div>
-    </div>
-  );
-};
 
-// Form Components
-interface WarehouseFormProps {
-  warehouse: Warehouse | null;
-  mode: 'create' | 'edit';
-  onSave: (data: Partial<Warehouse>) => void;
-  onCancel: () => void;
-}
+        {/* Warehouse Detail Modal */}
+        <Dialog open={showWarehouseDetailModal} onOpenChange={setShowWarehouseDetailModal}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-blue-600" />
+                Warehouse Details
+              </DialogTitle>
+              <DialogDescription>
+                Complete information about the warehouse
+              </DialogDescription>
+            </DialogHeader>
 
-const WarehouseForm: React.FC<WarehouseFormProps> = ({ warehouse, mode, onSave, onCancel }) => {
-  const [formData, setFormData] = useState({
-    name: warehouse?.name || '',
-    address: warehouse?.address || '',
-    priority: warehouse?.priority || 1
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name.trim() || !formData.address.trim()) {
-      alert('Please fill in all required fields');
-      return;
-    }
-    onSave(formData);
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium mb-1">Warehouse Name *</label>
-        <Input
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="Enter warehouse name"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Address *</label>
-        <Input
-          value={formData.address}
-          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-          placeholder="Enter warehouse address"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Priority</label>
-        <Select value={formData.priority.toString()} onValueChange={(value) => setFormData({ ...formData, priority: parseInt(value) })}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="1">Priority 1 (Highest)</SelectItem>
-            <SelectItem value="2">Priority 2</SelectItem>
-            <SelectItem value="3">Priority 3</SelectItem>
-            <SelectItem value="4">Priority 4</SelectItem>
-            <SelectItem value="5">Priority 5 (Lowest)</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex gap-2 pt-4">
-        <Button type="submit" className="flex-1">
-          {mode === 'create' ? 'Create Warehouse' : 'Update Warehouse'}
-        </Button>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </form>
-  );
-};
-
-interface ComponentFormProps {
-  component: TypeComponent | null;
-  mode: 'create' | 'edit';
-  onSave: (data: Partial<TypeComponent>) => void;
-  onCancel: () => void;
-}
-
-const ComponentForm: React.FC<ComponentFormProps> = ({ component, mode, onSave, onCancel }) => {
-  const [formData, setFormData] = useState({
-    name: component?.name || '',
-    sku: component?.sku || '',
-    category: component?.category || '',
-    price: component?.price || 0
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name.trim() || !formData.sku.trim() || !formData.category.trim()) {
-      alert('Please fill in all required fields');
-      return;
-    }
-    if (formData.price <= 0) {
-      alert('Price must be greater than 0');
-      return;
-    }
-    onSave(formData);
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium mb-1">Component Name *</label>
-        <Input
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          placeholder="Enter component name"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">SKU *</label>
-        <Input
-          value={formData.sku}
-          onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-          placeholder="Enter SKU code"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Category *</label>
-        <Select value={formData.category} onValueChange={(value) => setFormData({ ...formData, category: value })}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Battery">Battery</SelectItem>
-            <SelectItem value="Motor">Motor</SelectItem>
-            <SelectItem value="Brakes">Brakes</SelectItem>
-            <SelectItem value="Electronics">Electronics</SelectItem>
-            <SelectItem value="Body">Body Parts</SelectItem>
-            <SelectItem value="Interior">Interior</SelectItem>
-            <SelectItem value="Other">Other</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Price ($) *</label>
-        <Input
-          type="number"
-          value={formData.price}
-          onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
-          placeholder="Enter price"
-          min="0.01"
-          step="0.01"
-          required
-        />
-      </div>
-      <div className="flex gap-2 pt-4">
-        <Button type="submit" className="flex-1">
-          {mode === 'create' ? 'Create Component' : 'Update Component'}
-        </Button>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </form>
-  );
-};
-
-interface StockFormProps {
-  stock: Stock | null;
-  warehouses: Warehouse[];
-  components: TypeComponent[];
-  selectedWarehouse: Warehouse | null;
-  existingStocks: Stock[];
-  mode: 'create' | 'edit';
-  onSave: (data: Partial<Stock>) => void;
-  onCancel: () => void;
-}
-
-const StockForm: React.FC<StockFormProps> = ({ stock, warehouses, components, selectedWarehouse, existingStocks, mode, onSave, onCancel }) => {
-  const [formData, setFormData] = useState({
-    warehouse_id: stock?.warehouse_id || selectedWarehouse?.warehouse_id || warehouses[0]?.warehouse_id || '',
-    type_component_id: stock?.type_component_id || '',
-    quantity_in_stock: stock?.quantity_in_stock || 0,
-    quantity_reserved: stock?.quantity_reserved || 0
-  });
-
-  // Get existing stocks for selected warehouse
-  const getExistingComponentIds = (warehouseId: string) => {
-    return existingStocks
-      .filter(s => s.warehouse_id === warehouseId && (mode === 'edit' ? s.stock_id !== stock?.stock_id : true))
-      .map(s => s.type_component_id);
-  };
-
-  // Check if component already has stock in selected warehouse
-  const isComponentDuplicate = (componentId: string, warehouseId: string) => {
-    if (mode === 'edit' && stock?.stock_id) {
-      return existingStocks.some(s =>
-        s.warehouse_id === warehouseId &&
-        s.type_component_id === componentId &&
-        s.stock_id !== stock.stock_id
-      );
-    }
-    return existingStocks.some(s =>
-      s.warehouse_id === warehouseId &&
-      s.type_component_id === componentId
-    );
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.warehouse_id || !formData.type_component_id) {
-      alert('Please select warehouse and component');
-      return;
-    }
-    if (formData.quantity_in_stock < 0 || formData.quantity_reserved < 0) {
-      alert('Quantities cannot be negative');
-      return;
-    }
-    if (formData.quantity_reserved > formData.quantity_in_stock) {
-      alert('Reserved quantity cannot exceed in-stock quantity');
-      return;
-    }
-    onSave(formData);
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium mb-1">Warehouse *</label>
-        <Select
-          value={formData.warehouse_id}
-          onValueChange={(value) => setFormData({
-            ...formData,
-            warehouse_id: value,
-            // Reset component selection when warehouse changes in create mode
-            type_component_id: mode === 'create' ? '' : formData.type_component_id
-          })}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select warehouse" />
-          </SelectTrigger>
-          <SelectContent>
-            {warehouses.map(warehouse => {
-              const stockCount = existingStocks.filter(s => s.warehouse_id === warehouse.warehouse_id).length;
-              return (
-                <SelectItem key={warehouse.warehouse_id} value={warehouse.warehouse_id}>
-                  <div className="flex items-center justify-between w-full">
-                    <span>{warehouse.name}</span>
-                    {stockCount > 0 && (
-                      <span className="text-xs text-muted-foreground ml-2">
-                        ({stockCount} components)
-                      </span>
-                    )}
-                  </div>
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Component *</label>
-        <Select value={formData.type_component_id} onValueChange={(value) => setFormData({ ...formData, type_component_id: value })}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select component" />
-          </SelectTrigger>
-          <SelectContent>
-            {components.map(component => {
-              const isDuplicate = isComponentDuplicate(component.type_component_id, formData.warehouse_id);
-              const existingStock = existingStocks.find(s =>
-                s.warehouse_id === formData.warehouse_id &&
-                s.type_component_id === component.type_component_id
-              );
-
-              return (
-                <SelectItem
-                  key={component.type_component_id}
-                  value={component.type_component_id}
-                  disabled={isDuplicate && mode === 'create'}
-                  className={isDuplicate && mode === 'create' ? "opacity-50" : ""}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <span>{component.name} ({component.sku})</span>
-                    {isDuplicate && mode === 'create' && (
-                      <span className="text-xs text-amber-600 ml-2">
-                        (Stock: {existingStock?.quantity_in_stock || 0})
-                      </span>
-                    )}
-                  </div>
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-        {mode === 'create' && formData.warehouse_id && (
-          <div className="mt-3">
-            <div className="text-xs text-muted-foreground mb-2">
-              Components already in stock are disabled. Edit existing records instead.
-            </div>
-            {getExistingComponentIds(formData.warehouse_id).length > 0 && (
-              <div className="p-3 bg-muted rounded-lg">
-                <div className="text-xs font-medium mb-2">Existing Stock in This Warehouse:</div>
-                <div className="space-y-1">
-                  {existingStocks
-                    .filter(s => s.warehouse_id === formData.warehouse_id)
-                    .map(s => (
-                      <div key={s.stock_id} className="flex justify-between text-xs">
-                        <span>{s.type_component?.name} ({s.type_component?.sku})</span>
-                        <span className="text-primary font-medium">{s.quantity_in_stock} units</span>
+            {selectedWarehouse && (
+              <div className="space-y-6 mt-4">
+                {/* Basic Information */}
+                <Card className="shadow-md border">
+                  <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-900/20 pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+                        <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                       </div>
-                    ))}
-                </div>
+                      Basic Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Warehouse ID</label>
+                          <p className="font-mono text-sm font-semibold mt-0.5">{selectedWarehouse.warehouseId}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Name</label>
+                          <p className="text-sm font-medium mt-0.5">{selectedWarehouse.name}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <MapPin className="h-3 w-3" />
+                            Address
+                          </label>
+                          <p className="text-sm font-medium mt-0.5">{selectedWarehouse.address}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Priority</label>
+                          <div className="mt-1">
+                            <Badge 
+                              variant={selectedWarehouse.priority === 1 ? 'default' : selectedWarehouse.priority === 2 ? 'secondary' : 'outline'}
+                              className="text-xs"
+                            >
+                              Priority {selectedWarehouse.priority}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Service Center ID</label>
+                          <p className="font-mono text-sm mt-0.5">{selectedWarehouse.serviceCenterId || selectedWarehouse.service_center_id || '-'}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Vehicle Company ID</label>
+                          <p className="font-mono text-sm mt-0.5">{selectedWarehouse.vehicleCompanyId || selectedWarehouse.vehicle_company_id || '-'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Timestamps */}
+                <Card className="shadow-md border">
+                  <CardHeader className="bg-gradient-to-r from-green-50 to-transparent dark:from-green-900/20 pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <div className="p-2 bg-green-100 dark:bg-green-900/40 rounded-lg">
+                        <Clock className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      </div>
+                      Timestamps
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                        <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                          <Calendar className="h-3 w-3" />
+                          Created At
+                        </label>
+                        <p className="text-sm font-medium mt-0.5">
+                          {new Date(selectedWarehouse.createdAt).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                      <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                        <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                          <Calendar className="h-3 w-3" />
+                          Updated At
+                        </label>
+                        <p className="text-sm font-medium mt-0.5">
+                          {new Date(selectedWarehouse.updatedAt).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
-          </div>
-        )}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={closeWarehouseDetailModal}>
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Warehouse Selection Modal for Stock Transfer Request */}
+        <Dialog open={showWarehouseSelectionModal} onOpenChange={setShowWarehouseSelectionModal}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-orange-600" />
+                Select Warehouse for Stock Transfer Request
+              </DialogTitle>
+              <DialogDescription>
+                Choose the warehouse that will request the component from the manufacturer
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 mt-4">
+              {pendingStockRequest && (
+                <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+                  <CardContent className="p-4">
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                        Request Details:
+                      </p>
+                      <div className="text-sm text-blue-800 dark:text-blue-200">
+                        <p>• Component ID: <span className="font-mono">{pendingStockRequest.typeComponentId}</span></p>
+                        <p>• Quantity: <span className="font-semibold">{pendingStockRequest.quantity}</span></p>
+                        <p>• Case Line ID: <span className="font-mono text-xs">{pendingStockRequest.caseLineId}</span></p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <div>
+                <h4 className="font-medium text-sm mb-3">Available Warehouses:</h4>
+                {warehouses.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No warehouses available</p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-4"
+                      onClick={fetchWarehouses}
+                    >
+                      Load Warehouses
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 max-h-[400px] overflow-y-auto">
+                    {warehouses.map((warehouse) => (
+                      <Card 
+                        key={warehouse.warehouseId} 
+                        className="p-4 cursor-pointer transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20 border-2 hover:border-blue-400"
+                        onClick={() => submitStockTransferRequest(warehouse.warehouseId)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h5 className="font-semibold">{warehouse.name}</h5>
+                              <Badge 
+                                variant={warehouse.priority === 1 ? 'default' : warehouse.priority === 2 ? 'secondary' : 'outline'}
+                                className="text-xs"
+                              >
+                                Priority {warehouse.priority}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <MapPin className="h-3 w-3" />
+                              <span>{warehouse.address}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 font-mono">
+                              ID: {warehouse.warehouseId}
+                            </p>
+                          </div>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              submitStockTransferRequest(warehouse.warehouseId);
+                            }}
+                          >
+                            Select
+                          </Button>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowWarehouseSelectionModal(false);
+                  setPendingStockRequest(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Stock Transfer Requests Modal */}
+        <Dialog open={showStockRequestsModal} onOpenChange={setShowStockRequestsModal}>
+          <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-blue-600" />
+                Stock Transfer Requests
+              </DialogTitle>
+              <DialogDescription>
+                View all pending stock transfer requests from warehouses
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 mt-4">
+              {isLoadingStockRequests ? (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground">Loading requests...</p>
+                </div>
+              ) : stockTransferRequests.length === 0 ? (
+                <div className="text-center py-8">
+                  <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No pending stock transfer requests</p>
+                </div>
+              ) : (
+                <div className="rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Requester</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Requested At</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {stockTransferRequests.map((request) => (
+                        <TableRow key={request.id}>
+                          <TableCell>
+                            <p className="font-medium text-sm">{request.requester?.name || 'Unknown'}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Service Center: {request.requester?.serviceCenterId || 'N/A'}
+                            </p>
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant={
+                                request.status === 'PENDING_APPROVAL' ? 'outline' :
+                                request.status === 'APPROVED' ? 'default' :
+                                request.status === 'REJECTED' ? 'destructive' :
+                                'secondary'
+                              }
+                              className="text-xs"
+                            >
+                              {request.status.replace(/_/g, ' ')}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {new Date(request.requestedAt).toLocaleString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedStockRequest(request);
+                                setShowStockRequestDetailModal(true);
+                              }}
+                            >
+                              View Details
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              <div className="text-sm text-muted-foreground">
+                Showing {stockTransferRequests.length} request{stockTransferRequests.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowStockRequestsModal(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Stock Transfer Request Detail Modal */}
+        <Dialog open={showStockRequestDetailModal} onOpenChange={setShowStockRequestDetailModal}>
+          <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-blue-600" />
+                Stock Transfer Request Details
+              </DialogTitle>
+              <DialogDescription>
+                Complete information about the stock transfer request
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedStockRequest && (
+              <div className="space-y-6 mt-4">
+                {/* Request Information */}
+                <Card className="shadow-md border">
+                  <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-900/20 pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+                        <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      Request Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Request ID</label>
+                          <p className="font-mono text-sm mt-0.5">{selectedStockRequest.id}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
+                          <div className="mt-1">
+                            <Badge 
+                              variant={
+                                selectedStockRequest.status === 'PENDING_APPROVAL' ? 'outline' :
+                                selectedStockRequest.status === 'APPROVED' ? 'default' :
+                                selectedStockRequest.status === 'REJECTED' ? 'destructive' :
+                                'secondary'
+                              }
+                            >
+                              {selectedStockRequest.status.replace(/_/g, ' ')}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Requesting Warehouse ID</label>
+                          <p className="font-mono text-sm mt-0.5">{selectedStockRequest.requestingWarehouseId}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Requester</label>
+                          <p className="font-medium text-sm mt-0.5">{selectedStockRequest.requester?.name || 'Unknown'}</p>
+                          <p className="font-mono text-xs text-muted-foreground mt-1">
+                            User ID: {selectedStockRequest.requestedByUserId}
+                          </p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <Calendar className="h-3 w-3" />
+                            Requested At
+                          </label>
+                          <p className="text-sm mt-0.5">
+                            {new Date(selectedStockRequest.requestedAt).toLocaleString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                        {selectedStockRequest.approvedAt && (
+                          <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                            <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                              <CheckCircle className="h-3 w-3" />
+                              Approved At
+                            </label>
+                            <p className="text-sm mt-0.5">
+                              {new Date(selectedStockRequest.approvedAt).toLocaleString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        )}
+                        {selectedStockRequest.rejectedAt && (
+                          <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                            <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                              <XCircle className="h-3 w-3" />
+                              Rejected At
+                            </label>
+                            <p className="text-sm mt-0.5">
+                              {new Date(selectedStockRequest.rejectedAt).toLocaleString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {selectedStockRequest.rejectionReason && (
+                      <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-md border border-red-200">
+                        <label className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase">Rejection Reason</label>
+                        <p className="text-sm text-red-900 dark:text-red-100 mt-1">{selectedStockRequest.rejectionReason}</p>
+                      </div>
+                    )}
+                    {selectedStockRequest.cancellationReason && (
+                      <div className="mt-4 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-md border border-orange-200">
+                        <label className="text-xs font-semibold text-orange-700 dark:text-orange-400 uppercase">Cancellation Reason</label>
+                        <p className="text-sm text-orange-900 dark:text-orange-100 mt-1">{selectedStockRequest.cancellationReason}</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowStockRequestDetailModal(false);
+                  setSelectedStockRequest(null);
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Quantity in Stock *</label>
-        <Input
-          type="number"
-          value={formData.quantity_in_stock}
-          onChange={(e) => setFormData({ ...formData, quantity_in_stock: parseInt(e.target.value) || 0 })}
-          placeholder="Enter quantity"
-          min="0"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium mb-1">Reserved Quantity</label>
-        <Input
-          type="number"
-          value={formData.quantity_reserved}
-          onChange={(e) => setFormData({ ...formData, quantity_reserved: parseInt(e.target.value) || 0 })}
-          placeholder="Enter reserved quantity"
-          min="0"
-          max={formData.quantity_in_stock}
-        />
-      </div>
-      <div className="flex gap-2 pt-4">
-        <Button type="submit" className="flex-1">
-          {mode === 'create' ? 'Create Stock' : 'Update Stock'}
-        </Button>
-        <Button type="button" variant="outline" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </form>
+    </div>
   );
 };
 

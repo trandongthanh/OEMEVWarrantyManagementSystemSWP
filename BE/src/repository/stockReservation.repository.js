@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import db from "../models/index.cjs";
 
 const { StockReservation, Stock, TypeComponent } = db;
@@ -53,7 +54,11 @@ class StockReservationRepository {
     const [affectedRows] = await StockReservation.update(
       { status },
       {
-        where: { id: reservationIds },
+        where: {
+          reservationId: {
+            [Op.in]: reservationIds,
+          },
+        },
         transaction,
       }
     );

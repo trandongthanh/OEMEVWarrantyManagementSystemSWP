@@ -2,7 +2,7 @@ import { Transaction } from "sequelize";
 import db from "../models/index.cjs";
 import dayjs from "dayjs";
 import { formatUTCtzHCM } from "../util/formatUTCtzHCM.js";
-import { ConflictError } from "../error/index.js";
+import { ConflictError, NotFoundError } from "../error/index.js";
 
 class StockTransferRequestService {
   #stockTransferRequestRepository;
@@ -38,8 +38,8 @@ class StockTransferRequestService {
   createStockTransferRequest = async ({
     requestingWarehouseId,
     items,
-    caselineIds,
     requestedByUserId,
+    companyId,
   }) => {
     const rawResult = await db.sequelize.transaction(async (transaction) => {
       const newStockTransferRequest =
@@ -56,6 +56,8 @@ class StockTransferRequestService {
         ...item,
         requestId: newStockTransferRequest?.id,
       }));
+
+      const caselineIds = items.map((item) => item.caselineId);
 
       await this.#caselineRepository.bulkUpdateStatusByIds(
         {
@@ -81,6 +83,14 @@ class StockTransferRequestService {
       createdAt: formatUTCtzHCM(item.createdAt),
       updatedAt: formatUTCtzHCM(item.updatedAt),
     }));
+
+    const roomName = `emv_staff_${companyId}`;
+
+    this.#notificationService.sendToRoom(
+      roomName,
+      "new_stock_transfer_request",
+      { request: rawResult.newStockTransferRequest }
+    );
 
     return {
       newStockTransferRequest: {
@@ -277,7 +287,7 @@ class StockTransferRequestService {
           transaction
         );
 
-      const roomName = `oem_warehouse_dispatchers_${companyId}`;
+      const roomName = `parts_coordinator_company_${companyId}`;
       const eventName = "stock_transfer_request_approved";
       const data = { requestWithDetails };
 
@@ -297,6 +307,7 @@ class StockTransferRequestService {
     roleName,
     serviceCenterId,
     estimatedDeliveryDate,
+    companyId,
   }) => {
     const rawResult = await db.sequelize.transaction(async (transaction) => {
       const existingRequest =
@@ -333,11 +344,13 @@ class StockTransferRequestService {
         if (!acc[reservation.typeComponentId]) {
           acc[reservation.typeComponentId] = [];
         }
+
         acc[reservation.typeComponentId].push(reservation);
         return acc;
       }, {});
 
       const stockIds = reservations.map((r) => r.stockId);
+
       const stocks = await this.#warehouseRepository.findStocksByIds(
         { stockIds },
         transaction,
@@ -367,6 +380,7 @@ class StockTransferRequestService {
       const allComponentIds = componentCollections.flatMap(
         (c) => c.componentIds
       );
+
       await this.#componentRepository.bulkUpdateStatus(
         {
           componentIds: allComponentIds,
@@ -386,11 +400,11 @@ class StockTransferRequestService {
       }
 
       await this.#warehouseRepository.bulkUpdateStockQuantities(
-        { reservations: stockUpdates },
+        { stockUpdates: stockUpdates },
         transaction
       );
 
-      const reservationIds = reservations.map((r) => r.id);
+      const reservationIds = reservations.map((r) => r.stockId);
       await this.#stockReservationRepository.bulkUpdateStatus(
         { reservationIds, status: "SHIPPED" },
         transaction
@@ -413,7 +427,29 @@ class StockTransferRequestService {
       };
     });
 
-    return rawResult;
+    const roomNameServiceCenterStaff = `service_center_staff_${serviceCenterId}`;
+    const roomNameServiceCenterManager = `service_center_manager_${serviceCenterId}`;
+    const roomNamePartsCoordinatorServiceCenter = `parts_coordinator_service_center_${serviceCenterId}`;
+
+    const eventName = "stock_transfer_request_shipped";
+    const data = { requestId };
+
+    this.#notificationService.sendToRooms(
+      [
+        roomNameServiceCenterStaff,
+        roomNameServiceCenterManager,
+        roomNamePartsCoordinatorServiceCenter,
+      ],
+      eventName,
+      data
+    );
+
+    const { updatedRequest, componentCollections } = rawResult;
+
+    return {
+      updatedRequest,
+      componentCollections,
+    };
   };
 
   receiveStockTransferRequest = async ({
@@ -425,7 +461,7 @@ class StockTransferRequestService {
     const rawResult = await db.sequelize.transaction(async (transaction) => {
       const existingRequest =
         await this.#stockTransferRequestRepository.getStockTransferRequestById(
-          { requestId },
+          { id: requestId },
           transaction,
           Transaction.LOCK.UPDATE
         );
@@ -471,19 +507,22 @@ class StockTransferRequestService {
 
       const componentsByType = componentsInTransit.reduce((acc, component) => {
         const typeId = component.typeComponentId;
+
         if (!acc[typeId]) {
           acc[typeId] = [];
         }
+
         acc[typeId].push(component);
         return acc;
       }, {});
 
       const allComponentIds = componentsInTransit.map((c) => c.componentId);
-      await this.#componentRepository.bulkUpdateStatusAndWarehouse(
+
+      await this.#componentRepository.bulkUpdateStatus(
         {
           componentIds: allComponentIds,
           status: "IN_WAREHOUSE",
-          warehouseId: warehouseId,
+          requestId: existingRequest.id,
         },
         transaction
       );
@@ -493,10 +532,10 @@ class StockTransferRequestService {
         componentsByType
       )) {
         const existingStock =
-          await this.#warehouseRepository.findStockByWarehouseAndType(
+          await this.#warehouseRepository.findStockByWarehouseAndTypeComponent(
             {
               warehouseId: warehouseId,
-              typeComponentId: parseInt(typeComponentId),
+              typeComponentId: typeComponentId,
             },
             transaction,
             Transaction.LOCK.UPDATE
@@ -523,7 +562,7 @@ class StockTransferRequestService {
 
       if (stockUpdates.length > 0) {
         await this.#warehouseRepository.bulkUpdateStockQuantities(
-          { reservations: stockUpdates },
+          { stockUpdates: stockUpdates },
           transaction
         );
       }
@@ -538,37 +577,22 @@ class StockTransferRequestService {
           transaction
         );
 
-      const requestItems =
-        await this.#stockTransferRequestItemRepository.getStockTransferRequestItemsByRequestId(
-          { requestId },
-          transaction
-        );
-
-      const caselineIds = requestItems
-        .map((item) => item.caselineId)
-        .filter((id) => id);
-
-      if (caselineIds.length > 0) {
-        await this.#caselineRepository.bulkUpdateStatusByIds(
-          {
-            caselineIds,
-            status: "READY_FOR_REPAIR",
-          },
-          transaction
-        );
-      }
-
       const requestWithDetails =
         await this.#stockTransferRequestRepository.getStockTransferRequestById(
-          { requestId },
+          { id: requestId },
           transaction
         );
 
-      const roomName = `service_center_staff_${serviceCenterId}`;
+      const roomName_service_center_staff = `service_center_staff_${serviceCenterId}`;
+      const roomName_service_center_manager = `service_center_manager_${serviceCenterId}`;
       const eventName = "stock_transfer_request_received";
       const data = { requestWithDetails };
 
-      this.#notificationService.sendToRoom(roomName, eventName, data);
+      this.#notificationService.sendToRooms(
+        [roomName_service_center_staff, roomName_service_center_manager],
+        eventName,
+        data
+      );
 
       return {
         updatedRequest,
@@ -588,7 +612,7 @@ class StockTransferRequestService {
     const rawResult = await db.sequelize.transaction(async (transaction) => {
       const existingRequest =
         await this.#stockTransferRequestRepository.getStockTransferRequestById(
-          { requestId },
+          { id: requestId },
           transaction,
           Transaction.LOCK.UPDATE
         );
@@ -605,6 +629,16 @@ class StockTransferRequestService {
         );
       }
 
+      const caselineIds = existingRequest.items.map((item) => item.caselineId);
+
+      await this.#caselineRepository.bulkUpdateStatusByIds(
+        {
+          caseLineIds: caselineIds,
+          status: "REJECTED_BY_OEM",
+        },
+        transaction
+      );
+
       const updatedRequest =
         await this.#stockTransferRequestRepository.updateStockTransferRequestStatusRejected(
           {
@@ -615,10 +649,29 @@ class StockTransferRequestService {
           transaction
         );
 
-      return updatedRequest;
+      return {
+        updatedRequest,
+        requesterServiceCenterId: existingRequest.requester?.serviceCenterId,
+      };
     });
 
-    return rawResult;
+    const { updatedRequest, requesterServiceCenterId } = rawResult;
+
+    if (requesterServiceCenterId) {
+      const roomNameServiceCenterStaff = `service_center_staff_${requesterServiceCenterId}`;
+      const roomNameServiceCenterManager = `service_center_manager_${requesterServiceCenterId}`;
+
+      const eventName = "stock_transfer_request_rejected";
+      const data = { requestId };
+
+      this.#notificationService.sendToRooms(
+        [roomNameServiceCenterStaff, roomNameServiceCenterManager],
+        eventName,
+        data
+      );
+    }
+
+    return updatedRequest;
   };
 
   cancelStockTransferRequest = async ({
@@ -626,11 +679,12 @@ class StockTransferRequestService {
     cancelledByUserId,
     cancellationReason,
     roleName,
+    companyId,
   }) => {
     const rawResult = await db.sequelize.transaction(async (transaction) => {
       const existingRequest =
         await this.#stockTransferRequestRepository.getStockTransferRequestById(
-          { requestId },
+          { id: requestId },
           transaction,
           Transaction.LOCK.UPDATE
         );
@@ -676,7 +730,7 @@ class StockTransferRequestService {
             }
 
             await this.#warehouseRepository.bulkUpdateStockQuantities(
-              { reservations: stockUpdates },
+              stockUpdates,
               transaction
             );
 
@@ -701,6 +755,15 @@ class StockTransferRequestService {
 
       return updatedRequest;
     });
+
+    const { updatedRequest } = rawResult;
+
+    const roomName = `emv_staff_${companyId}`;
+
+    const eventName = "stock_transfer_request_cancelled";
+    const data = { updatedRequest };
+
+    this.#notificationService.sendToRooms([roomName], eventName, data);
 
     return rawResult;
   };

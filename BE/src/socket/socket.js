@@ -24,6 +24,10 @@ export function initializeSocket(httpServer) {
       socket.join(`parts_coordinator_company_${companyId}`);
     }
 
+    if (roleName === "emv_staff" && companyId) {
+      socket.join(`emv_staff_${companyId}`);
+    }
+
     if (roleName === "parts_coordinator_service_center" && companyId) {
       socket.join(`parts_coordinator_service_center_${companyId}`);
     }

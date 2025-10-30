@@ -8,12 +8,15 @@ class StockTransferRequestController {
     const { requestingWarehouseId, items, caselineIds } = req.body;
     const { serviceCenterId, userId } = req.user;
 
+    const { companyId } = req;
+
     const newStockTransferRequest =
       await this.#stockTransferRequestService.createStockTransferRequest({
         requestingWarehouseId,
         items,
-        caselineIds,
         requestedByUserId: userId,
+        serviceCenterId,
+        companyId,
       });
 
     res.status(201).json({
@@ -94,7 +97,9 @@ class StockTransferRequestController {
   shipStockTransferRequest = async (req, res, next) => {
     const { id } = req.params;
 
-    const { userId, roleName } = req.user;
+    const { roleName, serviceCenterId } = req.user;
+
+    const { companyId } = req;
 
     const { estimatedDeliveryDate } = req.body;
 
@@ -102,8 +107,9 @@ class StockTransferRequestController {
       await this.#stockTransferRequestService.shipStockTransferRequest({
         requestId: id,
         roleName,
+        serviceCenterId,
         estimatedDeliveryDate,
-        shippedByUserId: userId,
+        companyId,
       });
 
     res.status(200).json({
@@ -160,6 +166,7 @@ class StockTransferRequestController {
     const { id } = req.params;
     const { userId, roleName } = req.user;
     const { cancellationReason } = req.body;
+    const { companyId } = req;
 
     const cancelledStockTransferRequest =
       await this.#stockTransferRequestService.cancelStockTransferRequest({
@@ -167,6 +174,7 @@ class StockTransferRequestController {
         cancelledByUserId: userId,
         cancellationReason,
         roleName,
+        companyId,
       });
 
     res.status(200).json({

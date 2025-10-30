@@ -1,0 +1,69 @@
+import axios, { InternalAxiosRequestConfig, AxiosRequestHeaders } from 'axios';
+
+const API_BASE_URL = 'http://localhost:3000/api/v1';
+
+export interface PickupResponse {
+  reservation: {
+    reservationId: string;
+    status: string;
+    pickedUpBy?: string;
+    pickedUpAt?: string;
+  };
+  component: {
+    componentId: string;
+    serialNumber?: string;
+    status?: string;
+  };
+  caseLine?: {
+    id?: string;
+    status?: string;
+  };
+}
+
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 10000,
+});
+
+apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  const token = localStorage.getItem('ev_warranty_token');
+  if (token) {
+    // Ensure headers object exists and set Authorization in a type-safe way
+    if (!config.headers) {
+      // assign an empty AxiosRequestHeaders object
+      config.headers = {} as AxiosRequestHeaders;
+    }
+    (config.headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+  }
+  return config;
+});
+
+export const componentReservationService = {
+  pickupReservation: async (reservationId: string): Promise<PickupResponse> => {
+    const url = `/component-reservations/${reservationId}/pickup`;
+    const res = await apiClient.patch(url);
+    // assume backend returns { status: 'success', data: { reservation, component, caseLine } }
+    return res.data?.data || res.data;
+  }
+  ,
+  installComponent: async (reservationId: string): Promise<{
+    reservation?: Record<string, unknown>;
+    component?: Record<string, unknown>;
+    caseLine?: Record<string, unknown>;
+  }> => {
+    const url = `/component-reservations/${reservationId}/installComponent`;
+    const res = await apiClient.patch(url);
+    return res.data?.data || res.data;
+  }
+  ,
+  returnComponent: async (reservationId: string): Promise<{
+    reservation?: Record<string, unknown>;
+    component?: Record<string, unknown>;
+  }> => {
+    const url = `/component-reservations/${reservationId}/return`;
+    const res = await apiClient.patch(url);
+    return res.data?.data || res.data;
+  }
+};
+
+export default componentReservationService;

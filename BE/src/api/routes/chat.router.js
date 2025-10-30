@@ -7,8 +7,10 @@ const router = express.Router();
  * @swagger
  * /chat/start-anonymous-chat:
  *   post:
- *     summary: Start an anonymous chat session
- *     description: Create a new anonymous chat conversation as a guest user without authentication
+ *     summary: Khởi tạo hội thoại ẩn danh
+ *     description: |-
+ *       Tạo conversation giữa khách (guestId) và Service Center. Không cần authentication.
+ *       Backend gửi socket `newConversation` tới phòng `service_center_staff_{serviceCenterId}` để nhân viên biết có khách mới.
  *     tags: [Chat]
  *     requestBody:
  *       required: true
@@ -17,17 +19,19 @@ const router = express.Router();
  *           schema:
  *             type: object
  *             required:
- *               - guestName
- *               - initialMessage
+ *               - guestId
+ *               - serviceCenterId
  *             properties:
- *               guestName:
+ *               guestId:
  *                 type: string
- *                 description: Name of the guest user
- *                 example: "Nguyễn Văn A"
- *               initialMessage:
+ *                 format: uuid
+ *                 description: ID của khách vãng lai (được backend phát sinh trước đó)
+ *                 example: "550e8400-e29b-41d4-a716-446655440010"
+ *               serviceCenterId:
  *                 type: string
- *                 description: Initial message to start the conversation
- *                 example: "Tôi muốn hỏi về chính sách bảo hành xe điện"
+ *                 format: uuid
+ *                 description: Service Center nhận cuộc trò chuyện
+ *                 example: "550e8400-e29b-41d4-a716-446655440001"
  *     responses:
  *       201:
  *         description: Anonymous chat created successfully
@@ -45,34 +49,16 @@ const router = express.Router();
  *                     conversation:
  *                       type: object
  *                       properties:
- *                         conversationId:
+ *                         id:
  *                           type: string
  *                           format: uuid
- *                           example: "550e8400-e29b-41d4-a716-446655440000"
  *                         guestId:
  *                           type: string
  *                           format: uuid
- *                           example: "550e8400-e29b-41d4-a716-446655440001"
  *                         status:
  *                           type: string
- *                           example: "waiting"
- *                           enum: [waiting, active, closed]
+ *                           example: "UNASSIGNED"
  *                         createdAt:
- *                           type: string
- *                           format: date-time
- *                     message:
- *                       type: object
- *                       properties:
- *                         messageId:
- *                           type: string
- *                           format: uuid
- *                         content:
- *                           type: string
- *                           example: "Tôi muốn hỏi về chính sách bảo hành xe điện"
- *                         senderId:
- *                           type: string
- *                           format: uuid
- *                         sentAt:
  *                           type: string
  *                           format: date-time
  *       400:
@@ -99,8 +85,10 @@ router.post("/start-anonymous-chat", async (req, res, next) => {
  * @swagger
  * /chat/conversations/{conversationId}/accept:
  *   patch:
- *     summary: Accept and join an anonymous chat conversation
- *     description: Service center staff can accept and join a waiting anonymous chat conversation
+ *     summary: Nhận cuộc trò chuyện ẩn danh
+ *     description: |-
+ *       Service Center Staff nhận conversation ở trạng thái `UNASSIGNED`.
+ *       Khi nhận thành công, socket `chatAccepted` phát tới phòng `conversation_{conversationId}` để đồng bộ client khác.
  *     tags: [Chat]
  *     security:
  *       - BearerAuth: []
@@ -130,7 +118,7 @@ router.post("/start-anonymous-chat", async (req, res, next) => {
  *                     conversation:
  *                       type: object
  *                       properties:
- *                         conversationId:
+ *                         id:
  *                           type: string
  *                           format: uuid
  *                         staffId:
@@ -138,8 +126,8 @@ router.post("/start-anonymous-chat", async (req, res, next) => {
  *                           format: uuid
  *                         status:
  *                           type: string
- *                           example: "active"
- *                         acceptedAt:
+ *                           example: "ACTIVE"
+ *                         updatedAt:
  *                           type: string
  *                           format: date-time
  *       400:
@@ -404,8 +392,10 @@ router.get("/my-conversations", authentication, async (req, res, next) => {
  * @swagger
  * /chat/conversations/{conversationId}/close:
  *   patch:
- *     summary: Close a conversation
- *     description: Close an active conversation. Only staff members who are part of the conversation can close it.
+ *     summary: Đóng conversation
+ *     description: |-
+ *       Nhân viên tham gia cuộc trò chuyện đóng conversation đang `ACTIVE`.
+ *       Hệ thống phát socket `conversationClosed` tới phòng `conversation_{conversationId}` thông báo cho các client khác.
  *     tags: [Chat]
  *     security:
  *       - BearerAuth: []
@@ -429,22 +419,25 @@ router.get("/my-conversations", authentication, async (req, res, next) => {
  *                 status:
  *                   type: string
  *                   example: "success"
+ *                 message:
+ *                   type: string
+ *                   example: "Conversation closed successfully"
  *                 data:
  *                   type: object
  *                   properties:
  *                     conversation:
  *                       type: object
  *                       properties:
- *                         conversationId:
+ *                         id:
  *                           type: string
  *                           format: uuid
  *                         status:
  *                           type: string
- *                           example: "closed"
- *                         closedAt:
+ *                           example: "CLOSED"
+ *                         updatedAt:
  *                           type: string
  *                           format: date-time
- *                         closedBy:
+ *                         staffId:
  *                           type: string
  *                           format: uuid
  *       400:

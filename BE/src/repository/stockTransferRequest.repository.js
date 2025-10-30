@@ -99,6 +99,7 @@ class StockTransferRequestRepository {
             "requestId",
             "typeComponentId",
             "quantityRequested",
+            "caselineId",
           ],
           required: false,
         },
