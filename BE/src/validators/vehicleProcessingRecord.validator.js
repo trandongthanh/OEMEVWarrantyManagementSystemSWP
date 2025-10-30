@@ -9,6 +9,7 @@ export const createRecordSchema = Joi.object({
   guaranteeCases: Joi.array().items(guaranteeCaseSchema).required(),
   visitorInfo: Joi.object({
     fullName: Joi.string().required(),
+    email: Joi.string().email().required(),
     phone: Joi.string()
       .required()
       .pattern(/^(?:\+84|0)(?:\d{9}|\d{10})$/)
@@ -17,7 +18,6 @@ export const createRecordSchema = Joi.object({
     note: Joi.string().optional(),
   }).required(),
   vin: Joi.string().required(),
-  diagnosticFee: Joi.number().optional().min(0),
 });
 
 export const updateMainTechnicianBodySchema = Joi.object({

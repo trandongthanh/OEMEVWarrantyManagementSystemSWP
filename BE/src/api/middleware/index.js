@@ -165,3 +165,32 @@ export const validate =
 
     next();
   };
+
+export const ensureOtpVerified = async (req, res, next) => {
+  const emailValue = req.body?.approverEmail || req.body?.visitorInfo?.email;
+
+  if (typeof emailValue !== "string" || emailValue.trim() === "") {
+    throw new BadRequestError("OTP verification requires an email");
+  }
+
+  const email = emailValue.trim().toLowerCase();
+
+  const redisClient = req.container?.resolve("redis");
+
+  if (!redisClient) {
+    throw new Error("Redis client is not available");
+  }
+
+  const key = `otp:verified:${email}`;
+  const verified = await redisClient.get(key);
+
+  if (!verified) {
+    throw new ForbiddenError(
+      "OTP must be verified before performing this action"
+    );
+  }
+
+  await redisClient.del(key);
+
+  next();
+};

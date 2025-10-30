@@ -7,6 +7,7 @@ import {
   attachCompanyContext,
   authentication,
   authorizationByRole,
+  ensureOtpVerified,
   validate,
 } from "../middleware/index.js";
 
@@ -20,6 +21,7 @@ const router = express.Router();
  *     summary: Tạo hồ sơ tiếp nhận xe
  *     description: |-
  *       Service Center Staff tạo Vehicle Processing Record mới kèm danh sách Guarantee Case.
+ *       Trước khi gọi endpoint này, nhân viên phải gửi OTP qua `/mail/otp/send` và xác thực thành công bằng `/mail/otp/verify` cho địa chỉ email của khách/visitor.
  *       Ngay sau khi tạo thành công, backend phát socket `new_record_notification`
  *       tới phòng `service_center_manager_{serviceCenterId}` với payload `{ message, record }` để quản lý nắm thông tin.
  *     tags: [Vehicle Processing Record]
@@ -60,15 +62,28 @@ const router = express.Router();
  *                       example: "Xe bị rung nhẹ khi tăng tốc, cần kiểm tra hệ thống truyền động."
  *               visitorInfo:
  *                 type: object
- *                 nullable: true
  *                 description: Thông tin khách vãng lai (nếu không phải chủ xe)
+ *                 required:
+ *                   - fullName
+ *                   - email
+ *                   - phone
  *                 properties:
- *                   name:
+ *                   fullName:
  *                     type: string
  *                     example: "Nguyễn Văn A"
+ *                   email:
+ *                     type: string
+ *                     format: email
+ *                     example: "visitor@example.com"
  *                   phone:
  *                     type: string
  *                     example: "+84901234567"
+ *                   relationship:
+ *                     type: string
+ *                     example: "Bạn bè"
+ *                   note:
+ *                     type: string
+ *                     example: "Khách gửi xe hộ chủ sở hữu"
  *     responses:
  *       201:
  *         description: Vehicle processing record created successfully
@@ -139,7 +154,7 @@ const router = express.Router();
  *                   type: string
  *                   example: "Unauthorized"
  *       403:
- *         description: Forbidden - requires service_center_staff role
+ *         description: Forbidden - requires service_center_staff role và OTP đã được xác thực
  *         content:
  *           application/json:
  *             schema:
@@ -150,7 +165,7 @@ const router = express.Router();
  *                   example: "error"
  *                 message:
  *                   type: string
- *                   example: "Access denied. Required role: service_center_staff"
+ *                   example: "OTP must be verified before performing this action"
  *       404:
  *         description: Vehicle not found or vehicle doesn't have owner
  *         content:
@@ -184,6 +199,7 @@ router.post(
   authorizationByRole(["service_center_staff"]),
   attachCompanyContext,
   validate(createRecordSchema, "body"),
+  ensureOtpVerified,
 
   async (req, res, next) => {
     const vehicleProcessingRecordController = req.container.resolve(

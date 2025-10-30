@@ -61,6 +61,14 @@ module.exports = (sequelize, DataTypes) => {
                 "visitorInfo must have a non-empty phone number."
               );
             }
+
+            if (
+              !value.email ||
+              typeof value.email !== "string" ||
+              value.email.trim() === ""
+            ) {
+              throw new Error("visitorInfo.email must be a non-empty string");
+            }
           },
         },
         field: "visitor_info",
