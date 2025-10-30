@@ -57,6 +57,28 @@ class InventoryController {
       },
     });
   };
+
+  createInventoryAdjustment = async (req, res, next) => {
+    const { userId: adjustedByUserId, roleName } = req.user;
+    const { companyId } = req;
+    const { stockId, adjustmentType, quantity, reason, note } = req.body;
+
+    const result = await this.#inventoryService.createInventoryAdjustment({
+      stockId,
+      adjustmentType,
+      quantity,
+      reason,
+      note,
+      adjustedByUserId,
+      roleName,
+      companyId,
+    });
+
+    res.status(201).json({
+      status: "success",
+      data: result,
+    });
+  };
 }
 
 export default InventoryController;

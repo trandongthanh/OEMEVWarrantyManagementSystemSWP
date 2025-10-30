@@ -11,7 +11,7 @@ class MailService {
   #transporter;
   #customerService;
 
-  constructor(redis, transporter, customerService) {
+  constructor({ redis, transporter, customerService }) {
     this.#redis = redis;
     this.#transporter = transporter;
     this.#customerService = customerService;

@@ -313,6 +313,47 @@ class WareHouseRepository {
     return updatedStockItem ? updatedStockItem.toJSON() : null;
   };
 
+  findStockByStockId = async (stockId, transaction = null, lock = null) => {
+    const stockItem = await Stock.findOne({
+      where: { stockId: stockId },
+      transaction: transaction,
+      lock: lock,
+    });
+
+    return stockItem ? stockItem.toJSON() : null;
+  };
+
+  updateStockQuantities = async (
+    { stockId, quantityInStock, quantityReserved },
+    transaction = null
+  ) => {
+    const updateFields = {};
+
+    if (quantityInStock !== undefined) {
+      updateFields.quantityInStock = quantityInStock;
+    }
+
+    if (quantityReserved !== undefined) {
+      updateFields.quantityReserved = quantityReserved;
+    }
+
+    const [affectedRows] = await Stock.update(updateFields, {
+      where: { stockId },
+      transaction,
+    });
+
+    if (affectedRows === 0) {
+      return null;
+    }
+
+    const updatedStock = await Stock.findOne({
+      where: { stockId },
+      transaction,
+    });
+
+    return updatedStock ? updatedStock.toJSON() : null;
+  };
+
   getAllWarehouses = async ({ whereClause = {} } = {}) => {
     const warehouses = await Warehouse.findAll({
       where: whereClause,

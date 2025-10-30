@@ -67,13 +67,13 @@ class VehicleService {
       throw new ForbiddenError("You do not have permission");
     }
 
-    const isValidDate = this.#validateVehicleDatesWithDayjs(
+    const dateValidationResult = this.#validateVehicleDatesWithDayjs(
       purchaseDate,
       dateOfManufacture
     );
 
-    if (!isValidDate.valid) {
-      throw new BadRequestError(isValidDate.error);
+    if (!dateValidationResult.valid) {
+      throw new BadRequestError(dateValidationResult.error);
     }
 
     return await db.sequelize.transaction(async (t) => {
@@ -137,6 +137,21 @@ class VehicleService {
       );
       if (!existingVehicle) {
         throw new NotFoundError(`Vehicle not found with this vin: ${vin}`);
+      }
+
+      if (!existingVehicle?.dateOfManufacture) {
+        throw new BadRequestError(
+          "Vehicle record is missing dateOfManufacture information"
+        );
+      }
+
+      const requestedManufactureDate = dayjs(dateOfManufacture);
+      const vehicleManufactureDate = dayjs(existingVehicle?.dateOfManufacture);
+
+      if (!requestedManufactureDate.isSame(vehicleManufactureDate, "day")) {
+        throw new BadRequestError(
+          "Provided dateOfManufacture does not match vehicle record"
+        );
       }
 
       if (existingVehicle?.owner) {
@@ -232,7 +247,10 @@ class VehicleService {
     const dateOfManufacture = dayjs(dateOfManufactureStr);
 
     if (!purchaseDate.isValid() || !dateOfManufacture.isValid()) {
-      return false;
+      return {
+        valid: false,
+        error: "Valid purchase date and date of manufacture are required",
+      };
     }
 
     const today = dayjs();

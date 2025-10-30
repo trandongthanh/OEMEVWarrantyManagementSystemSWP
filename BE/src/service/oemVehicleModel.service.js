@@ -7,12 +7,12 @@ class OemVehicleModelService {
   #warrantyComponentRepository;
   #typeComponentRepository;
 
-  constructor(
+  constructor({
     oemVehicleModelRepository,
     vehicleModelRepository,
     warrantyComponentRepository,
-    typeComponentRepository
-  ) {
+    typeComponentRepository,
+  }) {
     this.#oemVehicleModelRepository = oemVehicleModelRepository;
     this.#vehicleModelRepository = vehicleModelRepository;
     this.#warrantyComponentRepository = warrantyComponentRepository;
