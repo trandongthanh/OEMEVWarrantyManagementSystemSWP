@@ -74,10 +74,41 @@ class WarehouseService {
     return typeComponents;
   };
 
-  getAllWarehouses = async (serviceCenterId) => {
-    const warehouses = await this.#warehouseRepository.getAllWarehouses(
-      serviceCenterId
-    );
+  getAllWarehouses = async ({
+    roleName,
+    serviceCenterId,
+    companyId,
+    filters = {},
+  }) => {
+    const whereClause = {};
+
+    if (
+      ["service_center_manager", "parts_coordinator_service_center"].includes(
+        roleName
+      )
+    ) {
+      if (!serviceCenterId) {
+        throw new BadRequestError("Service center context is required");
+      }
+
+      whereClause.serviceCenterId = serviceCenterId;
+    } else if (roleName === "parts_coordinator_company") {
+      if (!companyId) {
+        throw new BadRequestError("Company context is required");
+      }
+
+      whereClause.vehicleCompanyId = companyId;
+
+      if (filters?.serviceCenterId) {
+        whereClause.serviceCenterId = filters.serviceCenterId;
+      }
+    } else if (serviceCenterId) {
+      whereClause.serviceCenterId = serviceCenterId;
+    }
+
+    const warehouses = await this.#warehouseRepository.getAllWarehouses({
+      whereClause,
+    });
 
     if (!warehouses || warehouses.length === 0) {
       return [];

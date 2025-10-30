@@ -1,5 +1,5 @@
 import db from "../models/index.cjs";
-const { StockTransferRequestItem } = db;
+const { StockTransferRequestItem, CaseLine } = db;
 
 class StockTransferRequestItemRepository {
   createStockTransferRequestItems = async ({ items }, transaction = null) => {
@@ -19,6 +19,12 @@ class StockTransferRequestItemRepository {
   ) => {
     const items = await StockTransferRequestItem.findAll({
       where: { requestId },
+      include: [
+        {
+          model: CaseLine,
+          as: "caseline",
+        },
+      ],
       transaction,
       lock,
     });

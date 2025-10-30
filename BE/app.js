@@ -27,6 +27,7 @@ import warehouseRouter from "./src/api/routes/warehouse.router.js";
 import stockTransferRequestRouter from "./src/api/routes/stockTransferRequest.router.js";
 import workScheduleRouter from "./src/api/routes/workSchedule.router.js";
 import mailRouter from "./src/api/routes/mail.router.js";
+import inventoryRouter from "./src/api/routes/inventory.router.js";
 
 app.get("/", async (req, res) => {
   res.send("Hello world");
@@ -46,6 +47,7 @@ app.use(`${url}/reservations`, componentReservationsRouter);
 app.use(`${url}/warehouses`, warehouseRouter);
 app.use(`${url}/components`, componentRouter);
 app.use(`${url}/mail`, mailRouter);
+app.use(`${url}/inventory`, inventoryRouter);
 
 app.use(`${url}/stock-transfer-requests`, stockTransferRequestRouter);
 app.use(`${url}/work-schedules`, workScheduleRouter);

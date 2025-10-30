@@ -6,11 +6,18 @@ class WarehouseController {
   }
 
   async getAllWarehouse(req, res, next) {
-    const { serviceCenterId } = req.user;
+    const { roleName, serviceCenterId } = req.user;
+    const { companyId } = req;
+    const { serviceCenterId: filterServiceCenterId } = req.query;
 
-    const warehouses = await this.#warehouseService.getAllWarehouses(
-      serviceCenterId
-    );
+    const warehouses = await this.#warehouseService.getAllWarehouses({
+      roleName,
+      serviceCenterId,
+      companyId,
+      filters: {
+        serviceCenterId: filterServiceCenterId,
+      },
+    });
 
     res.status(200).json({
       status: "success",

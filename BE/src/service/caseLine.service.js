@@ -940,6 +940,7 @@ class CaseLineService {
         );
 
       const allGuaranteeCases = record?.guaranteeCases || [];
+
       const allCaseLinesCompleted = allGuaranteeCases.every((gc) =>
         gc.caseLines?.every((cl) => cl.status === "COMPLETED")
       );
@@ -1111,9 +1112,15 @@ class CaseLineService {
       throw new NotFoundError("Caseline not found");
     }
 
-    if (caseline.status !== "CUSTOMER_APPROVED") {
+    const allowedStatuses = [
+      "CUSTOMER_APPROVED",
+      "WAITING_FOR_PARTS",
+      "PARTS_AVAILABLE",
+    ];
+
+    if (!allowedStatuses.includes(caseline.status)) {
       throw new ConflictError(
-        "Caseline must be CUSTOMER_APPROVED to allocate stock"
+        "Caseline must be in CUSTOMER_APPROVED, WAITING_FOR_PARTS, or PARTS_AVAILABLE status to allocate stock"
       );
     }
 

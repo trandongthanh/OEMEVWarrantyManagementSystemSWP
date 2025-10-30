@@ -56,11 +56,11 @@ class ComponentRepository {
       updateData.status = status;
     }
 
-    if (requestId) {
+    if (requestId !== undefined) {
       updateData.requestId = requestId;
     }
 
-    if (warehouseId) {
+    if (warehouseId !== undefined) {
       updateData.warehouseId = warehouseId;
     }
 

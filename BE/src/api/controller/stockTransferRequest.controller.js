@@ -29,6 +29,7 @@ class StockTransferRequestController {
 
   getAllStockTransferRequests = async (req, res, next) => {
     const { userId, roleName, serviceCenterId } = req.user;
+    const { companyId } = req;
 
     const { page = 1, limit = 10, status } = req.query;
 
@@ -37,6 +38,7 @@ class StockTransferRequestController {
         userId,
         roleName,
         serviceCenterId,
+        companyId,
         page,
         limit,
         status,
@@ -54,6 +56,7 @@ class StockTransferRequestController {
     const { id } = req.params;
 
     const { userId, roleName, serviceCenterId } = req.user;
+    const { companyId } = req;
 
     const stockTransferRequest =
       await this.#stockTransferRequestService.getStockTransferRequestById({
@@ -61,6 +64,7 @@ class StockTransferRequestController {
         userId,
         roleName,
         serviceCenterId,
+        companyId,
       });
 
     res.status(200).json({

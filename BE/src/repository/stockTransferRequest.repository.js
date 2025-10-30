@@ -2,7 +2,7 @@ import dayjs from "dayjs";
 import db from "../models/index.cjs";
 import { formatUTCtzHCM } from "../util/formatUTCtzHCM.js";
 
-const { StockTransferRequest, StockTransferRequestItem, User } = db;
+const { StockTransferRequest, StockTransferRequestItem, User, Warehouse } = db;
 
 class StockTransferRequestRepository {
   createStockTransferRequest = async (
@@ -25,6 +25,7 @@ class StockTransferRequestRepository {
     userId,
     roleName,
     serviceCenterId,
+    companyId,
     offset,
     limit,
     status,
@@ -35,12 +36,27 @@ class StockTransferRequestRepository {
       whereClause.status = status;
     }
 
-    const isServiceCenterStaff = roleName === "service_center_staff";
+    const serviceCenterRoles = new Set([
+      "service_center_staff",
+      "service_center_manager",
+      "parts_coordinator_service_center",
+    ]);
 
-    if (isServiceCenterStaff) {
-      whereClause["$requester.service_center_id"] = serviceCenterId;
-    } else if (roleName === "service_center_manager") {
+    if (serviceCenterRoles.has(roleName) && serviceCenterId) {
+      whereClause["$requestingWarehouse.service_center_id$"] = serviceCenterId;
+    }
+
+    if (roleName === "service_center_manager" && !serviceCenterId && userId) {
       whereClause.requestedByUserId = userId;
+    }
+
+    const companyScopedRoles = new Set([
+      "parts_coordinator_company",
+      "emv_staff",
+    ]);
+
+    if (companyScopedRoles.has(roleName) && companyId) {
+      whereClause["$requestingWarehouse.vehicle_company_id$"] = companyId;
     }
 
     const requests = await StockTransferRequest.findAll({
@@ -54,6 +70,17 @@ class StockTransferRequestRepository {
 
           required: true,
         },
+        {
+          model: Warehouse,
+          as: "requestingWarehouse",
+          attributes: [
+            "warehouseId",
+            "name",
+            "serviceCenterId",
+            "vehicleCompanyId",
+          ],
+          required: true,
+        },
       ],
       order: [["createdAt", "DESC"]],
 
@@ -65,18 +92,30 @@ class StockTransferRequestRepository {
   };
 
   getStockTransferRequestById = async (
-    { id, userId, roleName, serviceCenterId },
+    { id, userId, roleName, serviceCenterId, companyId },
     transaction = null,
     lock = null
   ) => {
     let whereClause = { id: id };
 
-    const isServiceCenterStaff = roleName === "service_center_staff";
+    const serviceCenterRoles = new Set([
+      "service_center_staff",
+      "service_center_manager",
+      "parts_coordinator_service_center",
+    ]);
 
-    if (isServiceCenterStaff) {
-      whereClause["$requester.service_center_id$"] = serviceCenterId;
-    } else if (roleName === "service_center_manager") {
+    if (serviceCenterRoles.has(roleName) && serviceCenterId) {
+      whereClause["$requestingWarehouse.service_center_id$"] = serviceCenterId;
+    }
+
+    if (roleName === "service_center_manager" && !serviceCenterId && userId) {
       whereClause.requestedByUserId = userId;
+    }
+
+    const companyRoles = new Set(["parts_coordinator_company", "emv_staff"]);
+
+    if (companyRoles.has(roleName) && companyId) {
+      whereClause["$requestingWarehouse.vehicle_company_id$"] = companyId;
     }
 
     const record = await StockTransferRequest.findOne({
@@ -88,6 +127,17 @@ class StockTransferRequestRepository {
           as: "requester",
           attributes: ["userId", "name", "serviceCenterId"],
 
+          required: true,
+        },
+        {
+          model: Warehouse,
+          as: "requestingWarehouse",
+          attributes: [
+            "warehouseId",
+            "name",
+            "serviceCenterId",
+            "vehicleCompanyId",
+          ],
           required: true,
         },
 
