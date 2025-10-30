@@ -3,7 +3,12 @@ import {
   attachCompanyContext,
   authentication,
   authorizationByRole,
+  validate,
 } from "../middleware/index.js";
+import {
+  createInventoryAdjustmentBodySchema,
+  createInventoryAdjustmentQuerySchema,
+} from "../../validators/inventory.validator.js";
 
 const router = express.Router();
 
@@ -202,6 +207,172 @@ router.get(
     const inventoryController = req.container.resolve("inventoryController");
 
     await inventoryController.getInventoryTypeComponents(req, res, next);
+  }
+);
+
+/**
+ * @swagger
+ * /inventory/adjustments:
+ *   post:
+ *     summary: Tạo điều chỉnh tồn kho thủ công
+ *     description: Parts coordinator tạo điều chỉnh tồn kho cho các trường hợp đặc biệt như nhập hàng từ nhà cung cấp, hàng hỏng/mất mát, kiểm kê kho phát hiện chênh lệch. Hệ thống tự động cập nhật quantityInStock và gửi notification.
+ *     tags: [Inventory Management]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - stockId
+ *               - adjustmentType
+ *               - quantity
+ *               - reason
+ *             properties:
+ *               stockId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID của stock item cần điều chỉnh
+ *                 example: "550e8400-e29b-41d4-a716-446655440000"
+ *               adjustmentType:
+ *                 type: string
+ *                 enum: [IN, OUT]
+ *                 description: Loại điều chỉnh - IN (nhập kho, tăng tồn) hoặc OUT (xuất kho, giảm tồn)
+ *                 example: "IN"
+ *               quantity:
+ *                 type: integer
+ *                 minimum: 1
+ *                 description: Số lượng điều chỉnh (luôn dương)
+ *                 example: 10
+ *               reason:
+ *                 type: string
+ *                 minLength: 1
+ *                 maxLength: 255
+ *                 description: "Lý do điều chỉnh: DAMAGE (hàng hỏng), LOSS (mất mát), FOUND (tìm thấy), SUPPLIER_DELIVERY (nhập từ NCC), INVENTORY_COUNT (kiểm kê), MANUAL_CORRECTION (sửa lỗi), hoặc lý do khác"
+ *                 example: "SUPPLIER_DELIVERY"
+ *               note:
+ *                 type: string
+ *                 maxLength: 1000
+ *                 description: Ghi chú chi tiết về điều chỉnh (optional)
+ *                 example: "Nhập 10 màn hình LCD từ nhà cung cấp Samsung, PO#12345, invoice INV-2025-001"
+ *     responses:
+ *       201:
+ *         description: Tạo điều chỉnh tồn kho thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     adjustment:
+ *                       type: object
+ *                       properties:
+ *                         adjustmentId:
+ *                           type: string
+ *                           format: uuid
+ *                         stockId:
+ *                           type: string
+ *                           format: uuid
+ *                         adjustmentType:
+ *                           type: string
+ *                           example: "IN"
+ *                         quantity:
+ *                           type: integer
+ *                           example: 10
+ *                         reason:
+ *                           type: string
+ *                           example: "SUPPLIER_DELIVERY"
+ *                         note:
+ *                           type: string
+ *                           example: "Nhập 10 màn hình LCD từ Samsung"
+ *                         adjustedByUserId:
+ *                           type: string
+ *                           format: uuid
+ *                         adjustedAt:
+ *                           type: string
+ *                           format: date-time
+ *                         createdAt:
+ *                           type: string
+ *                           format: date-time
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
+ *                     updatedStock:
+ *                       type: object
+ *                       properties:
+ *                         stockId:
+ *                           type: string
+ *                           format: uuid
+ *                         warehouseId:
+ *                           type: string
+ *                           format: uuid
+ *                         typeComponentId:
+ *                           type: string
+ *                           format: uuid
+ *                         quantityInStock:
+ *                           type: integer
+ *                           example: 60
+ *                           description: Số lượng tồn kho sau khi điều chỉnh
+ *                         quantityReserved:
+ *                           type: integer
+ *                           example: 5
+ *       400:
+ *         description: Dữ liệu không hợp lệ
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: error
+ *                 message:
+ *                   type: string
+ *                   example: "quantity must be at least 1"
+ *       401:
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền truy cập
+ *       404:
+ *         description: Không tìm thấy stock item
+ *       409:
+ *         description: Conflict - Không đủ số lượng khả dụng cho adjustment type OUT
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: error
+ *                 message:
+ *                   type: string
+ *                   example: "Insufficient available stock. Available: 5, Requested: 10"
+ *       500:
+ *         description: Lỗi server
+ */
+router.post(
+  "/adjustments",
+  authentication,
+  authorizationByRole([
+    "parts_coordinator_company",
+    "parts_coordinator_service_center",
+  ]),
+  validate(createInventoryAdjustmentBodySchema, "body"),
+  validate(createInventoryAdjustmentQuerySchema, "query"),
+  attachCompanyContext,
+
+  async (req, res, next) => {
+    const inventoryController = req.container.resolve("inventoryController");
+
+    await inventoryController.createInventoryAdjustment(req, res, next);
   }
 );
 

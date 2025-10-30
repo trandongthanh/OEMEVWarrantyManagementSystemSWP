@@ -1,6 +1,6 @@
 class OemVehicleModelController {
   #oemVehicleModelService;
-  constructor(oemVehicleModelService) {
+  constructor({ oemVehicleModelService }) {
     this.#oemVehicleModelService = oemVehicleModelService;
   }
 

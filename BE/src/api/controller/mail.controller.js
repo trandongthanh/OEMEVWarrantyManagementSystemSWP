@@ -1,6 +1,6 @@
 class MailController {
   #mailService;
-  constructor(mailService) {
+  constructor({ mailService }) {
     this.#mailService = mailService;
   }
 
