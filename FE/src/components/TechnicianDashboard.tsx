@@ -1,4 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
+
+// Defensive: ensure a module-scoped fallback for any leftover dev-only variable
+// (some HMR edits previously added/removed pickup UI and a variable named
+// `reservationIdInput` accidentally; declare it here to avoid ReferenceError
+// during development while we fully remove any stale usage).
+let reservationIdInput: string | undefined;
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -190,6 +196,8 @@ const TechnicianDashboard = ({
   });
   const [isLoadingRecords, setIsLoadingRecords] = useState(false);
   const [recordsError, setRecordsError] = useState<string | null>(null);
+  const [consecutiveRecordErrors, setConsecutiveRecordErrors] = useState<number>(0);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState<boolean>(true);
 
   // Processing Records View states
   const [selectedRecord, setSelectedRecord] = useState<ProcessingRecord | null>(null);
@@ -449,6 +457,13 @@ const TechnicianDashboard = ({
         ...prev,
         IN_DIAGNOSIS: normalized
       }));
+      // reset consecutive error counter on success and ensure auto-refresh is enabled
+      try {
+        setConsecutiveRecordErrors(0);
+        setAutoRefreshEnabled(true);
+      } catch (e) {
+        // ignore
+      }
       
       console.log('💾 State updated with records');
 
@@ -535,16 +550,24 @@ const TechnicianDashboard = ({
         console.error('❌ Error while preloading case-lines after records fetch:', err);
       }
     } catch (error) {
-      console.error('❌ Error fetching records:', error);
-      if (error instanceof Error) {
-        console.error('❌ Error message:', error.message);
-        console.error('❌ Error stack:', error.stack);
-      }
-      setRecordsError(error instanceof Error ? error.message : "Failed to fetch records");
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to fetch records",
-        variant: "destructive"
+      // Downgrade noisy logs: keep a concise warning and let backoff mechanism surface to user
+      console.warn('Warning: failed to fetch processing records (see backoff/retry state)', error instanceof Error ? error.message : error);
+      const errMsg = error instanceof Error ? error.message : "Failed to fetch records";
+      setRecordsError(errMsg);
+      // increment consecutive failures and pause auto-refresh if threshold reached
+      setConsecutiveRecordErrors(prev => {
+        const next = prev + 1;
+        const threshold = 3;
+        if (next >= threshold) {
+          setAutoRefreshEnabled(false);
+          // notify user once when threshold reached (toast created here)
+          toast({
+            title: "Auto-refresh paused",
+            description: `Auto-refresh paused after ${next} consecutive failures. Click Retry to fetch now.`,
+            variant: "destructive"
+          });
+        }
+        return next;
       });
     } finally {
       setIsLoadingRecords(false);
@@ -614,7 +637,15 @@ const TechnicianDashboard = ({
       console.log('Created case lines response:', data);
       
       const newCaseLines = data.data?.caseLines || [];
-      setCreatedCaseLines(prev => [...prev, ...newCaseLines]);
+      // Merge and dedupe by caseLineId to avoid duplicates
+      setCreatedCaseLines(prev => {
+        const map = new Map<string, CaseLineResponse>();
+        prev.forEach(p => map.set(p.caseLineId, p));
+        (newCaseLines as CaseLineResponse[]).forEach((c) => {
+          if (c && c.caseLineId) map.set(c.caseLineId, c);
+        });
+        return Array.from(map.values());
+      });
       
       toast({
         title: "Success",
@@ -757,7 +788,15 @@ const TechnicianDashboard = ({
       // Persist created case lines into normalized state so they survive F5
       if (createdCaseLines && createdCaseLines.length > 0) {
         try {
-          setCreatedCaseLines(prev => [...prev, ...createdCaseLines]);
+          // Merge and dedupe by caseLineId to avoid duplicates and React key warnings
+          setCreatedCaseLines(prev => {
+            const map = new Map<string, CaseLineResponse>();
+            prev.forEach(p => map.set(p.caseLineId, p));
+            createdCaseLines.forEach((c: CaseLineResponse) => {
+              if (c && c.caseLineId) map.set(c.caseLineId, c);
+            });
+            return Array.from(map.values());
+          });
         } catch (err) {
           console.warn('Failed to append created case lines to state', err);
         }
@@ -776,7 +815,11 @@ const TechnicianDashboard = ({
         status: createdCaseLines[0].status === 'pending' ? 'submitted' : 'approved'
       };
 
-      setCaseLines(prev => [...prev, newCaseLine]);
+      // Ensure no duplicate caseLine IDs in UI list
+      setCaseLines(prev => {
+        const exists = prev.some(c => c.id === newCaseLine.id);
+        return exists ? prev : [...prev, newCaseLine];
+      });
 
       // Safely compute a short id suffix for the toast (backend may vary response shape)
       const createdIdSuffix =
@@ -833,7 +876,9 @@ const TechnicianDashboard = ({
         });
         
         await fetchProcessingRecords();
-        await fetchComponents(); // Fetch components if needed
+        // Do not fetch global /components on init to avoid 404 noisy logs when backend
+        // doesn't expose that endpoint. Components are fetched when needed (e.g. when
+        // opening Create Issue Diagnosis modal via fetchCompatibleComponents).
       } else {
         console.log('❌ No user found, cannot fetch data');
         toast({
@@ -850,28 +895,32 @@ const TechnicianDashboard = ({
   // Auto refresh data every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      if (user && !isLoading) {
+      if (user && !isLoading && autoRefreshEnabled) {
         console.log('Auto refreshing processing records...');
         fetchProcessingRecords();
       }
     }, 30000); // 30 seconds
 
     return () => clearInterval(interval);
-  }, [user, isLoading, fetchProcessingRecords]);
+  }, [user, isLoading, fetchProcessingRecords, autoRefreshEnabled]);
 
   // Fetch case lines when guarantee case is selected
   useEffect(() => {
     const loadCaseLines = async () => {
       if (selectedGuaranteeCase) {
         console.log('Loading case lines for selected guarantee case...');
-        const caseLines = await fetchCaseLinesForCase(selectedGuaranteeCase.guaranteeCaseId);
-        if (caseLines.length > 0) {
-          setCreatedCaseLines(prev => {
-            // Merge và deduplicate case lines
-            const existing = prev.filter(cl => cl.guaranteeCaseId !== selectedGuaranteeCase.guaranteeCaseId);
-            return [...existing, ...caseLines];
-          });
-        }
+          const caseLines = await fetchCaseLinesForCase(selectedGuaranteeCase.guaranteeCaseId);
+          if (caseLines.length > 0) {
+            // Merge into createdCaseLines and dedupe by caseLineId to avoid duplicates
+            setCreatedCaseLines(prev => {
+              const map = new Map<string, CaseLineResponse>();
+              prev.forEach(p => map.set(p.caseLineId, p));
+              (caseLines as CaseLineResponse[]).forEach((c) => {
+                if (c && c.caseLineId) map.set(c.caseLineId, c);
+              });
+              return Array.from(map.values());
+            });
+          }
       }
     };
 
@@ -1025,7 +1074,12 @@ const TechnicianDashboard = ({
       setCaseLines(prev => prev.filter(caseLine => caseLine.id !== caseLineToRemove));
 
       // Also remove from createdCaseLines normalized state if present
-      setCreatedCaseLines(prev => prev.filter(cl => (cl.caseLineId ?? cl.caseLineId) !== caseLineToRemove));
+      setCreatedCaseLines(prev => prev.filter(cl => {
+        type MaybeCL = { caseLineId?: string; id?: string };
+        const typed = (cl as unknown) as MaybeCL;
+        const id = typed.caseLineId ?? typed.id ?? '';
+        return id !== caseLineToRemove;
+      }));
 
       toast({
         title: "Issue Diagnosis Removed",
@@ -1258,6 +1312,7 @@ const TechnicianDashboard = ({
       </header>
 
       <div className="container mx-auto px-6 py-6">
+      
         <Tabs defaultValue="processing-records" className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="processing-records">Processing Records</TabsTrigger>
@@ -1270,6 +1325,35 @@ const TechnicianDashboard = ({
           <TabsContent value="processing-records">
             <div className="space-y-6">
               {/* Processing Records Table */}
+              {!autoRefreshEnabled && (
+                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-yellow-800">Auto-refresh paused after multiple consecutive errors. Click Retry to fetch now.</div>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={async () => {
+                        try {
+                          // reset counters and attempt an immediate fetch
+                          setConsecutiveRecordErrors(0);
+                          setAutoRefreshEnabled(true);
+                          await fetchProcessingRecords();
+                        } catch (err) {
+                          console.error('Retry fetch failed', err);
+                          toast({ title: 'Retry failed', description: 'Could not fetch records. Please try again.', variant: 'destructive' });
+                        }
+                      }}>
+                        Retry
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => {
+                        setConsecutiveRecordErrors(0);
+                        setAutoRefreshEnabled(true);
+                        toast({ title: 'Auto-refresh resumed', description: 'Auto-refresh has been re-enabled.' });
+                      }}>
+                        Resume
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <Card>
                 <CardHeader>
                   <CardTitle>Processing Records</CardTitle>

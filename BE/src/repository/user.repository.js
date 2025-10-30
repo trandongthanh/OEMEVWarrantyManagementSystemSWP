@@ -1,6 +1,13 @@
 import dayjs from "dayjs";
 import db from "../models/index.cjs";
-const { User, Role, ServiceCenter, WorkSchedule, TaskAssignment } = db;
+const {
+  User,
+  Role,
+  ServiceCenter,
+  WorkSchedule,
+  TaskAssignment,
+  VehicleCompany,
+} = db;
 
 class UserRepository {
   async findByUsername({ username }) {
@@ -95,6 +102,15 @@ class UserRepository {
           model: ServiceCenter,
           as: "serviceCenter",
           attributes: ["serviceCenterId", "name", "address"],
+
+          include: [
+            {
+              model: VehicleCompany,
+              as: "vehicleCompany",
+              attributes: ["vehicleCompanyId", "name"],
+              required: false,
+            },
+          ],
         },
       ],
 

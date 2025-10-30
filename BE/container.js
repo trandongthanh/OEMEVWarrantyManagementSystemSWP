@@ -39,10 +39,11 @@ import StockReservationRepository from "./src/repository/stockReservation.reposi
 import TaskAssignmentRepository from "./src/repository/taskAssignment.repository.js";
 import UserController from "./src/api/controller/user.controller.js";
 import UserService from "./src/service/user.service.js";
-// import redisClient from "./src/util/redisClient.js";
-import MailMessage from "nodemailer/lib/mailer/mail-message.js";
+import redisClient from "./src/util/redisClient.js";
 import transporter from "./src/util/emailTranporter.js";
 import NotificationService from "./src/service/notification.service.js";
+import MailService from "./src/service/mail.service.js";
+import MailController from "./src/api/controller/mail.controller.js";
 import ChatController from "./src/api/controller/chat.controller.js";
 import ChatService from "./src/service/chat.service.js";
 import GuestRepository from "./src/repository/guest.repository.js";
@@ -65,11 +66,12 @@ export function setupContainer({ io, notificationNamespace, chatNamespace }) {
     chats: asValue(chatNamespace, {
       lifetime: Lifetime.SINGLETON,
     }),
-    // redisClient: asValue(redisClient, { lifetime: Lifetime.SCOPED }),
-    transporter: asValue(transporter, { lifetime: Lifetime.SINGLETON }),
+    redis: asValue(redisClient, { lifetime: Lifetime.SCOPED }),
+    tranporter: asValue(transporter, { lifetime: Lifetime.SINGLETON }),
 
     // Controllers
     authController: asClass(AuthController, { lifetime: Lifetime.SCOPED }),
+    mailController: asClass(MailController, { lifetime: Lifetime.SCOPED }),
     vehicleController: asClass(VehicleController, {
       lifetime: Lifetime.SCOPED,
     }),
@@ -114,7 +116,7 @@ export function setupContainer({ io, notificationNamespace, chatNamespace }) {
     warehouseService: asClass(WarehouseService, { lifetime: Lifetime.SCOPED }),
     caseLineService: asClass(CaseLineService, { lifetime: Lifetime.SCOPED }),
     userService: asClass(UserService, { lifetime: Lifetime.SCOPED }),
-    mailService: asClass(MailMessage, { lifetime: Lifetime.SCOPED }),
+    mailService: asClass(MailService, { lifetime: Lifetime.SCOPED }),
     notificationService: asClass(NotificationService, {
       lifetime: Lifetime.SCOPED,
     }),

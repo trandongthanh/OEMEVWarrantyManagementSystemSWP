@@ -29,11 +29,12 @@
     "node-cron": "^4.2.1",
     "nodemailer": "^7.0.9",
     "nodemon": "^3.1.10",
+    "redis": "^5.9.0",
     "sequelize": "^6.37.7",
     "socket.io": "^4.8.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-latest/xlsx-latest.tgz"
   },
   "devDependencies": {
     "sequelize-cli": "^6.6.3"

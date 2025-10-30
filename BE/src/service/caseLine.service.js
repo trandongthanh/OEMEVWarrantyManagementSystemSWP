@@ -384,9 +384,9 @@ class CaseLineService {
     serviceCenterId,
   }) => {
     const arrayApproveIds = approvedCaseLineIds?.map((id) => id?.id);
-    const arrayRejectId = rejectedCaseLineIds?.map((id) => id?.id);
+    const arrayRejectIds = rejectedCaseLineIds?.map((id) => id?.id);
 
-    const arrayIds = [...arrayApproveIds, ...arrayRejectId];
+    const arrayIds = [...arrayApproveIds, ...arrayRejectIds];
 
     const rawResult = await db.sequelize.transaction(async (transaction) => {
       const caselines = await this.#caselineRepository.findByIds(
@@ -399,6 +399,58 @@ class CaseLineService {
         throw new NotFoundError("Caselines not found");
       }
 
+      const firstCaselineDetail = await this.#caselineRepository.findDetailById(
+        arrayIds[0],
+        transaction,
+        Transaction.LOCK.UPDATE
+      );
+
+      if (!firstCaselineDetail) {
+        throw new NotFoundError("Caseline not found");
+      }
+
+      const vehicleProcessingRecordId =
+        firstCaselineDetail.guaranteeCase?.vehicleProcessingRecord
+          ?.vehicleProcessingRecordId;
+
+      if (!vehicleProcessingRecordId) {
+        throw new ConflictError(
+          "Caseline is not associated with any vehicle processing record"
+        );
+      }
+
+      const pendingApprovalIds =
+        await this.#caselineRepository.findPendingApprovalIdsByVehicleProcessingRecordId(
+          { vehicleProcessingRecordId },
+          transaction,
+          Transaction.LOCK.UPDATE
+        );
+
+      if (pendingApprovalIds.length === 0) {
+        throw new ConflictError("No caselines awaiting customer approval");
+      }
+
+      const pendingSet = new Set(pendingApprovalIds);
+      const providedSet = new Set(arrayIds);
+
+      const missingIds = pendingApprovalIds.filter(
+        (pendingId) => !providedSet.has(pendingId)
+      );
+
+      if (missingIds.length > 0) {
+        throw new ConflictError(
+          "All pending caselines for this record must be approved or rejected"
+        );
+      }
+
+      const exceptionIds = arrayIds.filter((id) => !pendingSet.has(id));
+
+      if (exceptionIds.length > 0) {
+        throw new ConflictError(
+          "Some caselines are not part of this record or not pending approval"
+        );
+      }
+
       for (const caseline of caselines) {
         if (caseline.status !== "PENDING_APPROVAL") {
           throw new ConflictError(
@@ -408,7 +460,7 @@ class CaseLineService {
 
         if (caseline.warrantyStatus === "INELIGIBLE") {
           throw new ConflictError(
-            `Caseline with ID ${caseline.id} has INELIGIBLE warranty status and cannot be approved by customer`
+            `Caseline with ID ${caseline.id} has INELIGIBLE warranty status and cannot be actioned by customer`
           );
         }
       }
@@ -425,10 +477,10 @@ class CaseLineService {
               )
             : null,
 
-          arrayRejectId.length > 0
+          arrayRejectIds.length > 0
             ? this.#caselineRepository.bulkUpdateStatusByIds(
                 {
-                  caseLineIds: arrayRejectId,
+                  caseLineIds: arrayRejectIds,
                   status: "REJECTED_BY_CUSTOMER",
                 },
                 transaction
@@ -436,43 +488,29 @@ class CaseLineService {
             : null,
         ]);
 
-      const firstCaseline = await this.#caselineRepository.findDetailById(
-        arrayIds[0],
-        transaction
-      );
+      const pendingCount =
+        await this.#vehicleProcessingRecordRepository.countPendingApprovalByVehicleProcessingRecordId(
+          vehicleProcessingRecordId,
+          transaction
+        );
 
-      if (
-        firstCaseline?.guaranteeCase?.vehicleProcessingRecord
-          .vehicleProcessingRecordId
-      ) {
-        const vehicleProcessingRecordId =
-          firstCaseline.guaranteeCase.vehicleProcessingRecord
-            .vehicleProcessingRecordId;
-
-        const pendingCount =
-          await this.#vehicleProcessingRecordRepository.countPendingApprovalByVehicleProcessingRecordId(
-            vehicleProcessingRecordId,
-            transaction
-          );
-
-        if (pendingCount === 0) {
-          await this.#vehicleProcessingRecordRepository.updateStatus(
-            {
-              vehicleProcessingRecordId: vehicleProcessingRecordId,
-              status: "PROCESSING",
-            },
-            transaction
-          );
-
-          const roomName = `service_center_manager_${serviceCenterId}`;
-          const eventName = "vehicleProcessingRecordStatusUpdated";
-          const data = {
-            vehicleProcessingRecordId,
+      if (pendingCount === 0) {
+        await this.#vehicleProcessingRecordRepository.updateStatus(
+          {
+            vehicleProcessingRecordId: vehicleProcessingRecordId,
             status: "PROCESSING",
-          };
+          },
+          transaction
+        );
 
-          await this.#notificationService.sendToRoom(roomName, eventName, data);
-        }
+        const roomName = `service_center_staff_${serviceCenterId}`;
+        const eventName = "vehicleProcessingRecordStatusUpdated";
+        const data = {
+          vehicleProcessingRecordId,
+          status: "PROCESSING",
+        };
+
+        await this.#notificationService.sendToRoom(roomName, eventName, data);
       }
 
       return { updatedApprovedCaseLines, updatedRejectedCaseLines };
@@ -685,7 +723,7 @@ class CaseLineService {
       }
 
       const roomName = `service_center_technician_${technicianId}`;
-      const eventName = "newCaselineAssignment";
+      const eventName = "newRepairTaskAssigned";
       const data = {
         taskAssignment,
         caseline: updatedCaseline,
@@ -913,7 +951,7 @@ class CaseLineService {
     }
 
     if (reservations.length === 0) {
-      throw new ConflictError("Failed to allocate stock for caseline");
+      throw new ConflictError("No stock available for allocation");
     }
 
     return reservations;

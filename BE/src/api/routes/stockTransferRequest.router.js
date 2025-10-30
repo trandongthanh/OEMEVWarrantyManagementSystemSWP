@@ -20,7 +20,10 @@ const router = express.Router();
  * /stock-transfer-requests:
  *   post:
  *     summary: Tạo yêu cầu chuyển kho linh kiện (Service Center → Hãng)
- *     description: Service Center Manager tạo yêu cầu đặt hàng linh kiện từ kho hãng khi không đủ tồn kho
+ *     description: |-
+ *       Service Center Manager tạo yêu cầu đặt hàng linh kiện từ kho hãng khi không đủ tồn kho.
+ *       Sau khi tạo thành công, hệ thống phát sự kiện socket `new_stock_transfer_request`
+ *       tới phòng `emv_staff_{companyId}` để thông báo cho bộ phận OEM.
  *     tags: [StockTransferRequest]
  *     security:
  *       - BearerAuth: []
@@ -33,7 +36,6 @@ const router = express.Router();
  *             required:
  *               - requestingWarehouseId
  *               - items
- *               - caselineIds
  *             properties:
  *               requestingWarehouseId:
  *                 type: string
@@ -64,13 +66,6 @@ const router = express.Router();
  *                       format: uuid
  *                       description: ID caseline liên quan (optional)
  *                       example: "770e8400-e29b-41d4-a716-446655440003"
- *               caselineIds:
- *                 type: array
- *                 description: Danh sách caseline ID sẽ chuyển sang trạng thái WAITING_FOR_PARTS
- *                 items:
- *                   type: string
- *                   format: uuid
- *                 example: ["770e8400-e29b-41d4-a716-446655440003"]
  *     responses:
  *       201:
  *         description: Tạo yêu cầu thành công
@@ -114,6 +109,7 @@ const router = express.Router();
  *                               type: string
  *                               format: date-time
  *                         items:
+ *                           description: Danh sách item đã tạo kèm thời gian chuẩn hóa sang múi giờ HCM
  *                           type: array
  *                           items:
  *                             type: object
@@ -365,7 +361,10 @@ router.get(
  * /stock-transfer-requests/{id}/approve:
  *   patch:
  *     summary: Duyệt yêu cầu chuyển kho (EMV Staff)
- *     description: EMV Staff duyệt yêu cầu và tự động reserve stock từ kho hãng. Hệ thống kiểm tra tồn kho và phân bổ theo FIFO
+ *     description: |-
+ *       EMV Staff duyệt yêu cầu và tự động reserve stock từ kho hãng. Hệ thống kiểm tra tồn kho và phân bổ theo FIFO.
+ *       Sau khi duyệt thành công, server phát sự kiện socket `stock_transfer_request_approved`
+ *       tới phòng `parts_coordinator_company_{companyId}`.
  *     tags: [StockTransferRequest]
  *     security:
  *       - BearerAuth: []
@@ -417,6 +416,7 @@ router.get(
  *                                 example: "RESERVED"
  *                         updatedStockTransferRequest:
  *                           type: object
+ *                           description: Request sau khi chuyển sang trạng thái APPROVED
  *                           properties:
  *                             id:
  *                               type: string
@@ -470,7 +470,10 @@ router.patch(
  * /stock-transfer-requests/{id}/ship:
  *   patch:
  *     summary: Gửi hàng (Parts Coordinator - Company)
- *     description: Parts Coordinator của hãng xác nhận gửi hàng. Hệ thống sẽ collect components từ kho, cập nhật status → IN_TRANSIT và trừ stock
+ *     description: |-
+ *       Parts Coordinator của hãng xác nhận gửi hàng. Hệ thống sẽ collect components từ kho, cập nhật trạng thái component sang `IN_TRANSIT` và trừ tồn kho.
+ *       Sau khi xử lý, server phát sự kiện socket `stock_transfer_request_shipped`
+ *       tới các phòng `service_center_staff_{serviceCenterId}`, `service_center_manager_{serviceCenterId}` và `parts_coordinator_service_center_{serviceCenterId}`.
  *     tags: [StockTransferRequest]
  *     security:
  *       - BearerAuth: []
@@ -531,7 +534,7 @@ router.patch(
  *                               format: date
  *                         componentCollections:
  *                           type: array
- *                           description: Danh sách components đã được collect theo loại
+ *                           description: Danh sách components đã được collect theo loại (dùng làm log phân bổ)
  *                           items:
  *                             type: object
  *                             properties:
@@ -576,7 +579,10 @@ router.patch(
  * /stock-transfer-requests/{id}/receive:
  *   patch:
  *     summary: Nhận hàng (Parts Coordinator - Service Center)
- *     description: Parts Coordinator của Service Center xác nhận nhận hàng. Hệ thống sẽ cập nhật components → IN_WAREHOUSE, cộng stock vào kho SC và tự động chuyển caseline sang READY_FOR_REPAIR
+ *     description: |-
+ *       Parts Coordinator của Service Center xác nhận nhận hàng. Hệ thống sẽ cập nhật components sang `IN_WAREHOUSE`, cộng tồn kho cho kho Service Center.
+ *       Hoàn tất sẽ phát sự kiện socket `stock_transfer_request_received`
+ *       tới các phòng `service_center_staff_{serviceCenterId}` và `service_center_manager_{serviceCenterId}`.
  *     tags: [StockTransferRequest]
  *     security:
  *       - BearerAuth: []
@@ -624,7 +630,7 @@ router.patch(
  *                           example: 15
  *                         componentsByType:
  *                           type: object
- *                           description: Components được nhận theo từng loại
+ *                           description: Components được nhận nhóm theo typeComponentId
  *                           additionalProperties:
  *                             type: array
  *                             items:
@@ -635,6 +641,7 @@ router.patch(
  *                                   format: uuid
  *                                 serialNumber:
  *                                   type: string
+ *                                   nullable: true
  *                                 status:
  *                                   type: string
  *                                   example: "IN_WAREHOUSE"
@@ -670,7 +677,10 @@ router.patch(
  * /stock-transfer-requests/{id}/reject:
  *   patch:
  *     summary: Từ chối yêu cầu chuyển kho (EMV Staff)
- *     description: EMV Staff từ chối yêu cầu chuyển kho với lý do. Chỉ có thể reject request đang ở trạng thái PENDING_APPROVAL
+ *     description: |-
+ *       EMV Staff từ chối yêu cầu chuyển kho với lý do. Chỉ áp dụng cho request đang ở trạng thái `PENDING_APPROVAL`.
+ *       Hệ thống phát sự kiện socket `stock_transfer_request_rejected`
+ *       tới các phòng `service_center_staff_{requesterServiceCenterId}` và `service_center_manager_{requesterServiceCenterId}`.
  *     tags: [StockTransferRequest]
  *     security:
  *       - BearerAuth: []
@@ -724,6 +734,7 @@ router.patch(
  *                           format: uuid
  *                         rejectionReason:
  *                           type: string
+ *                           example: "Không đủ ngân sách cho đợt nhập hàng này"
  *       404:
  *         description: Không tìm thấy request
  *       409:
@@ -756,10 +767,12 @@ router.patch(
  * /stock-transfer-requests/{id}/cancel:
  *   patch:
  *     summary: Hủy yêu cầu chuyển kho
- *     description: |
+ *     description: |-
  *       Hủy yêu cầu chuyển kho với các quyền khác nhau:
- *       - Service Center Manager: chỉ có thể hủy request PENDING_APPROVAL
- *       - EMV Staff: có thể hủy request PENDING_APPROVAL hoặc APPROVED (sẽ tự động release reserved stock)
+ *       - Service Center Manager: chỉ có thể hủy request `PENDING_APPROVAL`
+ *       - EMV Staff: có thể hủy request `PENDING_APPROVAL` hoặc `APPROVED` (hệ thống tự động release stock đã reserve).
+ *       Sau khi hủy, hệ thống phát sự kiện socket `stock_transfer_request_cancelled`
+ *       tới phòng `emv_staff_{companyId}`.
  *     tags: [StockTransferRequest]
  *     security:
  *       - BearerAuth: []
@@ -802,17 +815,20 @@ router.patch(
  *                     stockTransferRequest:
  *                       type: object
  *                       properties:
- *                         id:
- *                           type: string
- *                           format: uuid
- *                         status:
- *                           type: string
- *                           example: "CANCELLED"
- *                         cancelledByUserId:
- *                           type: string
- *                           format: uuid
- *                         cancellationReason:
- *                           type: string
+ *                         updatedRequest:
+ *                           type: object
+ *                           properties:
+ *                             id:
+ *                               type: string
+ *                               format: uuid
+ *                             status:
+ *                               type: string
+ *                               example: "CANCELLED"
+ *                             cancelledByUserId:
+ *                               type: string
+ *                               format: uuid
+ *                             cancellationReason:
+ *                               type: string
  *       404:
  *         description: Không tìm thấy request
  *       409:

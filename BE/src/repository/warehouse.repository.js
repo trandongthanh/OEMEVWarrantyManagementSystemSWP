@@ -173,38 +173,55 @@ class WareHouseRepository {
   };
 
   bulkUpdateStockQuantities = async (stockUpdates, transaction = null) => {
-    if (!stockUpdates || stockUpdates.length === 0) {
+    if (!stockUpdates) {
       return [];
     }
 
-    const datatoUpdate = stockUpdates.map(async (update) => {
+    const updates = Array.isArray(stockUpdates) ? stockUpdates : [stockUpdates];
+
+    const affectedIds = [];
+
+    for (const update of updates) {
+      if (!update || !update.stockId) {
+        continue;
+      }
+
       const updateFields = {};
 
       if (update.quantityInStock) {
+        const quantityInStock = Number(update.quantityInStock);
         updateFields.quantityInStock = db.Sequelize.literal(
-          `quantity_in_stock + ${update.quantityInStock}`
+          `quantity_in_stock + ${quantityInStock}`
         );
       }
 
       if (update.quantityReserved) {
+        const quantityReserved = Number(update.quantityReserved);
         updateFields.quantityReserved = db.Sequelize.literal(
-          `quantity_reserved + ${update.quantityReserved}`
+          `quantity_reserved - ${quantityReserved}`
         );
       }
 
-      return Stock.update(updateFields, {
+      if (Object.keys(updateFields).length === 0) {
+        continue;
+      }
+
+      await Stock.update(updateFields, {
         where: { stockId: update.stockId },
         transaction,
       });
-    });
 
-    await Promise.all(datatoUpdate);
+      affectedIds.push(update.stockId);
+    }
 
-    const stockIds = stockUpdates.map((u) => u.stockId);
+    if (affectedIds.length === 0) {
+      return [];
+    }
+
     const updatedStocks = await Stock.findAll({
       where: {
         stockId: {
-          [Op.in]: stockIds,
+          [Op.in]: affectedIds,
         },
       },
       transaction,
@@ -314,6 +331,18 @@ class WareHouseRepository {
     });
 
     return stock ? stock.toJSON() : null;
+  };
+
+  findById = async ({ warehouseId }, transaction = null, lock = null) => {
+    const warehouse = await Warehouse.findOne({
+      where: {
+        warehouseId: warehouseId,
+      },
+      transaction: transaction,
+      lock: lock,
+    });
+
+    return warehouse ? warehouse.toJSON() : null;
   };
 }
 

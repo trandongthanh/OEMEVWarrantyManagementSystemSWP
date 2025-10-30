@@ -579,8 +579,11 @@ router.post(
  * @swagger
  * /case-lines/approve:
  *   patch:
- *     summary: Approve or reject case lines
- *     description: Service center staff can approve or reject case lines submitted by technicians. This endpoint allows bulk approval/rejection.
+ *     summary: Phê duyệt/Từ chối danh sách caseline
+ *     description: |-
+ *       Service Center Staff xử lý caseline đang chờ khách hàng xác nhận. Tất cả caseline thuộc cùng `vehicleProcessingRecord` phải được gửi kèm.
+ *       Khi toàn bộ caseline được xử lý và hồ sơ chuyển sang trạng thái `PROCESSING`, backend phát socket `vehicleProcessingRecordStatusUpdated`
+ *       tới phòng `service_center_staff_{serviceCenterId}` với payload `{ vehicleProcessingRecordId, status }`.
  *     tags: [Case Line]
  *     security:
  *       - BearerAuth: []
@@ -619,8 +622,9 @@ router.post(
  *                 data:
  *                   type: object
  *                   properties:
- *                     approved:
+ *                     formattedApprovedCaselines:
  *                       type: array
+ *                       description: Danh sách caseline chuyển sang trạng thái CUSTOMER_APPROVED
  *                       items:
  *                         type: object
  *                         properties:
@@ -630,8 +634,12 @@ router.post(
  *                           status:
  *                             type: string
  *                             example: "CUSTOMER_APPROVED"
- *                     rejected:
+ *                           updatedAt:
+ *                             type: string
+ *                             format: date-time
+ *                     formattedRejectedCaselines:
  *                       type: array
+ *                       description: Danh sách caseline chuyển sang trạng thái REJECTED_BY_CUSTOMER
  *                       items:
  *                         type: object
  *                         properties:
@@ -640,7 +648,10 @@ router.post(
  *                             format: uuid
  *                           status:
  *                             type: string
- *                             example: "REJECTED"
+ *                             example: "REJECTED_BY_CUSTOMER"
+ *                           updatedAt:
+ *                             type: string
+ *                             format: date-time
  *       401:
  *         description: Unauthorized
  *       403:
@@ -1167,8 +1178,11 @@ router.post(
  * @swagger
  * /case-lines/{caselineId}/assign-technician:
  *   post:
- *     summary: Assign a technician to a caseline
- *     description: Assign a technician to handle repairs for a specific caseline. The caseline must be in READY_FOR_REPAIR status. Only service center managers can assign technicians.
+ *     summary: Giao caseline cho kỹ thuật viên
+ *     description: |-
+ *       Service Center Manager chỉ định kỹ thuật viên sửa chữa caseline ở trạng thái `READY_FOR_REPAIR`.
+ *       Sau khi giao việc, backend phát socket `newRepairTaskAssigned` tới phòng `service_center_technician_{technicianId}`
+ *       với payload `{ taskAssignment, caseline }`.
  *     tags: [Case Line]
  *     security:
  *       - BearerAuth: []
@@ -1218,9 +1232,16 @@ router.post(
  *                           type: string
  *                           format: uuid
  *                           example: "770e8400-e29b-41d4-a716-446655440003"
+ *                         repairTechId:
+ *                           type: string
+ *                           format: uuid
+ *                           example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
  *                         status:
  *                           type: string
  *                           example: "IN_PROGRESS"
+ *                         updatedAt:
+ *                           type: string
+ *                           format: date-time
  *                     assignment:
  *                       type: object
  *                       properties:
@@ -1304,8 +1325,11 @@ router.patch(
  * @swagger
  * /case-lines/{caselineId}/mark-repair-complete:
  *   patch:
- *     summary: Đánh dấu sửa chữa hoàn tất (Technician)
- *     description: Kỹ thuật viên đánh dấu caseline đã sửa chữa xong. Hệ thống sẽ cập nhật trạng thái caseline → REPAIR_COMPLETED và chuyển component reservations từ RESERVED → USED. Nếu tất cả caselines trong guarantee case đều REPAIR_COMPLETED, guarantee case sẽ tự động chuyển sang IN_QUALITY_CHECK.
+ *     summary: Đánh dấu hoàn tất sửa chữa (Technician)
+ *     description: |-
+ *       Kỹ thuật viên được giao xác nhận caseline đã hoàn tất. Hệ thống chuyển caseline sang `COMPLETED`, đóng task assignment tương ứng
+ *       và kiểm tra toàn bộ hồ sơ. Nếu mọi caseline thuộc hồ sơ đều hoàn tất, backend phát socket `vehicleProcessingRecordStatusUpdated`
+ *       tới phòng `service_center_staff_{serviceCenterId}` với payload `{ roomName, updatedRecord }` báo hồ sơ chuyển `READY_FOR_PICKUP`.
  *     tags: [Case Line]
  *     security:
  *       - BearerAuth: []
@@ -1335,37 +1359,34 @@ router.patch(
  *                 data:
  *                   type: object
  *                   properties:
- *                     caseline:
+ *                     updatedCaseline:
+ *                       type: array
+ *                       description: Kết quả cập nhật trạng thái caseline (mảng từ repository)
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             format: uuid
+ *                           status:
+ *                             type: string
+ *                             example: "COMPLETED"
+ *                           updatedAt:
+ *                             type: string
+ *                             format: date-time
+ *                     updatedTaskAssignment:
  *                       type: object
+ *                       description: Task assignment sau khi đóng
  *                       properties:
- *                         caselineId:
+ *                         taskAssignmentId:
  *                           type: string
  *                           format: uuid
- *                           example: "770e8400-e29b-41d4-a716-446655440003"
- *                         status:
- *                           type: string
- *                           example: "REPAIR_COMPLETED"
- *                         repairedAt:
+ *                         completedAt:
  *                           type: string
  *                           format: date-time
- *                           example: "2025-10-26T14:30:00.000Z"
- *                     reservationsUpdated:
- *                       type: integer
- *                       description: Số lượng component reservations đã chuyển sang USED
- *                       example: 5
- *                     guaranteeCase:
- *                       type: object
- *                       description: Thông tin guarantee case nếu tất cả caselines đã hoàn tất
- *                       properties:
- *                         guaranteeCaseId:
- *                           type: string
- *                           format: uuid
- *                         status:
- *                           type: string
- *                           example: "IN_QUALITY_CHECK"
- *                         allCaselinesCompleted:
+ *                         isActive:
  *                           type: boolean
- *                           example: true
+ *                           example: false
  *       400:
  *         description: Dữ liệu không hợp lệ
  *         content:

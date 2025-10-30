@@ -158,7 +158,7 @@ router.get(
 router.get(
   "/my-schedule",
   authentication,
-  authorizationByRole(["technician"]),
+  authorizationByRole(["service_center_technician"]),
   async (req, res, next) => {
     const workScheduleController = req.container.resolve(
       "workScheduleController"

@@ -441,7 +441,13 @@ class VehicleProcessingRecordService {
         ];
         if (!finalStatuses.includes(caseLine.status)) {
           throw new ConflictError(
-            `Cannot complete record because case line with ID ${caseLine.id} is in status ${caseLine.status}. All case lines must be in a final state (${finalStatuses.join(", ")}) before completing the record.`
+            `Cannot complete record because case line with ID ${
+              caseLine.id
+            } is in status ${
+              caseLine.status
+            }. All case lines must be in a final state (${finalStatuses.join(
+              ", "
+            )}) before completing the record.`
           );
         }
       }
@@ -502,7 +508,9 @@ class VehicleProcessingRecordService {
           ];
           if (!validStatuses.includes(caseLine.status)) {
             throw new BadRequestError(
-              `Case line ${caseLine.id} has invalid status ${caseLine.status}. Must be one of: ${validStatuses.join(", ")}`
+              `Case line ${caseLine.id} has invalid status ${
+                caseLine.status
+              }. Must be one of: ${validStatuses.join(", ")}`
             );
           }
         }
@@ -532,7 +540,9 @@ class VehicleProcessingRecordService {
         updatedGuaranteeCases.push(updatedCase);
 
         for (const caseLine of guaranteeCase.caseLines) {
-          caseLineIds.push(caseLine.id);
+          if (caseLine.status === "DRAFT") {
+            caseLineIds.push(caseLine.id);
+          }
         }
       }
 
@@ -562,11 +572,11 @@ class VehicleProcessingRecordService {
 
       await this.#notificationService.sendToRoom(roomName, eventName, data);
 
-      return { updatedRecord, updatedGuaranteeCases, updatedCaseLines };
+      return { record, updatedGuaranteeCases, updatedCaseLines };
     });
 
     return {
-      record: rawResult.updatedRecord,
+      record: rawResult.record,
       updatedGuaranteeCases: rawResult.updatedGuaranteeCases,
       updatedCaseLines: rawResult.updatedCaseLines,
     };

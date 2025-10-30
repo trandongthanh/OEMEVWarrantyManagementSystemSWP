@@ -33,6 +33,25 @@ class NotificationService {
 
     return true;
   }
+
+  sendToRooms(roomNames, eventName, data) {
+    if (
+      !Array.isArray(roomNames) ||
+      roomNames.length === 0 ||
+      !eventName ||
+      typeof eventName !== "string" ||
+      !data ||
+      typeof data !== "object"
+    ) {
+      return false;
+    }
+
+    roomNames.forEach((roomName) => {
+      this.sendToRoom(roomName, eventName, data);
+    });
+
+    return true;
+  }
 }
 
 export default NotificationService;
