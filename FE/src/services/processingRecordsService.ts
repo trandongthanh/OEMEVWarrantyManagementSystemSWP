@@ -1,0 +1,221 @@
+import axios from 'axios';
+
+const API_BASE_URL = 'http://localhost:3000/api/v1';
+
+export interface ProcessingRecord {
+  recordId?: string; // UUID of the processing record (if available from API)
+  vin: string;
+  checkInDate: string;
+  odometer: number;
+  status: 'CHECKED_IN' | 'IN_DIAGNOSIS' | 'WAITING_FOR_PARTS' | 'IN_REPAIR' | 'COMPLETED' | 'PAID' | 'CANCELLED';
+  mainTechnician: {
+    userId: string;
+    name: string;
+  };
+  vehicle: {
+    vin: string;
+    model: {
+      name: string;
+      vehicleModelId: string;
+    };
+  };
+  guaranteeCases: Array<{
+    guaranteeCaseId: string;
+    status: string;
+    contentGuarantee: string;
+  }>;
+  createdByStaff: {
+    userId: string;
+    name: string;
+  };
+}
+
+export interface ProcessingRecordsResponse {
+  status: string;
+  data: {
+    records: {
+      records: ProcessingRecord[];
+      recordsCount: number;
+    };
+  };
+}
+
+export interface ProcessingRecordsByStatus {
+  CHECKED_IN: ProcessingRecord[];
+  IN_DIAGNOSIS: ProcessingRecord[];
+  WAITING_FOR_PARTS: ProcessingRecord[];
+  IN_REPAIR: ProcessingRecord[];
+  COMPLETED: ProcessingRecord[];
+  PAID: ProcessingRecord[];
+  CANCELLED: ProcessingRecord[];
+}
+
+// Create axios instance with default config
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 10000,
+});
+
+// Add request interceptor to include auth token
+apiClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('ev_warranty_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+export const processingRecordsService = {
+  // Get all processing records
+  getAllProcessingRecords: async (): Promise<ProcessingRecord[]> => {
+    try {
+      const response = await apiClient.get('/processing-records');
+      
+      // Handle different possible response structures
+      if (response.data?.data?.records?.records) {
+        return response.data.data.records.records;
+      } else if (response.data?.data?.records) {
+        return response.data.data.records;
+      } else if (response.data?.records) {
+        return response.data.records;
+      } else if (Array.isArray(response.data?.data)) {
+        return response.data.data;
+      } else if (Array.isArray(response.data)) {
+        return response.data;
+      } else {
+        console.warn('⚠️ Unexpected response structure, returning empty array');
+        return [];
+      }
+    } catch (error) {
+      // Expected network/backend errors are noisy in dev - downgrade to warn and return empty list
+      console.warn('Warning: failed to fetch all processing records:', error?.message || error);
+      return [] as ProcessingRecord[];
+    }
+  },
+
+  // Get processing records by status
+  getProcessingRecordsByStatus: async (status?: string): Promise<ProcessingRecord[]> => {
+    try {
+      const url = status ? `/processing-records?status=${status}` : '/processing-records';
+      const response = await apiClient.get(url);
+      
+    // avoid noisy full dumps in console in production
+    console.log('🔍 API Response status:', response.status);
+      
+      // Handle different possible response structures
+      if (response.data?.data?.records?.records) {
+        return response.data.data.records.records;
+      } else if (response.data?.data?.records) {
+        return response.data.data.records;
+      } else if (response.data?.records) {
+        return response.data.records;
+      } else if (Array.isArray(response.data?.data)) {
+        return response.data.data;
+      } else if (Array.isArray(response.data)) {
+        return response.data;
+      } else {
+        console.warn('⚠️ Unexpected response structure, returning empty array');
+        return [];
+      }
+    } catch (error) {
+      // Downgrade noisy errors to warn and return empty list so UI can handle gracefully
+      console.warn(`Warning: Error fetching processing records${status ? ` with status ${status}` : ''}:`, error?.message || error);
+      return [] as ProcessingRecord[];
+    }
+  },
+
+  // Get processing records grouped by status
+  getProcessingRecordsGroupedByStatus: async (): Promise<ProcessingRecordsByStatus> => {
+    try {
+      const allRecords = await processingRecordsService.getAllProcessingRecords();
+      
+      const groupedRecords: ProcessingRecordsByStatus = {
+        CHECKED_IN: [],
+        IN_DIAGNOSIS: [],
+        WAITING_FOR_PARTS: [],
+        IN_REPAIR: [],
+        COMPLETED: [],
+        PAID: [],
+        CANCELLED: [],
+      };
+
+      allRecords.forEach(record => {
+        if (groupedRecords[record.status]) {
+          groupedRecords[record.status].push(record);
+        }
+      });
+
+      return groupedRecords;
+    } catch (error) {
+      console.error('Error fetching and grouping processing records:', error);
+      throw error;
+    }
+  },
+
+  // Get compatible components for a processing record
+  getCompatibleComponents: async (
+    recordId: string, 
+    params?: { category?: string; searchName?: string }
+  ): Promise<Array<{ typeComponentId: string; name: string }>> => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.category) queryParams.append('category', params.category);
+      if (params?.searchName) queryParams.append('searchName', params.searchName);
+      
+      const url = `/processing-records/${recordId}/compatible-components${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      
+      console.log('🔍 Fetching compatible components:', url);
+      const response = await apiClient.get(url);
+      console.log('✅ Compatible components response:', response.data);
+      
+      return response.data?.data?.result || [];
+    } catch (error) {
+      console.error('❌ Error fetching compatible components:', error);
+      throw error;
+    }
+  },
+
+  // Search components without recordId dependency
+  searchComponents: async (
+    params: { category?: string; searchName?: string }
+  ): Promise<Array<{ typeComponentId: string; name: string }>> => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (params?.category) queryParams.append('category', params.category);
+      if (params?.searchName) queryParams.append('searchName', params.searchName);
+      
+      // Use a dummy recordId for now since the API still requires it in the path
+      // This will be updated when the API is modified to not require recordId
+      const dummyRecordId = 'e2539a11-9dc5-45d9-9091-2e9641eeedde'; // From user's example
+      const url = `/processing-records/${dummyRecordId}/compatible-components${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      
+      console.log('🔍 Searching components:', url);
+      const response = await apiClient.get(url);
+      console.log('✅ Component search response:', response.data);
+      
+      return response.data?.data?.result || [];
+    } catch (error) {
+      console.error('❌ Error searching components:', error);
+      throw error;
+    }
+  },
+
+  // Get processing record detail by recordId
+  getProcessingRecordById: async (recordId: string): Promise<ProcessingRecord> => {
+    try {
+      console.log('🔍 Fetching processing record detail for:', recordId);
+      const response = await apiClient.get(`/processing-records/${recordId}`);
+      console.log('✅ Processing record detail response:', response.data);
+      
+      return response.data?.data?.record || response.data?.data || response.data;
+    } catch (error) {
+      console.error('❌ Error fetching processing record detail:', error);
+      throw error;
+    }
+  }
+};

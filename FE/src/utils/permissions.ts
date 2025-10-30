@@ -1,8 +1,8 @@
 import { User } from '@/contexts/AuthContext';
 
-export type Permission = 
+export type Permission =
   | 'create_claim'
-  | 'register_vehicle' 
+  | 'register_vehicle'
   | 'add_customer'
   | 'validate_warranty'
   | 'assign_technicians'
@@ -28,6 +28,33 @@ const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'view_all_claims',
     'attach_parts',
     'view_claim_details'
+  ],
+  // Backend has a role named `parts_coordinator_service_center` (seeders). Map it to same permissions as service_center_staff
+  parts_coordinator_service_center: [
+    'create_claim',
+    'register_vehicle',
+    'add_customer',
+    'validate_warranty',
+    'assign_technicians',
+    'submit_to_manufacturer',
+    'manage_campaigns',
+    'view_all_claims',
+    'attach_parts',
+    'view_claim_details'
+  ],
+  service_center_manager: [
+    'create_claim',
+    'register_vehicle',
+    'add_customer',
+    'validate_warranty',
+    'assign_technicians',
+    'submit_to_manufacturer',
+    'manage_campaigns',
+    'view_all_claims',
+    'attach_parts',
+    'view_claim_details',
+    'approve_reject_claims',
+    'update_technical_status'
   ],
   service_center_technician: [
     'view_claim_details',
@@ -79,7 +106,7 @@ export const getAvailableStatuses = (userRole: string, currentStatus: string): s
         return [];
     }
   }
-  
+
   if (userRole === 'service_center_technician') {
     switch (currentStatus) {
       case 'technician_assigned':
@@ -105,7 +132,7 @@ export const getAvailableStatuses = (userRole: string, currentStatus: string): s
         return [];
     }
   }
-  
+
   return [];
 };
 

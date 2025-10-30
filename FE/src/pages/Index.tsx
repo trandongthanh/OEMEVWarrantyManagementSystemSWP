@@ -135,121 +135,16 @@ const Index = () => {
             {/* Right Side - Warranty Text */}
             <div className="space-y-4">
               <p className="text-lg text-muted-foreground leading-relaxed">
-              The car warranty period is the duration during which the manufacturer or authorized dealer commits to repair or replace, free of charge, any technical defects arising from the manufacturer's faults during the manufacturing or assembly process. Typically, the warranty period is specified based on either the number of years of use or the number of kilometers driven (whichever comes first). For example, many car brands offer a warranty of 3 years or 100,000 km. This period helps customers feel more secure when using the car while also demonstrating the manufacturer's responsibility and credibility regarding product quality.              </p>
+                Thời hạn bảo hành ô tô là khoảng thời gian mà nhà sản xuất hoặc đại lý ủy quyền cam kết sửa chữa, thay thế miễn phí các lỗi kỹ thuật phát sinh do lỗi của nhà sản xuất trong quá trình chế tạo hoặc lắp ráp. Thông thường, thời hạn bảo hành được quy định theo số năm sử dụng hoặc số km vận hành (tùy điều kiện nào đến trước). Ví dụ, nhiều hãng xe áp dụng mức bảo hành 3 năm hoặc 100.000 km. Thời hạn này giúp khách hàng yên tâm hơn khi sử dụng xe, đồng thời thể hiện trách nhiệm và uy tín của nhà sản xuất đối với chất lượng sản phẩm.
+              </p>
             </div>
           </div>
         </div>
       </section>
 
       {/* Role Selection */}
-      <section className="py-16">
-        <div className="container mx-auto px-6">
-          <div className="mb-12 text-center">
-            <h2 className="mb-4 text-3xl font-bold text-foreground">Choose Your Role</h2>
-            <p className="text-lg text-muted-foreground">
-              Select your organization type to access the appropriate dashboard and tools
-            </p>
-          </div>
-
-          <div className="grid gap-8 md:grid-cols-2">
-            {roles.map((role) => {
-              const Icon = role.icon;
-              return (
-                <Card 
-                  key={role.id}
-                  className={`group cursor-pointer transition-all duration-300 hover:shadow-glow hover:scale-105 ${
-                    selectedRole === role.id ? 'ring-2 ring-primary shadow-glow' : ''
-                  }`}
-                  onClick={() => handleRoleSelect(role.id)}
-                >
-                  <CardHeader className="text-center">
-                    <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${role.color}`}>
-                      <Icon className="h-8 w-8 text-primary-foreground" />
-                    </div>
-                    <CardTitle className="text-2xl">{role.title}</CardTitle>
-                    <CardDescription className="text-base">
-                      {role.description}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="space-y-3">
-                      {role.features.map((feature, index) => (
-                        <li key={index} className="flex items-center space-x-2">
-                          <div className="h-2 w-2 rounded-full bg-primary" />
-                          <span className="text-sm text-muted-foreground">{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <Button 
-                      className="mt-6 w-full group-hover:animate-pulse-glow"
-                      onClick={() => handleRoleSelect(role.id)}
-                    >
-                      Access Dashboard
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* Features Overview */}
-      <section className="py-16 bg-muted/50">
-        <div className="container mx-auto px-6">
-          <div className="text-center">
-            <h2 className="mb-4 text-3xl font-bold text-foreground">System Features</h2>
-            <p className="mb-12 text-lg text-muted-foreground">
-              Comprehensive tools for modern electric vehicle warranty management
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-3">
-            <Card className="shadow-elegant">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Shield className="h-5 w-5 text-primary" />
-                  <span>Secure Processing</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">
-                  End-to-end encrypted warranty claim processing with audit trails and compliance reporting.
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-elegant">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Car className="h-5 w-5 text-primary" />
-                  <span>VIN Integration</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">
-                  Automatic vehicle identification and history tracking through VIN-based database integration.
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-elegant">
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Wrench className="h-5 w-5 text-primary" />
-                  <span>Real-time Updates</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">
-                  Live progress tracking and notifications for technicians, staff, and customers.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </section>
+      
+  
 
         {/* Footer */}
         <footer className="border-t bg-card py-8">

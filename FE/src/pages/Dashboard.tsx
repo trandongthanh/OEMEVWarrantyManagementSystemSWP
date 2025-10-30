@@ -1,8 +1,10 @@
-import { useAuth } from "@/contexts/AuthContext";
-import ServiceCenterDashboard from "@/components/ServiceCenterDashboard";
-import ManufacturerDashboard from "@/components/ManufacturerDashboard";
-import TechnicianDashboard from "@/components/TechnicianDashboard";
-import WarrantyDashboard from "@/components/WarrantyDashboard";
+import { useAuth } from '@/contexts/AuthContext';
+import ServiceCenterDashboard from '@/components/ServiceCenterDashboard';
+import PartsCoordinatorDashboard from '@/components/PartsCoordinatorDashboard';
+import ManufacturerDashboard from '@/components/ManufacturerDashboard';
+import TechnicianDashboard from '@/components/TechnicianDashboard';
+import WarrantyDashboard from '@/components/WarrantyDashboard';
+import SuperAdvisor from "@/components/SuperAdvisor";
 
 const Dashboard = () => {
 	const { user } = useAuth();
@@ -10,8 +12,13 @@ const Dashboard = () => {
 	if (!user) return null;
 
 	// Route to appropriate dashboard based on user role
-	if (user.role === "service_center_staff") {
+	if (user.role === "service_center_manager") {
 		return <ServiceCenterDashboard />;
+	}
+
+	// Parts coordinator at service center should see the parts coordinator dashboard
+	if (user.role === "parts_coordinator_service_center") {
+		return <PartsCoordinatorDashboard />;
 	}
 
 	if (user.role === "service_center_technician") {
@@ -24,6 +31,10 @@ const Dashboard = () => {
 
 	if (user.role === "emv_staff") {
 		return <WarrantyDashboard />;
+	}
+
+	if (user.role === "service_center_staff") {
+		return <SuperAdvisor />;
 	}
 
 	return (

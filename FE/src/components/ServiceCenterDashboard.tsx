@@ -1,18 +1,16 @@
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasPermission } from "@/utils/permissions";
-import NewClaim from "./NewClaim";
-import RegisterVehicle from "./RegisterVehicle";
-import AddCustomer from "./AddCustomer";
-import AttachParts from "./AttachParts";
-import ClaimDetails from "./ClaimDetails";
-import UpdateClaimStatus from "./UpdateClaimStatus";
+import { API_BASE_URL } from "@/config/api";
 import {
   Car,
   User,
@@ -27,7 +25,14 @@ import {
   Calendar,
   Users,
   LogOut,
-  Save
+  Save,
+  MapPin,
+  DollarSign,
+  Tag,
+  Package,
+  BoxIcon as Box,
+  Edit,
+  Trash
 } from "lucide-react";
 
 interface VehicleResult {
@@ -62,7 +67,7 @@ interface Claim {
 
 const ServiceCenterDashboard = () => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [searchResult, setSearchResult] = useState<VehicleResult | null>(null);
+  const [searchResult, setSearchResult] = useState<any>(null);
   const [showVehicleForm, setShowVehicleForm] = useState(false);
   const [showNotFoundToast, setShowNotFoundToast] = useState(false);
   const [showNewClaim, setShowNewClaim] = useState(false);
@@ -102,10 +107,9 @@ const ServiceCenterDashboard = () => {
     }
   };
 
-  // Helper function to display value or "None" for null
-  const displayValue = (value: string | null) => {
-    return value || "None";
-  };
+const displayValue = (value: string | null | undefined) => {
+  return value || "---";
+};
 
 
 
@@ -143,7 +147,7 @@ const ServiceCenterDashboard = () => {
   ];
 
   // In real app, data would be fetched from API
-  const recentClaims: Claim[] = [];
+  const recentClaims: any[] = [];
 
   const handleViewDetails = (claimId: string) => {
     setSelectedClaimId(claimId);
@@ -287,974 +291,1846 @@ const ServiceCenterDashboard = () => {
       alert('Please fill in all owner information (Full Name, Phone, Email, Address).');
       return;
     }
-
     try {
-      // Get token from AuthContext
-      const token = localStorage.getItem('ev_warranty_token');
-      
-      if (!token) {
-        alert('Please login first');
-        return;
-      }
-
-      // Search for existing customer or create new one (same logic as save)
-      let customerData = null;
-      
-      const searchResponse = await axios.get(`http://localhost:3000/api/v1/customer/find-customer-with-phone-or-email`, {
-        params: {
-          phone: ownerForm.phone.trim()
-        },
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+      const response = await axios.get(`${API_BASE_URL}/warehouses`, {
+        headers: { Authorization: `Bearer ${token}` }
       });
-      
-      if (searchResponse.data?.data?.customer) {
-        // Customer exists
-        customerData = searchResponse.data.data.customer;
-        console.log('Existing customer found:', customerData);
-      } else {
-        // Customer doesn't exist, create new one
-        const createResponse = await axios.post(`http://localhost:3000/api/v1/customer`, {
-          fullName: ownerForm.fullName.trim(),
-          email: ownerForm.email.trim(),
-          phone: ownerForm.phone.trim(),
-          address: ownerForm.address.trim()
-        }, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
+      const warehouseData = response.data?.data?.warehouses || [];
+      setWarehouses(warehouseData);
+    } catch (error) {
+      console.error('Failed to fetch warehouses:', error);
+    } finally {
+      setIsLoadingWarehouses(false);
+    }
+  };
+
+  // Fetch stock transfer requests
+  const fetchStockTransferRequests = async (status = 'PENDING_APPROVAL') => {
+    setIsLoadingStockRequests(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingStockRequests(false);
+      return;
+    }
+    try {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests?status=${status}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const requestsData = response.data?.data?.stockTransferRequests || [];
+      setStockTransferRequests(requestsData);
+    } catch (error) {
+      console.error('Failed to fetch stock transfer requests:', error);
+    } finally {
+      setIsLoadingStockRequests(false);
+    }
+  };
+
+  // Load warranty claims and technicians data
+  useEffect(() => {
+    let cancelled = false;
+
+    // Fetch technicians from backend instead of using mock data
+    const fetchTechnicians = async (status = 'AVAILABLE') => {
+      setIsLoadingTechnicians(true);
+      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        setIsLoadingTechnicians(false);
+        return [] as Technician[];
+      }
+      try {
+        const url = status ? `${API_BASE_URL}/users/technicians?status=${status}` : `${API_BASE_URL}/users/technicians`;
+        const res = await axios.get(url, {
+          headers: { Authorization: `Bearer ${token}` }
         });
-        
-        if (createResponse.data?.status === 'success') {
-          customerData = createResponse.data.data.customer;
-          console.log('New customer created:', customerData);
-        } else {
-          throw new Error('Failed to create customer');
-        }
-      }
+        const records = res.data?.data || [];
+        const mapped: Technician[] = records.map((t: any) => {
+          // Status is in workSchedule array, not at root level
+          const rawStatus = t.workSchedule?.[0]?.status || t.status || '';
+          const normalizedStatus = String(rawStatus).trim().toUpperCase().replace(/\s+/g, '_') || undefined;
 
-      // Update searchResult with owner information for Save Changes button
-      const updatedVehicle = {
-        ...searchResult,
-        owner: {
-          id: customerData.id,
-          fullName: customerData.fullName || customerData.fullname,
-          email: customerData.email,
-          phone: customerData.phone,
-          address: customerData.address
-        }
-      };
-      
-      setSearchResult(updatedVehicle);
-      
-      // Update form with backend data
-      setOwnerForm({
-        fullName: customerData.fullName || customerData.fullname || '',
-        phone: customerData.phone || '',
-        email: customerData.email || '',
-        address: customerData.address || ''
-      });
-      
-      console.log('Owner registered in response body:', updatedVehicle);
-      alert('Owner information added to vehicle. Click "Save Changes" to save to backend.');
-      
-    } catch (error) {
-      console.error('Error registering owner:', error);
-      if (error.response?.data?.message) {
-        alert(`Failed to register owner: ${error.response.data.message}`);
-      } else {
-        alert('Failed to register owner. Please try again.');
-      }
-    }
-  };
-
-  const handleUpdateOwnerInBackend = async () => {
-    // Validate owner form
-    if (!ownerForm.fullName?.trim() || !ownerForm.phone?.trim() || !ownerForm.email?.trim() || !ownerForm.address?.trim()) {
-      alert('Please fill in all owner information (Full Name, Phone, Email, Address).');
-      return;
-    }
-
-    if (!searchResult?.owner?.id) {
-      alert('No owner information found. Please register owner first.');
-      return;
-    }
-
-    try {
-      const token = localStorage.getItem('ev_warranty_token');
-      
-      if (!token) {
-        alert('Please login first');
-        return;
-      }
-
-      // First, update or create customer with new information
-      let customerId = searchResult.owner.id;
-      
-      // Check if phone number changed - if so, search for existing customer or create new
-      if (ownerForm.phone.trim() !== searchResult.owner.phone) {
-        const searchResponse = await axios.get(`http://localhost:3000/api/v1/customer/find-customer-with-phone-or-email`, {
-          params: {
-            phone: ownerForm.phone.trim()
-          },
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
+          return {
+            id: t.userId || t.id || String(t.techId || ''),
+            name: t.name || t.fullName || '',
+            workload: t.activeTaskCount,
+            isAvailable: (normalizedStatus || '') === 'AVAILABLE',
+            status: normalizedStatus
+          } as Technician;
         });
-        
-        if (searchResponse.data?.data?.customer) {
-          // Customer with new phone exists
-          customerId = searchResponse.data.data.customer.id;
-        } else {
-          // Create new customer with new phone
-          const createResponse = await axios.post(`http://localhost:3000/api/v1/customer`, {
-            fullName: ownerForm.fullName.trim(),
-            email: ownerForm.email.trim(),
-            phone: ownerForm.phone.trim(),
-            address: ownerForm.address.trim()
-          }, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          if (createResponse.data?.status === 'success') {
-            customerId = createResponse.data.data.customer.id;
-          } else {
-            throw new Error('Failed to create new customer');
-          }
-        }
+        setIsLoadingTechnicians(false);
+        return mapped;
+      } catch (err) {
+        console.error('Failed to fetch technicians', err);
+        setIsLoadingTechnicians(false);
+        return [] as Technician[];
       }
-
-      // Prepare request body for update-owner endpoint
-      const requestBody = {
-        customerId: customerId,
-        licensePlate: searchResult.licensePlate || searchResult.licenseplate,
-        purchaseDate: searchResult.purchaseDate || searchResult.purchasedate,
-        dateOfManufacture: searchResult.dateOfManufacture || searchResult.dateofmanufacture
-      };
-
-      console.log('Updating vehicle owner in backend:', requestBody);
-
-      // API call to backend using HTTP PATCH
-      const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${searchResult.vin}/update-owner`, requestBody, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.data && response.data.status === 'success') {
-        console.log('Vehicle owner updated successfully:', response.data);
-        alert('Vehicle owner information updated successfully!');
-        
-        // Update local state with new owner info
-        const updatedVehicle = {
-          ...searchResult,
-          owner: {
-            id: customerId,
-            fullName: ownerForm.fullName,
-            phone: ownerForm.phone,
-            email: ownerForm.email,
-            address: ownerForm.address
-          }
-        };
-        setSearchResult(updatedVehicle);
-        
-      } else {
-        console.error('Unexpected response format:', response.data);
-        alert('Unexpected response from server. Please try again.');
-      }
-      
-    } catch (error) {
-      console.error('Error updating vehicle owner:', error);
-      if (error.response) {
-        console.error('Backend error:', error.response.data);
-        const errorMessage = error.response.data.message || 'Server error';
-        
-        if (errorMessage.includes('This vehicle has owner')) {
-          alert('This vehicle already has an owner registered. The backend currently does not support updating existing owner information. Please contact the administrator for assistance.');
-        } else {
-          alert(`Failed to update vehicle owner: ${errorMessage}`);
-        }
-      } else if (error.request) {
-        console.error('No response from server:', error.request);
-        alert('No response from server. Please check if backend is running.');
-      } else {
-        console.error('Request error:', error.message);
-        alert('An error occurred while updating. Please try again.');
-      }
-    }
-  };
-
-  const handleSaveVehicleData = async () => {
-    if (!searchResult) return;
-
-    // Validate required fields
-    const placeOfManufacture = searchResult.placeOfManufacture || searchResult.placeofmanufacture;
-    const licensePlate = searchResult.licensePlate || searchResult.licenseplate;
-    const purchaseDate = searchResult.purchaseDate || searchResult.purchasedate;
-
-    if (!placeOfManufacture || !placeOfManufacture.trim()) {
-      alert('Please fill in Place of Manufacture before saving.');
-      return;
-    }
-
-    if (!licensePlate || !licensePlate.trim()) {
-      alert('Please fill in License Plate before saving.');
-      return;
-    }
-
-    if (!purchaseDate) {
-      alert('Please select Purchase Date before saving.');
-      return;
-    }
-
-    // Debug: Check owner form values
-    console.log('Owner form values:', ownerForm);
-    
-    // Check if owner information is available in searchResult
-    if (!searchResult.owner?.id) {
-      alert('Please register owner information first by clicking "Register Owner" button.');
-      return;
-    }
-
-    try {
-      // Get token from AuthContext
-      const token = localStorage.getItem('ev_warranty_token');
-      
-      if (!token) {
-        alert('Please login first');
-        return;
-      }
-
-      // Use owner ID from searchResult (already validated in Register Owner step)
-      const customerId = searchResult.owner.id;
-
-      // Prepare request body for register-owner endpoint
-      const requestBody = {
-        customerId: customerId,
-        licensePlate: licensePlate,
-        purchaseDate: purchaseDate,
-        dateOfManufacture: searchResult.dateOfManufacture || searchResult.dateofmanufacture
-      };
-
-      console.log('Sending vehicle data to backend:', requestBody);
-      console.log('Using customer ID:', customerId);
-
-      // API call to backend using HTTP PATCH
-      const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${searchResult.vin}/update-owner`, requestBody, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.data && response.data.status === 'success') {
-        console.log('Vehicle data saved successfully:', response.data);
-        alert('Vehicle owner registered successfully!');
-        
-        // Close modal and reset states
-        setShowVehicleForm(false);
-        setSearchResult(null);
-        setSearchTerm('');
-        setCustomerSearchPhone('');
-        setHasSearchedCustomer(false);
-        setOwnerForm({ fullName: '', phone: '', email: '', address: '' });
-      } else {
-        console.error('Unexpected response format:', response.data);
-        alert('Unexpected response from server. Please try again.');
-      }
-      
-    } catch (error) {
-      console.error('Error saving vehicle data:', error);
-      if (error.response) {
-        // Backend returned an error response
-        console.error('Backend error:', error.response.data);
-        alert(`Failed to save vehicle data: ${error.response.data.message || 'Server error'}`);
-      } else if (error.request) {
-        // Request was made but no response received
-        console.error('No response from server:', error.request);
-        alert('No response from server. Please check if backend is running.');
-      } else {
-        // Something else happened
-        console.error('Request error:', error.message);
-        alert('An error occurred while saving. Please try again.');
-      }
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      pending: { variant: "pending" as const, icon: Clock, text: "Chờ duyệt" },
-      approved: { variant: "approved" as const, icon: CheckCircle, text: "Đã duyệt" },
-      rejected: { variant: "rejected" as const, icon: XCircle, text: "Từ chối" },
-      "in-progress": { variant: "warning" as const, icon: Wrench, text: "Đang sửa" },
-      completed: { variant: "success" as const, icon: CheckCircle, text: "Hoàn thành" }
     };
 
-    const config = statusConfig[status as keyof typeof statusConfig];
-    if (!config) return null;
+    // Fetch all statuses on mount
+    fetchAllStatuses();
 
-    const Icon = config.icon;
-    return (
-      <Badge variant={config.variant}>
-        <Icon className="mr-1 h-3 w-3" />
-        {config.text}
-      </Badge>
+    // Load technicians from API (AVAILABLE / UNAVAILABLE)
+    refreshTechnicians('').then(() => { });
+
+    // Load warehouses
+    fetchWarehouses();
+
+    return () => { cancelled = true; };
+  }, []);
+
+  const assignTechnicianToCase = async (vin: string, technicianId: string) => {
+    const technician = availableTechnicians.find(t => t.id === technicianId);
+    if (!technician) return;
+
+    // Find the record ID from the current claims
+    let claim: WarrantyClaim | undefined;
+    for (const status of Object.keys(claimsByStatus)) {
+      const found = claimsByStatus[status]?.find(c => c.vin === vin);
+      if (found) {
+        claim = found;
+        break;
+      }
+    }
+
+    if (!claim || !claim.recordId) {
+      alert('Record ID not found');
+      return;
+    }
+
+    try {
+      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        alert('Authentication required');
+        return;
+      }
+
+      // Call backend API to assign technician
+      const response = await axios.patch(
+        `${API_BASE_URL}/processing-records/${claim.recordId}/assignment`,
+        { technicianId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (response.data?.status === 'success') {
+        alert(`Technician ${technician.name} assigned successfully!`);
+        
+        // Close modal
+        setShowTechnicianModal(false);
+        setSelectedCaseForAssignment('');
+
+        // Refresh all data to ensure UI is up-to-date
+        await fetchAllStatuses();
+
+        // Refresh technicians list to update workload
+        await refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
+      }
+    } catch (error: any) {
+      console.error('Failed to assign technician:', error);
+      if (error.response?.data?.message) {
+        alert(`Failed to assign technician: ${error.response.data.message}`);
+      } else {
+        alert('Failed to assign technician. Please try again.');
+      }
+    }
+  };
+
+  const removeTechnicianFromCase = (vin: string, technicianId: string) => {
+    setWarrantyClaims(prev => prev.map(claim =>
+      claim.vin === vin
+        ? {
+          ...claim,
+          assignedTechnicians: claim.assignedTechnicians.filter(t => t.id !== technicianId)
+        }
+        : claim
+    ));
+  };
+
+  const getRecommendedTechnicians = (issueType: string) => {
+    const specialtyMapping: { [key: string]: string[] } = {
+      'Pin EV': ['Battery Systems'],
+      'Động cơ': ['Motor & Drivetrain', 'Electronics & Software'],
+      'Hệ thống điện': ['Electronics & Software', 'Charging Systems'],
+      'Cảm biến': ['Electronics & Software', 'General Diagnostics'],
+      'Phanh': ['General Diagnostics']
+    };
+
+    // Without specialty information, recommend by availability and workload (less loaded first)
+    return availableTechnicians
+      .filter(tech => tech.isAvailable)
+      .sort((a, b) => {
+        const aw = a.workload || 0;
+        const bw = b.workload || 0;
+        return aw - bw;
+      });
+  };
+
+  const handleViewClaimDetail = (vin: string) => {
+    console.log('handleViewClaimDetail called with VIN:', vin);
+    const claim = warrantyClaims.find(c => c.vin === vin);
+    console.log('Found claim:', claim);
+    if (claim) {
+      setSelectedClaimForDetail(claim);
+      setShowClaimDetailModal(true);
+      console.log('Modal should open now');
+    }
+  };
+
+  const openTechnicianAssignmentModal = (vin: string) => {
+    setSelectedCaseForAssignment(vin);
+    setShowTechnicianModal(true);
+  };
+
+  const closeTechnicianModal = () => {
+    setShowTechnicianModal(false);
+    setSelectedCaseForAssignment('');
+  };
+
+  // View technician's assigned records
+  const viewTechnicianRecords = (technician: Technician) => {
+    // Filter all records to find ones assigned to this technician
+    const allRecords: WarrantyClaim[] = [];
+    Object.values(claimsByStatus).forEach(claims => {
+      allRecords.push(...claims);
+    });
+
+    const techRecords = allRecords.filter(claim =>
+      (claim.assignedTechnicians || []).some(tech => tech.id === technician.id)
     );
+
+    setSelectedTechnicianForRecords(technician);
+    setTechnicianRecords(techRecords);
+    setShowTechnicianRecordsModal(true);
+  };
+
+  const closeTechnicianRecordsModal = () => {
+    setShowTechnicianRecordsModal(false);
+    setSelectedTechnicianForRecords(null);
+    setTechnicianRecords([]);
+  };
+
+  // View warehouse details
+  const viewWarehouseDetails = (warehouse: Warehouse) => {
+    setSelectedWarehouse(warehouse);
+    setShowWarehouseDetailModal(true);
+  };
+
+  const closeWarehouseDetailModal = () => {
+    setShowWarehouseDetailModal(false);
+    setSelectedWarehouse(null);
+  };
+
+  // Allocate component for case line
+  const handleAllocateComponent = async (guaranteeCaseId: string, caseLineId: string) => {
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('ev_warranty_token');
+      const response = await axios.post(
+        `${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/allocate-stock`,
+        {},
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (response.status === 200 || response.status === 201) {
+        alert('Component allocated successfully!');
+
+        // Remove from out of stock list if it was there
+        setOutOfStockCaseLines(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(caseLineId);
+          // Save to localStorage
+          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
+
+        // Refresh all data to ensure UI is up-to-date
+        await fetchAllStatuses();
+      }
+    } catch (error: any) {
+      console.error('Error allocating component:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to allocate component. Please try again.';
+
+      // Check if error is 409 Conflict (out of stock)
+      if (error.response?.status === 409) {
+        // Mark this case line as out of stock
+        setOutOfStockCaseLines(prev => {
+          const newSet = new Set([...prev, caseLineId]);
+          // Save to localStorage
+          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
+        alert('⚠️ Out of Stock! No available component in warehouse. Please request from manufacturer.');
+      } else if (error.response?.status === 404 && errorMessage.includes('No available stock found')) {
+        // Also handle 404 as out of stock
+        setOutOfStockCaseLines(prev => {
+          const newSet = new Set([...prev, caseLineId]);
+          // Save to localStorage
+          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
+        alert('⚠️ Out of Stock! No available component in warehouse. Please request from manufacturer.');
+      } else {
+        alert(errorMessage);
+      }
+    }
+  };
+
+  // Request component from manufacturer - Open warehouse selection modal
+  const handleRequestFromManufacturer = async (
+    guaranteeCaseId: string, 
+    caseLineId: string, 
+    typeComponentId: string,
+    quantity: number
+  ) => {
+    // Store the pending request data
+    setPendingStockRequest({
+      caseLineId,
+      typeComponentId,
+      quantity,
+      guaranteeCaseId
+    });
+    
+    // Open warehouse selection modal
+    setShowWarehouseSelectionModal(true);
+  };
+
+  // Submit stock transfer request after warehouse is selected
+  const submitStockTransferRequest = async (warehouseId: string) => {
+    if (!pendingStockRequest) return;
+
+    try {
+      const token = localStorage.getItem('token') || localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        alert('Authentication required');
+        return;
+      }
+
+      const requestBody = {
+        caselineIds: [pendingStockRequest.caseLineId],
+        items: [
+          {
+            quantityRequested: pendingStockRequest.quantity,
+            typeComponentId: pendingStockRequest.typeComponentId
+          }
+        ],
+        requestingWarehouseId: warehouseId
+      };
+
+      const response = await axios.post(
+        `${API_BASE_URL}/stock-transfer-requests`,
+        requestBody,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
+
+      if (response.status === 200 || response.status === 201) {
+        // Remove from out of stock list since request has been sent
+        setOutOfStockCaseLines(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(pendingStockRequest.caseLineId);
+          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
+
+        // Add to requested from manufacturer list to prevent showing allocate button
+        setRequestedFromManufacturer(prev => {
+          const newSet = new Set([...prev, pendingStockRequest.caseLineId]);
+          localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
+          return newSet;
+        });
+
+        alert('Stock transfer request sent successfully!');
+        
+        // Close modal and reset
+        setShowWarehouseSelectionModal(false);
+        setPendingStockRequest(null);
+
+        // Refresh data from backend to get updated status
+        await fetchAllStatuses();
+        await fetchWarehouses();
+        
+        // Refresh claim detail modal with updated data from backend
+        if (selectedClaimForDetail) {
+          const updatedClaims = Object.values(claimsByStatus).flat();
+          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
+          if (updatedClaim) {
+            setSelectedClaimForDetail(updatedClaim);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Error requesting from manufacturer:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to send request to manufacturer. Please try again.';
+      alert(errorMessage);
+    }
+  };
+
+  // Refresh technicians (callable from UI)
+  const refreshTechnicians = async (status = 'AVAILABLE') => {
+    setIsLoadingTechnicians(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingTechnicians(false);
+      return;
+    }
+    try {
+      const url = status ? `${API_BASE_URL}/users/technicians?status=${status}` : `${API_BASE_URL}/users/technicians`;
+      const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
+      const records = res.data?.data || [];
+      const mapped: Technician[] = records.map((t: any) => {
+        // Status is in workSchedule array, not at root level
+        const rawStatus = t.workSchedule?.[0]?.status || t.status || '';
+        const normalizedStatus = String(rawStatus).trim().toUpperCase().replace(/\s+/g, '_') || undefined;
+
+        return {
+          id: t.userId || t.id || String(t.techId || ''),
+          name: t.name || t.fullName || t.username || '',
+          specialty: t.specialty || t.department || undefined,
+          experience: t.experience || t.yearsOfExperience || undefined,
+          rating: t.rating || undefined,
+          workload: t.activeTaskCount || t.workload || t.currentLoad || undefined,
+          isAvailable: (normalizedStatus || '') === 'AVAILABLE',
+          status: normalizedStatus
+        } as Technician;
+      });
+      setAvailableTechnicians(mapped);
+    } catch (err) {
+      console.error('Failed to refresh technicians', err);
+    } finally {
+      setIsLoadingTechnicians(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b bg-card shadow-elegant">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-primary">
-                <Wrench className="h-6 w-6 text-primary-foreground" />
+    <div className="min-h-screen w-full relative">
+      {/* Radial Gradient Background */}
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          background: "radial-gradient(125% 125% at 50% 10%, #fff 40%, #6366f1 100%)",
+        }}
+      />
+
+      {/* Your Content/Components */}
+      <div className="min-h-screen bg-transparent relative z-10">
+        {/* Header */}
+        <header className="border-b bg-card shadow-elegant">
+          <div className="container mx-auto px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-primary">
+                  <Wrench className="h-6 w-6 text-primary-foreground" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-foreground">Service Center Dashboard</h1>
+                  <p className="text-sm text-muted-foreground">
+                    Welcome,{user?.role === 'service_center_staff' ? 'Staff' : user?.role === 'service_center_manager' ? 'Manager' : 'Technician'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-foreground">Service Center Dashboard</h1>
-                <p className="text-sm text-muted-foreground">
-                  Xin chào, {user?.name} ({user?.role === 'service_center_staff' ? 'Staff' : 'Technician'})
-                </p>
+              <div className="flex items-center space-x-3 ml-auto">
+                <Button variant="outline" onClick={logout}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Logout
+                </Button>
               </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <Badge variant="outline">{user?.serviceCenter}</Badge>
-              <Button variant="outline" onClick={logout}>
-                <LogOut className="mr-2 h-4 w-4" />
-                Logout
-              </Button>
-              {hasPermission(user, 'manage_campaigns') && (
-                <Button variant="outline">
-                  <Calendar className="mr-2 h-4 w-4" />
-                  Schedule
-                </Button>
-              )}
-              {hasPermission(user, 'create_claim') && (
-                <Button variant="gradient" onClick={() => setShowNewClaim(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Claim
-                </Button>
-              )}
             </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      <div className="container mx-auto px-6 py-6">
-        {/* Quick Search */}
-        <div className="mb-6">
-          <div className="flex w-full space-x-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by VIN"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Button 
-              variant="gradient"
-              onClick={handleVinSearch}
-            >
-              <Search className="h-4 w-4 mr-2" />
-              Search
-            </Button>
-          </div>
-        </div>
+        <div className="container mx-auto px-6 py-6">
+          {/* Main Content */}
+          <Tabs defaultValue="claims" className="space-y-6">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="claims">Warranty Claims</TabsTrigger>
+              <TabsTrigger value="repairs">Technician Management</TabsTrigger>
+              <TabsTrigger value="warehouses">Warehouse Management</TabsTrigger>
+            </TabsList>
 
+            <TabsContent value="claims" className="space-y-6">
+              <Card className="shadow-elegant">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    Warranty Claims Management
+                  </CardTitle>
+                  <CardDescription>
+                    Manage warranty claims and track their progress across all service centers
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {/* Status Tabs */}
+                  <div className="mb-4 flex items-center gap-2 flex-wrap">
+                    {STATUSES.map(s => (
+                      <Button
+                        key={s}
+                        variant={s === activeStatus ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => {
+                          if (s !== activeStatus) {
+                            setActiveStatus(s);
+                            setWarrantyClaims(claimsByStatus[s] || []);
+                          }
+                        }}
+                        className="border-dashed"
+                      >
+                        {getDisplayStatus(s)} ({(claimsByStatus[s] || []).length})
+                      </Button>
+                    ))}
+                  </div>
+                  <div className="rounded-lg border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>VIN</TableHead>
+                          <TableHead>Mileage</TableHead>
+                          <TableHead>Check-in Date</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Cases</TableHead>
+                          <TableHead>Technician Assignment</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {warrantyClaims.map((claim, index) => (
+                          <TableRow key={claim.recordId || claim.vin}>
+                            <TableCell className="font-mono text-sm font-medium">
+                              {claim.vin}
+                            </TableCell>
+                            <TableCell>
+                              <span className="font-medium">
+                                {formatMileage(claim.mileage)}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              {new Date(claim.checkInDate).toLocaleDateString('en-US')}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={getStatusBadgeVariant(claim.status)} className="text-xs">
+                                {getDisplayStatus(claim.status)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                {claim.guaranteeCases && claim.guaranteeCases.length > 0 ? (
+                                  <>
+                                    <Badge variant="default" className="text-xs">
+                                      {claim.guaranteeCases.length} case{claim.guaranteeCases.length > 1 ? 's' : ''}
+                                    </Badge>
+                                    {claim.priority && (
+                                      <Badge variant={getPriorityBadgeVariant(claim.priority)} className="text-xs">
+                                        {claim.priority === 'Urgent' && '🚨 '}
+                                        {claim.priority === 'High' && '🔥 '}
+                                        {claim.priority === 'Medium' && '📋 '}
+                                        {claim.priority === 'Low' && '📝 '}
+                                        {claim.priority}
+                                      </Badge>
+                                    )}
+                                  </>
+                                ) : (
+                                  <Badge variant="outline" className="text-xs text-muted-foreground">
+                                    No cases
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="max-w-xs">
+                              <div className="space-y-2">
+                                {/* Assigned Technicians */}
+                                <div className="flex flex-wrap gap-1">
+                                  {claim.assignedTechnicians.map((tech) => (
+                                    <Badge key={tech.id} variant="outline" className="text-xs">
+                                      {tech.name}
+                                    </Badge>
+                                  ))}
+                                  {claim.assignedTechnicians.length === 0 && (
+                                    <Badge variant="outline" className="text-xs bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100">
+                                      <AlertCircle className="h-3 w-3 mr-1" />
+                                      Not assigned
+                                    </Badge>
+                                  )}
+                                </div>
 
+                                {/* Assign Technician Button - Only show for CHECKED_IN status */}
+                                {hasPermission(user, 'assign_technicians') && claim.status === 'CHECKED_IN' && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full mt-2 border-dashed border-blue-300 text-blue-600 hover:bg-blue-50"
+                                    onClick={() => openTechnicianAssignmentModal(claim.vin)}
+                                  >
+                                    <Users className="h-4 w-4 mr-2" />
+                                    Assign Technician (Diagnosis)
+                                  </Button>
+                                )}
 
-        {/* Statistics Cards */}
-        <div className="mb-6 grid gap-4 md:grid-cols-4">
-          {stats.map((stat) => {
-            const Icon = stat.icon;
-            return (
-              <Card key={stat.title} className="shadow-elegant">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        {stat.title}
-                      </p>
-                      <p className="text-2xl font-bold">{stat.value}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {stat.change}
-                      </p>
-                    </div>
-                    <Icon className={`h-8 w-8 ${stat.color}`} />
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center space-x-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleViewClaimDetail(claim.vin)}
+                                >
+                                  View
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <div className="mt-6">
+                    <p className="text-sm text-muted-foreground">
+                      Showing {warrantyClaims.length} warranty claims
+                    </p>
                   </div>
                 </CardContent>
               </Card>
-            );
-          })}
+            </TabsContent>
+
+            <TabsContent value="repairs" className="space-y-6">
+              <Card className="shadow-elegant">
+                <CardHeader>
+                  <div className="flex items-center justify-between w-full">
+                    <div>
+                      <CardTitle>Technician Management</CardTitle>
+                      <CardDescription>View and manage technicians' statuses and assignments</CardDescription>
+                    </div>
+                    {/* actions removed: refresh buttons omitted per UX request */}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {/* Status tabs for technicians */}
+                  <div className="mb-4 flex items-center gap-2 flex-wrap">
+                    {['AVAILABLE', 'UNAVAILABLE', 'ALL'].map(s => {
+                      const count = s === 'ALL' ? availableTechnicians.length : availableTechnicians.filter(t => (t.status || (t.isAvailable ? 'AVAILABLE' : 'UNAVAILABLE')) === s).length;
+                      return (
+                        <Button
+                          key={s}
+                          size="sm"
+                          variant={s === (typeof techFilterStatus !== 'undefined' ? techFilterStatus : 'AVAILABLE') ? 'default' : 'outline'}
+                          onClick={() => setTechFilterStatus(s)}
+                        >
+                          {getDisplayStatus(s)} ({count})
+                        </Button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Tasks</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(techFilterStatus && techFilterStatus !== 'ALL' ? availableTechnicians.filter(t => (t.status || (t.isAvailable ? 'AVAILABLE' : 'UNAVAILABLE')) === techFilterStatus) : availableTechnicians).map(tech => (
+                          <TableRow key={tech.id}>
+                            <TableCell>{tech.name}</TableCell>
+                            <TableCell>{typeof tech.workload === 'number' ? tech.workload : '-'}</TableCell>
+                            <TableCell>
+                              <Badge variant={tech.isAvailable ? 'success' : 'outline'} className="text-xs">
+                                {getDisplayStatus(tech.status || (tech.isAvailable ? 'AVAILABLE' : 'UNAVAILABLE'))}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => viewTechnicianRecords(tech)}
+                              >
+                                View
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="warehouses" className="space-y-6">
+              <Card className="shadow-elegant">
+                <CardHeader>
+                  <div className="flex items-center justify-between w-full">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Package className="h-5 w-5" />
+                        Warehouse Management
+                      </CardTitle>
+                      <CardDescription>View and manage warehouses and inventory</CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant="default" 
+                        size="sm" 
+                        onClick={() => {
+                          fetchStockTransferRequests('PENDING_APPROVAL');
+                          setShowStockRequestsModal(true);
+                        }}
+                      >
+                        <Clock className="h-4 w-4 mr-2" />
+                        View Stock Requests
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={fetchWarehouses}
+                        disabled={isLoadingWarehouses}
+                      >
+                        {isLoadingWarehouses ? 'Loading...' : 'Refresh'}
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {isLoadingWarehouses ? (
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground">Loading warehouses...</p>
+                    </div>
+                  ) : warehouses.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground">No warehouses found</p>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="mt-4"
+                        onClick={fetchWarehouses}
+                      >
+                        Load Warehouses
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Address</TableHead>
+                            <TableHead>Priority</TableHead>
+                            <TableHead>Created At</TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {warehouses.map((warehouse) => (
+                            <TableRow key={warehouse.warehouseId}>
+                              <TableCell className="font-medium">
+                                {warehouse.name}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-1">
+                                  <MapPin className="h-3 w-3 text-muted-foreground" />
+                                  {warehouse.address}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={warehouse.priority === 1 ? 'default' : warehouse.priority === 2 ? 'secondary' : 'outline'}
+                                  className="text-xs"
+                                >
+                                  Priority {warehouse.priority}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {new Date(warehouse.createdAt).toLocaleDateString('en-US')}
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => viewWarehouseDetails(warehouse)}
+                                >
+                                  View Details
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                  <div className="mt-6">
+                    <p className="text-sm text-muted-foreground">
+                      Showing {warehouses.length} warehouse{warehouses.length !== 1 ? 's' : ''}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </div>
 
-        {/* Main Content */}
-        <Tabs defaultValue="claims" className="space-y-6">
-          <TabsList className={`grid w-full ${hasPermission(user, 'manage_campaigns') ? 'grid-cols-4' : 'grid-cols-3'}`}>
-            <TabsTrigger value="claims">Warranty Claims</TabsTrigger>
-            {hasPermission(user, 'register_vehicle') && (
-              <TabsTrigger value="vehicles">Vehicle Management</TabsTrigger>
-            )}
-            <TabsTrigger value="repairs">Active Repairs</TabsTrigger>
-            {hasPermission(user, 'manage_campaigns') && (
-              <TabsTrigger value="campaigns">Service Campaigns</TabsTrigger>
-            )}
-          </TabsList>
+        {/* Claim Detail Modal */}
+        <Dialog open={showClaimDetailModal} onOpenChange={setShowClaimDetailModal}>
+          <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader className="pb-4 border-b">
+              <DialogTitle className="flex items-center gap-2 text-lg">
+                <FileText className="h-5 w-5 text-blue-600" />
+                Warranty Claim Details
+              </DialogTitle>
+              <DialogDescription className="text-sm mt-1">
+                Complete information for warranty claim
+              </DialogDescription>
+            </DialogHeader>
 
-          <TabsContent value="claims" className="space-y-6">
-            <Card className="shadow-elegant">
-              <CardHeader>
-                <CardTitle>Recent Warranty Claims</CardTitle>
-                <CardDescription>
-                  Manage warranty claims and track their progress
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {recentClaims.map((claim) => (
-                    <div
-                      key={claim.id}
-                      className="flex items-center justify-between rounded-lg border p-4"
-                    >
-                      <div className="flex items-center space-x-4">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent">
-                          <FileText className="h-5 w-5 text-accent-foreground" />
+            {selectedClaimForDetail && (
+              <div className="space-y-6 mt-6">
+                <div className="flex items-center gap-2">
+                  <Badge variant={getStatusBadgeVariant(selectedClaimForDetail.status)} className="text-xs">
+                    {selectedClaimForDetail.status || 'UNKNOWN'}
+                  </Badge>
+                </div>
+                {/* Basic Information */}
+                <Card className="shadow-md border">
+                  <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-900/20 pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+                        <Car className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      Basic Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">VIN</label>
+                          <p className="font-mono text-sm font-semibold mt-0.5">{selectedClaimForDetail.vin}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Vehicle Model</label>
+                          <p className="text-sm font-medium mt-0.5">{selectedClaimForDetail.model}</p>
+                          {selectedClaimForDetail.modelId && (
+                            <p className="font-mono text-xs text-muted-foreground mt-1">
+                              Model ID: {selectedClaimForDetail.modelId}
+                            </p>
+                          )}
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <Car className="h-3 w-3" />
+                            Mileage
+                          </label>
+                          <p className="text-sm font-semibold mt-0.5">{selectedClaimForDetail.mileage.toLocaleString()} km</p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <Calendar className="h-3 w-3" />
+                            Check-in Date
+                          </label>
+                          <p className="text-sm font-medium mt-0.5">{new Date(selectedClaimForDetail.checkInDate).toLocaleDateString('en-US')}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <User className="h-3 w-3" />
+                            Created By Staff
+                          </label>
+                          <p className="text-sm font-semibold mt-0.5">{selectedClaimForDetail.serviceCenter}</p>
+                          {selectedClaimForDetail.createdByStaffId && (
+                            <p className="font-mono text-xs text-muted-foreground mt-1">
+                              ID: {selectedClaimForDetail.createdByStaffId}
+                            </p>
+                          )}
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <DollarSign className="h-3 w-3" />
+                            Estimated Cost
+                          </label>
+                          <p className="text-sm font-semibold text-green-600 mt-0.5">
+                            {selectedClaimForDetail.estimatedCost.toLocaleString()} VND
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Guarantee Cases */}
+                {selectedClaimForDetail.guaranteeCases && selectedClaimForDetail.guaranteeCases.length > 0 && (
+                  <Card className="shadow-md border">
+                    <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-900/20 pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <div className="p-1.5 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+                          <FileText className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        Guarantee Cases ({selectedClaimForDetail.guaranteeCases.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                      <div className="space-y-4">
+                        {selectedClaimForDetail.guaranteeCases.map((gc, idx) => (
+                          <Card key={gc.guaranteeCaseId} className="border-l-4 border-l-blue-500 shadow-md hover:shadow-lg transition-shadow bg-gradient-to-r from-blue-50/50 to-transparent dark:from-blue-900/10">
+                            <CardContent className="p-4">
+                              <div className="space-y-4">
+                                {/* Case Header */}
+                                <div className="flex items-start gap-3">
+                                  <div className="flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white font-bold text-sm shrink-0 shadow-sm">
+                                    {idx + 1}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1.5">
+                                      <span className="text-xs font-bold text-blue-700 dark:text-blue-300">Guarantee Case #{idx + 1}</span>
+                                      {gc.status && (
+                                        <Badge variant="outline" className="text-xs font-semibold">
+                                          {getDisplayStatus(gc.status)}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-sm leading-relaxed text-gray-900 dark:text-gray-100 font-medium bg-blue-50 dark:bg-blue-900/30 p-2 rounded-md border border-blue-100 dark:border-blue-800">
+                                      {gc.contentGuarantee}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {/* Case Lines */}
+                                {gc.caseLines && gc.caseLines.length > 0 && (
+                                  <div className="space-y-2 mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                                    <div className="flex items-center gap-2 mb-2 px-1">
+                                      <span className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">
+                                        Case Lines ({gc.caseLines.length})
+                                      </span>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                      {gc.caseLines.map((line, lineIdx) => (
+                                        <div
+                                          key={line.id}
+                                          className={`rounded-md p-2.5 border transition-all ${line.status === 'CUSTOMER_APPROVED'
+                                            ? 'bg-green-50/50 dark:bg-green-900/20 border-green-300 dark:border-green-700'
+                                            : 'bg-white dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
+                                            }`}
+                                        >
+                                          {/* Line Header - More compact */}
+                                          <div className="flex items-center justify-between mb-2 pb-2 border-b border-gray-200 dark:border-gray-700">
+                                            <div className="flex items-center gap-2">
+                                              <div className="flex items-center justify-center w-5 h-5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-bold text-xs">
+                                                {lineIdx + 1}
+                                              </div>
+                                              <Badge
+                                                variant={getCaseLineStatusVariant(line.status)}
+                                                className={`text-xs px-2 py-0 ${
+                                                  line.status === 'CUSTOMER_APPROVED' 
+                                                    ? 'bg-green-600 text-white' 
+                                                    : line.status === 'REJECTED_BY_CUSTOMER'
+                                                    ? 'bg-red-600 text-white font-semibold'
+                                                    : ''
+                                                }`}
+                                              >
+                                                {getDisplayStatus(line.status)}
+                                              </Badge>
+                                              <Badge
+                                                variant={line.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}
+                                                className="text-xs px-2 py-0"
+                                              >
+                                                {line.warrantyStatus}
+                                              </Badge>
+                                            </div>
+                                          </div>
+
+                                          {/* Content Grid - 2 columns for better readability */}
+                                          <div className="grid grid-cols-2 gap-2 mb-2">
+                                            {/* Diagnosis */}
+                                            <div className="p-2 bg-amber-50/80 dark:bg-amber-900/10 rounded border-l-2 border-amber-400">
+                                              <div className="flex items-center gap-1 mb-1">
+                                                <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                                                <span className="font-semibold text-sm text-amber-700 dark:text-amber-400">Diagnosis</span>
+                                              </div>
+                                              <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{line.diagnosisText}</p>
+                                            </div>
+
+                                            {/* Correction */}
+                                            <div className="p-2 bg-green-50/80 dark:bg-green-900/10 rounded border-l-2 border-green-400">
+                                              <div className="flex items-center gap-1 mb-1">
+                                                <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                                                <span className="font-semibold text-sm text-green-700 dark:text-green-400">Correction</span>
+                                              </div>
+                                              <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{line.correctionText}</p>
+                                            </div>
+                                          </div>
+
+                                          {/* Component Information */}
+                                          {line.typeComponent && (
+                                            <div className="p-2 bg-blue-50/80 dark:bg-blue-900/10 rounded border-l-2 border-blue-400">
+                                              <div className="flex items-center justify-between mb-1.5">
+                                                <div className="flex items-center gap-1.5">
+                                                  <Package className="h-3.5 w-3.5 text-blue-600" />
+                                                  <span className="font-semibold text-sm text-blue-700 dark:text-blue-400">Component</span>
+                                                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{line.typeComponent.name}</span>
+                                                  <Badge variant="outline" className="text-xs px-1.5 py-0">
+                                                    {line.typeComponent.category}
+                                                  </Badge>
+                                                  <Badge variant="secondary" className="text-xs px-1.5 py-0">
+                                                    Qty: {line.quantity}
+                                                  </Badge>
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                  {/* Show Allocate button only when record is PROCESSING and case line is CUSTOMER_APPROVED */}
+                                                  {/* Components can only be allocated when all case lines are approved/rejected and record moves to PROCESSING */}
+                                                  {/* Don't show if already requested from manufacturer */}
+                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && hasPermission(user, 'attach_parts') && !outOfStockCaseLines.has(line.id) && !requestedFromManufacturer.has(line.id) && (
+                                                    <Button
+                                                      size="sm"
+                                                      variant="default"
+                                                      onClick={() => handleAllocateComponent(gc.guaranteeCaseId, line.id)}
+                                                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-6 px-2"
+                                                    >
+                                                      <Package className="h-3 w-3 mr-1" />
+                                                      Allocate
+                                                    </Button>
+                                                  )}
+                                                  {/* Show Request button if record is PROCESSING, case line is CUSTOMER_APPROVED but out of stock */}
+                                                  {/* Don't show if already requested */}
+                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && outOfStockCaseLines.has(line.id) && !requestedFromManufacturer.has(line.id) && hasPermission(user, 'attach_parts') && line.typeComponent && (
+                                                    <Button
+                                                      size="sm"
+                                                      variant="outline"
+                                                      onClick={() => handleRequestFromManufacturer(
+                                                        gc.guaranteeCaseId, 
+                                                        line.id, 
+                                                        line.typeComponent.typeComponentId,
+                                                        line.quantity
+                                                      )}
+                                                      className="bg-orange-600 hover:bg-orange-700 text-white border-orange-600 text-xs h-6 px-2"
+                                                    >
+                                                      <AlertCircle className="h-3 w-3 mr-1" />
+                                                      Request from Manufacturer
+                                                    </Button>
+                                                  )}
+                                                  {/* Show "Requested" badge if request has been sent but backend hasn't updated yet */}
+                                                  {requestedFromManufacturer.has(line.id) && line.status === 'CUSTOMER_APPROVED' && (
+                                                    <Badge variant="outline" className="text-xs bg-yellow-50 border-yellow-400 text-yellow-700">
+                                                      <Clock className="h-3 w-3 mr-1" />
+                                                      Requested - Pending
+                                                    </Badge>
+                                                  )}
+                                                  {/* Show status badge if already allocated or backend has updated status */}
+                                                  {line.status !== 'CUSTOMER_APPROVED' && line.status !== 'DRAFT' && line.status !== 'PENDING_APPROVAL' && (
+                                                    <Badge variant="success" className="text-xs">
+                                                      ✓ {getDisplayStatus(line.status)}
+                                                    </Badge>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          {/* Rejection Reason */}
+                                          {line.rejectionReason && (
+                                            <div className="mt-2 p-2 bg-red-50/80 dark:bg-red-900/10 rounded border-l-2 border-red-400">
+                                              <div className="flex items-center gap-1 mb-1">
+                                                <XCircle className="h-3.5 w-3.5 text-red-600" />
+                                                <span className="font-semibold text-sm text-red-700 dark:text-red-400">Rejection Reason</span>
+                                              </div>
+                                              <p className="text-sm text-red-900 dark:text-red-100 font-medium leading-relaxed">{line.rejectionReason}</p>
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Assigned Technicians */}
+                <Card className="shadow-md border">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Users className="h-4 w-4" />
+                        Assigned Technicians ({selectedClaimForDetail.assignedTechnicians.length})
+                      </CardTitle>
+                      {hasPermission(user, 'assign_technicians') && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setShowClaimDetailModal(false);
+                            openTechnicianAssignmentModal(selectedClaimForDetail.vin);
+                          }}
+                          className="border-dashed border-blue-300 text-blue-600 hover:bg-blue-50"
+                        >
+                          <Users className="h-4 w-4 mr-2" />
+                          Assign Technician
+                        </Button>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {selectedClaimForDetail.assignedTechnicians.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {selectedClaimForDetail.assignedTechnicians.map((tech) => (
+                          <Card key={tech.id} className="border-dashed">
+                            <CardContent className="p-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                                  <User className="h-5 w-5 text-blue-600" />
+                                </div>
+                                <div className="flex-1">
+                                  <p className="font-semibold">{tech.name}</p>
+                                  <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                                    {typeof tech.workload === 'number' && (
+                                      <Badge variant="outline" className="text-xs">Tasks: {tech.workload}</Badge>
+                                    )}
+                                    {tech.status && (
+                                      <span className="text-xs">{getDisplayStatus(tech.status)}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <p className="text-muted-foreground">No technicians assigned yet</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Timeline */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Clock className="h-5 w-5" />
+                      Timeline
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                          <Calendar className="h-4 w-4 text-blue-600" />
                         </div>
                         <div>
-                          <div className="flex items-center space-x-2">
-                            <p className="font-semibold">{claim.id}</p>
-                            {getStatusBadge(claim.status)}
-                          </div>
+                          <p className="font-medium">Case Submitted</p>
                           <p className="text-sm text-muted-foreground">
-                            VIN: {claim.vin}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Customer: {claim.customer}
+                            {new Date(selectedClaimForDetail.submissionDate).toLocaleDateString('en-US')}
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-medium">{claim.issue}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Tech: {claim.technician}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {claim.date}
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium">Vehicle Check-in</p>
+                          <p className="text-sm text-muted-foreground">
+                            {new Date(selectedClaimForDetail.checkInDate).toLocaleDateString('en-US')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Technician Assignment Modal */}
+        <Dialog open={showTechnicianModal} onOpenChange={closeTechnicianModal}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-blue-600" />
+                  Assign Technician to Case
+                </DialogTitle>
+                <DialogDescription>
+                  {selectedCaseForAssignment && (() => {
+                    const claim = warrantyClaims.find(c => c.vin === selectedCaseForAssignment);
+                    return (
+                      <div className="mt-2 p-3 bg-muted/50 rounded-lg border space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Car className="h-4 w-4 text-primary" />
+                          <div className="flex-1">
+                            <span className="text-xs text-muted-foreground mr-2">VIN:</span>
+                            <span className="font-mono font-medium text-sm">{selectedCaseForAssignment}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4 text-amber-600" />
+                          <div className="flex-1">
+                            <span className="text-xs text-muted-foreground mr-2">Issue:</span>
+                            <span className="font-medium text-sm">{claim?.issueType}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </DialogDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => refreshTechnicians('AVAILABLE')}>
+                  Refresh
+                </Button>
+                {isLoadingTechnicians && (
+                  <div className="text-sm text-muted-foreground">Loading...</div>
+                )}
+              </div>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {/* Currently Assigned */}
+              {selectedCaseForAssignment && (
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <h4 className="font-medium text-sm mb-2">Currently Assigned:</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.assignedTechnicians.map((tech) => (
+                      <Badge key={tech.id} variant="default" className="text-sm p-2">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{tech.name}</span>
+                          {typeof tech.workload === 'number' && (
+                            <span className="text-xs">Tasks: {tech.workload}</span>
+                          )}
+                          {tech.status && (
+                            <span className="text-xs text-muted-foreground">{getDisplayStatus(tech.status)}</span>
+                          )}
+                        </div>
+                      </Badge>
+                    )) || []}
+                    {(!warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.assignedTechnicians.length ||
+                      warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.assignedTechnicians.length === 0) && (
+                        <span className="text-sm text-muted-foreground">No technicians assigned yet</span>
+                      )}
+                  </div>
+                </div>
+              )}
+
+              {/* Available Technicians */}
+              <div>
+                <h4 className="font-medium text-sm mb-3">Available Technicians:</h4>
+                <div className="grid gap-3">
+                  {selectedCaseForAssignment && getRecommendedTechnicians(
+                    warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.issueType || ''
+                  ).map((tech) => {
+                    const isAssigned = warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.assignedTechnicians.some(t => t.id === tech.id);
+                    return (
+                      <Card key={tech.id} className={`p-4 cursor-pointer transition-colors ${isAssigned ? 'bg-gray-100 opacity-60' : 'hover:bg-blue-50'}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h5 className="font-medium">{tech.name}</h5>
+                              {typeof tech.workload === 'number' && (
+                                <Badge variant={tech.workload <= 2 ? "default" : tech.workload <= 4 ? "secondary" : "destructive"} className="text-xs">
+                                  Tasks: {tech.workload}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                              <span className={`${tech.isAvailable ? 'text-green-600' : 'text-red-600'}`}>
+                                {tech.isAvailable ? '✅ Available' : '❌ Busy'}
+                              </span>
+                              {tech.status && (
+                                <span className="text-xs text-muted-foreground">{tech.status}</span>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            variant={isAssigned ? "outline" : "default"}
+                            size="sm"
+                            disabled={isAssigned || !tech.isAvailable}
+                            onClick={() => assignTechnicianToCase(selectedCaseForAssignment, tech.id)}
+                          >
+                            {isAssigned ? 'Assigned' : 'Assign'}
+                          </Button>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Technician Records Modal */}
+        <Dialog open={showTechnicianRecordsModal} onOpenChange={setShowTechnicianRecordsModal}>
+          <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                Records Assigned to {selectedTechnicianForRecords?.name || 'Technician'}
+              </DialogTitle>
+              <DialogDescription>
+                Viewing all warranty claims currently assigned to this technician
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {technicianRecords.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  No records assigned to this technician
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Users className="w-4 h-4" />
+                    <span>Total: {technicianRecords.length} record(s)</span>
+                  </div>
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>VIN</TableHead>
+                        <TableHead>Model</TableHead>
+                        <TableHead>Issue</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Check-in Date</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {technicianRecords.map((record) => (
+                        <TableRow key={record.recordId}>
+                          <TableCell className="font-mono text-xs">{record.vin}</TableCell>
+                          <TableCell>{displayValue(record.model)}</TableCell>
+                          <TableCell>
+                            {record.guaranteeCases && record.guaranteeCases.length > 0 ? (
+                              <div className="space-y-1">
+                                {record.guaranteeCases.map((gCase, idx) => (
+                                  <div key={gCase.guaranteeCaseId} className="text-xs">
+                                    <Badge variant="outline" className="mr-1">#{idx + 1}</Badge>
+                                    {gCase.contentGuarantee}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              displayValue(record.issueType)
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={getStatusBadgeVariant(record.status)}>
+                              {getDisplayStatus(record.status)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {new Date(record.checkInDate).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedClaimForDetail(record);
+                                setShowClaimDetailModal(true);
+                              }}
+                            >
+                              View Details
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={closeTechnicianRecordsModal}>
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Warehouse Detail Modal */}
+        <Dialog open={showWarehouseDetailModal} onOpenChange={setShowWarehouseDetailModal}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-blue-600" />
+                Warehouse Details
+              </DialogTitle>
+              <DialogDescription>
+                Complete information about the warehouse
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedWarehouse && (
+              <div className="space-y-6 mt-4">
+                {/* Basic Information */}
+                <Card className="shadow-md border">
+                  <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-900/20 pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+                        <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      Basic Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Warehouse ID</label>
+                          <p className="font-mono text-sm font-semibold mt-0.5">{selectedWarehouse.warehouseId}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Name</label>
+                          <p className="text-sm font-medium mt-0.5">{selectedWarehouse.name}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <MapPin className="h-3 w-3" />
+                            Address
+                          </label>
+                          <p className="text-sm font-medium mt-0.5">{selectedWarehouse.address}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Priority</label>
+                          <div className="mt-1">
+                            <Badge 
+                              variant={selectedWarehouse.priority === 1 ? 'default' : selectedWarehouse.priority === 2 ? 'secondary' : 'outline'}
+                              className="text-xs"
+                            >
+                              Priority {selectedWarehouse.priority}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Service Center ID</label>
+                          <p className="font-mono text-sm mt-0.5">{selectedWarehouse.serviceCenterId || selectedWarehouse.service_center_id || '-'}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Vehicle Company ID</label>
+                          <p className="font-mono text-sm mt-0.5">{selectedWarehouse.vehicleCompanyId || selectedWarehouse.vehicle_company_id || '-'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Timestamps */}
+                <Card className="shadow-md border">
+                  <CardHeader className="bg-gradient-to-r from-green-50 to-transparent dark:from-green-900/20 pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <div className="p-2 bg-green-100 dark:bg-green-900/40 rounded-lg">
+                        <Clock className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      </div>
+                      Timestamps
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                        <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                          <Calendar className="h-3 w-3" />
+                          Created At
+                        </label>
+                        <p className="text-sm font-medium mt-0.5">
+                          {new Date(selectedWarehouse.createdAt).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
                         </p>
                       </div>
-                      <div className="flex space-x-2">
-                        <Button variant="outline" size="sm" onClick={() => handleViewDetails(claim.id)}>
-                          View Details
-                        </Button>
-                        {(hasPermission(user, 'approve_reject_claims') || hasPermission(user, 'update_technical_status')) && (
+                      <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                        <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                          <Calendar className="h-3 w-3" />
+                          Updated At
+                        </label>
+                        <p className="text-sm font-medium mt-0.5">
+                          {new Date(selectedWarehouse.updatedAt).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button variant="outline" onClick={closeWarehouseDetailModal}>
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Warehouse Selection Modal for Stock Transfer Request */}
+        <Dialog open={showWarehouseSelectionModal} onOpenChange={setShowWarehouseSelectionModal}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-orange-600" />
+                Select Warehouse for Stock Transfer Request
+              </DialogTitle>
+              <DialogDescription>
+                Choose the warehouse that will request the component from the manufacturer
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 mt-4">
+              {pendingStockRequest && (
+                <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
+                  <CardContent className="p-4">
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                        Request Details:
+                      </p>
+                      <div className="text-sm text-blue-800 dark:text-blue-200">
+                        <p>• Component ID: <span className="font-mono">{pendingStockRequest.typeComponentId}</span></p>
+                        <p>• Quantity: <span className="font-semibold">{pendingStockRequest.quantity}</span></p>
+                        <p>• Case Line ID: <span className="font-mono text-xs">{pendingStockRequest.caseLineId}</span></p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <div>
+                <h4 className="font-medium text-sm mb-3">Available Warehouses:</h4>
+                {warehouses.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No warehouses available</p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-4"
+                      onClick={fetchWarehouses}
+                    >
+                      Load Warehouses
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 max-h-[400px] overflow-y-auto">
+                    {warehouses.map((warehouse) => (
+                      <Card 
+                        key={warehouse.warehouseId} 
+                        className="p-4 cursor-pointer transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20 border-2 hover:border-blue-400"
+                        onClick={() => submitStockTransferRequest(warehouse.warehouseId)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h5 className="font-semibold">{warehouse.name}</h5>
+                              <Badge 
+                                variant={warehouse.priority === 1 ? 'default' : warehouse.priority === 2 ? 'secondary' : 'outline'}
+                                className="text-xs"
+                              >
+                                Priority {warehouse.priority}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <MapPin className="h-3 w-3" />
+                              <span>{warehouse.address}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 font-mono">
+                              ID: {warehouse.warehouseId}
+                            </p>
+                          </div>
                           <Button
-                            variant="secondary"
+                            variant="default"
                             size="sm"
-                            onClick={() => handleUpdateStatus(claim.id, claim.status)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              submitStockTransferRequest(warehouse.warehouseId);
+                            }}
                           >
-                            {user?.role === 'service_center_technician' ? 'Update Progress' : 'Update Status'}
+                            Select
                           </Button>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowWarehouseSelectionModal(false);
+                  setPendingStockRequest(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Stock Transfer Requests Modal */}
+        <Dialog open={showStockRequestsModal} onOpenChange={setShowStockRequestsModal}>
+          <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Clock className="h-5 w-5 text-blue-600" />
+                Stock Transfer Requests
+              </DialogTitle>
+              <DialogDescription>
+                View all pending stock transfer requests from warehouses
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 mt-4">
+              {isLoadingStockRequests ? (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground">Loading requests...</p>
+                </div>
+              ) : stockTransferRequests.length === 0 ? (
+                <div className="text-center py-8">
+                  <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No pending stock transfer requests</p>
+                </div>
+              ) : (
+                <div className="rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Requester</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Requested At</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {stockTransferRequests.map((request) => (
+                        <TableRow key={request.id}>
+                          <TableCell>
+                            <p className="font-medium text-sm">{request.requester?.name || 'Unknown'}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Service Center: {request.requester?.serviceCenterId || 'N/A'}
+                            </p>
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant={
+                                request.status === 'PENDING_APPROVAL' ? 'outline' :
+                                request.status === 'APPROVED' ? 'default' :
+                                request.status === 'REJECTED' ? 'destructive' :
+                                'secondary'
+                              }
+                              className="text-xs"
+                            >
+                              {request.status.replace(/_/g, ' ')}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {new Date(request.requestedAt).toLocaleString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setSelectedStockRequest(request);
+                                setShowStockRequestDetailModal(true);
+                              }}
+                            >
+                              View Details
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              <div className="text-sm text-muted-foreground">
+                Showing {stockTransferRequests.length} request{stockTransferRequests.length !== 1 ? 's' : ''}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowStockRequestsModal(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Stock Transfer Request Detail Modal */}
+        <Dialog open={showStockRequestDetailModal} onOpenChange={setShowStockRequestDetailModal}>
+          <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-blue-600" />
+                Stock Transfer Request Details
+              </DialogTitle>
+              <DialogDescription>
+                Complete information about the stock transfer request
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedStockRequest && (
+              <div className="space-y-6 mt-4">
+                {/* Request Information */}
+                <Card className="shadow-md border">
+                  <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-900/20 pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
+                        <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      Request Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Request ID</label>
+                          <p className="font-mono text-sm mt-0.5">{selectedStockRequest.id}</p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
+                          <div className="mt-1">
+                            <Badge 
+                              variant={
+                                selectedStockRequest.status === 'PENDING_APPROVAL' ? 'outline' :
+                                selectedStockRequest.status === 'APPROVED' ? 'default' :
+                                selectedStockRequest.status === 'REJECTED' ? 'destructive' :
+                                'secondary'
+                              }
+                            >
+                              {selectedStockRequest.status.replace(/_/g, ' ')}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Requesting Warehouse ID</label>
+                          <p className="font-mono text-sm mt-0.5">{selectedStockRequest.requestingWarehouseId}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Requester</label>
+                          <p className="font-medium text-sm mt-0.5">{selectedStockRequest.requester?.name || 'Unknown'}</p>
+                          <p className="font-mono text-xs text-muted-foreground mt-1">
+                            User ID: {selectedStockRequest.requestedByUserId}
+                          </p>
+                        </div>
+                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                            <Calendar className="h-3 w-3" />
+                            Requested At
+                          </label>
+                          <p className="text-sm mt-0.5">
+                            {new Date(selectedStockRequest.requestedAt).toLocaleString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                        {selectedStockRequest.approvedAt && (
+                          <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                            <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                              <CheckCircle className="h-3 w-3" />
+                              Approved At
+                            </label>
+                            <p className="text-sm mt-0.5">
+                              {new Date(selectedStockRequest.approvedAt).toLocaleString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        )}
+                        {selectedStockRequest.rejectedAt && (
+                          <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
+                            <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
+                              <XCircle className="h-3 w-3" />
+                              Rejected At
+                            </label>
+                            <p className="text-sm mt-0.5">
+                              {new Date(selectedStockRequest.rejectedAt).toLocaleString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
                         )}
                       </div>
                     </div>
-                  ))}
-                </div>
-                {hasPermission(user, 'view_all_claims') && (
-                  <div className="mt-6 flex justify-center">
-                    <Button variant="outline" onClick={() => window.location.href = '/all-claims'}>
-                      View All Claims
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
 
-          <TabsContent value="vehicles" className="space-y-6">
-            <Card className="shadow-elegant">
-              <CardHeader>
-                <CardTitle>Vehicle & Customer Management</CardTitle>
-                <CardDescription>
-                  Register vehicles, manage customer profiles and service history
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex space-x-4">
-                  {hasPermission(user, 'register_vehicle') && (
-                    <Button variant="gradient" onClick={() => setShowRegisterVehicle(true)}>
-                      <Plus className="mr-2 h-4 w-4" />
-                      Register New Vehicle
-                    </Button>
-                  )}
-                  {hasPermission(user, 'add_customer') && (
-                    <Button variant="outline" onClick={() => setShowAddCustomer(true)}>
-                      <User className="mr-2 h-4 w-4" />
-                      Add Customer
-                    </Button>
-                  )}
-                  {hasPermission(user, 'attach_parts') && (
-                    <Button variant="secondary" onClick={() => setShowAttachParts(true)}>
-                      <Car className="mr-2 h-4 w-4" />
-                      Attach Parts
-                    </Button>
-                  )}
-                </div>
-                <div className="mt-6 grid gap-4 md:grid-cols-3">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Vehicle Info</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-muted-foreground">
-                        VIN registration, model details, warranty dates
-                      </p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Customer Details</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-muted-foreground">
-                        Personal information, contact details, history
-                      </p>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Service History</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-muted-foreground">
-                        Timeline of services, repairs, and maintenance
-                      </p>
-                    </CardContent>
-                  </Card>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="repairs" className="space-y-6">
-            <Card className="shadow-elegant">
-              <CardHeader>
-                <CardTitle>Active Repairs</CardTitle>
-                <CardDescription>
-                  Track repair progress and technician assignments
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4 md:grid-cols-3">
-                  <Card className="border-warning">
-                    <CardHeader>
-                      <CardTitle className="text-base text-warning">Pending Parts</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm">5 repairs waiting for parts delivery</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-primary">
-                    <CardHeader>
-                      <CardTitle className="text-base text-primary">In Progress</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm">7 vehicles currently being repaired</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-success">
-                    <CardHeader>
-                      <CardTitle className="text-base text-success">Ready for Handover</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm">3 repairs completed and ready</p>
-                    </CardContent>
-                  </Card>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="campaigns" className="space-y-6">
-            <Card className="shadow-elegant">
-              <CardHeader>
-                <CardTitle>Service Campaigns</CardTitle>
-                <CardDescription>
-                  Manage recall campaigns and customer notifications
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between rounded-lg border p-4">
-                    <div>
-                      <h3 className="font-semibold">Battery Software Update Campaign</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Affects 2022-2023 EV models - Critical safety update
-                      </p>
-                    </div>
-                    {hasPermission(user, 'manage_campaigns') && (
-                      <div className="flex space-x-2">
-                        <Button variant="outline" size="sm">Send Notifications</Button>
-                        <Button variant="default" size="sm">Manage Schedule</Button>
+                    {selectedStockRequest.rejectionReason && (
+                      <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-md border border-red-200">
+                        <label className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase">Rejection Reason</label>
+                        <p className="text-sm text-red-900 dark:text-red-100 mt-1">{selectedStockRequest.rejectionReason}</p>
                       </div>
                     )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                    {selectedStockRequest.cancellationReason && (
+                      <div className="mt-4 p-3 bg-orange-50 dark:bg-orange-900/20 rounded-md border border-orange-200">
+                        <label className="text-xs font-semibold text-orange-700 dark:text-orange-400 uppercase">Cancellation Reason</label>
+                        <p className="text-sm text-orange-900 dark:text-orange-100 mt-1">{selectedStockRequest.cancellationReason}</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowStockRequestDetailModal(false);
+                  setSelectedStockRequest(null);
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
-
-      {/* Modals */}
-      {showNewClaim && (
-        <NewClaim onClose={() => setShowNewClaim(false)} />
-      )}
-      {showRegisterVehicle && (
-        <RegisterVehicle onClose={() => setShowRegisterVehicle(false)} />
-      )}
-      {showAddCustomer && (
-        <AddCustomer onClose={() => setShowAddCustomer(false)} />
-      )}
-      {showAttachParts && (
-        <AttachParts onClose={() => setShowAttachParts(false)} />
-      )}
-      {showClaimDetails && (
-        <ClaimDetails
-          claimId={selectedClaimId}
-          onClose={() => setShowClaimDetails(false)}
-          onUpdateStatus={() => {
-            setShowClaimDetails(false);
-            setShowUpdateStatus(true);
-          }}
-        />
-      )}
-      {showUpdateStatus && (
-        <UpdateClaimStatus
-          claimId={selectedClaimId}
-          currentStatus={selectedClaimStatus}
-          onClose={() => setShowUpdateStatus(false)}
-          onStatusUpdated={handleStatusUpdated}
-        />
-      )}
-
-      {/* Vehicle Information Modal */}
-      {showVehicleForm && searchResult && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden">
-            <CardHeader className="border-b pb-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center space-x-2">
-                    <Car className="h-5 w-5 text-primary" />
-                    <span>Vehicle Information</span>
-                  </CardTitle>
-                  <CardDescription>
-                    Edit vehicle details and owner information
-                  </CardDescription>
-                </div>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  onClick={() => {
-                    setShowVehicleForm(false);
-                    setSearchResult(null);
-                    setSearchTerm('');
-                    // Reset customer search states when closing modal
-                    setCustomerSearchPhone('');
-                    setHasSearchedCustomer(false);
-                    setOwnerForm({ fullName: '', phone: '', email: '', address: '' });
-                  }}
-                >
-                  <XCircle className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="p-6 overflow-y-auto max-h-[calc(90vh-200px)] space-y-6">
-              {/* Vehicle Details Form */}
-              <div className="space-y-4">
-                <h3 className="font-semibold text-lg border-b pb-2">Vehicle Details</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">VIN Number</label>
-                    <Input 
-                      value={searchResult.vin}
-                      disabled
-                      className="bg-muted"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Date of Manufacture</label>
-                    <Input 
-                      value={formatDate(searchResult.dateOfManufacture)}
-                      disabled
-                      className="bg-muted"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Place of Manufacture</label>
-                    <Input 
-                      value={searchResult.placeOfManufacture || searchResult.placeofmanufacture || ""}
-                      onChange={(e) => setSearchResult(prev => ({ 
-                        ...prev, 
-                        placeOfManufacture: e.target.value,
-                        placeofmanufacture: e.target.value
-                      }))}
-                      placeholder="Enter place of manufacture"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">License Plate</label>
-                    <Input 
-                      value={searchResult.licensePlate || searchResult.licenseplate || ""}
-                      onChange={(e) => setSearchResult(prev => ({ 
-                        ...prev, 
-                        licensePlate: e.target.value,
-                        licenseplate: e.target.value
-                      }))}
-                      placeholder="Enter license plate"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Purchase Date</label>
-                    <Input 
-                      type="date"
-                      value={searchResult.purchaseDate || searchResult.purchasedate ? 
-                        new Date(searchResult.purchaseDate || searchResult.purchasedate).toISOString().split('T')[0] : ""}
-                      onChange={(e) => setSearchResult(prev => ({ 
-                        ...prev, 
-                        purchaseDate: e.target.value ? new Date(e.target.value).toISOString() : null,
-                        purchasedate: e.target.value ? new Date(e.target.value).toISOString() : null
-                      }))}
-                      placeholder="Select purchase date"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Owner Information Form */}
-              <div className="space-y-4">
-                <h3 className="font-semibold text-lg border-b pb-2">Owner Information</h3>
-                {searchResult.owner ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center space-x-2 mb-4">
-                      <Badge variant="success">
-                        <CheckCircle className="mr-1 h-3 w-3" />
-                        Registered Owner
-                      </Badge>
-                    </div>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Full Name</label>
-                        <Input 
-                          value={searchResult.owner?.fullName || searchResult.owner?.fullname || ''}
-                          onChange={(e) => setSearchResult(prev => ({ 
-                            ...prev, 
-                            owner: { ...prev.owner, fullName: e.target.value, fullname: e.target.value }
-                          }))}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Phone Number</label>
-                        <Input 
-                          value={searchResult.owner?.phone || ''}
-                          onChange={(e) => handlePhoneChange(e.target.value, (phone) => setSearchResult(prev => ({ 
-                            ...prev, 
-                            owner: { ...prev.owner, phone }
-                          })))}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Email</label>
-                        <Input 
-                          type="email"
-                          value={searchResult.owner?.email || ''}
-                          onChange={(e) => setSearchResult(prev => ({ 
-                            ...prev, 
-                            owner: { ...prev.owner, email: e.target.value }
-                          }))}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Address</label>
-                        <Input 
-                          value={searchResult.owner?.address || ''}
-                          onChange={(e) => setSearchResult(prev => ({ 
-                            ...prev, 
-                            owner: { ...prev.owner, address: e.target.value }
-                          }))}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="flex items-center space-x-2 p-3 bg-warning/10 border border-warning/20 rounded-lg">
-                      <AlertCircle className="h-4 w-4 text-warning" />
-                      <p className="text-warning font-medium">This car is unowned</p>
-                    </div>
-                    
-                    {/* Customer Search Section */}
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Search Existing Customer</label>
-                        <div className="flex space-x-2">
-                          <Input
-                            placeholder="Enter customer phone number"
-                            value={customerSearchPhone}
-                            onChange={(e) => handlePhoneChange(e.target.value, setCustomerSearchPhone)}
-                            className="flex-1"
-                          />
-                          <Button 
-                            variant="outline" 
-                            onClick={handleSearchCustomer}
-                            disabled={isSearchingCustomer || !customerSearchPhone.trim()}
-                            className="px-6"
-                          >
-                            {isSearchingCustomer ? (
-                              <><Clock className="mr-2 h-4 w-4 animate-spin" />Searching...</>
-                            ) : (
-                              <><Search className="mr-2 h-4 w-4" />Search</>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Owner Form Fields - Only show after search button is clicked */}
-                    {hasSearchedCustomer && (
-                      <>
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-medium mb-1">Full Name *</label>
-                            <Input
-                              placeholder="Enter owner full name"
-                              value={ownerForm.fullName}
-                              onChange={(e) => setOwnerForm(prev => ({ ...prev, fullName: e.target.value }))}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium mb-1">Phone Number *</label>
-                            <Input
-                              placeholder="Enter phone number"
-                              value={ownerForm.phone}
-                              onChange={(e) => handlePhoneChange(e.target.value, (phone) => setOwnerForm(prev => ({ ...prev, phone })))}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium mb-1">Email</label>
-                            <Input
-                              placeholder="Enter email address"
-                              type="email"
-                              value={ownerForm.email}
-                              onChange={(e) => setOwnerForm(prev => ({ ...prev, email: e.target.value }))}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium mb-1">Address</label>
-                            <Input
-                              placeholder="Enter address"
-                              value={ownerForm.address}
-                              onChange={(e) => setOwnerForm(prev => ({ ...prev, address: e.target.value }))}
-                            />
-                          </div>
-                        </div>
-                        
-                        <div className="flex justify-start gap-2">
-                          <Button 
-                            variant="gradient" 
-                            onClick={handleRegisterOwner}
-                            disabled={!ownerForm.fullName || !ownerForm.phone}
-                          >
-                            <User className="mr-2 h-4 w-4" />
-                            {searchResult?.owner ? 'Update Owner Info' : 'Register Owner'}
-                          </Button>
-                          {searchResult?.owner && (
-                            <Button 
-                              variant="outline"
-                              onClick={handleUpdateOwnerInBackend}
-                              disabled={!ownerForm.fullName || !ownerForm.phone}
-                            >
-                              <Save className="mr-2 h-4 w-4" />
-                              Update Changes
-                            </Button>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-            
-            {/* Modal Footer */}
-            <div className="border-t p-6">
-              <div className="flex justify-between">
-                <Button 
-                  variant="outline"
-                  onClick={handleSaveVehicleData}
-                  disabled={
-                    !searchResult || 
-                    !(searchResult.placeOfManufacture || searchResult.placeofmanufacture)?.trim() ||
-                    !(searchResult.licensePlate || searchResult.licenseplate)?.trim() ||
-                    !(searchResult.purchaseDate || searchResult.purchasedate) ||
-                    !searchResult.owner?.id
-                  }
-                >
-                  <Save className="mr-2 h-4 w-4" />
-                  Save Changes
-                </Button>
-                <Button 
-                  variant="secondary"
-                  onClick={() => {
-                    setShowVehicleForm(false);
-                    setSearchResult(null);
-                    setSearchTerm('');
-                    // Reset customer search states when closing modal
-                    setCustomerSearchPhone('');
-                    setHasSearchedCustomer(false);
-                    setOwnerForm({ fullName: '', phone: '', email: '', address: '' });
-                  }}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* Toast Notification for Vehicle Not Found */}
-      {showNotFoundToast && (
-        <div className="fixed bottom-4 right-4 z-50 animate-in slide-in-from-right duration-300">
-          <div className="bg-destructive text-destructive-foreground px-4 py-3 rounded-lg shadow-lg border border-destructive/20 flex items-center space-x-2 min-w-[300px]">
-            <AlertCircle className="h-4 w-4 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="font-medium text-sm">Vehicle not found</p>
-              <p className="text-xs opacity-90">VIN "{searchTerm}" does not exist in the system</p>
-            </div>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="h-6 w-6 p-0 text-destructive-foreground hover:bg-destructive-foreground/20"
-              onClick={() => setShowNotFoundToast(false)}
-            >
-              <XCircle className="h-3 w-3" />
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

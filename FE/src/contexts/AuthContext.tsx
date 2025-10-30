@@ -37,6 +37,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 		if (token) {
 			try {
+				// Decode token to get user info
+				const payload = JSON.parse(atob(token.split(".")[1]));
+				const userData: User = {
+					id: payload.userId,
+					email: "",
+					name: "",
+					role: payload.roleName,
+					serviceCenter: payload.serviceCenterId,
+					department: payload.department,
+				};
+				setUser(userData);
+				console.log("User restored from token:", userData);
 			} catch (error) {
 				console.error("Error parsing saved user data:", error);
 				// Clear invalid data
@@ -72,10 +84,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 				const token = data.data.token;
 				if (token) {
 					localStorage.setItem("ev_warranty_token", token);
-					let userData: User;
 
 					const payload = JSON.parse(atob(token.split(".")[1]));
-					userData = {
+					const userData: User = {
 						id: payload.userId,
 						email: "",
 						name: "",
@@ -85,6 +96,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 					};
 
 					setUser(userData);
+					console.log("User logged in:", userData);
 					setIsLoading(false);
 					return true;
 				} else {
