@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import dotenv from "dotenv";
-import { BadRequestError } from "../error";
+import { BadRequestError } from "../error/index.js";
 dotenv.config();
 
 const OTP_EXPIRATION_SECONDS = 300;
