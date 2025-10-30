@@ -1028,14 +1028,15 @@ const SuperAdvisor = () => {
     setIsSendingOtp(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/mail/send`, {
+      const response = await fetch(`${API_BASE_URL}/mail/otp/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
         },
         body: JSON.stringify({
-          email: warrantyRecordForm.customerEmail
+          email: warrantyRecordForm.customerEmail,
+          vin: warrantyRecordForm.vin
         })
       });
 
@@ -1075,7 +1076,7 @@ const SuperAdvisor = () => {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/mail/verify`, {
+      const response = await fetch(`${API_BASE_URL}/mail/otp/verify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1161,21 +1162,11 @@ const SuperAdvisor = () => {
       return;
     }
 
-    // Validate phone number format (10 digits)
-    if (!/^\d{10}$/.test(warrantyRecordForm.visitorPhone.trim())) {
-      toast({
-        title: 'Error',
-        description: 'Phone number must be exactly 10 digits',
-        variant: 'destructive'
-      });
-      return;
-    }
-
     // Validate OTP verification - MUST verify OTP before creating record
     if (!otpVerified) {
       toast({
         title: 'OTP Verification Required',
-        description: 'Please send and verify OTP for the phone number before creating record',
+        description: 'Please send and verify OTP for the email address before creating record',
         variant: 'destructive'
       });
       return;
@@ -1207,6 +1198,10 @@ const SuperAdvisor = () => {
       setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
       setWarrantyRecordCaseText('');
       setShowCreateWarrantyDialog(false);
+      setOtpSent(false);
+      setOtpVerified(false);
+      setOtpCode('');
+      setOtpCountdown(0);
       setVehicleWarrantyStatus(null);
       setVehicleOdometer('');
       
@@ -3829,6 +3824,19 @@ const SuperAdvisor = () => {
               />
             </div>
 
+            {/* Visitor Phone - Editable */}
+            <div className="grid gap-2">
+              <Label htmlFor="visitor-phone">Visitor Phone *</Label>
+              <Input
+                id="visitor-phone"
+                type="tel"
+                value={warrantyRecordForm.visitorPhone}
+                onChange={(e) => setWarrantyRecordForm(prev => ({ ...prev, visitorPhone: e.target.value }))}
+                placeholder="Enter visitor's phone number"
+                className="border-green-300 focus:border-green-500"
+              />
+            </div>
+
             {/* Customer Email - Editable */}
             <div className="grid gap-2">
               <Label htmlFor="customer-email">Customer Email *</Label>
@@ -3992,7 +4000,7 @@ const SuperAdvisor = () => {
             </Button>
             <Button 
               onClick={handleSubmitWarrantyRecord}
-              disabled={warrantyRecordForm.cases.length === 0 || isCreatingRecord || !warrantyRecordForm.visitorFullName.trim() || !warrantyRecordForm.visitorPhone.trim() || !otpVerified}
+              disabled={warrantyRecordForm.cases.length === 0 || isCreatingRecord || !warrantyRecordForm.visitorFullName.trim() || !warrantyRecordForm.visitorPhone.trim() || !warrantyRecordForm.customerEmail.trim() || !otpVerified}
               className="bg-blue-600 hover:bg-blue-700"
             >
               <Plus className="h-4 w-4 mr-2" />

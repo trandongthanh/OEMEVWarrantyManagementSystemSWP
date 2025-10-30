@@ -2,10 +2,9 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Package, Warehouse, ArrowRightCircle, Truck } from 'lucide-react';
+import { Package, Warehouse, Truck } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { componentReservationService, PickupResponse } from '@/services/componentReservationService';
 
@@ -28,21 +27,13 @@ interface TransferRequest {
   status: string;
 }
 
-interface Technician {
-  id: string;
-  name: string;
-  username?: string;
-  service_center_id?: string;
-}
 
 const PartsCoordinatorDashboard: React.FC = () => {
-  const { getToken } = useAuth();
+  const { getToken, user } = useAuth();
   const [stocks, setStocks] = useState<StockRow[]>([]);
   const [transferRequests, setTransferRequests] = useState<TransferRequest[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [technicians, setTechnicians] = useState<Technician[]>([]);
-  const [selectedTech, setSelectedTech] = useState<string | null>(null);
-  const [assignTargetId, setAssignTargetId] = useState<string>('');
+  
   // Pickup reserved components (for parts coordinator)
   const [reservationIdInput, setReservationIdInput] = useState<string>('');
   const [pickupResult, setPickupResult] = useState<PickupResponse | null>(null);
@@ -61,7 +52,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
       setIsLoading(true);
       try {
         const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-        if (!token) {
+        // If no token or user role is not related to inventory/parts operations,
+        // fallback to mock data to avoid spamming backend with unauthorized requests.
+        const allowedRoles = ['emv_staff', 'service_center_manager', 'service_center_staff', 'parts_coordinator_company', 'parts_coordinator_service_center'];
+        if (!token || !user || !allowedRoles.includes(user.role)) {
           // fallback to mock data when not authenticated in dev
           setStocks(mockStocks());
           setTransferRequests(mockTransfers());
@@ -70,27 +64,37 @@ const PartsCoordinatorDashboard: React.FC = () => {
         }
 
         // Example API endpoints - adjust if your backend uses different paths
-        const [stocksRes, transfersRes] = await Promise.all([
-          axios.get('http://localhost:3000/api/v1/stocks', { headers: { Authorization: `Bearer ${token}` } }),
+        const [warehousesRes, transfersRes] = await Promise.all([
+          // backend exposes warehouses (with nested stock info) at /api/v1/warehouses
+          axios.get('http://localhost:3000/api/v1/warehouses', { headers: { Authorization: `Bearer ${token}` } }),
           axios.get('http://localhost:3000/api/v1/stock-transfer-requests?limit=50', { headers: { Authorization: `Bearer ${token}` } })
         ]);
 
         if (cancelled) return;
 
         // Use unknown and defensive casts to avoid `any` in the codebase
-        const stocksRaw = (((stocksRes.data as Record<string, unknown>)?.data) as unknown[]) || [];
+        // warehousesRes.data.data.warehouses -> each warehouse has `stock` array
+        const warehouses = (((warehousesRes.data as Record<string, unknown>)?.data) as Record<string, unknown>)?.warehouses as unknown[] | undefined;
+        const stocksRaw: unknown[] = (warehouses && Array.isArray(warehouses))
+          ? warehouses.flatMap((w) => {
+              const wh = w as Record<string, unknown>;
+              const warehouseName = String(wh['name'] ?? wh['warehouseName'] ?? 'Unknown');
+              const stockArr = (wh['stock'] ?? []) as unknown[];
+              return (Array.isArray(stockArr) ? stockArr : []).map((s) => ({ ...(s as Record<string, unknown>), __warehouseName: warehouseName }));
+            })
+          : [];
+
         const stocksData = stocksRaw.map((s) => {
           const obj = s as Record<string, unknown>;
-          const warehouse = obj['warehouse'] as Record<string, unknown> | undefined;
-          const typeComp = obj['type_component'] as Record<string, unknown> | undefined;
+          const typeComp = obj['component'] ?? obj['type_component'] ?? obj['typeComponent'] as Record<string, unknown> | undefined;
           return {
-            stock_id: String(obj['stock_id'] ?? obj['id'] ?? Date.now()),
-            warehouse_name: String(warehouse?.['name'] ?? obj['warehouse_name'] ?? 'Unknown'),
+            stock_id: String(obj['stockId'] ?? obj['stock_id'] ?? obj['id'] ?? Date.now()),
+            warehouse_name: String(obj['__warehouseName'] ?? obj['warehouse_name'] ?? 'Unknown'),
             component_name: String(typeComp?.['name'] ?? obj['component_name'] ?? 'Unknown'),
             sku: typeComp?.['sku'] ? String(typeComp['sku']) : undefined,
             category: typeComp?.['category'] ? String(typeComp['category']) : undefined,
-            in_stock: Number(obj['quantity_in_stock'] ?? 0),
-            reserved: Number(obj['quantity_reserved'] ?? 0)
+            in_stock: Number(obj['quantity'] ?? obj['quantity_in_stock'] ?? obj['quantityAvailable'] ?? 0),
+            reserved: Number(obj['quantityReserved'] ?? obj['quantity_reserved'] ?? 0)
           } as StockRow;
         });
 
@@ -123,146 +127,14 @@ const PartsCoordinatorDashboard: React.FC = () => {
 
     load();
 
-    // also fetch technicians for this service center (best-effort)
-    const loadTechs = async () => {
-      try {
-        const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-        if (!token) return setTechnicians([]);
-        const res = await axios.get('http://localhost:3000/api/v1/users?role=technician&limit=200', { headers: { Authorization: `Bearer ${token}` } });
-        const data = (((res.data as Record<string, unknown>)?.data) as unknown[]) || [];
-        const techs = data.map((u) => {
-          const obj = u as Record<string, unknown>;
-          return {
-            id: String(obj['id'] ?? obj['user_id'] ?? obj['uuid'] ?? obj['userId'] ?? obj['userId'] ?? Date.now()),
-            name: String(obj['name'] ?? obj['fullName'] ?? obj['username'] ?? 'Technician'),
-            username: obj['username'] ? String(obj['username']) : undefined,
-            service_center_id: obj['service_center_id'] ? String(obj['service_center_id']) : undefined
-          } as Technician;
-        });
-        setTechnicians(techs);
-      } catch (err) {
-        // ignore; keep empty list
-        setTechnicians([]);
-      }
-    };
-
-    loadTechs();
+    
 
     return () => { cancelled = true; };
-  }, [getToken]);
+  }, [getToken, user]);
 
-  const approveTransfer = async (id: string) => {
-    // Approve is typically done by EMV staff — this button will attempt the approve endpoint and show result/error
-    try {
-      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-      if (!token) return alert('Authentication required');
-      const res = await axios.patch(`http://localhost:3000/api/v1/stock-transfer-requests/${id}/approve`, {}, { headers: { Authorization: `Bearer ${token}` } });
-      alert('Approved: ' + (res.data?.message || 'OK'));
-      // refresh
-      refreshTransfers();
-    } catch (err: unknown) {
-      alert('Approve failed: ' + getErrorMessage(err));
-    }
-  };
+  
 
-  const getErrorMessage = (err: unknown): string => {
-    if (!err) return 'Unknown error';
-    if (typeof err === 'string') return err;
-    if (err instanceof Error) return err.message;
-    const maybe = err as { response?: { data?: { message?: unknown } } };
-    const msg = maybe?.response?.data?.message;
-    if (typeof msg === 'string') return msg;
-    try {
-      return JSON.stringify(maybe).slice(0, 200);
-    } catch {
-      return String(err);
-    }
-  };
-
-  const rejectTransfer = async (id: string) => {
-    try {
-      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-      if (!token) return alert('Authentication required');
-      const body = { rejectionReason: 'Rejected by parts coordinator' };
-      const res = await axios.patch(`http://localhost:3000/api/v1/stock-transfer-requests/${id}/reject`, body, { headers: { Authorization: `Bearer ${token}` } });
-      alert('Rejected: ' + (res.data?.message || 'OK'));
-      refreshTransfers();
-    } catch (err: unknown) {
-      alert('Reject failed: ' + getErrorMessage(err));
-    }
-  };
-
-  const receiveTransfer = async (id: string) => {
-    try {
-      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-      if (!token) return alert('Authentication required');
-      const res = await axios.patch(`http://localhost:3000/api/v1/stock-transfer-requests/${id}/receive`, {}, { headers: { Authorization: `Bearer ${token}` } });
-      alert('Received: ' + (res.data?.message || 'OK'));
-      refreshTransfers();
-    } catch (err: unknown) {
-      alert('Receive failed: ' + getErrorMessage(err));
-    }
-  };
-
-  const refreshTransfers = async () => {
-    try {
-      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-      if (!token) return;
-      const res = await axios.get('http://localhost:3000/api/v1/stock-transfer-requests?limit=50', { headers: { Authorization: `Bearer ${token}` } });
-      const transfersRaw = (((res.data as Record<string, unknown>)?.data) as unknown[]) || [];
-      const transfersData = transfersRaw.map((t) => {
-        const obj = t as Record<string, unknown>;
-        const fromW = obj['requestingWarehouse'] as Record<string, unknown> | undefined;
-        const items = obj['items'] as unknown[] | undefined;
-        const firstItem = Array.isArray(items) && items.length > 0 ? (items[0] as Record<string, unknown>) : undefined;
-        return {
-          id: String(obj['id'] ?? obj['requestId'] ?? Date.now()),
-          fromWarehouse: String(fromW?.['name'] ?? obj['from'] ?? 'Unknown'),
-          toWarehouse: String(obj['requestingWarehouse']?.['name'] ?? obj['to'] ?? 'Unknown'),
-          typeComponentName: String(firstItem?.['typeComponentName'] ?? firstItem?.['typeComponent'] ?? 'Multiple'),
-          qty: Number(firstItem?.['quantityRequested'] ?? firstItem?.['quantity'] ?? 0),
-          status: String(obj['status'] ?? 'pending')
-        } as TransferRequest;
-      });
-      setTransferRequests(transfersData);
-    } catch (err) {
-      console.warn('refreshTransfers failed', err);
-    }
-  };
-
-  const assignToTechnician = async () => {
-    if (!assignTargetId) return alert('Please enter the processing/caseline id to assign');
-    if (!selectedTech) return alert('Please select a technician');
-    try {
-      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-      if (!token) return alert('Authentication required');
-
-      // Try assignment endpoint. Adjust path/body if your backend expects different fields.
-      const body = { technicianId: selectedTech };
-      // first try processing-records assignment
-      try {
-        const res = await axios.patch(
-          `http://localhost:3000/api/v1/processing-records/${assignTargetId}/assignment`,
-          body,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        alert('Assigned: ' + (res.data?.message || 'OK'));
-      } catch (innerErr) {
-        // fallback: try case-line allocation endpoint
-        const res2 = await axios.post(
-          `http://localhost:3000/api/v1/case-lines/${assignTargetId}/allocate-stock`,
-          { technicianId: selectedTech },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        alert('Assigned via allocate endpoint: ' + (res2.data?.message || 'OK'));
-      }
-
-      // refresh relevant lists
-      refreshTransfers();
-    } catch (err: unknown) {
-      alert('Assign failed: ' + getErrorMessage(err));
-    }
-  };
+  
 
   return (
     <div className="min-h-screen w-full">
@@ -326,7 +198,15 @@ const PartsCoordinatorDashboard: React.FC = () => {
                         setPickupResult(null);
                         const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
                         if (!token) return alert('Authentication required');
-                        const data = await componentReservationService.pickupReservation(reservationIdInput.trim());
+                        // best-effort decode user id from token to pass to backend validation
+                        let pickedUpByTechId: string | undefined;
+                        try {
+                          const payload = JSON.parse(atob(token.split('.')[1]));
+                          pickedUpByTechId = payload.userId || payload.sub || payload.userId || payload.user?.userId;
+                        } catch (e) {
+                          // ignore decode errors
+                        }
+                        const data = await componentReservationService.pickupReservation(reservationIdInput.trim(), pickedUpByTechId ? { pickedUpByTechId } : undefined);
                         setPickupResult(data as PickupResponse);
                         alert('Pickup success: ' + (data?.reservation?.reservationId ?? 'OK'));
                       } catch (err) {
@@ -402,7 +282,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
                         setReturnResult(null);
                         const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
                         if (!token) return alert('Authentication required');
-                        const data = await componentReservationService.returnComponent(reservationIdInput.trim());
+                        // Prompt for serial number required by backend
+                        const serial = window.prompt('Enter serial number of the old component being returned');
+                        if (!serial) return alert('Serial number is required to return a component');
+                        const data = await componentReservationService.returnComponent(reservationIdInput.trim(), { serialNumber: serial });
                         setReturnResult(data as Record<string, unknown>);
                         alert('Return success: ' + (data?.reservation?.reservationId ?? 'OK'));
                       } catch (err) {
@@ -430,138 +313,6 @@ const PartsCoordinatorDashboard: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Transfer Requests</CardTitle>
-              <CardDescription>Approve or reject transfers between warehouses</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>From</TableHead>
-                      <TableHead>To</TableHead>
-                      <TableHead>Component</TableHead>
-                      <TableHead>Qty</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transferRequests.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8">No transfer requests</TableCell>
-                      </TableRow>
-                    )}
-
-                    {transferRequests.map(tr => (
-                      <TableRow key={tr.id} className="hover:bg-muted/50">
-                        <TableCell>{tr.fromWarehouse}</TableCell>
-                        <TableCell>{tr.toWarehouse}</TableCell>
-                        <TableCell>{tr.typeComponentName}</TableCell>
-                        <TableCell>{tr.qty}</TableCell>
-                        <TableCell>
-                          <Badge variant={tr.status === 'pending' ? 'secondary' : tr.status === 'approved' ? 'success' : 'destructive'}>
-                            {tr.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {tr.status === 'pending' ? (
-                            <div className="flex gap-2">
-                              <Button size="sm" variant="default" onClick={() => approveTransfer(tr.id)}>
-                                Approve
-                              </Button>
-                              <Button size="sm" variant="outline" onClick={() => rejectTransfer(tr.id)}>
-                                Reject
-                              </Button>
-                            </div>
-                          ) : tr.status === 'SHIPPED' || tr.status === 'shipped' ? (
-                            <div className="flex gap-2">
-                              <Button size="sm" variant="default" onClick={() => receiveTransfer(tr.id)}>
-                                Mark Received
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => alert('View details - implement')}>
-                                <ArrowRightCircle className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <Button size="sm" variant="ghost" onClick={() => alert('View details - implement')}>
-                              <ArrowRightCircle className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Assign to Technician</CardTitle>
-              <CardDescription>Select a technician and assign a processing record or caseline</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium">Technician</label>
-                  <select
-                    value={selectedTech ?? ''}
-                    onChange={(e) => setSelectedTech(e.target.value || null)}
-                    className="rounded-md border px-3 py-2"
-                  >
-                    <option value="">-- Select technician --</option>
-                    {technicians.map(t => (
-                      <option key={t.id} value={t.id}>{t.name}{t.username ? ` (${t.username})` : ''}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium">Processing record / Caseline ID</label>
-                  <input
-                    value={assignTargetId}
-                    onChange={(e) => setAssignTargetId(e.target.value)}
-                    placeholder="Enter processing-record id or caseline id"
-                    className="rounded-md border px-3 py-2"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Button size="sm" variant="default" onClick={assignToTechnician}>Assign</Button>
-                  <Button size="sm" variant="outline" onClick={() => { setAssignTargetId(''); setSelectedTech(null); }}>Reset</Button>
-                </div>
-
-                <div className="text-xs text-muted-foreground">Tip: paste the processing-record id from the case or the caseline id to allocate stock and assign.</div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Key Inventory</CardTitle>
-              <CardDescription>Top components by shortage</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {stocks.slice(0, 8).map(s => (
-                  <div key={s.stock_id} className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium">{s.component_name}</div>
-                      <div className="text-sm text-muted-foreground">{s.warehouse_name} · {s.sku || '—'}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-semibold">{s.in_stock - s.reserved}</div>
-                      <div className="text-sm text-muted-foreground">available</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>
