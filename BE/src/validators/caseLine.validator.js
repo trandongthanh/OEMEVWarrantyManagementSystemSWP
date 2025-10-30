@@ -20,6 +20,7 @@ const approveCaseline = Joi.object({
 export const approveCaselineBodySchema = Joi.object({
   approvedCaseLineIds: Joi.array().items(approveCaseline).required(),
   rejectedCaseLineIds: Joi.array().items(approveCaseline).required(),
+  approverEmail: Joi.string().email().required(),
 });
 
 export const allocateStockParamsSchema = Joi.object({

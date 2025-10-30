@@ -97,12 +97,13 @@ class CaseLineController {
   allocateStockForCaseline = async (req, res, next) => {
     const { caseId, caselineId } = req.params;
 
-    const { userId } = req.user;
+    const { userId, serviceCenterId } = req.user;
 
     const result = await this.#caseLineService.allocateStockForCaseline({
       caseId,
       caselineId,
       userId,
+      serviceCenterId,
     });
 
     if (!result) {

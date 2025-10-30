@@ -7,6 +7,7 @@ import VehicleProcessingRecordController from "./src/api/controller/vehicleProce
 import CaseLineController from "./src/api/controller/caseLine.controller.js";
 import WorkScheduleController from "./src/api/controller/workSchedule.controller.js";
 import StockTransferRequestController from "./src/api/controller/stockTransferRequest.controller.js";
+import MailController from "./src/api/controller/mail.controller.js";
 
 import AuthService from "./src/service/auth.service.js";
 import HashService from "./src/service/hash.service.js";
@@ -19,6 +20,7 @@ import WarehouseService from "./src/service/warehouse.service.js";
 import CaseLineService from "./src/service/caseLine.service.js";
 import WorkScheduleService from "./src/service/workSchedule.service.js";
 import StockTransferRequestService from "./src/service/stockTransferRequest.service.js";
+import MailService from "./src/service/mail.service.js";
 
 import UserRepository from "./src/repository/user.repository.js";
 import VehicleRepository from "./src/repository/vehicle.repository.js";
@@ -40,10 +42,8 @@ import TaskAssignmentRepository from "./src/repository/taskAssignment.repository
 import UserController from "./src/api/controller/user.controller.js";
 import UserService from "./src/service/user.service.js";
 import redisClient from "./src/util/redisClient.js";
-import transporter from "./src/util/emailTranporter.js";
+import transporter from "./src/util/emailTransporter.js";
 import NotificationService from "./src/service/notification.service.js";
-import MailService from "./src/service/mail.service.js";
-import MailController from "./src/api/controller/mail.controller.js";
 import ChatController from "./src/api/controller/chat.controller.js";
 import ChatService from "./src/service/chat.service.js";
 import GuestRepository from "./src/repository/guest.repository.js";
@@ -67,11 +67,10 @@ export function setupContainer({ io, notificationNamespace, chatNamespace }) {
       lifetime: Lifetime.SINGLETON,
     }),
     redis: asValue(redisClient, { lifetime: Lifetime.SCOPED }),
-    tranporter: asValue(transporter, { lifetime: Lifetime.SINGLETON }),
+    transporter: asValue(transporter, { lifetime: Lifetime.SINGLETON }),
 
     // Controllers
     authController: asClass(AuthController, { lifetime: Lifetime.SCOPED }),
-    mailController: asClass(MailController, { lifetime: Lifetime.SCOPED }),
     vehicleController: asClass(VehicleController, {
       lifetime: Lifetime.SCOPED,
     }),
@@ -87,6 +86,7 @@ export function setupContainer({ io, notificationNamespace, chatNamespace }) {
     }),
     userController: asClass(UserController, { lifetime: Lifetime.SCOPED }),
     chatController: asClass(ChatController, { lifetime: Lifetime.SCOPED }),
+    mailController: asClass(MailController, { lifetime: Lifetime.SCOPED }),
 
     componentReservationsController: asClass(ComponentReservationsController, {
       lifetime: Lifetime.SCOPED,

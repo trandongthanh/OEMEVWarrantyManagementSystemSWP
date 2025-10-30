@@ -400,11 +400,11 @@ class StockTransferRequestService {
       }
 
       await this.#warehouseRepository.bulkUpdateStockQuantities(
-        { stockUpdates: stockUpdates },
+        stockUpdates,
         transaction
       );
 
-      const reservationIds = reservations.map((r) => r.stockId);
+  const reservationIds = reservations.map((r) => r.reservationId);
       await this.#stockReservationRepository.bulkUpdateStatus(
         { reservationIds, status: "SHIPPED" },
         transaction
@@ -522,7 +522,8 @@ class StockTransferRequestService {
         {
           componentIds: allComponentIds,
           status: "IN_WAREHOUSE",
-          requestId: existingRequest.id,
+          requestId: null,
+          warehouseId: warehouseId,
         },
         transaction
       );
@@ -562,7 +563,7 @@ class StockTransferRequestService {
 
       if (stockUpdates.length > 0) {
         await this.#warehouseRepository.bulkUpdateStockQuantities(
-          { stockUpdates: stockUpdates },
+          stockUpdates,
           transaction
         );
       }
@@ -597,7 +598,6 @@ class StockTransferRequestService {
       return {
         updatedRequest,
         receivedComponentsCount: allComponentIds.length,
-        componentsByType,
       };
     });
 
@@ -734,7 +734,7 @@ class StockTransferRequestService {
               transaction
             );
 
-            const reservationIds = reservations.map((r) => r.id);
+            const reservationIds = reservations.map((r) => r.reservationId);
             await this.#stockReservationRepository.bulkUpdateStatus(
               { reservationIds, status: "CANCELLED" },
               transaction
