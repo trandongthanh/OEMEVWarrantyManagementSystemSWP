@@ -76,11 +76,18 @@ class CaseLineService {
           .map((c) => [c.typeComponentId, Boolean(c.isUnderWarranty)])
       );
 
-      this.#validateWarrantyConsistency(typeComponentsMap, caselines);
+      const normalizedCaselines = caselines.map((caseline) => ({
+        ...caseline,
+        evidenceImageUrls: this.#normalizeEvidenceImageUrls(
+          caseline.evidenceImageUrls
+        ),
+      }));
+
+      this.#validateWarrantyConsistency(typeComponentsMap, normalizedCaselines);
 
       const processedCaselines = this.#assignInitialCaseLineStatuses(
         typeComponentsMap,
-        caselines
+        normalizedCaselines
       );
 
       for (const caseline of processedCaselines) {
@@ -125,6 +132,7 @@ class CaseLineService {
     serviceCenterId,
     techId,
     companyId,
+    evidenceImageUrls,
   }) => {
     const rawResult = await db.sequelize.transaction(async (transaction) => {
       const guaranteeCase = await this.#guaranteeCaseRepository.findDetailById(
@@ -177,6 +185,9 @@ class CaseLineService {
 
       const initialStatus = "DRAFT";
 
+      const normalizedImageUrls =
+        this.#normalizeEvidenceImageUrls(evidenceImageUrls);
+
       const newCaseLine = await this.#caselineRepository.createCaseLine(
         {
           guaranteeCaseId: guaranteeCaseId,
@@ -187,6 +198,7 @@ class CaseLineService {
           status: initialStatus,
           warrantyStatus,
           diagnosticTechId: techId,
+          evidenceImageUrls: normalizedImageUrls,
         },
         transaction
       );
@@ -601,6 +613,7 @@ class CaseLineService {
     serviceCenterId,
     companyId,
     userId,
+    evidenceImageUrls,
   }) => {
     const rawResult = await db.sequelize.transaction(async (transaction) => {
       const caseline = await this.#caselineRepository.findById(
@@ -612,6 +625,8 @@ class CaseLineService {
       if (!caseline) {
         throw new NotFoundError("Caseline not found");
       }
+
+      let updatedCaseline;
 
       if (caseline.status === "DRAFT") {
         const guaranteeCase =
@@ -664,17 +679,28 @@ class CaseLineService {
 
         const initialStatus = "DRAFT";
 
-        var updatedCaseline = await this.#caselineRepository.updateCaseline(
-          {
-            caselineId,
-            diagnosisText,
-            correctionText,
-            typeComponentId,
-            quantity,
-            status: initialStatus,
-            warrantyStatus,
-            rejectionReason,
-          },
+        const normalizedEvidenceImageUrls =
+          typeof evidenceImageUrls === "undefined"
+            ? undefined
+            : this.#normalizeEvidenceImageUrls(evidenceImageUrls);
+
+        const updatePayload = {
+          caselineId,
+          diagnosisText,
+          correctionText,
+          typeComponentId,
+          quantity,
+          status: initialStatus,
+          warrantyStatus,
+          rejectionReason,
+        };
+
+        if (typeof normalizedEvidenceImageUrls !== "undefined") {
+          updatePayload.evidenceImageUrls = normalizedEvidenceImageUrls;
+        }
+
+        updatedCaseline = await this.#caselineRepository.updateCaseline(
+          updatePayload,
           transaction
         );
 
@@ -1099,6 +1125,16 @@ class CaseLineService {
     }
 
     return processedCaselines;
+  };
+
+  #normalizeEvidenceImageUrls = (value) => {
+    if (Array.isArray(value)) {
+      return value
+        .map((url) => (typeof url === "string" ? url.trim() : null))
+        .filter((url) => Boolean(url));
+    }
+
+    return [];
   };
 
   #validateCaseLine = async (caselineId, transaction) => {

@@ -47,6 +47,12 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         field: "category",
       },
+
+      makeBrand: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        field: "make_brand",
+      },
     },
     {
       tableName: "type_component",

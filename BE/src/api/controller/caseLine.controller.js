@@ -35,6 +35,7 @@ class CaseLineController {
       typeComponentId,
       quantity,
       warrantyStatus,
+      evidenceImageUrls,
     } = req.body;
 
     const { serviceCenterId, userId } = req.user;
@@ -50,6 +51,7 @@ class CaseLineController {
       serviceCenterId: serviceCenterId,
       techId: userId,
       companyId: companyId,
+      evidenceImageUrls,
     });
 
     res.status(201).json({
@@ -130,9 +132,10 @@ class CaseLineController {
       quantity,
       warrantyStatus,
       rejectionReason,
+      evidenceImageUrls,
     } = req.body;
 
-    const { serviceCenterId } = req.user;
+    const { serviceCenterId, userId } = req.user;
     const { companyId } = req;
 
     const updatedCaseLine = await this.#caseLineService.updateCaseLine({
@@ -147,6 +150,7 @@ class CaseLineController {
       serviceCenterId,
       companyId,
       userId,
+      evidenceImageUrls,
     });
 
     res.status(200).json({
