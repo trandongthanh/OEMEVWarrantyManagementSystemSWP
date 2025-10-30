@@ -1,5 +1,9 @@
 import express from "express";
-import { validate } from "../middleware/index.js";
+import {
+  authentication,
+  authorizationByRole,
+  validate,
+} from "../middleware/index.js";
 import {
   sendOtpSchema,
   verifyOtpSchema,
@@ -55,14 +59,16 @@ const router = express.Router();
  *                   type: string
  *                   example: "Email is required"
  */
-router.post("/otp/send", validate(sendOtpSchema), async (req, res, next) => {
-  try {
+router.post(
+  "/otp/send",
+  authentication,
+  authorizationByRole(["service_center_staff", "service_center_technician"]),
+  validate(sendOtpSchema),
+  async (req, res, next) => {
     const mailController = req.container.resolve("mailController");
-    await mailController.sendOtp(req, res);
-  } catch (error) {
-    next(error);
+    await mailController.sendOtp(req, res, next);
   }
-});
+);
 
 /**
  * @swagger
@@ -119,14 +125,13 @@ router.post("/otp/send", validate(sendOtpSchema), async (req, res, next) => {
  */
 router.post(
   "/otp/verify",
+  authorizationByRole(["service_center_staff", "service_center_technician"]),
   validate(verifyOtpSchema),
+
   async (req, res, next) => {
-    try {
-      const mailController = req.container.resolve("mailController");
-      await mailController.verifyOtp(req, res);
-    } catch (error) {
-      next(error);
-    }
+    const mailController = req.container.resolve("mailController");
+
+    await mailController.verifyOtp(req, res, next);
   }
 );
 
