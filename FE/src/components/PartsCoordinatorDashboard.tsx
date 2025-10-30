@@ -29,7 +29,7 @@ interface TransferRequest {
 
 
 const PartsCoordinatorDashboard: React.FC = () => {
-  const { getToken } = useAuth();
+  const { getToken, user } = useAuth();
   const [stocks, setStocks] = useState<StockRow[]>([]);
   const [transferRequests, setTransferRequests] = useState<TransferRequest[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -52,7 +52,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
       setIsLoading(true);
       try {
         const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-        if (!token) {
+        // If no token or user role is not related to inventory/parts operations,
+        // fallback to mock data to avoid spamming backend with unauthorized requests.
+        const allowedRoles = ['emv_staff', 'service_center_manager', 'service_center_staff', 'parts_coordinator_company', 'parts_coordinator_service_center'];
+        if (!token || !user || !allowedRoles.includes(user.role)) {
           // fallback to mock data when not authenticated in dev
           setStocks(mockStocks());
           setTransferRequests(mockTransfers());
@@ -61,27 +64,37 @@ const PartsCoordinatorDashboard: React.FC = () => {
         }
 
         // Example API endpoints - adjust if your backend uses different paths
-        const [stocksRes, transfersRes] = await Promise.all([
-          axios.get('http://localhost:3000/api/v1/stocks', { headers: { Authorization: `Bearer ${token}` } }),
+        const [warehousesRes, transfersRes] = await Promise.all([
+          // backend exposes warehouses (with nested stock info) at /api/v1/warehouses
+          axios.get('http://localhost:3000/api/v1/warehouses', { headers: { Authorization: `Bearer ${token}` } }),
           axios.get('http://localhost:3000/api/v1/stock-transfer-requests?limit=50', { headers: { Authorization: `Bearer ${token}` } })
         ]);
 
         if (cancelled) return;
 
         // Use unknown and defensive casts to avoid `any` in the codebase
-        const stocksRaw = (((stocksRes.data as Record<string, unknown>)?.data) as unknown[]) || [];
+        // warehousesRes.data.data.warehouses -> each warehouse has `stock` array
+        const warehouses = (((warehousesRes.data as Record<string, unknown>)?.data) as Record<string, unknown>)?.warehouses as unknown[] | undefined;
+        const stocksRaw: unknown[] = (warehouses && Array.isArray(warehouses))
+          ? warehouses.flatMap((w) => {
+              const wh = w as Record<string, unknown>;
+              const warehouseName = String(wh['name'] ?? wh['warehouseName'] ?? 'Unknown');
+              const stockArr = (wh['stock'] ?? []) as unknown[];
+              return (Array.isArray(stockArr) ? stockArr : []).map((s) => ({ ...(s as Record<string, unknown>), __warehouseName: warehouseName }));
+            })
+          : [];
+
         const stocksData = stocksRaw.map((s) => {
           const obj = s as Record<string, unknown>;
-          const warehouse = obj['warehouse'] as Record<string, unknown> | undefined;
-          const typeComp = obj['type_component'] as Record<string, unknown> | undefined;
+          const typeComp = obj['component'] ?? obj['type_component'] ?? obj['typeComponent'] as Record<string, unknown> | undefined;
           return {
-            stock_id: String(obj['stock_id'] ?? obj['id'] ?? Date.now()),
-            warehouse_name: String(warehouse?.['name'] ?? obj['warehouse_name'] ?? 'Unknown'),
+            stock_id: String(obj['stockId'] ?? obj['stock_id'] ?? obj['id'] ?? Date.now()),
+            warehouse_name: String(obj['__warehouseName'] ?? obj['warehouse_name'] ?? 'Unknown'),
             component_name: String(typeComp?.['name'] ?? obj['component_name'] ?? 'Unknown'),
             sku: typeComp?.['sku'] ? String(typeComp['sku']) : undefined,
             category: typeComp?.['category'] ? String(typeComp['category']) : undefined,
-            in_stock: Number(obj['quantity_in_stock'] ?? 0),
-            reserved: Number(obj['quantity_reserved'] ?? 0)
+            in_stock: Number(obj['quantity'] ?? obj['quantity_in_stock'] ?? obj['quantityAvailable'] ?? 0),
+            reserved: Number(obj['quantityReserved'] ?? obj['quantity_reserved'] ?? 0)
           } as StockRow;
         });
 
@@ -117,7 +130,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
     
 
     return () => { cancelled = true; };
-  }, [getToken]);
+  }, [getToken, user]);
 
   
 
@@ -185,7 +198,15 @@ const PartsCoordinatorDashboard: React.FC = () => {
                         setPickupResult(null);
                         const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
                         if (!token) return alert('Authentication required');
-                        const data = await componentReservationService.pickupReservation(reservationIdInput.trim());
+                        // best-effort decode user id from token to pass to backend validation
+                        let pickedUpByTechId: string | undefined;
+                        try {
+                          const payload = JSON.parse(atob(token.split('.')[1]));
+                          pickedUpByTechId = payload.userId || payload.sub || payload.userId || payload.user?.userId;
+                        } catch (e) {
+                          // ignore decode errors
+                        }
+                        const data = await componentReservationService.pickupReservation(reservationIdInput.trim(), pickedUpByTechId ? { pickedUpByTechId } : undefined);
                         setPickupResult(data as PickupResponse);
                         alert('Pickup success: ' + (data?.reservation?.reservationId ?? 'OK'));
                       } catch (err) {
@@ -261,7 +282,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
                         setReturnResult(null);
                         const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
                         if (!token) return alert('Authentication required');
-                        const data = await componentReservationService.returnComponent(reservationIdInput.trim());
+                        // Prompt for serial number required by backend
+                        const serial = window.prompt('Enter serial number of the old component being returned');
+                        if (!serial) return alert('Serial number is required to return a component');
+                        const data = await componentReservationService.returnComponent(reservationIdInput.trim(), { serialNumber: serial });
                         setReturnResult(data as Record<string, unknown>);
                         alert('Return success: ' + (data?.reservation?.reservationId ?? 'OK'));
                       } catch (err) {
