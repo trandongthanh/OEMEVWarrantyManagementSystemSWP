@@ -5,16 +5,16 @@ class MailController {
   }
 
   sendOtp = async (req, res) => {
-    const { email } = req.body;
+    const { email, vin } = req.body;
 
-    if (!email) {
+    if (!email || !vin) {
       return res.status(400).json({
         status: "error",
-        message: "Email is required",
+        message: "Email and VIN are required",
       });
     }
 
-    await this.#mailService.sendOTPEmail({ email });
+    await this.#mailService.sendOTPEmail({ email, vin });
 
     return res.status(200).json({
       status: "success",

@@ -306,11 +306,10 @@ class WareHouseRepository {
     return updatedStockItem ? updatedStockItem.toJSON() : null;
   };
 
-  getAllWarehouses = async (serviceCenterId) => {
+  getAllWarehouses = async ({ whereClause = {} } = {}) => {
     const warehouses = await Warehouse.findAll({
-      where: {
-        serviceCenterId: serviceCenterId,
-      },
+      where: whereClause,
+      order: [["name", "ASC"]],
     });
 
     return warehouses.map((warehouse) => warehouse.toJSON());

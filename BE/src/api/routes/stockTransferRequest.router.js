@@ -251,6 +251,8 @@ router.get(
     "emv_staff",
     "service_center_manager",
     "service_center_staff",
+    "parts_coordinator_company",
+    "parts_coordinator_service_center",
   ]),
 
   attachCompanyContext,
@@ -341,6 +343,8 @@ router.get(
     "emv_staff",
     "service_center_manager",
     "service_center_staff",
+    "parts_coordinator_company",
+    "parts_coordinator_service_center",
   ]),
   attachCompanyContext,
   async (req, res, next) => {

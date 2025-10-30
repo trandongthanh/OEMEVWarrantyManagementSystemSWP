@@ -93,8 +93,12 @@ const router = express.Router({ mergeParams: true });
 router.get(
   "/",
   authentication,
-  authorizationByRole(["service_center_manager"]),
-
+  authorizationByRole([
+    "service_center_manager",
+    "parts_coordinator_service_center",
+    "parts_coordinator_company",
+  ]),
+  attachCompanyContext,
   async (req, res, next) => {
     const warehouseController = req.container.resolve("warehouseController");
 

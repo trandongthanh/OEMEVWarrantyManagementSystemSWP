@@ -106,6 +106,7 @@ class StockTransferRequestService {
     userId,
     roleName,
     serviceCenterId,
+    companyId,
     page,
     limit,
     status,
@@ -119,6 +120,7 @@ class StockTransferRequestService {
         userId,
         roleName,
         serviceCenterId,
+        companyId,
         offset: offsetNumber,
         limit: limitNumber,
         status: status,
@@ -138,6 +140,7 @@ class StockTransferRequestService {
     userId,
     roleName,
     serviceCenterId,
+    companyId,
   }) => {
     const stockTransferRequest =
       await this.#stockTransferRequestRepository.getStockTransferRequestById({
@@ -145,6 +148,7 @@ class StockTransferRequestService {
         userId,
         roleName,
         serviceCenterId,
+        companyId,
       });
 
     return stockTransferRequest;
@@ -578,6 +582,21 @@ class StockTransferRequestService {
           transaction
         );
 
+      const relatedCaseLineIds = existingRequest.items
+        ?.map((item) => item.caselineId)
+        .filter(Boolean);
+
+      if (relatedCaseLineIds && relatedCaseLineIds.length > 0) {
+        await this.#caselineRepository.bulkUpdateStatusByIds(
+          {
+            caseLineIds: relatedCaseLineIds,
+            status: "PARTS_AVAILABLE",
+          },
+          transaction,
+          Transaction.LOCK.UPDATE
+        );
+      }
+
       const requestWithDetails =
         await this.#stockTransferRequestRepository.getStockTransferRequestById(
           { id: requestId },
@@ -587,7 +606,13 @@ class StockTransferRequestService {
       const roomName_service_center_staff = `service_center_staff_${serviceCenterId}`;
       const roomName_service_center_manager = `service_center_manager_${serviceCenterId}`;
       const eventName = "stock_transfer_request_received";
-      const data = { requestWithDetails };
+      const data = {
+        requestWithDetails,
+        updatedCaselineStatus: relatedCaseLineIds?.map((caselineId) => ({
+          caselineId,
+          status: "PARTS_AVAILABLE",
+        })),
+      };
 
       this.#notificationService.sendToRooms(
         [roomName_service_center_staff, roomName_service_center_manager],
