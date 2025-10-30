@@ -200,6 +200,7 @@ const SuperAdvisor = () => {
     customerName: '',
     cases: [],
     visitorFullName: '',
+    visitorPhone: '',
     customerEmail: ''
   });
   const [warrantyRecordCaseText, setWarrantyRecordCaseText] = useState('');
@@ -1002,6 +1003,7 @@ const SuperAdvisor = () => {
       customerName: foundCustomer.fullName || foundCustomer.name,
       cases: [],
       visitorFullName: foundCustomer.fullName || foundCustomer.name || '',
+      visitorPhone: foundCustomer.phone || '',
       customerEmail: foundCustomer.email || ''
     });
     
@@ -1026,7 +1028,7 @@ const SuperAdvisor = () => {
     setIsSendingOtp(true);
 
     try {
-      const response = await fetch(`${API_BASE}/mail/send`, {
+      const response = await fetch(`${API_BASE_URL}/mail/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1073,7 +1075,7 @@ const SuperAdvisor = () => {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/mail/verify`, {
+      const response = await fetch(`${API_BASE_URL}/mail/verify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1202,7 +1204,7 @@ const SuperAdvisor = () => {
       await loadProcessingRecords();
       
       // Reset forms and close dialogs
-      setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '' });
+      setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
       setWarrantyRecordCaseText('');
       setShowCreateWarrantyDialog(false);
       setVehicleWarrantyStatus(null);
@@ -1762,7 +1764,8 @@ const SuperAdvisor = () => {
       customerName: vehicleSearchResult.owner.fullName,
       cases: [],
       visitorFullName: vehicleSearchResult.owner.fullName || '',
-      visitorPhone: vehicleSearchResult.owner.phone || ''
+      visitorPhone: vehicleSearchResult.owner.phone || '',
+      customerEmail: vehicleSearchResult.owner.email || ''
     });
     
     // Open create dialog
@@ -1841,6 +1844,7 @@ const SuperAdvisor = () => {
           odometer: record.odometer.toString(),
           visitorFullName: recordData.visitorInfo?.fullName || '',
           visitorPhone: recordData.visitorInfo?.phone || '',
+          customerEmail: recordData.visitorInfo?.email || '',
           cases: record.cases || [],
           purchaseDate: record.purchaseDate || '',
           status: record.status,
@@ -1853,6 +1857,7 @@ const SuperAdvisor = () => {
           odometer: record.odometer.toString(),
           visitorFullName: '',
           visitorPhone: '',
+          customerEmail: '',
           cases: record.cases || [],
           purchaseDate: record.purchaseDate || '',
           status: record.status,
@@ -1867,6 +1872,7 @@ const SuperAdvisor = () => {
         odometer: record.odometer.toString(),
         visitorFullName: '',
         visitorPhone: '',
+        customerEmail: '',
         cases: record.cases || [],
         purchaseDate: record.purchaseDate || '',
         status: record.status,
@@ -3973,7 +3979,7 @@ const SuperAdvisor = () => {
               variant="outline" 
               onClick={() => {
                 setShowCreateWarrantyDialog(false);
-                setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '' });
+                setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
                 setWarrantyRecordCaseText('');
                 // Reset OTP states
                 setOtpCode('');
