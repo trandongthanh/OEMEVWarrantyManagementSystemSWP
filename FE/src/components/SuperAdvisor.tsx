@@ -1021,9 +1021,16 @@ const SuperAdvisor = () => {
         })
       });
 
-      const result = await response.json();
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server error response:', errorText);
+        throw new Error(`Server error: ${response.status}`);
+      }
 
-      if (response.ok && result.status === 'success') {
+      const result = await response.json();
+      console.log('OTP send result:', result);
+
+      if (result.status === 'success') {
         setOtpSent(true);
         setOtpCountdown(300); // 5 minutes
         toast({
@@ -1165,7 +1172,8 @@ const SuperAdvisor = () => {
         })),
         visitorInfo: {
           fullName: warrantyRecordForm.visitorFullName.trim(),
-          phone: warrantyRecordForm.visitorPhone.trim()
+          phone: warrantyRecordForm.visitorPhone.trim(),
+          email: warrantyRecordForm.customerEmail.trim()
         }
       };
       
