@@ -311,6 +311,39 @@ class ComponentReservationService {
     return rawResult;
   };
 
+  getComponentReservations = async ({
+    page = 1,
+    limit = 10,
+    status,
+    warehouseId,
+    typeComponentId,
+    caseLineId,
+    guaranteeCaseId,
+    vehicleProcessingRecordId,
+    serviceCenterId,
+    sortBy,
+    sortOrder,
+  }) => {
+    const result = await this.#componentReservationRepository.findAll(
+      {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        status,
+        warehouseId,
+        typeComponentId,
+        caseLineId,
+        guaranteeCaseId,
+        vehicleProcessingRecordId,
+        serviceCenterId,
+        sortBy,
+        sortOrder,
+      },
+      null
+    );
+
+    return result;
+  };
+
   #validateReturnReservationById = async (reservationId, transaction) => {
     const existingReservation =
       await this.#componentReservationRepository.findById(
