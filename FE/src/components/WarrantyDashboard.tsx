@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Progress } from '@/components/ui/progress';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
 		LogOut,Wrench
@@ -11,182 +9,292 @@ import {
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 
-interface ClaimStatistics {
-  totalClaims: number;
-  pendingClaims: number;
-  approvedClaims: number;
-  rejectedClaims: number;
-  approvalRate: number;
-  rejectionRate: number;
-  totalApprovedCost: number;
-  averageProcessingTime: number;
+//base URL for API
+const API_BASE_URL = 'http://localhost:3000/api/v1';
+
+interface StockTransferRequest {
+  id: number;
+  requestingWarehouseId: number;
+  requestedByUserId: number;
+  requestedAt: string;
+  approvedByUserId: number | null;
+  status: string;
 }
 
-interface ModelStatistics {
-  model: string;
-  totalClaims: number;
-  approvedClaims: number;
-  rejectedClaims: number;
-  totalCost: number;
-  commonIssues: string[];
-}
-
-interface ServiceCenterPerformance {
-  id: string;
-  name: string;
-  totalSubmitted: number;
-  approvedClaims: number;
-  rejectedClaims: number;
-  successRate: number;
-  averageCost: number;
-  responseTime: number;
-  rating: 'Xuất sắc' | 'Tốt' | 'Trung bình' | 'Cần cải thiện';
-}
-
-interface MonthlyTrend {
-  month: string;
-  totalClaims: number;
-  approvedClaims: number;
-  rejectedClaims: number;
-  totalCost: number;
+interface StockTransferRequestDetail extends StockTransferRequest {
+  items?: Array<{
+    id: number;
+    componentId: number;
+    requestedQuantity: number;
+    approvedQuantity?: number;
+  }>;
+  warehouse?: {
+    id: number;
+    name: string;
+    address: string;
+  };
+  requestedByUser?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  approvedByUser?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
 }
 
 const WarrantyDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [statistics, setStatistics] = useState<ClaimStatistics | null>(null);
-  const [modelStats, setModelStats] = useState<ModelStatistics[]>([]);
-  const [centerPerformance, setCenterPerformance] = useState<ServiceCenterPerformance[]>([]);
-  const [monthlyTrends, setMonthlyTrends] = useState<MonthlyTrend[]>([]);
-  const [selectedPeriod, setSelectedPeriod] = useState<string>('this-quarter');
-  const { user, logout } = useAuth();
+  const [stockTransferRequests, setStockTransferRequests] = useState<StockTransferRequest[]>([]);
+  const [isLoadingTransfers, setIsLoadingTransfers] = useState<boolean>(false);
+  const [page, setPage] = useState<number>(1);
+  const [limit, setLimit] = useState<number>(10);
+  const [status, setStatus] = useState<string>('PENDING_APPROVAL');
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [selectedRequest, setSelectedRequest] = useState<StockTransferRequestDetail | null>(null);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState<boolean>(false);
+  const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
+  const { user } = useAuth();
+  
   useEffect(() => {
-    // Mock data
-    const mockStatistics: ClaimStatistics = {
-      totalClaims: 156,
-      pendingClaims: 23,
-      approvedClaims: 98,
-      rejectedClaims: 35,
-      approvalRate: 73.7,
-      rejectionRate: 26.3,
-      totalApprovedCost: 1250000000,
-      averageProcessingTime: 2.5
-    };
+    // Auto-fetch when page changes
+    if (user) {
+      fetchStockTransferRequests();
+    }
+  }, [user, page]);
 
-    const mockModelStats: ModelStatistics[] = [
-      {
-        model: 'Model X',
-        totalClaims: 45,
-        approvedClaims: 32,
-        rejectedClaims: 13,
-        totalCost: 450000000,
-        commonIssues: ['Pin EV', 'Hệ thống điện', 'Cảm biến']
-      },
-      {
-        model: 'Model Y',
-        totalClaims: 38,
-        approvedClaims: 29,
-        rejectedClaims: 9,
-        totalCost: 380000000,
-        commonIssues: ['Động cơ', 'Phanh', 'Hệ thống làm mát']
-      },
-      {
-        model: 'Model S',
-        totalClaims: 42,
-        approvedClaims: 25,
-        rejectedClaims: 17,
-        totalCost: 320000000,
-        commonIssues: ['Hệ thống điện', 'Cảm biến', 'Nội thất']
-      },
-      {
-        model: 'Model 3',
-        totalClaims: 31,
-        approvedClaims: 12,
-        rejectedClaims: 19,
-        totalCost: 100000000,
-        commonIssues: ['Phanh', 'Lốp xe', 'Hệ thống âm thanh']
+  const fetchStockTransferRequests = async () => {
+    setIsLoadingTransfers(true);
+    try {
+      const token = localStorage.getItem('token');
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+        status: status
+      });
+      
+      const response = await fetch(`${API_BASE_URL}/stock-transfer-requests?${queryParams}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        console.warn(`API returned status ${response.status}. Using mock data for testing.`);
+        // Use mock data for testing
+        const mockData: StockTransferRequest[] = [
+          {
+            id: 1,
+            requestingWarehouseId: 3,
+            requestedByUserId: 5,
+            requestedAt: "2025-10-31T02:22:20.725Z",
+            approvedByUserId: null,
+            status: "PENDING_APPROVAL"
+          },
+          {
+            id: 2,
+            requestingWarehouseId: 7,
+            requestedByUserId: 12,
+            requestedAt: "2025-10-30T14:15:10.500Z",
+            approvedByUserId: 8,
+            status: "APPROVED"
+          },
+          {
+            id: 3,
+            requestingWarehouseId: 2,
+            requestedByUserId: 9,
+            requestedAt: "2025-10-29T09:45:30.123Z",
+            approvedByUserId: null,
+            status: "PENDING_APPROVAL"
+          }
+        ];
+        setStockTransferRequests(mockData);
+        setTotalPages(1);
+        setIsLoadingTransfers(false);
+        return;
       }
-    ];
-
-    const mockCenterPerformance: ServiceCenterPerformance[] = [
-      {
-        id: '1',
-        name: 'SC Hà Nội',
-        totalSubmitted: 52,
-        approvedClaims: 41,
-        rejectedClaims: 11,
-        successRate: 78.8,
-        averageCost: 12500000,
-        responseTime: 1.8,
-        rating: 'Xuất sắc'
-      },
-      {
-        id: '2',
-        name: 'SC TP.HCM',
-        totalSubmitted: 48,
-        approvedClaims: 35,
-        rejectedClaims: 13,
-        successRate: 72.9,
-        averageCost: 11200000,
-        responseTime: 2.1,
-        rating: 'Tốt'
-      },
-      {
-        id: '3',
-        name: 'SC Đà Nẵng',
-        totalSubmitted: 32,
-        approvedClaims: 15,
-        rejectedClaims: 17,
-        successRate: 46.9,
-        averageCost: 8500000,
-        responseTime: 3.2,
-        rating: 'Cần cải thiện'
-      },
-      {
-        id: '4',
-        name: 'SC Cần Thơ',
-        totalSubmitted: 24,
-        approvedClaims: 7,
-        rejectedClaims: 17,
-        successRate: 29.2,
-        averageCost: 6200000,
-        responseTime: 4.1,
-        rating: 'Cần cải thiện'
+      
+      const data = await response.json();
+      
+      // Handle both paginated and non-paginated responses
+      if (data.data && Array.isArray(data.data)) {
+        setStockTransferRequests(data.data);
+        if (data.totalPages) setTotalPages(data.totalPages);
+      } else if (Array.isArray(data)) {
+        setStockTransferRequests(data);
+      } else {
+        setStockTransferRequests([]);
       }
-    ];
-
-    const mockMonthlyTrends: MonthlyTrend[] = [
-      { month: '2025-06', totalClaims: 18, approvedClaims: 13, rejectedClaims: 5, totalCost: 180000000 },
-      { month: '2025-07', totalClaims: 22, approvedClaims: 16, rejectedClaims: 6, totalCost: 220000000 },
-      { month: '2025-08', totalClaims: 28, approvedClaims: 20, rejectedClaims: 8, totalCost: 285000000 },
-      { month: '2025-09', totalClaims: 31, approvedClaims: 23, rejectedClaims: 8, totalCost: 315000000 }
-    ];
-
-    setStatistics(mockStatistics);
-    setModelStats(mockModelStats);
-    setCenterPerformance(mockCenterPerformance);
-    setMonthlyTrends(mockMonthlyTrends);
-  }, []);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('vi-VN', {
-      style: 'currency',
-      currency: 'VND'
-    }).format(amount);
-  };
-
-  const getRatingColor = (rating: ServiceCenterPerformance['rating']) => {
-    switch (rating) {
-      case 'Xuất sắc': return 'text-green-600';
-      case 'Tốt': return 'text-blue-600';
-      case 'Trung bình': return 'text-yellow-600';
-      case 'Cần cải thiện': return 'text-red-600';
-      default: return 'text-gray-600';
+    } catch (error) {
+      console.error('Error fetching stock transfer requests:', error);
+      // Use mock data on error
+      const mockData: StockTransferRequest[] = [
+        {
+          id: 1,
+          requestingWarehouseId: 3,
+          requestedByUserId: 5,
+          requestedAt: "2025-10-31T02:22:20.725Z",
+          approvedByUserId: null,
+          status: "PENDING_APPROVAL"
+        },
+        {
+          id: 2,
+          requestingWarehouseId: 7,
+          requestedByUserId: 12,
+          requestedAt: "2025-10-30T14:15:10.500Z",
+          approvedByUserId: 8,
+          status: "APPROVED"
+        },
+        {
+          id: 3,
+          requestingWarehouseId: 2,
+          requestedByUserId: 9,
+          requestedAt: "2025-10-29T09:45:30.123Z",
+          approvedByUserId: null,
+          status: "PENDING_APPROVAL"
+        }
+      ];
+      setStockTransferRequests(mockData);
+      setTotalPages(1);
+    } finally {
+      setIsLoadingTransfers(false);
     }
   };
 
-  if (!statistics) {
-    return <div>Loading...</div>;
-  }
+  const handleLoadRequests = () => {
+    fetchStockTransferRequests();
+  };
+
+  const fetchRequestDetail = async (requestId: number) => {
+    setIsLoadingDetail(true);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/stock-transfer-requests/${requestId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        console.warn(`API returned status ${response.status}. Using mock detail data.`);
+        // Mock detail data
+        const mockDetail: StockTransferRequestDetail = {
+          id: requestId,
+          requestingWarehouseId: 3,
+          requestedByUserId: 5,
+          requestedAt: "2025-10-31T02:22:20.725Z",
+          approvedByUserId: null,
+          status: "PENDING_APPROVAL",
+          items: [
+            {
+              id: 1,
+              componentId: 101,
+              requestedQuantity: 10,
+              approvedQuantity: 0
+            },
+            {
+              id: 2,
+              componentId: 205,
+              requestedQuantity: 5,
+              approvedQuantity: 0
+            }
+          ],
+          warehouse: {
+            id: 3,
+            name: "Warehouse Hanoi",
+            address: "123 Nguyen Trai, Hanoi"
+          },
+          requestedByUser: {
+            id: "761e6148-bc8e-46d7-be4a-f6860ace8f5c",
+            name: "Nguyễn Thị Xuân",
+            email: "manager_hcm@vinfast.vn"
+          },
+          approvedByUser: null
+        };
+        setSelectedRequest(mockDetail);
+        setIsDetailDialogOpen(true);
+        setIsLoadingDetail(false);
+        return;
+      }
+      
+      const data = await response.json();
+      setSelectedRequest(data);
+      setIsDetailDialogOpen(true);
+    } catch (error) {
+      console.error('Error fetching request detail:', error);
+      // Use mock data on error
+      const mockDetail: StockTransferRequestDetail = {
+        id: requestId,
+        requestingWarehouseId: 3,
+        requestedByUserId: 5,
+        requestedAt: "2025-10-31T02:22:20.725Z",
+        approvedByUserId: null,
+        status: "PENDING_APPROVAL",
+        items: [
+          {
+            id: 1,
+            componentId: 101,
+            requestedQuantity: 10,
+            approvedQuantity: 0
+          },
+          {
+            id: 2,
+            componentId: 205,
+            requestedQuantity: 5,
+            approvedQuantity: 0
+          }
+        ],
+        warehouse: {
+          id: 3,
+          name: "Warehouse Hanoi",
+          address: "123 Nguyen Trai, Hanoi"
+        },
+        requestedByUser: {
+          id: "761e6148-bc8e-46d7-be4a-f6860ace8f5c",
+          name: "Nguyễn Thị Xuân",
+          email: "manager_hcm@vinfast.vn"
+        },
+        approvedByUser: null
+      };
+      setSelectedRequest(mockDetail);
+      setIsDetailDialogOpen(true);
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
+
+  const handleViewDetails = (requestId: number) => {
+    fetchRequestDetail(requestId);
+  };
+
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'pending':
+        return 'secondary';
+      case 'approved':
+        return 'default';
+      case 'rejected':
+        return 'destructive';
+      case 'completed':
+        return 'default';
+      default:
+        return 'outline';
+    }
+  };
+
+  const formatDateTime = (dateString: string) => {
+    return new Date(dateString).toLocaleString('en-US', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
 
   return (
     <div className="min-h-screen w-full relative">
@@ -208,22 +316,10 @@ const WarrantyDashboard: React.FC = () => {
               </div>
           <div>
           <h1 className="text-3xl font-bold text-gray-900">Warranty Dashboard</h1>
-          <p className="text-gray-600 mt-1">Welcome,{user?.role === 'emv_staff' ? 'EMVstaff' : 'Staff'}
+          <p className="text-gray-600 mt-1">Welcome, {user?.role === 'emv_staff' ? 'EMV Staff' : 'Staff'}
 </p>    
         </div>
          
-        </div>
-        <div className="flex gap-2">
-          <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Chọn kỳ báo cáo" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="this-month">Tháng này</SelectItem>
-              <SelectItem value="this-quarter">Quý này</SelectItem>
-              <SelectItem value="this-year">Năm này</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
         <Button
 								variant="ghost"
@@ -238,245 +334,400 @@ const WarrantyDashboard: React.FC = () => {
 								}}
 							>
 								<LogOut className="h-4 w-4 mr-2" />
-								Back to Homepage
+								Log Out
 							</Button>
       </div>
 
-      {/* Overview Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Tổng yêu cầu</CardTitle>
-            <span className="text-2xl">📋</span>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{statistics.totalClaims}</div>
-            <p className="text-xs text-muted-foreground">
-              yêu cầu bảo hành
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Tỷ lệ chấp nhận</CardTitle>
-            <span className="text-2xl">✅</span>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{statistics.approvalRate}%</div>
-            <Progress value={statistics.approvalRate} className="mt-2" />
-            <p className="text-xs text-muted-foreground mt-1">
-              {statistics.approvedClaims}/{statistics.totalClaims} được chấp nhận
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Tỷ lệ từ chối</CardTitle>
-            <span className="text-2xl">❌</span>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">{statistics.rejectionRate}%</div>
-            <Progress value={statistics.rejectionRate} className="mt-2" />
-            <p className="text-xs text-muted-foreground mt-1">
-              {statistics.rejectedClaims}/{statistics.totalClaims} bị từ chối
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Chi phí đã duyệt</CardTitle>
-            <span className="text-2xl">💰</span>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">
-              {(statistics.totalApprovedCost / 1000000000).toFixed(1)}B
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {formatCurrency(statistics.totalApprovedCost)}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Claims by Model */}
+      {/* Stock Transfer Requests */}
       <Card>
-        <CardHeader>
-          <CardTitle>Thống kê theo Model xe</CardTitle>
-          <CardDescription>Phân tích yêu cầu bảo hành theo từng model</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Model</TableHead>
-                <TableHead>Tổng yêu cầu</TableHead>
-                <TableHead>Đã duyệt</TableHead>
-                <TableHead>Từ chối</TableHead>
-                <TableHead>Tỷ lệ duyệt</TableHead>
-                <TableHead>Chi phí</TableHead>
-                <TableHead>Vấn đề thường gặp</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {modelStats.map((model) => (
-                <TableRow key={model.model}>
-                  <TableCell className="font-medium">{model.model}</TableCell>
-                  <TableCell>{model.totalClaims}</TableCell>
-                  <TableCell className="text-green-600">{model.approvedClaims}</TableCell>
-                  <TableCell className="text-red-600">{model.rejectedClaims}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">
-                        {((model.approvedClaims / model.totalClaims) * 100).toFixed(1)}%
-                      </span>
-                      <Progress 
-                        value={(model.approvedClaims / model.totalClaims) * 100} 
-                        className="w-16 h-2" 
-                      />
-                    </div>
-                  </TableCell>
-                  <TableCell>{formatCurrency(model.totalCost)}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {model.commonIssues.slice(0, 2).map((issue, index) => (
-                        <Badge key={index} variant="outline" className="text-xs">
-                          {issue}
-                        </Badge>
-                      ))}
-                      {model.commonIssues.length > 2 && (
-                        <span className="text-xs text-gray-500">+{model.commonIssues.length - 2}</span>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {/* Service Center Performance */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Hiệu suất Trung tâm Dịch vụ</CardTitle>
-          <CardDescription>Đánh giá hiệu suất các trung tâm dịch vụ trong việc gửi yêu cầu bảo hành</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Trung tâm</TableHead>
-                <TableHead>Tổng gửi</TableHead>
-                <TableHead>Được duyệt</TableHead>
-                <TableHead>Tỷ lệ thành công</TableHead>
-                <TableHead>Chi phí TB</TableHead>
-                <TableHead>Thời gian xử lý</TableHead>
-                <TableHead>Đánh giá</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {centerPerformance.map((center) => (
-                <TableRow key={center.id}>
-                  <TableCell className="font-medium">{center.name}</TableCell>
-                  <TableCell>{center.totalSubmitted}</TableCell>
-                  <TableCell className="text-green-600">{center.approvedClaims}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{center.successRate.toFixed(1)}%</span>
-                      <Progress value={center.successRate} className="w-16 h-2" />
-                    </div>
-                  </TableCell>
-                  <TableCell>{formatCurrency(center.averageCost)}</TableCell>
-                  <TableCell>{center.responseTime} ngày</TableCell>
-                  <TableCell>
-                    <span className={`font-medium ${getRatingColor(center.rating)}`}>
-                      {center.rating === 'Xuất sắc' && '🏆 '}
-                      {center.rating === 'Tốt' && '👍 '}
-                      {center.rating === 'Trung bình' && '📊 '}
-                      {center.rating === 'Cần cải thiện' && '⚠️ '}
-                      {center.rating}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {/* Monthly Trends */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Xu hướng theo Tháng</CardTitle>
-          <CardDescription>Biến động yêu cầu bảo hành và chi phí theo thời gian</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {monthlyTrends.map((trend, index) => (
-              <div key={trend.month} className="flex items-center justify-between p-4 border rounded-lg">
-                <div className="flex items-center gap-4">
-                  <div className="text-center">
-                    <div className="text-sm text-gray-500">Tháng</div>
-                    <div className="font-bold">
-                      {new Date(trend.month + '-01').toLocaleDateString('vi-VN', { month: 'short' })}
-                    </div>
-                  </div>
-                  <div className="h-8 w-px bg-gray-300"></div>
-                  <div className="grid grid-cols-4 gap-6">
-                    <div>
-                      <div className="text-sm text-gray-500">Tổng yêu cầu</div>
-                      <div className="font-bold">{trend.totalClaims}</div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-gray-500">Đã duyệt</div>
-                      <div className="font-bold text-green-600">{trend.approvedClaims}</div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-gray-500">Từ chối</div>
-                      <div className="font-bold text-red-600">{trend.rejectedClaims}</div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-gray-500">Chi phí</div>
-                      <div className="font-bold text-blue-600">
-                        {(trend.totalCost / 1000000).toFixed(0)}M
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {index > 0 && (
-                    <div className="text-sm">
-                      {trend.totalClaims > monthlyTrends[index - 1].totalClaims ? (
-                        <span className="text-green-600">📈 +{((trend.totalClaims - monthlyTrends[index - 1].totalClaims) / monthlyTrends[index - 1].totalClaims * 100).toFixed(1)}%</span>
-                      ) : (
-                        <span className="text-red-600">📉 {((trend.totalClaims - monthlyTrends[index - 1].totalClaims) / monthlyTrends[index - 1].totalClaims * 100).toFixed(1)}%</span>
-                      )}
-                    </div>
-                  )}
+          <CardHeader>
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Stock Transfer Requests</CardTitle>
+                  <CardDescription>List of stock transfer requests in the system</CardDescription>
                 </div>
               </div>
-            ))}
-          </div>
+              
+              {/* Filters */}
+              <div className="flex items-end gap-4">
+                <div className="flex-1">
+                  <label className="text-sm font-medium mb-2 block">Page</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={page}
+                    onChange={(e) => setPage(Math.max(1, parseInt(e.target.value) || 1))}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleLoadRequests();
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Page number"
+                  />
+                </div>
+                
+                <div className="flex-1">
+                  <label className="text-sm font-medium mb-2 block">Limit</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={limit}
+                    onChange={(e) => setLimit(Math.max(1, Math.min(100, parseInt(e.target.value) || 10)))}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleLoadRequests();
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Items per page"
+                  />
+                </div>
+                
+                <div className="flex-1">
+                  <label className="text-sm font-medium mb-2 block">Status</label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="PENDING_APPROVAL">Pending Approval</option>
+                    <option value="APPROVED">Approved</option>
+                    <option value="REJECTED">Rejected</option>
+                    <option value="COMPLETED">Completed</option>
+                    <option value="">All Status</option>
+                  </select>
+                </div>
+                
+                <Button 
+                  onClick={handleLoadRequests}
+                  disabled={isLoadingTransfers}
+                  className="px-6"
+                >
+                  {isLoadingTransfers ? '🔄 Loading...' : 'Load'}
+                </Button>
+              </div>
+              
+              {/* Page Info */}
+              <div className="text-sm text-gray-600">
+                Page {page} of {totalPages} • Showing up to {limit} items
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {isLoadingTransfers ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <div className="text-4xl mb-2">⏳</div>
+                  <div className="text-gray-500 font-medium">Loading data...</div>
+                </div>
+              </div>
+            ) : stockTransferRequests.length === 0 ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <div className="text-6xl mb-4">📦</div>
+                  <div className="text-gray-500 font-medium text-lg mb-2">No stock transfer requests found</div>
+                  <div className="text-gray-400 text-sm">Try adjusting your filters or create a new request</div>
+                </div>
+              </div>
+            ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ID</TableHead>
+                  <TableHead>Requesting Warehouse</TableHead>
+                  <TableHead>Requested By</TableHead>
+                  <TableHead>Request Time</TableHead>
+                  <TableHead>Approved By</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {stockTransferRequests.map((request) => (
+                  <TableRow key={request.id}>
+                    <TableCell className="font-medium">#{request.id}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className="text-blue-600">🏢</span>
+                        Warehouse #{request.requestingWarehouseId}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <span className="text-purple-600">👤</span>
+                        User #{request.requestedByUserId}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm text-gray-600">
+                        {formatDateTime(request.requestedAt)}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {request.approvedByUserId ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-green-600">✓</span>
+                          User #{request.approvedByUserId}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 italic">Not approved</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={getStatusBadgeVariant(request.status)}>
+                        {request.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleViewDetails(request.id)}
+                        disabled={isLoadingDetail}
+                      >
+                        👁️ View Details
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          
+          {/* Pagination Controls */}
+          {!isLoadingTransfers && stockTransferRequests.length > 0 && (
+            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(Math.max(1, page - 1))}
+                disabled={page === 1 || isLoadingTransfers}
+              >
+                ← Previous
+              </Button>
+              
+              <span className="text-sm text-gray-600">
+                Page {page} of {totalPages}
+              </span>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage(Math.min(totalPages, page + 1))}
+                disabled={page >= totalPages || isLoadingTransfers}
+              >
+                Next →
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Action Buttons */}
-      <div className="flex gap-4">
-        <Button className="flex items-center gap-2">
-          📊 Xuất báo cáo chi tiết
-        </Button>
-        <Button variant="outline" className="flex items-center gap-2">
-          📧 Gửi báo cáo định kỳ
-        </Button>
-        <Button variant="outline" className="flex items-center gap-2">
-          📈 Phân tích xu hướng
-        </Button>
+      {/* Detail Dialog */}
+      {isDetailDialogOpen && selectedRequest && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Dialog Header */}
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Stock Transfer Request Details</h2>
+                <p className="text-sm text-gray-500 mt-1">Request ID: #{selectedRequest.id}</p>
+              </div>
+              <button
+                onClick={() => setIsDetailDialogOpen(false)}
+                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
 
-        
-      </div>
+            {/* Dialog Content */}
+            <div className="p-6 space-y-6">
+              {/* Status Badge */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-gray-600">Status:</span>
+                <Badge variant={getStatusBadgeVariant(selectedRequest.status)} className="text-base px-4 py-1">
+                  {selectedRequest.status}
+                </Badge>
+              </div>
+
+              {/* Basic Info */}
+              <div className="grid grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Request Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div>
+                      <span className="text-xs text-gray-500">Request Time:</span>
+                      <p className="font-medium">{formatDateTime(selectedRequest.requestedAt)}</p>
+                    </div>
+                    {selectedRequest.warehouse && (
+                      <div>
+                        <span className="text-xs text-gray-500">Warehouse:</span>
+                        <p className="font-medium">🏢 {selectedRequest.warehouse.name}</p>
+                        <p className="text-sm text-gray-600">{selectedRequest.warehouse.address}</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">User Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {selectedRequest.requestedByUser && (
+                      <div>
+                        <span className="text-xs text-gray-500">Requested By:</span>
+                        <p className="font-medium">👤 {selectedRequest.requestedByUser.name}</p>
+                        <p className="text-sm text-gray-600">{selectedRequest.requestedByUser.email}</p>
+                      </div>
+                    )}
+                    {selectedRequest.approvedByUser ? (
+                      <div>
+                        <span className="text-xs text-gray-500">Approved By:</span>
+                        <p className="font-medium text-green-600">✓ {selectedRequest.approvedByUser.name}</p>
+                        <p className="text-sm text-gray-600">{selectedRequest.approvedByUser.email}</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <span className="text-xs text-gray-500">Approved By:</span>
+                        <p className="text-sm text-gray-400 italic">Pending approval</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Items Table */}
+              {selectedRequest.items && selectedRequest.items.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Requested Items</CardTitle>
+                    <CardDescription>Components and quantities</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Item ID</TableHead>
+                          <TableHead>Component ID</TableHead>
+                          <TableHead>Requested Quantity</TableHead>
+                          <TableHead>Approved Quantity</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {selectedRequest.items.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell className="font-medium">#{item.id}</TableCell>
+                            <TableCell>Component #{item.componentId}</TableCell>
+                            <TableCell>
+                              <span className="font-semibold text-blue-600">{item.requestedQuantity}</span>
+                            </TableCell>
+                            <TableCell>
+                              {item.approvedQuantity ? (
+                                <span className="font-semibold text-green-600">{item.approvedQuantity}</span>
+                              ) : (
+                                <span className="text-gray-400 italic">Pending</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+            {/* Dialog Footer */}
+            <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-between items-center">
+              <Button
+                variant="outline"
+                onClick={() => setIsDetailDialogOpen(false)}
+              >
+                Close
+              </Button>
+              <div className="flex gap-3">
+                <Button
+                  variant="destructive"
+                  onClick={async () => {
+                    if (!selectedRequest) return;
+                    if (!confirm('Are you sure you want to reject this request?')) return;
+                    
+                    try {
+                      const token = localStorage.getItem('token');
+                      const response = await fetch(
+                        `${API_BASE_URL}/stock-transfer-requests/${selectedRequest.id}/reject`,
+                        {
+                          method: 'PATCH',
+                          headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                          }
+                        }
+                      );
+                      
+                      if (response.ok) {
+                        alert('Request rejected successfully!');
+                        setIsDetailDialogOpen(false);
+                        fetchStockTransferRequests(); // Refresh list
+                      } else {
+                        alert('Failed to reject request. Please try again.');
+                      }
+                    } catch (error) {
+                      console.error('Error rejecting request:', error);
+                      alert('Error rejecting request. Please try again.');
+                    }
+                  }}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  ❌ Reject
+                </Button>
+                <Button
+                  onClick={async () => {
+                    if (!selectedRequest) return;
+                    if (!confirm('Are you sure you want to approve this request?')) return;
+                    
+                    try {
+                      const token = localStorage.getItem('token');
+                      const response = await fetch(
+                        `${API_BASE_URL}/stock-transfer-requests/${selectedRequest.id}/approve`,
+                        {
+                          method: 'PATCH',
+                          headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                          }
+                        }
+                      );
+                      
+                      if (response.ok) {
+                        alert('Request approved successfully!');
+                        setIsDetailDialogOpen(false);
+                        fetchStockTransferRequests(); // Refresh list
+                      } else {
+                        alert('Failed to approve request. Please try again.');
+                      }
+                    } catch (error) {
+                      console.error('Error approving request:', error);
+                      alert('Error approving request. Please try again.');
+                    }
+                  }}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  ✓ Approve
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       </div>
     </div>
   );
