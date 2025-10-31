@@ -374,6 +374,15 @@ router.get(
  *                       enum: [ELIGIBLE, INELIGIBLE]
  *                       description: Warranty eligibility status for this case line
  *                       example: "ELIGIBLE"
+ *                     evidenceImageUrls:
+ *                       type: array
+ *                       description: Optional array of supporting image URLs captured during diagnosis
+ *                       items:
+ *                         type: string
+ *                         format: uri
+ *                       example:
+ *                         - "https://cdn.example.com/case-lines/diagnosis/evidence-01.jpg"
+ *                         - "https://cdn.example.com/case-lines/diagnosis/evidence-02.jpg"
  *           examples:
  *             brakeReplacement:
  *               summary: Brake system repair with warranty
@@ -384,11 +393,14 @@ router.get(
  *                     componentId: "1096033d-f11f-4a49-a751-8be0cfb9d705"
  *                     quantity: 1
  *                     warrantyStatus: "ELIGIBLE"
+ *                     evidenceImageUrls:
+ *                       - "https://cdn.example.com/case-lines/diagnosis/evidence-01.jpg"
  *                   - diagnosisText: "Kiểm tra hệ thống phanh, phát hiện má phanh trước bị mòn dưới mức an toàn."
  *                     correctionText: "Thay thế bộ má phanh trước mới."
  *                     componentId: "cce9b4f8-bfd3-45d9-b650-8773383c90eb"
  *                     quantity: 5
  *                     warrantyStatus: "ELIGIBLE"
+ *                     evidenceImageUrls: []
  *             mixedWarranty:
  *               summary: Mixed warranty status cases
  *               value:
@@ -398,11 +410,14 @@ router.get(
  *                     componentId: "abc123-def4-5678-90ab-cdef12345678"
  *                     quantity: 1
  *                     warrantyStatus: "ELIGIBLE"
+ *                     evidenceImageUrls:
+ *                       - "https://cdn.example.com/case-lines/battery/evidence-01.jpg"
  *                   - diagnosisText: "Trầy xước ở cản trước do va chạm nhẹ."
  *                     correctionText: "Sơn lại cản trước."
  *                     componentId: null
  *                     quantity: 0
  *                     warrantyStatus: "INELIGIBLE"
+ *                     evidenceImageUrls: []
  *     responses:
  *       201:
  *         description: Case lines created successfully

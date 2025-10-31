@@ -359,6 +359,18 @@ const options = {
               type: "string",
               enum: ["ELIGIBLE", "INELIGIBLE"],
             },
+            evidenceImageUrls: {
+              type: "array",
+              description: "Danh sách URL hình ảnh chứng cứ đính kèm caseline",
+              items: {
+                type: "string",
+                format: "uri",
+              },
+              example: [
+                "https://cdn.example.com/case-line/evidence-1.jpg",
+                "https://cdn.example.com/case-line/evidence-2.jpg",
+              ],
+            },
             status: {
               type: "string",
               enum: [
