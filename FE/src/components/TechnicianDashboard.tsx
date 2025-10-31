@@ -140,6 +140,17 @@ interface CaseLine {
   photoFiles?: File[]; // Store actual File objects for blob URLs
   createdDate: string;
   status: 'draft' | 'submitted' | 'approved' | 'rejected';
+  // Additional backend fields (optional) - surface them in the Details modal when available
+  diagnosisText?: string;
+  correctionText?: string;
+  typeComponentId?: string | null;
+  componentId?: string | null;
+  quantity?: number;
+  warrantyStatus?: string | null;
+  diagnosticTechId?: string | null;
+  repairTechId?: string | null;
+  rejectionReason?: string | null;
+  updatedAt?: string | null;
 }
 
 interface IssueDiagnosisForm {
@@ -171,6 +182,11 @@ interface CaseLineResponse {
   techId: string;
   status: string;
   createdAt: string;
+  updatedAt?: string | null;
+  // Optional fields that may appear in different backend shapes
+  typeComponentId?: string | null;
+  repairTechId?: string | null;
+  rejectionReason?: string | null;
 }
 
 interface TechnicianDashboardProps {
@@ -225,6 +241,9 @@ const TechnicianDashboard = ({
   const [viewReportModalOpen, setViewReportModalOpen] = useState(false);
   const [createIssueDiagnosisModalOpen, setCreateIssueDiagnosisModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Loading state for completing a processing record
+  const [isCompleting, setIsCompleting] = useState(false);
+  
   
   // Processing Records form (uses CaseLineRequest for API)
   const [caseLineForm, setCaseLineForm] = useState<CaseLineRequest>({
@@ -300,6 +319,7 @@ const TechnicianDashboard = ({
   // State cho API data
   const [selectedGuaranteeCase, setSelectedGuaranteeCase] = useState<GuaranteeCase | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>('processing-records');
   const [createdCaseLines, setCreatedCaseLines] = useState<CaseLineResponse[]>([]);
   // Work schedules state
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
@@ -685,6 +705,50 @@ const TechnicianDashboard = ({
     return labels[status] || status;
   };
 
+  // Complete a processing record by calling the backend PATCH endpoint
+  // Endpoint: PATCH /processing-records/{id}/complete-diagnosis
+  const completeProcessingRecord = useCallback(async (recordId?: string) => {
+    if (!recordId) {
+      toast({ title: 'Missing Record ID', description: 'Cannot complete record without an ID', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setIsCompleting(true);
+      const nowIso = new Date().toISOString();
+      // apiService is an axios wrapper with baseURL = http://localhost:3000/api/v1
+      const resp = await apiService.patch(`/processing-records/${recordId}/complete-diagnosis`, {
+        checkOutDate: nowIso
+      });
+
+      toast({ title: 'Record Completed', description: `Processing record ${recordId} marked as completed.` });
+
+      // Update local selectedRecord state if it refers to the same record we just completed.
+      if (selectedRecord) {
+        // Backend may return the id under different keys (recordId, id). Normalize safely without using `any`.
+        const maybeId = ((selectedRecord as unknown) as Record<string, unknown>)['id'];
+        const selId = typeof selectedRecord.recordId === 'string' && selectedRecord.recordId.length > 0
+          ? selectedRecord.recordId
+          : (typeof maybeId === 'string' ? maybeId : (typeof maybeId === 'number' ? String(maybeId) : ''));
+
+        if (selId === recordId) {
+          setSelectedRecord(prev => prev ? ({ ...prev, status: 'COMPLETED', checkOutDate: nowIso } as ProcessingRecord) : prev);
+        }
+      }
+
+      // Refresh processing records to reflect status change
+      try { await fetchProcessingRecords(); } catch (e) { /* ignore refresh error */ }
+      setViewCaseModalOpen(false);
+      return resp?.data;
+    } catch (err) {
+      console.error('Failed to complete processing record', err);
+      toast({ title: 'Complete Failed', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
+      throw err;
+    } finally {
+      setIsCompleting(false);
+    }
+  }, [fetchProcessingRecords, selectedRecord]);
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
@@ -1014,6 +1078,12 @@ const TechnicianDashboard = ({
     console.log('Created case lines updated:', createdCaseLines.length, 'case lines');
   }, [createdCaseLines]);
 
+  // Helpers
+  const isCaseLineCompleted = (status?: string | null) => {
+    if (!status) return false;
+    try { return String(status).toUpperCase() === 'COMPLETED'; } catch { return false; }
+  };
+
   // Warranty cases state with mock data
   const [warrantyDiagnosisCases, setWarrantyDiagnosisCases] = useState<WarrantyCase[]>([
     {
@@ -1125,9 +1195,40 @@ const TechnicianDashboard = ({
     setUpdateDetailsModalOpen(true);
   };
 
-  // Handle view case line
+  // Handle view case line: enrich the lightweight UI caseLine with any detailed
+  // response we've previously loaded into `createdCaseLines` so the modal can
+  // display the full set of fields returned by the backend.
   const handleViewCaseLine = (caseLine: CaseLine) => {
-    setSelectedCaseLine(caseLine);
+    try {
+      // Try to find a detailed server response for this caseLine id
+      const detailed = createdCaseLines.find(c => c.caseLineId === caseLine.id || c.caseLineId === (caseLine.id as unknown as string));
+
+      if (detailed) {
+        const enriched: CaseLine = {
+          ...caseLine,
+          diagnosisText: detailed.diagnosisText ?? undefined,
+          correctionText: detailed.correctionText ?? undefined,
+          // backend may call this componentId or typeComponentId
+          componentId: detailed.componentId ?? detailed.typeComponentId ?? null,
+          typeComponentId: detailed.typeComponentId ?? detailed.componentId ?? null,
+          quantity: typeof detailed.quantity === 'number' ? detailed.quantity : (detailed.quantity ? Number(detailed.quantity) : undefined),
+          warrantyStatus: detailed.warrantyStatus ?? null,
+          diagnosticTechId: detailed.techId ?? null,
+          // repairTechId / rejectionReason may be present in some responses
+          repairTechId: detailed.repairTechId ?? null,
+          rejectionReason: detailed.rejectionReason ?? null,
+          updatedAt: detailed.updatedAt ?? null,
+        };
+
+        setSelectedCaseLine(enriched);
+      } else {
+        setSelectedCaseLine(caseLine);
+      }
+    } catch (err) {
+      console.warn('Failed to enrich caseLine for details modal', err);
+      setSelectedCaseLine(caseLine);
+    }
+
     setViewCaseLineModalOpen(true);
   };
 
@@ -1346,12 +1447,12 @@ const TechnicianDashboard = ({
 
       <div className="container mx-auto px-6 py-6">
       
-        <Tabs defaultValue="processing-records" className="space-y-6">
+  <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="processing-records">Processing Records</TabsTrigger>
-            <TabsTrigger value="case-lines">Issue Diagnosis</TabsTrigger>
-            <TabsTrigger value="work-schedules">Work Schedules</TabsTrigger>
-          </TabsList>
+                      <TabsTrigger value="processing-records">Processing Records</TabsTrigger>
+                      <TabsTrigger value="case-lines">Issue Diagnosis</TabsTrigger>
+                      <TabsTrigger value="work-schedules">Work Schedules</TabsTrigger>
+                    </TabsList>
 
           {/* Processing Records Tab */}
           <TabsContent value="processing-records">
@@ -1583,7 +1684,7 @@ const TechnicianDashboard = ({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {caseLines.map((caseLine) => (
+                      {caseLines.filter(cl => !isCaseLineCompleted(cl.status)).map((caseLine) => (
                         <TableRow key={caseLine.id}>
                           <TableCell className="font-mono text-sm">
                             {caseLine.id}
@@ -1651,6 +1752,7 @@ const TechnicianDashboard = ({
                                   <Settings className="h-3 w-3" />
                                 </Button>
                               )}
+                              
                             </div>
                           </TableCell>
                         </TableRow>
@@ -1661,6 +1763,8 @@ const TechnicianDashboard = ({
               </CardContent>
             </Card>
           </TabsContent>
+
+          
 
           {/* Work Schedules Tab (replaced Components + Staff Management) */}
           <TabsContent value="work-schedules" className="space-y-6">
@@ -1787,6 +1891,80 @@ const TechnicianDashboard = ({
                     <span className="text-lg bg-white px-3 py-2 rounded border">{selectedWarrantyCase?.customerPhone || 'Not provided'}</span>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Technical / Backend Fields (show if available) */}
+            <div className="bg-white p-6 rounded-lg border border-gray-200">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center">
+                  <FileText className="h-4 w-4 text-white" />
+                </div>
+                <h4 className="font-semibold text-lg text-gray-900">Technical Details</h4>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {selectedCaseLine?.diagnosisText !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Diagnosis Text</div>
+                    <div className="bg-muted p-3 rounded mt-1">{selectedCaseLine?.diagnosisText || '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.correctionText !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Correction Text</div>
+                    <div className="bg-muted p-3 rounded mt-1">{selectedCaseLine?.correctionText || '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.componentId !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Component ID</div>
+                    <div className="font-mono bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.componentId ?? selectedCaseLine?.typeComponentId ?? '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.quantity !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Quantity</div>
+                    <div className="bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.quantity ?? '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.warrantyStatus !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Warranty Status</div>
+                    <div className="bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.warrantyStatus ?? '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.diagnosticTechId !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Diagnostic Tech ID</div>
+                    <div className="font-mono bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.diagnosticTechId ?? '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.repairTechId !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Repair Tech ID</div>
+                    <div className="font-mono bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.repairTechId ?? '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.rejectionReason !== undefined && (
+                  <div className="md:col-span-2">
+                    <div className="text-sm text-gray-600">Rejection Reason</div>
+                    <div className="bg-muted p-3 rounded mt-1">{selectedCaseLine?.rejectionReason || '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.updatedAt !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Last Updated</div>
+                    <div className="bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.updatedAt ?? '—'}</div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2903,6 +3081,33 @@ const TechnicianDashboard = ({
               </div>
             </div>
           )}
+
+          <div className="flex justify-end gap-3 pt-6 border-t">
+            <Button variant="outline" onClick={() => setViewCaseModalOpen(false)}>Close</Button>
+
+            {selectedRecord && (selectedRecord.status !== 'COMPLETED') && (
+              <Button
+                className="bg-blue-600 hover:bg-blue-700"
+                onClick={async () => {
+                  // derive candidate id (recordId or fallback to id field)
+                  const rec = selectedRecord as unknown as Record<string, unknown>;
+                  const candidateId = (rec['recordId'] as string) || (rec['vehicleProcessingRecordId'] as string) || (rec['processing_record_id'] as string) || (rec['id'] as string) || '';
+                  if (!candidateId) {
+                    toast({ title: 'Missing Record ID', description: 'Cannot complete record: ID not found', variant: 'destructive' });
+                    return;
+                  }
+                  try {
+                    await completeProcessingRecord(candidateId);
+                  } catch (err) {
+                    // error already handled in helper
+                  }
+                }}
+                disabled={isCompleting}
+              >
+                {isCompleting ? 'Completing...' : 'Complete Record'}
+              </Button>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
