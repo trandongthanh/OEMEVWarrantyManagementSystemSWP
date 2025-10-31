@@ -10,7 +10,6 @@ const TYPE_COMPONENTS_DATA = [
     category: "HIGH_VOLTAGE_BATTERY",
     price: 280000000,
     makeBrand: "CATL",
-    suppliers: ["catl"],
   },
   {
     sku: "BAT-HV-92KWH-VF8",
@@ -18,7 +17,6 @@ const TYPE_COMPONENTS_DATA = [
     category: "HIGH_VOLTAGE_BATTERY",
     price: 420000000,
     makeBrand: "CATL",
-    suppliers: ["catl"],
   },
   {
     sku: "MOT-ELC-130KW",
@@ -26,7 +24,6 @@ const TYPE_COMPONENTS_DATA = [
     category: "POWERTRAIN",
     price: 165000000,
     makeBrand: "Bosch",
-    suppliers: ["bosch"],
   },
   {
     sku: "INV-PWR-400V",
@@ -34,7 +31,6 @@ const TYPE_COMPONENTS_DATA = [
     category: "POWERTRAIN",
     price: 89000000,
     makeBrand: "Bosch",
-    suppliers: ["bosch"],
   },
   {
     sku: "CHG-OBC-11KW",
@@ -42,7 +38,6 @@ const TYPE_COMPONENTS_DATA = [
     category: "CHARGING_SYSTEM",
     price: 36000000,
     makeBrand: "Bosch",
-    suppliers: ["bosch"],
   },
   {
     sku: "HVAC-AUTO-2ZONE",
@@ -50,7 +45,6 @@ const TYPE_COMPONENTS_DATA = [
     category: "HVAC",
     price: 39000000,
     makeBrand: "LG",
-    suppliers: ["lg"],
   },
   {
     sku: "ADAS-CAM-360",
@@ -58,7 +52,6 @@ const TYPE_COMPONENTS_DATA = [
     category: "INFOTAINMENT_ADAS",
     price: 18500000,
     makeBrand: "LG",
-    suppliers: ["lg"],
   },
   {
     sku: "DISPLAY-15IN",
@@ -66,7 +59,6 @@ const TYPE_COMPONENTS_DATA = [
     category: "INFOTAINMENT_ADAS",
     price: 29500000,
     makeBrand: "LG",
-    suppliers: ["lg"],
   },
   {
     sku: "BRAKE-PAD-CERAMIC",
@@ -74,7 +66,6 @@ const TYPE_COMPONENTS_DATA = [
     category: "BRAKING",
     price: 4800000,
     makeBrand: "Bosch",
-    suppliers: ["bosch"],
   },
   {
     sku: "SUSP-AIR-ADAPTIVE",
@@ -82,7 +73,6 @@ const TYPE_COMPONENTS_DATA = [
     category: "SUSPENSION_STEERING",
     price: 82000000,
     makeBrand: "Bosch",
-    suppliers: ["bosch"],
   },
   {
     sku: "FILTER-CABIN-HEPA",
@@ -90,7 +80,6 @@ const TYPE_COMPONENTS_DATA = [
     category: "HVAC",
     price: 3600000,
     makeBrand: "LG",
-    suppliers: ["lg"],
   },
   {
     sku: "BODY-WINDSHIELD-HEAT",
@@ -98,7 +87,6 @@ const TYPE_COMPONENTS_DATA = [
     category: "BODY_CHASSIS",
     price: 16500000,
     makeBrand: "LG",
-    suppliers: ["lg"],
   },
 ];
 
@@ -420,12 +408,10 @@ async function seedDatabase() {
     const models = sequelize.models;
     const {
       VehicleCompany,
-      ComponentCompany,
       VehicleModel,
       ServiceCenter,
       Warehouse,
       TypeComponent,
-      TypeComponentByCompany,
       WarrantyComponent,
       Role,
       User,
@@ -447,40 +433,6 @@ async function seedDatabase() {
       },
       transaction,
     });
-
-    const componentCompanies = {};
-    const componentCompanyData = [
-      {
-        key: "catl",
-        name: "CATL Battery",
-        address: "Ningde, Trung Quốc",
-        phone: "+86-593-8988888",
-        email: "info@catl.com",
-      },
-      {
-        key: "bosch",
-        name: "Bosch Automotive",
-        address: "Stuttgart, Đức",
-        phone: "+49-711-811-0",
-        email: "contact@bosch.com",
-      },
-      {
-        key: "lg",
-        name: "LG Electronics",
-        address: "Seoul, Hàn Quốc",
-        phone: "+82-2-3777-1114",
-        email: "info@lge.com",
-      },
-    ];
-
-    for (const data of componentCompanyData) {
-      const [record] = await ComponentCompany.findOrCreate({
-        where: { name: data.name },
-        defaults: data,
-        transaction,
-      });
-      componentCompanies[data.key] = record;
-    }
 
     const vehicleModels = {};
     for (const data of VEHICLE_MODELS_DATA) {
@@ -562,21 +514,6 @@ async function seedDatabase() {
         transaction,
       });
       typeComponents[data.sku] = record;
-
-      for (const supplierKey of data.suppliers) {
-        const supplier = componentCompanies[supplierKey];
-        await TypeComponentByCompany.findOrCreate({
-          where: {
-            componentCompanyId: supplier.componentCompanyId,
-            typeComponentId: record.typeComponentId,
-          },
-          defaults: {
-            componentCompanyId: supplier.componentCompanyId,
-            typeComponentId: record.typeComponentId,
-          },
-          transaction,
-        });
-      }
     }
 
     for (const [modelKey, items] of Object.entries(WARRANTY_COMPONENT_PLAN)) {
@@ -612,39 +549,110 @@ async function seedDatabase() {
 
     const hashedPassword = await bcrypt.hash("123456", 10);
     const userPayload = [
+      // Hà Nội - staff + tech + manager + parts coordinator
       {
-        username: "staff_hn",
-        name: "Nguyễn Lan Anh",
+        username: "staff_hn1",
+        name: "Nguyễn Văn An",
         role: "service_center_staff",
         serviceCenterId: serviceCenterHN.serviceCenterId,
       },
       {
-        username: "tech_hn",
-        name: "Phạm Đức Trung",
+        username: "staff_hn2",
+        name: "Đỗ Thị Mai",
+        role: "service_center_staff",
+        serviceCenterId: serviceCenterHN.serviceCenterId,
+      },
+      {
+        username: "tech_hn1",
+        name: "Lê Văn Cường",
         role: "service_center_technician",
         serviceCenterId: serviceCenterHN.serviceCenterId,
       },
       {
-        username: "staff_hcm",
-        name: "Trần Mỹ Duyên",
+        username: "tech_hn2",
+        name: "Vũ Minh Tuấn",
+        role: "service_center_technician",
+        serviceCenterId: serviceCenterHN.serviceCenterId,
+      },
+      {
+        username: "manager_hn",
+        name: "Trần Thị Bình",
+        role: "service_center_manager",
+        serviceCenterId: serviceCenterHN.serviceCenterId,
+      },
+      {
+        username: "parts_sc_hn1",
+        name: "Hoàng Thị Em",
+        role: "parts_coordinator_service_center",
+        serviceCenterId: serviceCenterHN.serviceCenterId,
+      },
+
+      // TP.HCM - staff + tech + manager + parts coordinator
+      {
+        username: "staff_hcm1",
+        name: "Võ Văn Khoa",
         role: "service_center_staff",
         serviceCenterId: serviceCenterHCM.serviceCenterId,
       },
       {
-        username: "tech_hcm",
-        name: "Lê Quốc Bảo",
+        username: "staff_hcm2",
+        name: "Phan Thị Lan",
+        role: "service_center_staff",
+        serviceCenterId: serviceCenterHCM.serviceCenterId,
+      },
+      {
+        username: "tech_hcm1",
+        name: "Trương Văn Phong",
         role: "service_center_technician",
         serviceCenterId: serviceCenterHCM.serviceCenterId,
       },
       {
-        username: "parts_company",
-        name: "Đỗ Hữu Minh",
+        username: "tech_hcm2",
+        name: "Huỳnh Văn Tài",
+        role: "service_center_technician",
+        serviceCenterId: serviceCenterHCM.serviceCenterId,
+      },
+      {
+        username: "manager_hcm",
+        name: "Nguyễn Thị Xuân",
+        role: "service_center_manager",
+        serviceCenterId: serviceCenterHCM.serviceCenterId,
+      },
+      {
+        username: "parts_sc_hcm1",
+        name: "Đặng Văn Minh",
+        role: "parts_coordinator_service_center",
+        serviceCenterId: serviceCenterHCM.serviceCenterId,
+      },
+
+      // Company-level roles: parts coordinator, emv staff, admin
+      {
+        username: "parts_company1",
+        name: "Đặng Văn Phúc",
         role: "parts_coordinator_company",
         vehicleCompanyId: vehicleCompany.vehicleCompanyId,
       },
       {
+        username: "parts_company2",
+        name: "Cao Văn Sơn",
+        role: "parts_coordinator_company",
+        vehicleCompanyId: vehicleCompany.vehicleCompanyId,
+      },
+      {
+        username: "emv_staff1",
+        name: "Phạm Văn Dũng",
+        role: "emv_staff",
+        vehicleCompanyId: vehicleCompany.vehicleCompanyId,
+      },
+      {
+        username: "emv_staff2",
+        name: "Lê Thị Nga",
+        role: "emv_staff",
+        vehicleCompanyId: vehicleCompany.vehicleCompanyId,
+      },
+      {
         username: "admin",
-        name: "Võ Minh Giang",
+        name: "Võ Thị Giang (Admin)",
         role: "emv_admin",
         vehicleCompanyId: vehicleCompany.vehicleCompanyId,
       },

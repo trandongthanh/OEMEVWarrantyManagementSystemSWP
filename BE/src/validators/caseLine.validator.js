@@ -77,13 +77,16 @@ export const getAllCaselinesQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(100).default(10),
   status: Joi.string()
     .valid(
+      "DRAFT",
       "PENDING_APPROVAL",
       "CUSTOMER_APPROVED",
       "REJECTED_BY_OUT_OF_WARRANTY",
       "REJECTED_BY_TECH",
       "REJECTED_BY_CUSTOMER",
       "WAITING_FOR_PARTS",
+      "REJECTED_BY_OEM",
       "READY_FOR_REPAIR",
+      "PARTS_AVAILABLE",
       "IN_REPAIR",
       "COMPLETED",
       "CANCELLED"
