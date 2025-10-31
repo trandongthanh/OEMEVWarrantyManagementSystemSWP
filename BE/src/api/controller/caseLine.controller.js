@@ -162,11 +162,11 @@ class CaseLineController {
   };
 
   getCaseLines = async (req, res, next) => {
+    const { caseId } = req.params;
     const {
       page,
       limit,
       status,
-      guaranteeCaseId,
       warrantyStatus,
       vehicleProcessingRecordId,
       diagnosticTechId,
@@ -181,7 +181,7 @@ class CaseLineController {
       page,
       limit,
       status,
-      guaranteeCaseId,
+      guaranteeCaseId: caseId,
       warrantyStatus,
       vehicleProcessingRecordId,
       diagnosticTechId,
