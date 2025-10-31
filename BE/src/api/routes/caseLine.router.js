@@ -302,7 +302,7 @@ router.get(
     "service_center_technician",
     "service_center_staff",
     "service_center_manager",
-    "service_center_manager",
+    "emv_staff",
   ]),
   validate(getAllCaselinesQuerySchema, "query"),
   async (req, res, next) => {

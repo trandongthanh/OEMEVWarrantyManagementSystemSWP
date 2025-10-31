@@ -1,6 +1,13 @@
 import db from "../models/index.cjs";
 
-const { ComponentReservation } = db;
+const {
+  ComponentReservation,
+  Component,
+  CaseLine,
+  GuaranteeCase,
+  VehicleProcessingRecord,
+  User,
+} = db;
 
 class ComponentReservationRepository {
   bulkCreate = async ({ componentReservations }, transaction = null) => {
@@ -135,6 +142,169 @@ class ComponentReservationRepository {
     });
 
     return reservations.map((reservation) => reservation.toJSON());
+  };
+
+  findAll = async (
+    {
+      page = 1,
+      limit = 10,
+      status,
+      warehouseId,
+      typeComponentId,
+      caseLineId,
+      guaranteeCaseId,
+      vehicleProcessingRecordId,
+      serviceCenterId,
+      sortBy = "createdAt",
+      sortOrder = "DESC",
+    },
+    transaction = null
+  ) => {
+    const offset = (page - 1) * limit;
+    const reservationWhere = {};
+    const componentWhere = {};
+    const guaranteeCaseWhere = {};
+    const vehicleProcessingRecordWhere = {};
+    const createdByStaffWhere = {};
+
+    if (status) {
+      reservationWhere.status = status;
+    }
+
+    if (caseLineId) {
+      reservationWhere.caseLineId = caseLineId;
+    }
+
+    if (warehouseId) {
+      componentWhere.warehouseId = warehouseId;
+    }
+
+    if (typeComponentId) {
+      componentWhere.typeComponentId = typeComponentId;
+    }
+
+    if (guaranteeCaseId) {
+      guaranteeCaseWhere.guaranteeCaseId = guaranteeCaseId;
+    }
+
+    if (vehicleProcessingRecordId) {
+      vehicleProcessingRecordWhere.vehicleProcessingRecordId =
+        vehicleProcessingRecordId;
+    }
+
+    if (serviceCenterId) {
+      createdByStaffWhere.serviceCenterId = serviceCenterId;
+    }
+
+    const { count, rows } = await ComponentReservation.findAndCountAll({
+      where: reservationWhere,
+      include: [
+        {
+          model: Component,
+          as: "component",
+          attributes: [
+            "componentId",
+            "serialNumber",
+            "status",
+            "warehouseId",
+            "typeComponentId",
+          ],
+          where:
+            Object.keys(componentWhere).length > 0 ? componentWhere : undefined,
+          required: true,
+        },
+        {
+          model: User,
+          as: "pickedUpByTech",
+          attributes: ["userId", "name", "email", "roleId"],
+          required: false,
+        },
+        {
+          model: CaseLine,
+          as: "caseLine",
+          attributes: [
+            "id",
+            "guaranteeCaseId",
+            "typeComponentId",
+            "quantity",
+            "status",
+            "diagnosticTechId",
+            "repairTechId",
+          ],
+          include: [
+            {
+              model: User,
+              as: "diagnosticTechnician",
+              attributes: ["userId", "name", "email"],
+              required: false,
+            },
+            {
+              model: User,
+              as: "repairTechnician",
+              attributes: ["userId", "name", "email"],
+              required: false,
+            },
+            {
+              model: GuaranteeCase,
+              as: "guaranteeCase",
+              attributes: [
+                "guaranteeCaseId",
+                "vehicleProcessingRecordId",
+                "status",
+              ],
+              where:
+                Object.keys(guaranteeCaseWhere).length > 0
+                  ? guaranteeCaseWhere
+                  : undefined,
+              required: true,
+              include: [
+                {
+                  model: VehicleProcessingRecord,
+                  as: "vehicleProcessingRecord",
+                  attributes: [
+                    "vehicleProcessingRecordId",
+                    "vin",
+                    "createdByStaffId",
+                  ],
+                  where:
+                    Object.keys(vehicleProcessingRecordWhere).length > 0
+                      ? vehicleProcessingRecordWhere
+                      : undefined,
+                  required: true,
+                  include: [
+                    {
+                      model: User,
+                      as: "createdByStaff",
+                      attributes: ["userId", "serviceCenterId", "name"],
+                      where:
+                        Object.keys(createdByStaffWhere).length > 0
+                          ? createdByStaffWhere
+                          : undefined,
+                      required: true,
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      limit,
+      offset,
+      order: [[sortBy, sortOrder]],
+      transaction,
+      distinct: true,
+    });
+
+    return {
+      reservations: rows.map((row) => row.toJSON()),
+      pagination: {
+        total: count,
+        page,
+        limit,
+        totalPages: Math.ceil(count / limit),
+      },
+    };
   };
 }
 

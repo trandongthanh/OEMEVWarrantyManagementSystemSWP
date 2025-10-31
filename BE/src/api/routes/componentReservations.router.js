@@ -5,11 +5,114 @@ import {
   validate,
 } from "../middleware/index.js";
 import {
+  getComponentReservationsQuerySchema,
   pickupReservedComponentSchema,
   returnReservedComponentSchema,
 } from "../../validators/componentReservation.validator.js";
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /component-reservations:
+ *   get:
+ *     summary: List component reservations assigned to a service center
+ *     description: Parts coordinators can view reservation queue to prepare and hand over components to technicians.
+ *     tags: [Component Reservations]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Pagination page index
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Number of records per page
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [RESERVED, PICKED_UP, INSTALLED, RETURNED, CANCELLED]
+ *           default: RESERVED
+ *         description: Filter reservations by status
+ *       - in: query
+ *         name: warehouseId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by warehouse storing the component
+ *       - in: query
+ *         name: typeComponentId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by component type
+ *       - in: query
+ *         name: caseLineId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by specific case line
+ *       - in: query
+ *         name: guaranteeCaseId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by guarantee case
+ *       - in: query
+ *         name: vehicleProcessingRecordId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter by processing record
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [createdAt, updatedAt]
+ *           default: createdAt
+ *         description: Sort field
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [ASC, DESC]
+ *           default: DESC
+ *         description: Sort direction
+ *     responses:
+ *       200:
+ *         description: Reservations retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - requires parts coordinator role
+ */
+router.get(
+  "/",
+  authentication,
+  authorizationByRole(["parts_coordinator_service_center"]),
+  validate(getComponentReservationsQuerySchema, "query"),
+  async (req, res, next) => {
+    const componentReservationsController = req.container.resolve(
+      "componentReservationsController"
+    );
+
+    await componentReservationsController.getComponentReservations(
+      req,
+      res,
+      next
+    );
+  }
+);
 
 /**
  * @swagger
