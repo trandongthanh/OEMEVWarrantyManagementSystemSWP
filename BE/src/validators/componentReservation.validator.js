@@ -11,11 +11,17 @@ export const getComponentReservationsQuerySchema = Joi.object({
   caseLineId: Joi.string().uuid().optional(),
   guaranteeCaseId: Joi.string().uuid().optional(),
   vehicleProcessingRecordId: Joi.string().uuid().optional(),
+  repairTechId: Joi.string().uuid().optional(),
+  repairTechPhone: Joi.string().trim().optional(),
   sortBy: Joi.string().valid("createdAt", "updatedAt").default("createdAt"),
   sortOrder: Joi.string().valid("ASC", "DESC").default("DESC"),
 });
 
 export const pickupReservedComponentSchema = Joi.object({
+  reservationIds: Joi.array()
+    .items(Joi.string().uuid({ version: "uuidv4" }))
+    .min(1)
+    .required(),
   pickedUpByTechId: Joi.string().uuid({ version: "uuidv4" }).required(),
 });
 

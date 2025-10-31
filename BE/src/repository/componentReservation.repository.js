@@ -154,6 +154,8 @@ class ComponentReservationRepository {
       caseLineId,
       guaranteeCaseId,
       vehicleProcessingRecordId,
+      repairTechId,
+      repairTechPhone,
       serviceCenterId,
       sortBy = "createdAt",
       sortOrder = "DESC",
@@ -166,6 +168,7 @@ class ComponentReservationRepository {
     const guaranteeCaseWhere = {};
     const vehicleProcessingRecordWhere = {};
     const createdByStaffWhere = {};
+    const repairTechnicianWhere = {};
 
     if (status) {
       reservationWhere.status = status;
@@ -196,6 +199,14 @@ class ComponentReservationRepository {
       createdByStaffWhere.serviceCenterId = serviceCenterId;
     }
 
+    if (repairTechId) {
+      repairTechnicianWhere.userId = repairTechId;
+    }
+
+    if (repairTechPhone) {
+      repairTechnicianWhere.phone = repairTechPhone;
+    }
+
     const { count, rows } = await ComponentReservation.findAndCountAll({
       where: reservationWhere,
       include: [
@@ -216,7 +227,7 @@ class ComponentReservationRepository {
         {
           model: User,
           as: "pickedUpByTech",
-          attributes: ["userId", "name", "email", "roleId"],
+          attributes: ["userId", "name", "email", "phone", "roleId"],
           required: false,
         },
         {
@@ -235,14 +246,18 @@ class ComponentReservationRepository {
             {
               model: User,
               as: "diagnosticTechnician",
-              attributes: ["userId", "name", "email"],
+              attributes: ["userId", "name", "email", "phone"],
               required: false,
             },
             {
               model: User,
               as: "repairTechnician",
-              attributes: ["userId", "name", "email"],
-              required: false,
+              attributes: ["userId", "name", "email", "phone"],
+              where:
+                Object.keys(repairTechnicianWhere).length > 0
+                  ? repairTechnicianWhere
+                  : undefined,
+              required: Object.keys(repairTechnicianWhere).length > 0,
             },
             {
               model: GuaranteeCase,

@@ -14,6 +14,8 @@ class ComponentReservationsController {
       caseLineId,
       guaranteeCaseId,
       vehicleProcessingRecordId,
+      repairTechId,
+      repairTechPhone,
       sortBy,
       sortOrder,
     } = req.query;
@@ -30,6 +32,8 @@ class ComponentReservationsController {
         caseLineId,
         guaranteeCaseId,
         vehicleProcessingRecordId,
+        repairTechId,
+        repairTechPhone,
         sortBy,
         sortOrder,
         serviceCenterId,
@@ -41,24 +45,22 @@ class ComponentReservationsController {
     });
   };
 
-  pickupReservedComponent = async (req, res, next) => {
-    const { reservationId } = req.params;
-
+  pickupReservedComponents = async (req, res, next) => {
     const { serviceCenterId } = req.user;
 
-    const { pickedUpByTechId } = req.body;
+    const { reservationIds, pickedUpByTechId } = req.body;
 
-    const updatedReservation =
-      await this.#componentReservationsService.pickupReservedComponent({
-        reservationId,
+    const updatedReservations =
+      await this.#componentReservationsService.pickupReservedComponents({
+        reservationIds,
         serviceCenterId,
-        pickedUpByTechId: pickedUpByTechId,
+        pickedUpByTechId,
       });
 
     res.status(200).json({
       status: "success",
       data: {
-        reservation: updatedReservation,
+        reservations: updatedReservations,
       },
     });
   };
