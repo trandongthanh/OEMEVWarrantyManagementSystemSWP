@@ -2123,12 +2123,14 @@ const SuperAdvisor = () => {
     setShowCaselineDialog(true);
     setIsLoadingCaselines(true);
     setCaselines([]);
-
-    // Auto-fill approver email from record
-    if (record.customerEmail) {
-      setCaselineApproverEmail(record.customerEmail);
-      console.log('✉️ Auto-filled approver email from record:', record.customerEmail);
-    }
+    
+    // Reset all states when opening dialog (fresh start)
+    setSelectedCaselineIds({ approved: [], rejected: [] });
+    setCaselineApproverEmail('');
+    setCaselineOtpCode('');
+    setCaselineOtpSent(false);
+    setCaselineOtpVerified(false);
+    setCaselineOtpCountdown(0);
 
     try {
       const token = localStorage.getItem('ev_warranty_token');
@@ -2152,9 +2154,13 @@ const SuperAdvisor = () => {
       });
 
       const result = await response.json();
+      console.log('🔍 Full API Response:', result);
+      console.log('🔍 Record Data:', result.data?.record);
 
       if (result.status === 'success' && result.data?.record) {
         const recordData = result.data.record;
+        console.log('🔍 Visitor Info:', recordData.visitorInfo);
+        
         const allCaselines: any[] = [];
 
         // Extract caselines from all guarantee cases
@@ -2172,17 +2178,22 @@ const SuperAdvisor = () => {
           });
         }
 
-        // Auto-fill approver email from API response if not already set from record
-        if (!caselineApproverEmail) {
-          const ownerEmail = recordData.vehicle?.owner?.email || 
-                            recordData.owner?.email || 
-                            recordData.customer?.email ||
-                            recordData.vehicle?.customer?.email || '';
-          
-          if (ownerEmail) {
-            setCaselineApproverEmail(ownerEmail);
-            console.log('✉️ Auto-filled approver email from API:', ownerEmail);
-          }
+        // Auto-fill approver email from visitorInfo
+        const ownerEmail = recordData.visitorInfo?.email || 
+                          recordData.vehicle?.owner?.email || 
+                          recordData.owner?.email || 
+                          recordData.customer?.email ||
+                          recordData.vehicle?.customer?.email ||
+                          record.customerEmail ||
+                          '';
+        
+        console.log('✉️ Email found:', ownerEmail);
+        
+        if (ownerEmail) {
+          setCaselineApproverEmail(ownerEmail);
+          console.log('✅ Set approver email to:', ownerEmail);
+        } else {
+          console.warn('⚠️ No email found in API response!');
         }
 
         setCaselines(allCaselines);
