@@ -200,6 +200,7 @@ const SuperAdvisor = () => {
     customerName: '',
     cases: [],
     visitorFullName: '',
+    visitorPhone: '',
     customerEmail: ''
   });
   const [warrantyRecordCaseText, setWarrantyRecordCaseText] = useState('');
@@ -640,28 +641,9 @@ const SuperAdvisor = () => {
           
           setHasSearchedCustomer(true);
           
-          // Only reset if coming from Register New Vehicle flow (indicated by registrationFlowPhone)
-          if (registrationFlowPhone) {
-            console.log('🔄 Resetting Register New Vehicle flow...');
-            
-            // Reset Register New Vehicle section after successful search
-            setNewVehicleVin('');
-            setRegistrationFlowPhone('');
-            
-            // Reset vehicle search result and warranty info to show only "Check Warranty" button
-            setVehicleSearchResult(null);
-            setWarrantyStatus(null);
-            setWarrantyDetails(null);
-            setOdometer('');
-            setSearchVin('');
-            
-            // Reset selected vehicle for warranty check in customer's vehicle list
-            setSelectedVehicleForWarranty(null);
-            setVehicleOdometer('');
-            setVehicleWarrantyStatus(null);
-          } else {
-            console.log('✅ Regular search - keeping vehicle info intact');
-          }
+          // Don't reset vehicle info here - user still needs to complete registration
+          // Only keep the registrationFlowPhone marker for later cleanup
+          console.log('✅ Customer found - keeping vehicle info for registration');
         } else {
           setFoundCustomer(null);
           
@@ -1002,6 +984,7 @@ const SuperAdvisor = () => {
       customerName: foundCustomer.fullName || foundCustomer.name,
       cases: [],
       visitorFullName: foundCustomer.fullName || foundCustomer.name || '',
+      visitorPhone: foundCustomer.phone || '',
       customerEmail: foundCustomer.email || ''
     });
     
@@ -1026,20 +1009,28 @@ const SuperAdvisor = () => {
     setIsSendingOtp(true);
 
     try {
-      const response = await fetch(`${API_BASE}/mail/send`, {
+      const response = await fetch(`${API_BASE_URL}/mail/otp/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
         },
         body: JSON.stringify({
-          email: warrantyRecordForm.customerEmail
+          email: warrantyRecordForm.customerEmail,
+          vin: warrantyRecordForm.vin
         })
       });
 
-      const result = await response.json();
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server error response:', errorText);
+        throw new Error(`Server error: ${response.status}`);
+      }
 
-      if (response.ok && result.status === 'success') {
+      const result = await response.json();
+      console.log('OTP send result:', result);
+
+      if (result.status === 'success') {
         setOtpSent(true);
         setOtpCountdown(300); // 5 minutes
         toast({
@@ -1073,7 +1064,7 @@ const SuperAdvisor = () => {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/mail/verify`, {
+      const response = await fetch(`${API_BASE_URL}/mail/otp/verify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1159,21 +1150,11 @@ const SuperAdvisor = () => {
       return;
     }
 
-    // Validate phone number format (10 digits)
-    if (!/^\d{10}$/.test(warrantyRecordForm.visitorPhone.trim())) {
-      toast({
-        title: 'Error',
-        description: 'Phone number must be exactly 10 digits',
-        variant: 'destructive'
-      });
-      return;
-    }
-
     // Validate OTP verification - MUST verify OTP before creating record
     if (!otpVerified) {
       toast({
         title: 'OTP Verification Required',
-        description: 'Please send and verify OTP for the phone number before creating record',
+        description: 'Please send and verify OTP for the email address before creating record',
         variant: 'destructive'
       });
       return;
@@ -1191,7 +1172,8 @@ const SuperAdvisor = () => {
         })),
         visitorInfo: {
           fullName: warrantyRecordForm.visitorFullName.trim(),
-          phone: warrantyRecordForm.visitorPhone.trim()
+          phone: warrantyRecordForm.visitorPhone.trim(),
+          email: warrantyRecordForm.customerEmail.trim()
         }
       };
       
@@ -1202,9 +1184,13 @@ const SuperAdvisor = () => {
       await loadProcessingRecords();
       
       // Reset forms and close dialogs
-      setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '' });
+      setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
       setWarrantyRecordCaseText('');
       setShowCreateWarrantyDialog(false);
+      setOtpSent(false);
+      setOtpVerified(false);
+      setOtpCode('');
+      setOtpCountdown(0);
       setVehicleWarrantyStatus(null);
       setVehicleOdometer('');
       
@@ -1332,6 +1318,13 @@ const SuperAdvisor = () => {
             title: 'Success',
             description: 'Vehicle registered to existing customer successfully!',
           });
+          
+          // Reset Register New Vehicle flow after successful registration
+          if (registrationFlowPhone) {
+            console.log('🔄 Resetting Register New Vehicle flow after successful registration');
+            setNewVehicleVin('');
+            setRegistrationFlowPhone('');
+          }
         }
       }
       // Case 3: Have form data but no customer ID - Search by phone or create new
@@ -1340,7 +1333,7 @@ const SuperAdvisor = () => {
         let customerIdToUse = null;
         
         try {
-          const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers?phone=${ownerForm.phone.trim()}`, {
+          const searchResponse = await axios.get(`${API_BASE_URL}/customers?phone=${ownerForm.phone.trim()}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
@@ -1380,7 +1373,7 @@ const SuperAdvisor = () => {
 
         // Register vehicle with PATCH /vehicles/{VIN}
         const response = await axios.patch(
-          `http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}`,
+          `${API_BASE_URL}/vehicles/${vehicleSearchResult.vin}`,
           requestBody,
           {
             headers: {
@@ -1405,6 +1398,13 @@ const SuperAdvisor = () => {
               ? 'Vehicle registered to existing customer successfully!'
               : 'New customer created and vehicle registered successfully!',
           });
+          
+          // Reset Register New Vehicle flow after successful registration
+          if (registrationFlowPhone) {
+            console.log('🔄 Resetting Register New Vehicle flow after successful registration');
+            setNewVehicleVin('');
+            setRegistrationFlowPhone('');
+          }
         }
       }
 
@@ -1461,7 +1461,7 @@ const SuperAdvisor = () => {
 
    
       const response = await axios.post(
-        `http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}/warranty/preview`,
+        `${API_BASE_URL}/vehicles/${vehicleSearchResult.vin}/warranty/preview`,
         {
           odometer: parseInt(odometer),
           purchaseDate: vehicleSearchResult.purchaseDate
@@ -1649,7 +1649,7 @@ const SuperAdvisor = () => {
       // First, find or create customer
       let customerData = null;
 
-      const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers/`, {
+      const searchResponse = await axios.get(`${API_BASE_URL}/customers/`, {
         params: {
           phone: ownerForm.phone.trim()
         },
@@ -1663,7 +1663,7 @@ const SuperAdvisor = () => {
         customerData = searchResponse.data.data.customer;
       } else {
         // Create new customer
-        const createResponse = await axios.post(`http://localhost:3000/api/v1/customers/`, {
+        const createResponse = await axios.post(`${API_BASE_URL}/customers/`, {
           fullName: ownerForm.fullName.trim(),
           email: ownerForm.email.trim(),
           phone: ownerForm.phone.trim(),
@@ -1692,7 +1692,7 @@ const SuperAdvisor = () => {
       };
 
       // Register owner to vehicle
-      const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
+      const response = await axios.patch(`${API_BASE_URL}/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -1762,7 +1762,8 @@ const SuperAdvisor = () => {
       customerName: vehicleSearchResult.owner.fullName,
       cases: [],
       visitorFullName: vehicleSearchResult.owner.fullName || '',
-      visitorPhone: vehicleSearchResult.owner.phone || ''
+      visitorPhone: vehicleSearchResult.owner.phone || '',
+      customerEmail: vehicleSearchResult.owner.email || ''
     });
     
     // Open create dialog
@@ -1788,7 +1789,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      const response = await fetch(`http://localhost:3000/api/v1/processing-records/${record.id}`, {
+      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -1817,7 +1818,7 @@ const SuperAdvisor = () => {
         let apiCustomerName = 'Unknown Customer';
         
         try {
-          const vehicleResponse = await fetch(`http://localhost:3000/api/v1/vehicles/${recordData.vin}`, {
+          const vehicleResponse = await fetch(`${API_BASE_URL}/vehicles/${recordData.vin}`, {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -1841,6 +1842,7 @@ const SuperAdvisor = () => {
           odometer: record.odometer.toString(),
           visitorFullName: recordData.visitorInfo?.fullName || '',
           visitorPhone: recordData.visitorInfo?.phone || '',
+          customerEmail: recordData.visitorInfo?.email || '',
           cases: record.cases || [],
           purchaseDate: record.purchaseDate || '',
           status: record.status,
@@ -1853,6 +1855,7 @@ const SuperAdvisor = () => {
           odometer: record.odometer.toString(),
           visitorFullName: '',
           visitorPhone: '',
+          customerEmail: '',
           cases: record.cases || [],
           purchaseDate: record.purchaseDate || '',
           status: record.status,
@@ -1867,6 +1870,7 @@ const SuperAdvisor = () => {
         odometer: record.odometer.toString(),
         visitorFullName: '',
         visitorPhone: '',
+        customerEmail: '',
         cases: record.cases || [],
         purchaseDate: record.purchaseDate || '',
         status: record.status,
@@ -1988,7 +1992,7 @@ const SuperAdvisor = () => {
       }
 
       // Fetch record details with caselines
-      const response = await fetch(`http://localhost:3000/api/v1/processing-records/${record.id}`, {
+      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -3513,7 +3517,11 @@ const SuperAdvisor = () => {
                   <div>
                     <span className="font-medium">Purchase Date:</span> {
                       currentVehicleForWarranty?.purchaseDate 
-                        ? new Date(currentVehicleForWarranty.purchaseDate).toLocaleDateString()
+                        ? new Date(currentVehicleForWarranty.purchaseDate).toLocaleDateString('en-GB', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                          })
                         : 'N/A'
                     }
                   </div>
@@ -3823,6 +3831,19 @@ const SuperAdvisor = () => {
               />
             </div>
 
+            {/* Visitor Phone - Editable */}
+            <div className="grid gap-2">
+              <Label htmlFor="visitor-phone">Visitor Phone *</Label>
+              <Input
+                id="visitor-phone"
+                type="tel"
+                value={warrantyRecordForm.visitorPhone}
+                onChange={(e) => setWarrantyRecordForm(prev => ({ ...prev, visitorPhone: e.target.value }))}
+                placeholder="Enter visitor's phone number"
+                className="border-green-300 focus:border-green-500"
+              />
+            </div>
+
             {/* Customer Email - Editable */}
             <div className="grid gap-2">
               <Label htmlFor="customer-email">Customer Email *</Label>
@@ -3973,7 +3994,7 @@ const SuperAdvisor = () => {
               variant="outline" 
               onClick={() => {
                 setShowCreateWarrantyDialog(false);
-                setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '' });
+                setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
                 setWarrantyRecordCaseText('');
                 // Reset OTP states
                 setOtpCode('');
@@ -3986,7 +4007,7 @@ const SuperAdvisor = () => {
             </Button>
             <Button 
               onClick={handleSubmitWarrantyRecord}
-              disabled={warrantyRecordForm.cases.length === 0 || isCreatingRecord || !warrantyRecordForm.visitorFullName.trim() || !warrantyRecordForm.visitorPhone.trim() || !otpVerified}
+              disabled={warrantyRecordForm.cases.length === 0 || isCreatingRecord || !warrantyRecordForm.visitorFullName.trim() || !warrantyRecordForm.visitorPhone.trim() || !warrantyRecordForm.customerEmail.trim() || !otpVerified}
               className="bg-blue-600 hover:bg-blue-700"
             >
               <Plus className="h-4 w-4 mr-2" />

@@ -39,9 +39,10 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 });
 
 export const componentReservationService = {
-  pickupReservation: async (reservationId: string): Promise<PickupResponse> => {
-    const url = `/component-reservations/${reservationId}/pickup`;
-    const res = await apiClient.patch(url);
+  pickupReservation: async (reservationId: string, body?: { pickedUpByTechId: string }): Promise<PickupResponse> => {
+    // NOTE: backend mounts the reservations router under /reservations (see BE app.js)
+    const url = `/reservations/${reservationId}/pickup`;
+    const res = await apiClient.patch(url, body ?? {});
     // assume backend returns { status: 'success', data: { reservation, component, caseLine } }
     return res.data?.data || res.data;
   }
@@ -51,17 +52,18 @@ export const componentReservationService = {
     component?: Record<string, unknown>;
     caseLine?: Record<string, unknown>;
   }> => {
-    const url = `/component-reservations/${reservationId}/installComponent`;
+    const url = `/reservations/${reservationId}/installComponent`;
     const res = await apiClient.patch(url);
     return res.data?.data || res.data;
   }
   ,
-  returnComponent: async (reservationId: string): Promise<{
+  returnComponent: async (reservationId: string, body?: { serialNumber: string }): Promise<{
     reservation?: Record<string, unknown>;
     component?: Record<string, unknown>;
   }> => {
-    const url = `/component-reservations/${reservationId}/return`;
-    const res = await apiClient.patch(url);
+    const url = `/reservations/${reservationId}/return`;
+    // this endpoint expects a body like { serialNumber: string }
+    const res = await apiClient.patch(url, body ?? {});
     return res.data?.data || res.data;
   }
 };
