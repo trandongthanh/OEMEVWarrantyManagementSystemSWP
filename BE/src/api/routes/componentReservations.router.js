@@ -75,6 +75,17 @@ const router = express.Router();
  *           format: uuid
  *         description: Filter by processing record
  *       - in: query
+ *         name: repairTechId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Filter reservations assigned to a specific repair technician
+ *       - in: query
+ *         name: repairTechPhone
+ *         schema:
+ *           type: string
+ *         description: Filter reservations by repair technician phone number
+ *       - in: query
  *         name: sortBy
  *         schema:
  *           type: string
@@ -116,22 +127,37 @@ router.get(
 
 /**
  * @swagger
- * /component-reservations/{reservationId}/pickup:
+ * /component-reservations/pickup:
  *   patch:
- *     summary: Pickup reserved components from warehouse
- *     description: Parts coordinator picks up reserved components from warehouse. Updates reservation status from RESERVED to PICKED_UP and updates component status.
+ *     summary: Pickup one or many reserved components from warehouse
+ *     description: Parts coordinator checks out reserved components for technicians. Supports picking multiple reservations in a single request, moving them from RESERVED to PICKED_UP and updating stock.
  *     tags: [Component Reservations]
  *     security:
  *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: reservationId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: Reservation ID
- *         example: "d1e8d13d-7088-400e-a3d2-fdd584140176"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - reservationIds
+ *               - pickedUpByTechId
+ *             properties:
+ *               reservationIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *                 description: List of reservation IDs to pick up
+ *                 example:
+ *                   - "d1e8d13d-7088-400e-a3d2-fdd584140176"
+ *                   - "e9c4caa2-98a1-4b36-9ed9-04eaa40c7b9c"
+ *               pickedUpByTechId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Technician who receives the components
+ *                 example: "725d1073-9660-48ae-b970-7c8db76f676d"
  *     responses:
  *       200:
  *         description: Components picked up successfully
@@ -146,43 +172,25 @@ router.get(
  *                 data:
  *                   type: object
  *                   properties:
- *                     reservation:
- *                       type: object
- *                       properties:
- *                         reservationId:
- *                           type: string
- *                           format: uuid
- *                         status:
- *                           type: string
- *                           example: "PICKED_UP"
- *                         pickedUpBy:
- *                           type: string
- *                           format: uuid
- *                         pickedUpAt:
- *                           type: string
- *                           format: date-time
- *                     component:
- *                       type: object
- *                       properties:
- *                         componentId:
- *                           type: string
- *                           format: uuid
- *                         serialNumber:
- *                           type: string
- *                         status:
- *                           type: string
- *                           example: "PICKED_UP"
- *                     caseLine:
- *                       type: object
- *                       properties:
- *                         id:
- *                           type: string
- *                           format: uuid
- *                         status:
- *                           type: string
- *                           example: "IN_REPAIR"
+ *                     reservations:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           reservationId:
+ *                             type: string
+ *                             format: uuid
+ *                           status:
+ *                             type: string
+ *                             example: "PICKED_UP"
+ *                           pickedUpBy:
+ *                             type: string
+ *                             format: uuid
+ *                           pickedUpAt:
+ *                             type: string
+ *                             format: date-time
  *       400:
- *         description: Bad request - Invalid reservation ID
+ *         description: Bad request - Invalid reservation list
  *       401:
  *         description: Unauthorized
  *       403:
@@ -193,7 +201,7 @@ router.get(
  *         description: Conflict - Reservation not in RESERVED status
  */
 router.patch(
-  "/:reservationId/pickup",
+  "/pickup",
   authentication,
   authorizationByRole(["parts_coordinator_service_center"]),
   validate(pickupReservedComponentSchema, "body"),
@@ -202,7 +210,7 @@ router.patch(
       "componentReservationsController"
     );
 
-    await componentReservationsController.pickupReservedComponent(
+    await componentReservationsController.pickupReservedComponents(
       req,
       res,
       next
