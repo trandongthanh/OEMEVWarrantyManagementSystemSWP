@@ -210,18 +210,23 @@ const getPriorityBadgeVariant = (priority: 'Low' | 'Medium' | 'High' | 'Urgent' 
 
 const getStatusBadgeVariant = (status?: string) => {
   switch ((status || '').toUpperCase()) {
+    // Pending/Initial states - gray
     case 'CHECKED_IN':
     case 'PENDING_DIAGNOSIS':
       return 'secondary';
+    // Waiting states - amber/outline
     case 'WAITING_CUSTOMER_APPROVAL':
       return 'outline';
+    // Active processing states - blue
     case 'IN_PROGRESS':
     case 'IN_DIAGNOSIS':
     case 'PROCESSING':
       return 'default';
+    // Success states - green
     case 'COMPLETED':
     case 'DELIVERED':
       return 'success';
+    // Error/Cancelled states - red
     case 'REJECTED':
     case 'CANCELLED':
       return 'destructive';
@@ -294,13 +299,21 @@ const getTechBadgeVariant = (status?: string) => {
 
 const getCaseLineStatusVariant = (status?: string) => {
   switch ((status || '').toUpperCase()) {
-    case 'CUSTOMER_APPROVED':
-    case 'READY_FOR_REPAIR':
-    case 'COMPLETED':
-      return 'default';
+    // Pending/Draft states - gray
     case 'PENDING_APPROVAL':
     case 'DRAFT':
       return 'secondary';
+    // Approved but waiting for parts - blue
+    case 'CUSTOMER_APPROVED':
+      return 'default';
+    // Parts available and ready states - green
+    case 'PARTS_AVAILABLE':
+    case 'READY_FOR_REPAIR':
+      return 'success';
+    // Completed - green
+    case 'COMPLETED':
+      return 'success';
+    // Rejected/Cancelled - red
     case 'REJECTED_BY_OUT_OF_WARRANTY':
     case 'REJECTED_BY_TECH':
     case 'REJECTED_BY_CUSTOMER':
@@ -349,7 +362,6 @@ const getStatusBadge = (status: string) => {
 const ServiceCenterDashboard = () => {
   const [warrantyClaims, setWarrantyClaims] = useState<WarrantyClaim[]>([]);
   const [availableTechnicians, setAvailableTechnicians] = useState<Technician[]>([]);
-  const [isLoadingClaims, setIsLoadingClaims] = useState<boolean>(false);
   const [techFilterStatus, setTechFilterStatus] = useState<string>('AVAILABLE');
   // Status tabs
   const STATUSES = [
@@ -401,6 +413,11 @@ const ServiceCenterDashboard = () => {
     guaranteeCaseId: string;
     caseLineId: string;
   } | null>(null);
+
+  // Cancel stock request states
+  const [showCancelRequestModal, setShowCancelRequestModal] = useState(false);
+  const [cancelRequestId, setCancelRequestId] = useState<string | null>(null);
+  const [cancellationReason, setCancellationReason] = useState('');
 
   const { user, logout, getToken } = useAuth();
 
@@ -469,13 +486,11 @@ const ServiceCenterDashboard = () => {
 
   // Fetch all statuses (moved outside useEffect to be reusable)
   const fetchAllStatuses = async () => {
-    setIsLoadingClaims(true);
     const results = await Promise.all(STATUSES.map(s => fetchForStatus(s)));
     const byStatus: Record<string, WarrantyClaim[]> = {};
     STATUSES.forEach((s, idx) => { byStatus[s] = results[idx] || []; });
     setClaimsByStatus(byStatus);
     setWarrantyClaims(byStatus[activeStatus] || []);
-    setIsLoadingClaims(false);
 
     // Return byStatus data for immediate use by caller
     return byStatus;
@@ -716,10 +731,19 @@ const ServiceCenterDashboard = () => {
         setSelectedCaseForAssignment('');
 
         // Refresh all data to ensure UI is up-to-date
-        await fetchAllStatuses();
+        const updatedData = await fetchAllStatuses();
 
         // Refresh technicians list to update workload
         await refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
+        
+        // Update the detail modal with fresh data if open
+        if (selectedClaimForDetail && updatedData) {
+          const updatedClaims = Object.values(updatedData).flat();
+          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
+          if (updatedClaim) {
+            setSelectedClaimForDetail(updatedClaim);
+          }
+        }
       }
     } catch (error: any) {
       console.error('Failed to assign technician:', error);
@@ -873,10 +897,19 @@ const ServiceCenterDashboard = () => {
         }
 
         // Refresh all data to ensure UI is up-to-date
-        await fetchAllStatuses();
+        const updatedData = await fetchAllStatuses();
         
         // Also refresh stock transfer requests to update the mapping
         await fetchStockTransferRequests();
+        
+        // Update the detail modal with fresh data
+        if (selectedClaimForDetail && updatedData) {
+          const updatedClaims = Object.values(updatedData).flat();
+          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
+          if (updatedClaim) {
+            setSelectedClaimForDetail(updatedClaim);
+          }
+        }
       }
     } catch (error: any) {
       console.error('Error allocating component:', error);
@@ -967,10 +1000,19 @@ const ServiceCenterDashboard = () => {
         setSelectedCaseLineForTechnician(null);
         
         // Refresh data to update UI
-        await fetchAllStatuses();
+        const updatedData = await fetchAllStatuses();
         
         // Refresh technicians list to update workload
         await refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
+        
+        // Update the detail modal with fresh data
+        if (selectedClaimForDetail && updatedData) {
+          const updatedClaims = Object.values(updatedData).flat();
+          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
+          if (updatedClaim) {
+            setSelectedClaimForDetail(updatedClaim);
+          }
+        }
       }
     } catch (error: any) {
       console.error('Error assigning technician to case line:', error);
@@ -1082,6 +1124,62 @@ const ServiceCenterDashboard = () => {
     } catch (error: any) {
       console.error('Error requesting from manufacturer:', error);
       const errorMessage = error.response?.data?.message || 'Failed to send request to manufacturer. Please try again.';
+      alert(errorMessage);
+    }
+  };
+
+  // Cancel stock transfer request
+  const handleCancelStockRequest = async () => {
+    if (!cancelRequestId || !cancellationReason.trim()) {
+      alert('Please provide a cancellation reason');
+      return;
+    }
+
+    try {
+      const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
+      if (!token) {
+        alert('Authentication required');
+        return;
+      }
+
+      const response = await axios.patch(
+        `${API_BASE_URL}/stock-transfer-requests/${cancelRequestId}/cancel`,
+        { cancellationReason: cancellationReason.trim() },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (response.status === 200 || response.status === 201) {
+        alert('Stock transfer request cancelled successfully!');
+        
+        // Close modal and reset
+        setShowCancelRequestModal(false);
+        setCancelRequestId(null);
+        setCancellationReason('');
+        
+        // Close detail modal if open
+        setShowStockRequestDetailModal(false);
+        setSelectedStockRequest(null);
+        
+        // Refresh data
+        const updatedData = await fetchAllStatuses();
+        await fetchStockTransferRequests();
+        
+        // Update detail modal if open
+        if (selectedClaimForDetail && updatedData) {
+          const updatedClaims = Object.values(updatedData).flat();
+          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
+          if (updatedClaim) {
+            setSelectedClaimForDetail(updatedClaim);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Error cancelling stock request:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to cancel request. Please try again.';
       alert(errorMessage);
     }
   };
@@ -1715,7 +1813,6 @@ const ServiceCenterDashboard = () => {
                                                     
                                                     // Show allocate for PARTS_AVAILABLE (after stock received)
                                                     if (isPartsAvailable && hasPermission(user, 'attach_parts')) {
-                                                      console.log(`🟢 Case line ${line.id} - PARTS_AVAILABLE, showing allocate button`);
                                                       return (
                                                         <Button
                                                           size="sm"
@@ -1733,7 +1830,6 @@ const ServiceCenterDashboard = () => {
                                                     if (isCustomerApproved && 
                                                         selectedClaimForDetail.status === 'PROCESSING' && 
                                                         hasPermission(user, 'attach_parts')) {
-                                                      console.log(`🔵 Case line ${line.id} - CUSTOMER_APPROVED, showing allocate button`);
                                                       return (
                                                         <Button
                                                           size="sm"
@@ -1755,8 +1851,6 @@ const ServiceCenterDashboard = () => {
                                                     const requestId = caseLineToRequestMap.get(line.id);
                                                     const matchingRequest = stockTransferRequests.find(req => req.id === requestId);
                                                     
-                                                    console.log(`🔎 Case line ${line.id} (status: ${line.status}) - hasMapping: true, requestId:`, requestId, 'requestStatus:', matchingRequest?.status);
-                                                    
                                                     // Show "View Request" button for pending requests
                                                     return (
                                                       <Button
@@ -1764,10 +1858,8 @@ const ServiceCenterDashboard = () => {
                                                         variant="outline"
                                                         onClick={async () => {
                                                           if (requestId) {
-                                                            console.log('🔍 Fetching request detail for ID:', requestId);
                                                             // Ensure claims are loaded before fetching request detail
                                                             if (Object.keys(claimsByStatus).length === 0) {
-                                                              console.log('⚠️ Claims not loaded, fetching now...');
                                                               await fetchAllStatuses();
                                                             }
                                                             const requestDetail = await fetchStockTransferRequestDetail(requestId);
@@ -1809,10 +1901,6 @@ const ServiceCenterDashboard = () => {
                                                       size="sm"
                                                       variant="outline"
                                                       onClick={() => {
-                                                        console.log('👷 Opening technician selection for case line:', {
-                                                          guaranteeCaseId: gc.guaranteeCaseId,
-                                                          caseLineId: line.id
-                                                        });
                                                         setSelectedCaseLineForTechnician({
                                                           guaranteeCaseId: gc.guaranteeCaseId,
                                                           caseLineId: line.id
@@ -3024,6 +3112,23 @@ const ServiceCenterDashboard = () => {
             )}
 
             <div className="flex justify-end gap-2 pt-4 border-t">
+              {/* Show Cancel button if request is not in terminal state */}
+              {selectedStockRequest && 
+               selectedStockRequest.status !== 'CANCELLED' && 
+               selectedStockRequest.status !== 'REJECTED' && 
+               selectedStockRequest.status !== 'RECEIVED' && 
+               hasPermission(user, 'attach_parts') && (
+                <Button 
+                  variant="destructive"
+                  onClick={() => {
+                    setCancelRequestId(selectedStockRequest.id);
+                    setShowCancelRequestModal(true);
+                  }}
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Cancel Request
+                </Button>
+              )}
               <Button 
                 variant="outline" 
                 onClick={() => {
@@ -3032,6 +3137,60 @@ const ServiceCenterDashboard = () => {
                 }}
               >
                 Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Cancel Request Modal */}
+        <Dialog open={showCancelRequestModal} onOpenChange={setShowCancelRequestModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-600">
+                <XCircle className="h-5 w-5" />
+                Cancel Stock Transfer Request
+              </DialogTitle>
+              <DialogDescription>
+                Please provide a reason for cancelling this request. This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 mt-4">
+              <div>
+                <label className="text-sm font-semibold mb-2 block">
+                  Cancellation Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={cancellationReason}
+                  onChange={(e) => setCancellationReason(e.target.value)}
+                  placeholder="Enter the reason for cancelling this request..."
+                  className="w-full min-h-[100px] p-3 border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-red-500"
+                  maxLength={500}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {cancellationReason.length}/500 characters
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowCancelRequestModal(false);
+                  setCancelRequestId(null);
+                  setCancellationReason('');
+                }}
+              >
+                Keep Request
+              </Button>
+              <Button 
+                variant="destructive"
+                onClick={handleCancelStockRequest}
+                disabled={!cancellationReason.trim()}
+              >
+                <XCircle className="h-4 w-4 mr-2" />
+                Confirm Cancellation
               </Button>
             </div>
           </DialogContent>
