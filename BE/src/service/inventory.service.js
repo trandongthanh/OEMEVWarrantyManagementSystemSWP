@@ -22,7 +22,6 @@ class InventoryService {
     this.#userRepository = userRepository;
     this.#notificationService = notificationService;
   }
-
   getInventorySummary = async ({
     serviceCenterId,
     roleName,

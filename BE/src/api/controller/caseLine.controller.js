@@ -199,14 +199,16 @@ class CaseLineController {
 
   getCaseLineById = async (req, res, next) => {
     const { caselineId } = req.params;
+    const { userId, roleName, serviceCenterId } = req.user;
+    const { companyId } = req;
 
-    const { userId, roleName } = req.user;
-
-    const caseLine = await this.#caseLineService.getCaseLineById(
+    const caseLine = await this.#caseLineService.getCaseLineById({
       userId,
       roleName,
-      caselineId
-    );
+      caselineId,
+      companyId,
+      serviceCenterId,
+    });
 
     if (!caseLine) {
       return res.status(404).json({
