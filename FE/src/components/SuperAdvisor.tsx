@@ -102,11 +102,6 @@ interface WarrantyRecord {
   createdAt: string;
 }
 
-interface VinDataState {
-  vinNumber: string;
-  warrantyStatus: string;
-}
-
 interface VehicleSearchResult {
   vin: string;
   dateOfManufacture: string;
@@ -140,7 +135,6 @@ const SuperAdvisor = () => {
   const [searchMode, setSearchMode] = useState<'warranty' | 'customer' | 'phone'>('phone');
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
-  const [isDialogSearch, setIsDialogSearch] = useState(false);
   
   // Record State
   const [selectedRecord, setSelectedRecord] = useState<WarrantyRecord | null>(null);
@@ -148,10 +142,6 @@ const SuperAdvisor = () => {
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
   
   // Form States
-  const [vinData, setVinData] = useState<VinDataState>({
-    vinNumber: "",
-    warrantyStatus: ""
-  });
   const [vehicleSearchResult, setVehicleSearchResult] = useState<VehicleSearchResult | null>(null);
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
   const [ownerForm, setOwnerForm] = useState<OwnerForm>({
@@ -247,17 +237,6 @@ const SuperAdvisor = () => {
     status: 'pending' as 'pending' | 'in-progress' | 'completed',
     rawStatus: 'CHECKED_IN' // Store actual API status
   });
-
-  // Transform form data to API format
-  const transformToApiFormat = (formData: { vinNumber: string; odometer: string; cases: CaseNote[] }) => {
-    return {
-      vin: formData.vinNumber,
-      odometer: parseInt(formData.odometer),
-      guaranteeCases: formData.cases.map(caseItem => ({
-        contentGuarantee: caseItem.text
-      }))
-    };
-  };
 
   const [records, setRecords] = useState<WarrantyRecord[]>([]);
 
@@ -405,97 +384,6 @@ const SuperAdvisor = () => {
       });
     }
   }, [caselineOtpCountdown, caselineOtpSent, toast]);
-
-  const handleSearchWarranty = async () => {
-  try {
-    if (!searchVin.trim()) {
-      toast({
-        title: 'Error',
-        description: 'Please enter VIN',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    const vin = searchVin.trim();
-    const odometer = 0;
-
-    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-    if (!token) {
-      console.error("No token found (checked AuthContext.getToken and localStorage 'ev_warranty_token')");
-      toast({
-        title: 'Error',
-        description: 'Không tìm thấy token đăng nhập',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    const url = `${API_BASE_URL}/vehicles/${vin}/warranty?odometer=${odometer}`;
-    
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-      },
-    });
-
-    const data = await response.json();
-    
-    if (!response.ok || data.status !== 'success') {
-      toast({
-        title: 'Unable to find warranty',
-        variant: 'destructive'
-      });
-      return;
-    }    if (data && data.status === 'success' && data.data && data.data.vehicle) {
-      const vehicle = data.data.vehicle;
-      
-      // Lấy warranty status từ response hoặc từ generalWarranty
-      let warrantyStatus = 'N/A';
-      if (vehicle.warrantyStatus) {
-        warrantyStatus = vehicle.warrantyStatus;
-      } else if (vehicle.generalWarranty) {
-        // Nếu không có warrantyStatus trực tiếp, lấy từ generalWarranty
-        const durationStatus = vehicle.generalWarranty.duration?.status;
-        const mileageStatus = vehicle.generalWarranty.mileage?.status;
-        
-        if (durationStatus === 'ACTIVE' && mileageStatus === 'ACTIVE') {
-          warrantyStatus = 'Active';
-        } else if (durationStatus === 'INACTIVE' && mileageStatus === 'INACTIVE') {
-          warrantyStatus = 'Expired (Time & Odometer)';
-        } else if (durationStatus === 'INACTIVE') {
-          warrantyStatus = 'Expired (Time)';
-        } else if (mileageStatus === 'INACTIVE') {
-          warrantyStatus = 'Expired (Odometer)';
-        }
-      }
-      
-      setVinData({
-        vinNumber: vehicle.vin || '',
-        warrantyStatus
-      });
-
-      setIsDialogSearch(true);
-
-      toast({
-        title: 'Thành công',
-        description: 'Đã tải thông tin VIN',
-      });
-    } else {
-      toast({
-        title: 'Không có dữ liệu',
-        description: 'Không tìm thấy thông tin xe',
-        variant: 'destructive'
-      });
-    }
-
-  } catch (error) {
-    console.error("Failed to fetch VIN warranty info:", error);
-    
-  }
-};
 
   const handleSearchCustomer = async (vinToSearch?: string) => {
     try {
@@ -2026,19 +1914,6 @@ const SuperAdvisor = () => {
     setIsEditMode(true);
   };
 
-  const handleDeleteRecord = (record: WarrantyRecord) => {
-    if (window.confirm(`Are you sure you want to delete this warranty record for VIN: ${record.vinNumber}?`)) {
-      // Remove from local state only
-      const updatedRecords = records.filter(r => r.id !== record.id);
-      setRecords(updatedRecords);
-      
-      toast({
-        title: 'Record Deleted',
-        description: `Warranty record for VIN ${record.vinNumber} has been deleted`,
-      });
-    }
-  };
-
   const handleSaveEdit = () => {
     if (!validateRecord(editRecord)) {
       toast({
@@ -2386,8 +2261,8 @@ const SuperAdvisor = () => {
                 onClick={() => setSearchMode('warranty')}
                 className={searchMode === 'warranty' ? 'bg-blue-600 hover:bg-blue-700' : ''}
               >
-                <Search className="h-4 w-4 mr-2" />
-                Check Warranty by VIN
+                <FileText className="h-4 w-4 mr-2" />
+                View Warranty Records
               </Button>
             </div>
 
@@ -2502,15 +2377,6 @@ const SuperAdvisor = () => {
                             >
                               <Edit className="h-4 w-4 mr-1" />
                               Edit
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-red-600 hover:bg-red-50"
-                              onClick={() => handleDeleteRecord(record)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-1" />
-                              Delete
                             </Button>
                           </div>
                         </TableCell>
@@ -3308,44 +3174,6 @@ const SuperAdvisor = () => {
           </Card>
         )}
       </main>
-
-      {/* dialog search */}
-      <Dialog open={isDialogSearch} onOpenChange={setIsDialogSearch}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center space-x-2">
-              <Car className="h-5 w-5" />
-              <span>VIN Warranty</span>
-            </DialogTitle>
-            <DialogDescription>
-              Vehicle warranty information and coverage details
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4 py-4" >
-            <div className="grid gap-2">
-              <Label>VIN Number</Label>
-              <Input
-                id="vinNumber"
-                placeholder="VIN" 
-                value={vinData.vinNumber}
-                readOnly              
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Warranty Status</Label>
-              <Input
-                id="Status"
-                placeholder="Warranty status"
-                value={vinData.warrantyStatus}
-                readOnly
-              />
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-      
 
       {/* Nested New Case Dialog */}
       <Dialog open={isAddNewcaseOpen} onOpenChange={(open) => {
