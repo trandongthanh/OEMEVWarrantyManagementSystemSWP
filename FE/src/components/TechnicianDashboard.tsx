@@ -835,7 +835,7 @@ const TechnicianDashboard = ({
       
       // Call API to get case lines where repairTechId matches current user
       // Try without status filter first to see all case lines
-      const response = await apiService.get<{ status: string; data: { caseLines: AssignedCaseLine[]; pagination?: any } }>('/case-lines', {
+      const response = await apiService.get<{ status: string; data: { caseLines: AssignedCaseLine[]; pagination?: { page: number; limit: number; total: number } } }>('/case-lines', {
         params: {
           repairTechId: user.id,
           // status: 'IN_REPAIR,READY_FOR_REPAIR,PENDING', // Comment out to see all
