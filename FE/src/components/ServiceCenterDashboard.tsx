@@ -776,8 +776,9 @@ const ServiceCenterDashboard = () => {
     };
 
     // Without specialty information, recommend by availability and workload (less loaded first)
+    // Only show technicians with AVAILABLE status
     return availableTechnicians
-      .filter(tech => tech.isAvailable)
+      .filter(tech => tech.status === 'AVAILABLE' && tech.isAvailable)
       .sort((a, b) => {
         const aw = a.workload || 0;
         const bw = b.workload || 0;
@@ -2570,7 +2571,9 @@ const ServiceCenterDashboard = () => {
                   </div>
                 ) : (
                   <div className="grid gap-3 max-h-[400px] overflow-y-auto">
-                    {availableTechnicians.map((tech) => (
+                    {availableTechnicians
+                      .filter(tech => tech.status === 'AVAILABLE')
+                      .map((tech) => (
                       <Card 
                         key={tech.id} 
                         className="p-4 cursor-pointer transition-colors hover:bg-purple-50 dark:hover:bg-purple-900/20 border-2 hover:border-purple-400"
