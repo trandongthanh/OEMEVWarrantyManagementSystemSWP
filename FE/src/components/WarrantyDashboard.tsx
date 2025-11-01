@@ -367,6 +367,8 @@ const WarrantyDashboard: React.FC = () => {
                     <option value="PENDING_APPROVAL">Pending Approval</option>
                     <option value="APPROVED">Approved</option>
                     <option value="REJECTED">Rejected</option>
+                    <option value="CANCELLED">Cancelled</option>
+                    <option value="RECEIVED">Received</option>
                     <option value="COMPLETED">Completed</option>
                     <option value="">All Status</option>
                   </select>
