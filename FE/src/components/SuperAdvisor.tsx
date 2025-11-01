@@ -295,12 +295,8 @@ const SuperAdvisor = () => {
   const loadProcessingRecords = async () => {
     try {
       const token = localStorage.getItem('ev_warranty_token');
-      console.log('🔑 Current token:', token);
       
       const response = await fetchProcessingRecords();
-      
-      console.log('📡 API Response:', response);
-      console.log('📊 Records data:', response.data);
       
       if (response.status === 'success' && response.data?.records?.records) {
         // API returns nested structure: data.records.records
@@ -434,8 +430,7 @@ const SuperAdvisor = () => {
 
       if (response.data && response.data.status === 'success' && response.data.data && response.data.data.vehicle) {
         const vehicle = response.data.data.vehicle;
-        console.log('🚗 Vehicle data received:', vehicle); // Debug log
-        console.log('👤 Vehicle owner:', vehicle.owner); // Debug owner specifically
+
         setVehicleSearchResult({
           vin: vehicle.vin,
           dateOfManufacture: vehicle.dateOfManufacture,
@@ -570,7 +565,7 @@ const SuperAdvisor = () => {
           
           // Don't reset vehicle info here - user still needs to complete registration
           // Only keep the registrationFlowPhone marker for later cleanup
-          console.log('✅ Customer found - keeping vehicle info for registration');
+
         } else {
           setFoundCustomer(null);
           
@@ -860,7 +855,7 @@ const SuperAdvisor = () => {
     // Save the phone from registration flow before switching modes
     if (customerSearchPhone.trim()) {
       setRegistrationFlowPhone(customerSearchPhone.trim());
-      console.log('💾 Saved registration flow phone:', customerSearchPhone.trim());
+
     }
 
     // Switch to customer mode (Find Vehicle by VIN) and auto search
@@ -955,7 +950,7 @@ const SuperAdvisor = () => {
       }
 
       const result = await response.json();
-      console.log('OTP send result:', result);
+
 
       if (result.status === 'success') {
         setOtpSent(true);
@@ -1067,7 +1062,7 @@ const SuperAdvisor = () => {
       }
 
       const result = await response.json();
-      console.log('Caseline OTP send result:', result);
+
 
       if (result.status === 'success') {
         setCaselineOtpSent(true);
@@ -1360,7 +1355,6 @@ const SuperAdvisor = () => {
           
           // Reset Register New Vehicle flow after successful registration
           if (registrationFlowPhone) {
-            console.log('🔄 Resetting Register New Vehicle flow after successful registration');
             setNewVehicleVin('');
             setRegistrationFlowPhone('');
           }
@@ -1440,7 +1434,6 @@ const SuperAdvisor = () => {
           
           // Reset Register New Vehicle flow after successful registration
           if (registrationFlowPhone) {
-            console.log('🔄 Resetting Register New Vehicle flow after successful registration');
             setNewVehicleVin('');
             setRegistrationFlowPhone('');
           }
@@ -1572,10 +1565,6 @@ const SuperAdvisor = () => {
               description: `General warranty valid for ${generalWarranty.duration.remainingDays} more days and ${generalWarranty.mileage.remainingMileage} km.${componentWarning}`,
             });
 
-            console.log('🚗 Current vehicleSearchResult:', vehicleSearchResult);
-            console.log('👤 vehicleSearchResult.owner:', vehicleSearchResult.owner);
-            console.log('📞 Current customerSearchPhone:', customerSearchPhone);
-            console.log('📞 Saved registrationFlowPhone:', registrationFlowPhone);
 
             // Check for owner phone from two sources:
             // 1. If vehicle already has owner (existing customer)
@@ -1595,7 +1584,6 @@ const SuperAdvisor = () => {
             }
 
             if (phoneToSearch) {
-              console.log('🔍 Auto-filling customer phone:', phoneToSearch);
               
               // Fill customer search phone if not already filled
               if (!customerSearchPhone.trim()) {
@@ -1604,7 +1592,6 @@ const SuperAdvisor = () => {
               
               // Auto-trigger phone search by passing phone directly
               setTimeout(async () => {
-                console.log('🔍 Auto-triggering customer search for phone:', phoneToSearch);
                 try {
                   await handleSearchCustomerByPhone(phoneToSearch);
                 } catch (error) {
@@ -1810,9 +1797,6 @@ const SuperAdvisor = () => {
   };
 
   const handleEditRecord = async (record: WarrantyRecord) => {
-    console.log('📝 Opening edit dialog for record:', record);
-    console.log('📋 Cases in record:', record.cases);
-    console.log('📊 Status - mapped:', record.status, 'raw:', record.rawStatus);
     
     setSelectedRecord(record);
     
@@ -1841,17 +1825,6 @@ const SuperAdvisor = () => {
       if (result.status === 'success' && result.data?.record) {
         const recordData = result.data.record;
         
-        console.log('🔍 Full API record data:', recordData);
-        console.log('� Vehicle object:', recordData.vehicle);
-        console.log('�👤 Customer fields:', {
-          customerName: recordData.customerName,
-          vehicleOwner: recordData.vehicle?.owner,
-          vehicleCustomer: recordData.vehicle?.customer,
-          owner: recordData.owner,
-          customer: recordData.customer,
-          createdByStaff: recordData.createdByStaff
-        });
-        
         // Get customer name from API response
         // Note: processing-record API doesn't include vehicle owner, need to call vehicle API separately
         let apiCustomerName = 'Unknown Customer';
@@ -1866,11 +1839,9 @@ const SuperAdvisor = () => {
           });
           
           const vehicleResult = await vehicleResponse.json();
-          console.log('🚗 Vehicle details from vehicle API:', vehicleResult);
           
           if (vehicleResult.status === 'success' && vehicleResult.data?.vehicle?.owner) {
             apiCustomerName = vehicleResult.data.vehicle.owner.fullName || 'Unknown Customer';
-            console.log('✅ Found customer name from vehicle API:', apiCustomerName);
           }
         } catch (vehicleError) {
           console.error('❌ Error fetching vehicle details:', vehicleError);
@@ -1914,7 +1885,7 @@ const SuperAdvisor = () => {
         purchaseDate: record.purchaseDate || '',
         status: record.status,
         rawStatus: record.rawStatus || 'CHECKED_IN'
-        });
+      });
     }
     
     setIsEditMode(true);
@@ -2004,12 +1975,14 @@ const SuperAdvisor = () => {
     setShowCaselineDialog(true);
     setIsLoadingCaselines(true);
     setCaselines([]);
-
-    // Auto-fill approver email from record
-    if (record.customerEmail) {
-      setCaselineApproverEmail(record.customerEmail);
-      console.log('✉️ Auto-filled approver email from record:', record.customerEmail);
-    }
+    
+    // Reset all states when opening dialog (fresh start)
+    setSelectedCaselineIds({ approved: [], rejected: [] });
+    setCaselineApproverEmail('');
+    setCaselineOtpCode('');
+    setCaselineOtpSent(false);
+    setCaselineOtpVerified(false);
+    setCaselineOtpCountdown(0);
 
     try {
       const token = localStorage.getItem('ev_warranty_token');
@@ -2036,6 +2009,7 @@ const SuperAdvisor = () => {
 
       if (result.status === 'success' && result.data?.record) {
         const recordData = result.data.record;
+        
         const allCaselines: any[] = [];
 
         // Extract caselines from all guarantee cases
@@ -2053,17 +2027,20 @@ const SuperAdvisor = () => {
           });
         }
 
-        // Auto-fill approver email from API response if not already set from record
-        if (!caselineApproverEmail) {
-          const ownerEmail = recordData.vehicle?.owner?.email || 
-                            recordData.owner?.email || 
-                            recordData.customer?.email ||
-                            recordData.vehicle?.customer?.email || '';
-          
-          if (ownerEmail) {
-            setCaselineApproverEmail(ownerEmail);
-            console.log('✉️ Auto-filled approver email from API:', ownerEmail);
-          }
+        // Auto-fill approver email from visitorInfo
+        const ownerEmail = recordData.visitorInfo?.email || 
+                          recordData.vehicle?.owner?.email || 
+                          recordData.owner?.email || 
+                          recordData.customer?.email ||
+                          recordData.vehicle?.customer?.email ||
+                          record.customerEmail ||
+                          '';
+        
+        
+        if (ownerEmail) {
+          setCaselineApproverEmail(ownerEmail);
+        } else {
+          console.warn('⚠️ No email found in API response!');
         }
 
         setCaselines(allCaselines);
