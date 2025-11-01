@@ -15,7 +15,8 @@ import {
   Loader2,
   Calendar,
   User,
-  Warehouse
+  Warehouse,
+  Truck
 } from "lucide-react";
 
 const API_BASE_URL = 'http://localhost:3000/api/v1';
@@ -66,6 +67,7 @@ const PartsCompanyDashboard: React.FC = () => {
   const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
   const [isLoadingRequests, setIsLoadingRequests] = useState<boolean>(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
+  const [isShipping, setIsShipping] = useState<boolean>(false);
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
 
   // Fetch all stock transfer requests
@@ -132,6 +134,42 @@ const PartsCompanyDashboard: React.FC = () => {
   useEffect(() => {
     fetchStockTransferRequests();
   }, []);
+
+  // Ship stock transfer request
+  const handleShipRequest = async (requestId: string) => {
+    setIsShipping(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsShipping(false);
+      return;
+    }
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/stock-transfer-requests/${requestId}/ship`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+      console.log('✅ Request shipped successfully:', response.data);
+      
+      // Refresh the list
+      await fetchStockTransferRequests();
+      
+      // If modal is open, refresh the detail
+      if (showDetailModal && selectedStockRequest?.id === requestId) {
+        await fetchStockTransferRequestDetail(requestId);
+      }
+      
+      alert('Request shipped successfully!');
+    } catch (error: any) {
+      console.error('Failed to ship request:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to ship request';
+      alert(`Error: ${errorMessage}`);
+    } finally {
+      setIsShipping(false);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -269,15 +307,28 @@ const PartsCompanyDashboard: React.FC = () => {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => fetchStockTransferRequestDetail(request.id)}
-                              disabled={isLoadingDetail}
-                            >
-                              <Eye className="mr-1 h-3 w-3" />
-                              View Details
-                            </Button>
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => fetchStockTransferRequestDetail(request.id)}
+                                disabled={isLoadingDetail}
+                              >
+                                <Eye className="mr-1 h-3 w-3" />
+                                View Details
+                              </Button>
+                              {request.status === 'APPROVED' && (
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  onClick={() => handleShipRequest(request.id)}
+                                  disabled={isShipping}
+                                >
+                                  <Truck className="mr-1 h-3 w-3" />
+                                  {isShipping ? 'Shipping...' : 'Ship'}
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -293,7 +344,20 @@ const PartsCompanyDashboard: React.FC = () => {
         <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
           <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Stock Transfer Request Details</DialogTitle>
+              <DialogTitle className="flex items-center justify-between">
+                <span>Stock Transfer Request Details</span>
+                {selectedStockRequest && selectedStockRequest.status === 'APPROVED' && (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => handleShipRequest(selectedStockRequest.id)}
+                    disabled={isShipping}
+                  >
+                    <Truck className="mr-1 h-4 w-4" />
+                    {isShipping ? 'Shipping...' : 'Ship Request'}
+                  </Button>
+                )}
+              </DialogTitle>
               <DialogDescription>
                 Detailed information about the stock transfer request
               </DialogDescription>

@@ -1,337 +1,517 @@
-import React, { useEffect, useState } from 'react';
-import axios from 'axios';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
+import {
+  Package,
+  LogOut,
+  Warehouse as WarehouseIcon,
+  Eye,
+  Loader2,
+  Calendar,
+  User,
+  Warehouse,
+  Truck,
+  CheckCircle
+} from "lucide-react";
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Package, Warehouse, Truck } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { componentReservationService, PickupResponse } from '@/services/componentReservationService';
+const API_BASE_URL = 'http://localhost:3000/api/v1';
 
-interface StockRow {
-  stock_id: string;
-  warehouse_name: string;
-  component_name: string;
-  sku?: string;
-  category?: string;
-  in_stock: number;
-  reserved: number;
-}
-
-interface TransferRequest {
+interface StockTransferRequest {
   id: string;
-  fromWarehouse: string;
-  toWarehouse: string;
-  typeComponentName: string;
-  qty: number;
+  requestingWarehouseId: string;
+  requestedByUserId: string;
+  approvedByUserId: string | null;
+  rejectedByUserId: string | null;
+  cancelledByUserId: string | null;
   status: string;
+  rejectionReason: string | null;
+  cancellationReason: string | null;
+  requestedAt: string;
+  receivedByUserId: string | null;
+  approvedAt: string | null;
+  shippedAt: string | null;
+  receivedAt: string | null;
+  rejectedAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  requester?: {
+    userId: string;
+    name: string;
+    serviceCenterId: string;
+  };
+  items?: Array<{
+    id: string;
+    quantityRequested: number;
+    quantityApproved: number | null;
+    typeComponentId: string;
+    caselineId?: string;
+    typeComponent?: {
+      typeComponentId: string;
+      nameComponent: string;
+      description: string | null;
+    };
+  }>;
 }
-
 
 const PartsCoordinatorDashboard: React.FC = () => {
-  const { getToken, user } = useAuth();
-  const [stocks, setStocks] = useState<StockRow[]>([]);
-  const [transferRequests, setTransferRequests] = useState<TransferRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  
-  // Pickup reserved components (for parts coordinator)
-  const [reservationIdInput, setReservationIdInput] = useState<string>('');
-  const [pickupResult, setPickupResult] = useState<PickupResponse | null>(null);
-  const [isPicking, setIsPicking] = useState<boolean>(false);
-  // Install component on vehicle
-  const [installResult, setInstallResult] = useState<Record<string, unknown> | null>(null);
-  const [isInstalling, setIsInstalling] = useState<boolean>(false);
-  // Return old component after replacement
-  const [returnResult, setReturnResult] = useState<Record<string, unknown> | null>(null);
-  const [isReturning, setIsReturning] = useState<boolean>(false);
+  const { user, logout, getToken } = useAuth();
+  const navigate = useNavigate();
 
+  const [stockTransferRequests, setStockTransferRequests] = useState<StockTransferRequest[]>([]);
+  const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
+  const [isLoadingRequests, setIsLoadingRequests] = useState<boolean>(false);
+  const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
+  const [isReceiving, setIsReceiving] = useState<boolean>(false);
+  const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
+
+  // Fetch all stock transfer requests
+  const fetchStockTransferRequests = async () => {
+    setIsLoadingRequests(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingRequests(false);
+      return;
+    }
+    try {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const requestsData = response.data?.data?.stockTransferRequests || [];
+      console.log('📦 Fetched all stock transfer requests:', requestsData);
+      setStockTransferRequests(requestsData);
+    } catch (error) {
+      console.error('Failed to fetch stock transfer requests:', error);
+    } finally {
+      setIsLoadingRequests(false);
+    }
+  };
+
+  // Fetch detailed stock transfer request
+  const fetchStockTransferRequestDetail = async (requestId: string) => {
+    setIsLoadingDetail(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingDetail(false);
+      return null;
+    }
+    try {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests/${requestId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const detailData = response.data?.data?.stockTransferRequest || null;
+      console.log('📦 Stock Transfer Request Detail:', detailData);
+      console.log('📦 Items in request:', detailData?.items);
+      console.log('📦 Number of items:', detailData?.items?.length);
+      
+      // Log each item details
+      detailData?.items?.forEach((item: any, index: number) => {
+        console.log(`Item ${index + 1}:`, {
+          id: item.id,
+          typeComponentId: item.typeComponentId,
+          quantityRequested: item.quantityRequested,
+          quantityApproved: item.quantityApproved,
+          typeComponent: item.typeComponent,
+          caselineId: item.caselineId
+        });
+      });
+      
+      setSelectedStockRequest(detailData);
+      setShowDetailModal(true);
+    } catch (error) {
+      console.error('Failed to fetch stock transfer request detail:', error);
+    } finally {
+      setIsLoadingDetail(false);
+    }
+  };
+
+  // Load requests on mount
   useEffect(() => {
-    // Lightweight initial load: try to fetch inventory & requests from API if token exists.
-    let cancelled = false;
-    const load = async () => {
-      setIsLoading(true);
-      try {
-        const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-        // If no token or user role is not related to inventory/parts operations,
-        // fallback to mock data to avoid spamming backend with unauthorized requests.
-        const allowedRoles = ['emv_staff', 'service_center_manager', 'service_center_staff', 'parts_coordinator_company', 'parts_coordinator_service_center'];
-        if (!token || !user || !allowedRoles.includes(user.role)) {
-          // fallback to mock data when not authenticated in dev
-          setStocks(mockStocks());
-          setTransferRequests(mockTransfers());
-          setIsLoading(false);
-          return;
+    fetchStockTransferRequests();
+  }, []);
+
+  // Receive stock transfer request
+  const handleReceiveRequest = async (requestId: string) => {
+    setIsReceiving(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsReceiving(false);
+      return;
+    }
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/stock-transfer-requests/${requestId}/receive`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` }
         }
-
-        // Example API endpoints - adjust if your backend uses different paths
-        const [warehousesRes, transfersRes] = await Promise.all([
-          // backend exposes warehouses (with nested stock info) at /api/v1/warehouses
-          axios.get('http://localhost:3000/api/v1/warehouses', { headers: { Authorization: `Bearer ${token}` } }),
-          axios.get('http://localhost:3000/api/v1/stock-transfer-requests?limit=50', { headers: { Authorization: `Bearer ${token}` } })
-        ]);
-
-        if (cancelled) return;
-
-        // Use unknown and defensive casts to avoid `any` in the codebase
-        // warehousesRes.data.data.warehouses -> each warehouse has `stock` array
-        const warehouses = (((warehousesRes.data as Record<string, unknown>)?.data) as Record<string, unknown>)?.warehouses as unknown[] | undefined;
-        const stocksRaw: unknown[] = (warehouses && Array.isArray(warehouses))
-          ? warehouses.flatMap((w) => {
-              const wh = w as Record<string, unknown>;
-              const warehouseName = String(wh['name'] ?? wh['warehouseName'] ?? 'Unknown');
-              const stockArr = (wh['stock'] ?? []) as unknown[];
-              return (Array.isArray(stockArr) ? stockArr : []).map((s) => ({ ...(s as Record<string, unknown>), __warehouseName: warehouseName }));
-            })
-          : [];
-
-        const stocksData = stocksRaw.map((s) => {
-          const obj = s as Record<string, unknown>;
-          const typeComp = obj['component'] ?? obj['type_component'] ?? obj['typeComponent'] as Record<string, unknown> | undefined;
-          return {
-            stock_id: String(obj['stockId'] ?? obj['stock_id'] ?? obj['id'] ?? Date.now()),
-            warehouse_name: String(obj['__warehouseName'] ?? obj['warehouse_name'] ?? 'Unknown'),
-            component_name: String(typeComp?.['name'] ?? obj['component_name'] ?? 'Unknown'),
-            sku: typeComp?.['sku'] ? String(typeComp['sku']) : undefined,
-            category: typeComp?.['category'] ? String(typeComp['category']) : undefined,
-            in_stock: Number(obj['quantity'] ?? obj['quantity_in_stock'] ?? obj['quantityAvailable'] ?? 0),
-            reserved: Number(obj['quantityReserved'] ?? obj['quantity_reserved'] ?? 0)
-          } as StockRow;
-        });
-
-        const transfersRaw = (((transfersRes.data as Record<string, unknown>)?.data) as unknown[]) || [];
-        const transfersData = transfersRaw.map((t) => {
-          const obj = t as Record<string, unknown>;
-          const fromW = obj['fromWarehouse'] as Record<string, unknown> | undefined;
-          const toW = obj['toWarehouse'] as Record<string, unknown> | undefined;
-          const typeComp = obj['typeComponent'] as Record<string, unknown> | undefined;
-          return {
-            id: String(obj['id'] ?? obj['requestId'] ?? Date.now()),
-            fromWarehouse: String(fromW?.['name'] ?? obj['from'] ?? 'Unknown'),
-            toWarehouse: String(toW?.['name'] ?? obj['to'] ?? 'Unknown'),
-            typeComponentName: String(typeComp?.['name'] ?? obj['componentName'] ?? 'Unknown'),
-            qty: Number(obj['quantity'] ?? obj['qty'] ?? 0),
-            status: String(obj['status'] ?? 'pending')
-          } as TransferRequest;
-        });
-
-        setStocks(stocksData);
-        setTransferRequests(transfersData);
-      } catch (err) {
-        console.warn('PartsCoordinatorDashboard: failed to fetch data, using mock', err);
-        setStocks(mockStocks());
-        setTransferRequests(mockTransfers());
-      } finally {
-        if (!cancelled) setIsLoading(false);
+      );
+      console.log('✅ Request received successfully:', response.data);
+      
+      // Refresh the list
+      await fetchStockTransferRequests();
+      
+      // If modal is open, refresh the detail
+      if (showDetailModal && selectedStockRequest?.id === requestId) {
+        await fetchStockTransferRequestDetail(requestId);
       }
-    };
+      
+      alert('Request received successfully!');
+    } catch (error: any) {
+      console.error('Failed to receive request:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to receive request';
+      alert(`Error: ${errorMessage}`);
+    } finally {
+      setIsReceiving(false);
+    }
+  };
 
-    load();
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
 
-    
+  const getStatusBadgeVariant = (status?: string) => {
+    switch ((status || '').toUpperCase()) {
+      case 'PENDING_APPROVAL':
+        return 'secondary';
+      case 'APPROVED':
+        return 'default';
+      case 'SHIPPED':
+        return 'default';
+      case 'RECEIVED':
+        return 'success';
+      case 'REJECTED':
+      case 'CANCELLED':
+        return 'destructive';
+      default:
+        return 'outline';
+    }
+  };
 
-    return () => { cancelled = true; };
-  }, [getToken, user]);
-
-  
-
-  
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return "N/A";
+    try {
+      return new Date(dateString).toLocaleString('vi-VN');
+    } catch (e) {
+      return dateString;
+    }
+  };
 
   return (
-    <div className="min-h-screen w-full">
-      <div className="container mx-auto px-6 py-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Package className="h-4 w-4" /> Inventory</CardTitle>
-              <CardDescription>Quick overview of stocks</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stocks.reduce((s, r) => s + r.in_stock, 0)}</div>
-              <div className="text-sm text-muted-foreground">Total items in stock</div>
-            </CardContent>
-          </Card>
+    <div className="min-h-screen w-full relative">
+      {/* Radial Gradient Background */}
+      <div
+        className="absolute inset-0 z-0"
+        style={{
+          background: "radial-gradient(125% 125% at 50% 10%, #fff 40%, #6366f1 100%)",
+        }}
+      />
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Truck className="h-4 w-4" /> Transfers</CardTitle>
-              <CardDescription>Pending transfer requests</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{transferRequests.filter(t => t.status === 'pending').length}</div>
-              <div className="text-sm text-muted-foreground">Pending requests</div>
-            </CardContent>
-          </Card>
+      {/* Content */}
+      <div className="min-h-screen bg-transparent relative z-10">
+        {/* Header */}
+        <header className="border-b bg-card shadow-elegant">
+          <div className="container mx-auto px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-primary">
+                  <Package className="h-6 w-6 text-primary-foreground" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-foreground">Parts Coordinator Dashboard</h1>
+                  <p className="text-sm text-muted-foreground">
+                    Welcome, {user?.name || 'Parts Coordinator'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-3">
+                <Badge variant="outline" className="text-xs">
+                  <WarehouseIcon className="mr-1 h-3 w-3" />
+                  Parts Coordinator Service Center
+                </Badge>
+                <Button variant="outline" onClick={handleLogout}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Logout
+                </Button>
+              </div>
+            </div>
+          </div>
+        </header>
 
-          <Card>
+        {/* Main Content Area */}
+        <div className="container mx-auto px-6 py-6">
+          <Card className="shadow-elegant">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Warehouse className="h-4 w-4" /> Warehouses</CardTitle>
-              <CardDescription>Number of warehouses</CardDescription>
+              <CardTitle>Stock Transfer Requests</CardTitle>
+              <CardDescription>
+                View stock transfer requests for your service center
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{Array.from(new Set(stocks.map(s => s.warehouse_name))).length}</div>
-              <div className="text-sm text-muted-foreground">Active warehouses</div>
+              {isLoadingRequests ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <span className="ml-3 text-muted-foreground">Loading requests...</span>
+                </div>
+              ) : stockTransferRequests.length === 0 ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <Package className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-foreground mb-2">
+                      No Stock Transfer Requests
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      There are no stock transfer requests at the moment.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Request ID</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Requester</TableHead>
+                        <TableHead>Requested At</TableHead>
+                        <TableHead>Items</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {stockTransferRequests.map((request) => (
+                        <TableRow key={request.id}>
+                          <TableCell className="font-mono text-xs">
+                            #{request.id.substring(0, 8)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={getStatusBadgeVariant(request.status)}>
+                              {request.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {request.requester?.name || 'N/A'}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {formatDate(request.requestedAt)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {request.items?.length || 0} items
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => fetchStockTransferRequestDetail(request.id)}
+                                disabled={isLoadingDetail}
+                              >
+                                <Eye className="mr-1 h-3 w-3" />
+                                View Details
+                              </Button>
+                              {request.status === 'SHIPPED' && (
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  onClick={() => handleReceiveRequest(request.id)}
+                                  disabled={isReceiving}
+                                >
+                                  <CheckCircle className="mr-1 h-3 w-3" />
+                                  {isReceiving ? 'Receiving...' : 'Receive'}
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        {/* Pickup / Install tabs (Parts Coordinator) */}
-        <div className="mb-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Reservation Actions</CardTitle>
-              <CardDescription>Pickup reserved components or install them on vehicle (use reservation id)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Tabs defaultValue="pickup">
-                <TabsList>
-                  <TabsTrigger value="pickup">Pickup</TabsTrigger>
-                    <TabsTrigger value="install">Install on Vehicle</TabsTrigger>
-                    <TabsTrigger value="return">Return Old Component</TabsTrigger>
-                </TabsList>
+        {/* Detail Modal */}
+        <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center justify-between">
+                <span>Stock Transfer Request Details</span>
+                {selectedStockRequest && selectedStockRequest.status === 'SHIPPED' && (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => handleReceiveRequest(selectedStockRequest.id)}
+                    disabled={isReceiving}
+                  >
+                    <CheckCircle className="mr-1 h-4 w-4" />
+                    {isReceiving ? 'Receiving...' : 'Receive Request'}
+                  </Button>
+                )}
+              </DialogTitle>
+              <DialogDescription>
+                Detailed information about the stock transfer request
+              </DialogDescription>
+            </DialogHeader>
 
-                <TabsContent value="pickup">
-                  <div className="flex gap-2 items-center">
-                    <input className="rounded-md border px-3 py-2 flex-1" placeholder="Reservation ID" value={reservationIdInput} onChange={(e) => setReservationIdInput(e.target.value)} />
-                    <Button disabled={!reservationIdInput || isPicking} onClick={async () => {
-                      try {
-                        setIsPicking(true);
-                        setPickupResult(null);
-                        const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-                        if (!token) return alert('Authentication required');
-                        // best-effort decode user id from token to pass to backend validation
-                        let pickedUpByTechId: string | undefined;
-                        try {
-                          const payload = JSON.parse(atob(token.split('.')[1]));
-                          pickedUpByTechId = payload.userId || payload.sub || payload.userId || payload.user?.userId;
-                        } catch (e) {
-                          // ignore decode errors
-                        }
-                        const data = await componentReservationService.pickupReservation(reservationIdInput.trim(), pickedUpByTechId ? { pickedUpByTechId } : undefined);
-                        setPickupResult(data as PickupResponse);
-                        alert('Pickup success: ' + (data?.reservation?.reservationId ?? 'OK'));
-                      } catch (err) {
-                        console.error('Pickup failed', err);
-                        alert('Pickup failed: ' + (err instanceof Error ? err.message : String(err)));
-                      } finally {
-                        setIsPicking(false);
-                      }
-                    }}>{isPicking ? 'Picking...' : 'Pickup'}</Button>
-                    <Button variant="outline" onClick={() => { setReservationIdInput(''); setPickupResult(null); }}>Reset</Button>
-                  </div>
-
-                  {pickupResult && (
-                    <div className="mt-4">
-                      <h4 className="font-medium">Reservation</h4>
-                      <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(pickupResult.reservation, null, 2)}</pre>
-                      <h4 className="font-medium mt-2">Component</h4>
-                      <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(pickupResult.component, null, 2)}</pre>
-                      {pickupResult.caseLine && (
-                        <>
-                          <h4 className="font-medium mt-2">Case Line</h4>
-                          <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(pickupResult.caseLine, null, 2)}</pre>
-                        </>
+            {isLoadingDetail ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : selectedStockRequest ? (
+              <div className="space-y-6">
+                {/* Request Information */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Request Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Request ID</label>
+                        <p className="font-mono text-sm">#{selectedStockRequest.id.substring(0, 8)}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Status</label>
+                        <div className="mt-1">
+                          <Badge variant={getStatusBadgeVariant(selectedStockRequest.status)}>
+                            {selectedStockRequest.status}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground flex items-center">
+                          <User className="mr-1 h-3 w-3" />
+                          Requester
+                        </label>
+                        <p className="text-sm">{selectedStockRequest.requester?.name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground flex items-center">
+                          <Warehouse className="mr-1 h-3 w-3" />
+                          Warehouse ID
+                        </label>
+                        <p className="font-mono text-xs">{selectedStockRequest.requestingWarehouseId}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground flex items-center">
+                          <Calendar className="mr-1 h-3 w-3" />
+                          Requested At
+                        </label>
+                        <p className="text-sm">{formatDate(selectedStockRequest.requestedAt)}</p>
+                      </div>
+                      {selectedStockRequest.approvedAt && (
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Approved At</label>
+                          <p className="text-sm">{formatDate(selectedStockRequest.approvedAt)}</p>
+                        </div>
+                      )}
+                      {selectedStockRequest.shippedAt && (
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Shipped At</label>
+                          <p className="text-sm">{formatDate(selectedStockRequest.shippedAt)}</p>
+                        </div>
+                      )}
+                      {selectedStockRequest.receivedAt && (
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Received At</label>
+                          <p className="text-sm">{formatDate(selectedStockRequest.receivedAt)}</p>
+                        </div>
                       )}
                     </div>
-                  )}
-                </TabsContent>
 
-                <TabsContent value="install">
-                  <div className="flex gap-2 items-center">
-                    <input className="rounded-md border px-3 py-2 flex-1" placeholder="Reservation ID" value={reservationIdInput} onChange={(e) => setReservationIdInput(e.target.value)} />
-                    <Button variant="secondary" disabled={!reservationIdInput || isInstalling} onClick={async () => {
-                      try {
-                        setIsInstalling(true);
-                        setInstallResult(null);
-                        const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-                        if (!token) return alert('Authentication required');
-                        const data = await componentReservationService.installComponent(reservationIdInput.trim());
-                        setInstallResult(data as Record<string, unknown>);
-                        alert('Install success: ' + (data?.reservation?.reservationId ?? 'OK'));
-                      } catch (err) {
-                        console.error('Install failed', err);
-                        alert('Install failed: ' + (err instanceof Error ? err.message : String(err)));
-                      } finally {
-                        setIsInstalling(false);
-                      }
-                    }}>{isInstalling ? 'Installing...' : 'Install on Vehicle'}</Button>
-                    <Button variant="outline" onClick={() => { setReservationIdInput(''); setInstallResult(null); }}>Reset</Button>
-                  </div>
+                    {selectedStockRequest.rejectionReason && (
+                      <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+                        <label className="text-sm font-medium text-destructive">Rejection Reason</label>
+                        <p className="text-sm mt-1">{selectedStockRequest.rejectionReason}</p>
+                      </div>
+                    )}
 
-                  {installResult && (
-                    <div className="mt-4">
-                      <h4 className="font-medium">Install Result - Reservation</h4>
-                      <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(installResult?.reservation ?? installResult, null, 2)}</pre>
-                      <h4 className="font-medium mt-2">Install Result - Component</h4>
-                      <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(installResult?.component ?? installResult, null, 2)}</pre>
-                      {installResult?.caseLine && (
-                        <>
-                          <h4 className="font-medium mt-2">Install Result - Case Line</h4>
-                          <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(installResult?.caseLine, null, 2)}</pre>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </TabsContent>
+                    {selectedStockRequest.cancellationReason && (
+                      <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+                        <label className="text-sm font-medium text-destructive">Cancellation Reason</label>
+                        <p className="text-sm mt-1">{selectedStockRequest.cancellationReason}</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
 
-                <TabsContent value="return">
-                  <div className="flex gap-2 items-center">
-                    <input className="rounded-md border px-3 py-2 flex-1" placeholder="Reservation ID" value={reservationIdInput} onChange={(e) => setReservationIdInput(e.target.value)} />
-                    <Button variant="destructive" disabled={!reservationIdInput || isReturning} onClick={async () => {
-                      try {
-                        setIsReturning(true);
-                        setReturnResult(null);
-                        const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-                        if (!token) return alert('Authentication required');
-                        // Prompt for serial number required by backend
-                        const serial = window.prompt('Enter serial number of the old component being returned');
-                        if (!serial) return alert('Serial number is required to return a component');
-                        const data = await componentReservationService.returnComponent(reservationIdInput.trim(), { serialNumber: serial });
-                        setReturnResult(data as Record<string, unknown>);
-                        alert('Return success: ' + (data?.reservation?.reservationId ?? 'OK'));
-                      } catch (err) {
-                        console.error('Return failed', err);
-                        alert('Return failed: ' + (err instanceof Error ? err.message : String(err)));
-                      } finally {
-                        setIsReturning(false);
-                      }
-                    }}>{isReturning ? 'Returning...' : 'Return Component'}</Button>
-                    <Button variant="outline" onClick={() => { setReservationIdInput(''); setReturnResult(null); }}>Reset</Button>
-                  </div>
-
-                  {returnResult && (
-                    <div className="mt-4">
-                      <h4 className="font-medium">Return Result - Reservation</h4>
-                      <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(returnResult?.reservation ?? returnResult, null, 2)}</pre>
-                      <h4 className="font-medium mt-2">Return Result - Component</h4>
-                      <pre className="text-xs bg-gray-50 p-2 rounded">{JSON.stringify(returnResult?.component ?? returnResult, null, 2)}</pre>
-                    </div>
-                  )}
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        </div>
+                {/* Requested Items */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Requested Items</CardTitle>
+                    <CardDescription>
+                      {selectedStockRequest.items?.length || 0} item(s) in this request
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {selectedStockRequest.items && selectedStockRequest.items.length > 0 ? (
+                      <div className="rounded-md border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>#</TableHead>
+                              <TableHead>Component ID</TableHead>
+                              <TableHead>Component Name</TableHead>
+                              <TableHead>Description</TableHead>
+                              <TableHead className="text-right">Qty Requested</TableHead>
+                              <TableHead className="text-right">Qty Approved</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {selectedStockRequest.items.map((item, index) => (
+                              <TableRow key={item.id || index}>
+                                <TableCell className="font-medium">
+                                  {index + 1}
+                                </TableCell>
+                                <TableCell className="font-mono text-xs">
+                                  {item.typeComponentId ? `#${item.typeComponentId.substring(0, 8)}` : 'N/A'}
+                                </TableCell>
+                                <TableCell className="font-medium">
+                                  {item.typeComponent?.nameComponent || 'N/A'}
+                                </TableCell>
+                                <TableCell className="text-sm text-muted-foreground max-w-xs">
+                                  {item.typeComponent?.description || '-'}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Badge variant="outline">{item.quantityRequested}</Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {item.quantityApproved !== null && item.quantityApproved !== undefined ? (
+                                    <Badge variant="default">{item.quantityApproved}</Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground text-sm">Pending</span>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center py-4">No items found</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <p className="text-center text-muted-foreground py-8">No details available</p>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
 };
-
-function mockStocks(): StockRow[] {
-  return [
-    { stock_id: 's1', warehouse_name: 'Main Warehouse', component_name: 'EV Battery Pack 75kWh', sku: 'BAT-EV-75K', category: 'Battery', in_stock: 15, reserved: 3 },
-    { stock_id: 's2', warehouse_name: 'Main Warehouse', component_name: 'Electric Motor Controller', sku: 'MOT-CTL-001', category: 'Motor', in_stock: 5, reserved: 2 },
-    { stock_id: 's3', warehouse_name: 'Emergency Stock', component_name: 'Brake Pad Set', sku: 'BRK-PAD-STD', category: 'Brake', in_stock: 40, reserved: 8 }
-  ];
-}
-
-function mockTransfers(): TransferRequest[] {
-  return [
-    { id: 't1', fromWarehouse: 'Emergency Stock', toWarehouse: 'Main Warehouse', typeComponentName: 'Electric Motor Controller', qty: 2, status: 'pending' },
-    { id: 't2', fromWarehouse: 'Main Warehouse', toWarehouse: 'Service Center HCM', typeComponentName: 'Brake Pad Set', qty: 10, status: 'approved' }
-  ];
-}
 
 export default PartsCoordinatorDashboard;
