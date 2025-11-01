@@ -2027,18 +2027,38 @@ const TechnicianDashboard = ({
                         {workSchedules.map((s) => (
                           <TableRow key={s.scheduleId}>
                             <TableCell className="font-mono text-xs">{s.scheduleId}</TableCell>
-                            <TableCell>{s.workDate}</TableCell>
+                            <TableCell className="whitespace-nowrap">{s.workDate}</TableCell>
                             <TableCell>
                               <Badge variant={s.status === 'AVAILABLE' ? 'default' : 'destructive'} className="uppercase">
                                 {s.status}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-sm">{s.notes ?? '—'}</TableCell>
-                            <TableCell>{s.technician?.name ?? '—'}</TableCell>
+                            <TableCell>
+                              <div className="font-semibold">{s.technician?.name ?? '—'}</div>
+                            </TableCell>
                             <TableCell className="text-sm">{s.technician?.email ?? '—'}</TableCell>
                             <TableCell className="font-mono text-xs">{s.technicianId ?? s.technician_id ?? '—'}</TableCell>
-                            <TableCell className="text-xs">{s.createdAt ? new Date(s.createdAt).toLocaleString() : '—'}</TableCell>
-                            <TableCell className="text-xs">{s.updatedAt ? new Date(s.updatedAt).toLocaleString() : '—'}</TableCell>
+                            <TableCell className="text-xs">
+                              {s.createdAt ? (
+                                <div className="text-right">
+                                  <div>{new Date(s.createdAt).toLocaleTimeString()}</div>
+                                  <div className="text-muted-foreground">{new Date(s.createdAt).toLocaleDateString()}</div>
+                                </div>
+                              ) : (
+                                '—'
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {s.updatedAt ? (
+                                <div className="text-right">
+                                  <div>{new Date(s.updatedAt).toLocaleTimeString()}</div>
+                                  <div className="text-muted-foreground">{new Date(s.updatedAt).toLocaleDateString()}</div>
+                                </div>
+                              ) : (
+                                '—'
+                              )}
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
