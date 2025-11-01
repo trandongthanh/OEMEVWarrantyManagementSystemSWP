@@ -1,4 +1,4 @@
-
+﻿
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -102,11 +102,6 @@ interface WarrantyRecord {
   createdAt: string;
 }
 
-interface VinDataState {
-  vinNumber: string;
-  warrantyStatus: string;
-}
-
 interface VehicleSearchResult {
   vin: string;
   dateOfManufacture: string;
@@ -140,7 +135,6 @@ const SuperAdvisor = () => {
   const [searchMode, setSearchMode] = useState<'warranty' | 'customer' | 'phone'>('phone');
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
-  const [isDialogSearch, setIsDialogSearch] = useState(false);
   
   // Record State
   const [selectedRecord, setSelectedRecord] = useState<WarrantyRecord | null>(null);
@@ -148,10 +142,6 @@ const SuperAdvisor = () => {
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
   
   // Form States
-  const [vinData, setVinData] = useState<VinDataState>({
-    vinNumber: "",
-    warrantyStatus: ""
-  });
   const [vehicleSearchResult, setVehicleSearchResult] = useState<VehicleSearchResult | null>(null);
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
   const [ownerForm, setOwnerForm] = useState<OwnerForm>({
@@ -181,6 +171,12 @@ const SuperAdvisor = () => {
   const [selectedRecordForCaseline, setSelectedRecordForCaseline] = useState<WarrantyRecord | null>(null);
   const [caselines, setCaselines] = useState<any[]>([]);
   const [isLoadingCaselines, setIsLoadingCaselines] = useState(false);
+
+  // View Record dialog states
+  const [showViewRecordDialog, setShowViewRecordDialog] = useState(false);
+  const [viewRecordData, setViewRecordData] = useState<any>(null);
+  const [isLoadingRecordDetail, setIsLoadingRecordDetail] = useState(false);
+  const [isCompletingRecord, setIsCompletingRecord] = useState(false);
   const [selectedCaselineIds, setSelectedCaselineIds] = useState<{
     approved: string[];
     rejected: string[];
@@ -247,17 +243,6 @@ const SuperAdvisor = () => {
     status: 'pending' as 'pending' | 'in-progress' | 'completed',
     rawStatus: 'CHECKED_IN' // Store actual API status
   });
-
-  // Transform form data to API format
-  const transformToApiFormat = (formData: { vinNumber: string; odometer: string; cases: CaseNote[] }) => {
-    return {
-      vin: formData.vinNumber,
-      odometer: parseInt(formData.odometer),
-      guaranteeCases: formData.cases.map(caseItem => ({
-        contentGuarantee: caseItem.text
-      }))
-    };
-  };
 
   const [records, setRecords] = useState<WarrantyRecord[]>([]);
 
@@ -401,97 +386,6 @@ const SuperAdvisor = () => {
       });
     }
   }, [caselineOtpCountdown, caselineOtpSent, toast]);
-
-  const handleSearchWarranty = async () => {
-  try {
-    if (!searchVin.trim()) {
-      toast({
-        title: 'Error',
-        description: 'Please enter VIN',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    const vin = searchVin.trim();
-    const odometer = 0;
-
-    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-    if (!token) {
-      console.error("No token found (checked AuthContext.getToken and localStorage 'ev_warranty_token')");
-      toast({
-        title: 'Error',
-        description: 'Không tìm thấy token đăng nhập',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    const url = `${API_BASE_URL}/vehicles/${vin}/warranty?odometer=${odometer}`;
-    
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-      },
-    });
-
-    const data = await response.json();
-    
-    if (!response.ok || data.status !== 'success') {
-      toast({
-        title: 'Unable to find warranty',
-        variant: 'destructive'
-      });
-      return;
-    }    if (data && data.status === 'success' && data.data && data.data.vehicle) {
-      const vehicle = data.data.vehicle;
-      
-      // Lấy warranty status từ response hoặc từ generalWarranty
-      let warrantyStatus = 'N/A';
-      if (vehicle.warrantyStatus) {
-        warrantyStatus = vehicle.warrantyStatus;
-      } else if (vehicle.generalWarranty) {
-        // Nếu không có warrantyStatus trực tiếp, lấy từ generalWarranty
-        const durationStatus = vehicle.generalWarranty.duration?.status;
-        const mileageStatus = vehicle.generalWarranty.mileage?.status;
-        
-        if (durationStatus === 'ACTIVE' && mileageStatus === 'ACTIVE') {
-          warrantyStatus = 'Active';
-        } else if (durationStatus === 'INACTIVE' && mileageStatus === 'INACTIVE') {
-          warrantyStatus = 'Expired (Time & Odometer)';
-        } else if (durationStatus === 'INACTIVE') {
-          warrantyStatus = 'Expired (Time)';
-        } else if (mileageStatus === 'INACTIVE') {
-          warrantyStatus = 'Expired (Odometer)';
-        }
-      }
-      
-      setVinData({
-        vinNumber: vehicle.vin || '',
-        warrantyStatus
-      });
-
-      setIsDialogSearch(true);
-
-      toast({
-        title: 'Thành công',
-        description: 'Đã tải thông tin VIN',
-      });
-    } else {
-      toast({
-        title: 'Không có dữ liệu',
-        description: 'Không tìm thấy thông tin xe',
-        variant: 'destructive'
-      });
-    }
-
-  } catch (error) {
-    console.error("Failed to fetch VIN warranty info:", error);
-    
-  }
-};
 
   const handleSearchCustomer = async (vinToSearch?: string) => {
     try {
@@ -1997,19 +1891,6 @@ const SuperAdvisor = () => {
     setIsEditMode(true);
   };
 
-  const handleDeleteRecord = (record: WarrantyRecord) => {
-    if (window.confirm(`Are you sure you want to delete this warranty record for VIN: ${record.vinNumber}?`)) {
-      // Remove from local state only
-      const updatedRecords = records.filter(r => r.id !== record.id);
-      setRecords(updatedRecords);
-      
-      toast({
-        title: 'Record Deleted',
-        description: `Warranty record for VIN ${record.vinNumber} has been deleted`,
-      });
-    }
-  };
-
   const handleSaveEdit = () => {
     if (!validateRecord(editRecord)) {
       toast({
@@ -2184,6 +2065,181 @@ const SuperAdvisor = () => {
         description: 'Failed to load caselines',
         variant: 'destructive'
       });
+    }
+  };
+
+  // Fetch record details (can be called to refresh)
+  const fetchRecordDetails = async (recordId: string) => {
+    setIsLoadingRecordDetail(true);
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'Authentication token not found',
+          variant: 'destructive'
+        });
+        setIsLoadingRecordDetail(false);
+        return null;
+      }
+
+      // Fetch record details
+      const response = await fetch(`${API_BASE_URL}/processing-records/${recordId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.status === 'success' && result.data?.record) {
+        setViewRecordData(result.data.record);
+        setIsLoadingRecordDetail(false);
+        return result.data.record;
+      } else {
+        throw new Error('Failed to fetch record details');
+      }
+    } catch (error) {
+      console.error('Error fetching record details:', error);
+      setIsLoadingRecordDetail(false);
+      toast({
+        title: 'Error',
+        description: 'Failed to load record details',
+        variant: 'destructive'
+      });
+      return null;
+    }
+  };
+
+  // Handle view record details
+  const handleViewRecord = async (record: WarrantyRecord) => {
+    setShowViewRecordDialog(true);
+    setViewRecordData(null);
+    await fetchRecordDetails(record.id);
+  };
+
+  // Handle refresh record details
+  const handleRefreshRecordDetails = async () => {
+    if (viewRecordData?.id) {
+      await fetchRecordDetails(viewRecordData.id);
+      toast({
+        title: 'Refreshed',
+        description: 'Record details have been updated',
+      });
+    }
+  };
+
+  // Check if all caselines are completed
+  const areAllCaselinesCompleted = () => {
+    if (!viewRecordData?.guaranteeCases || viewRecordData.guaranteeCases.length === 0) {
+      return false; // No caselines = cannot complete
+    }
+
+    // Check all guarantee cases for their caselines
+    for (const guaranteeCase of viewRecordData.guaranteeCases) {
+      // If no caselines in this case, it's not ready
+      if (!guaranteeCase.caseLines || guaranteeCase.caseLines.length === 0) {
+        return false;
+      }
+
+      // Check if all caselines in this case are completed
+      const allCompleted = guaranteeCase.caseLines.every(
+        (caseline: any) => caseline.status === 'COMPLETED'
+      );
+
+      if (!allCompleted) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  // Handle complete record
+  const handleCompleteRecord = async () => {
+    if (!viewRecordData?.id) {
+      toast({
+        title: 'Error',
+        description: 'No record selected',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Check if record is already completed
+    if (viewRecordData.status === 'COMPLETED') {
+      toast({
+        title: 'Already Completed',
+        description: 'This record has already been completed',
+        variant: 'default'
+      });
+      return;
+    }
+
+    // Check if all caselines are completed
+    if (!areAllCaselinesCompleted()) {
+      toast({
+        title: 'Cannot Complete',
+        description: 'All caselines must be completed before completing the record',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsCompletingRecord(true);
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+
+      const response = await fetch(`${API_BASE_URL}/processing-records/${viewRecordData.id}/completed`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result.status !== 'success') {
+        throw new Error(result.message || 'Failed to complete record');
+      }
+
+      toast({
+        title: 'Record Completed Successfully',
+        description: `Record has been marked as completed. Check-out date: ${new Date(result.data.checkOutDate).toLocaleString()}`,
+      });
+
+      // Update the view record data with new status
+      setViewRecordData({
+        ...viewRecordData,
+        status: result.data.status,
+        checkOutDate: result.data.checkOutDate
+      });
+
+      // Reload processing records to update the table
+      await loadProcessingRecords();
+
+      // Close dialog after a short delay
+      setTimeout(() => {
+        setShowViewRecordDialog(false);
+      }, 1500);
+
+    } catch (error) {
+      console.error('Error completing record:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to complete record',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsCompletingRecord(false);
     }
   };
 
@@ -2363,8 +2419,8 @@ const SuperAdvisor = () => {
                 onClick={() => setSearchMode('warranty')}
                 className={searchMode === 'warranty' ? 'bg-blue-600 hover:bg-blue-700' : ''}
               >
-                <Search className="h-4 w-4 mr-2" />
-                Check Warranty by VIN
+                <FileText className="h-4 w-4 mr-2" />
+                View Warranty Records
               </Button>
             </div>
 
@@ -2466,28 +2522,20 @@ const SuperAdvisor = () => {
                             <Button
                               variant="outline"
                               size="sm"
+                              onClick={() => handleViewRecord(record)}
+                              className="text-green-600 hover:bg-green-50"
+                            >
+                              <FileText className="h-4 w-4 mr-1" />
+                              View Record
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
                               onClick={() => handleViewCaselines(record)}
                               className="text-blue-600 hover:bg-blue-50"
                             >
                               <FileText className="h-4 w-4 mr-1" />
                               View Caselines
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleEditRecord(record)}
-                            >
-                              <Edit className="h-4 w-4 mr-1" />
-                              Edit
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-red-600 hover:bg-red-50"
-                              onClick={() => handleDeleteRecord(record)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-1" />
-                              Delete
                             </Button>
                           </div>
                         </TableCell>
@@ -2498,11 +2546,7 @@ const SuperAdvisor = () => {
               </Table>
             </div>
 
-              {records.length > 0 && (
-              <div className="mt-4 text-center">
-                <Button variant="outline">View All Records</Button>
-              </div>
-            )}
+             
           </CardContent>
         </Card>
         )}
@@ -3286,44 +3330,6 @@ const SuperAdvisor = () => {
         )}
       </main>
 
-      {/* dialog search */}
-      <Dialog open={isDialogSearch} onOpenChange={setIsDialogSearch}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center space-x-2">
-              <Car className="h-5 w-5" />
-              <span>VIN Warranty</span>
-            </DialogTitle>
-            <DialogDescription>
-              Vehicle warranty information and coverage details
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4 py-4" >
-            <div className="grid gap-2">
-              <Label>VIN Number</Label>
-              <Input
-                id="vinNumber"
-                placeholder="VIN" 
-                value={vinData.vinNumber}
-                readOnly              
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Warranty Status</Label>
-              <Input
-                id="Status"
-                placeholder="Warranty status"
-                value={vinData.warrantyStatus}
-                readOnly
-              />
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-      
-
       {/* Nested New Case Dialog */}
       <Dialog open={isAddNewcaseOpen} onOpenChange={(open) => {
         setIsAddNewcaseOpen(open);
@@ -3405,131 +3411,6 @@ const SuperAdvisor = () => {
             }}>
               {editingCaseId ? 'Update Case' : 'Add Case'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* View/Edit Record Dialog */}
-      <Dialog open={isEditMode} onOpenChange={(open) => {
-        if (!open) setIsEditMode(false);
-      }}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>View Warranty Record</span>
-            </DialogTitle>
-            <DialogDescription>
-              View warranty details and update status
-            </DialogDescription>
-          </DialogHeader>
-
-          {isEditMode && (
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="edit-vinNumber">VIN Number</Label>
-                <Input
-                  id="edit-vinNumber"
-                  value={editRecord.vinNumber}
-                  readOnly
-                  className="bg-muted/50 cursor-default"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-visitorFullName">Visitor Full Name</Label>
-                <Input
-                  id="edit-visitorFullName"
-                  value={editRecord.visitorFullName}
-                  readOnly
-                  className="bg-muted/50 cursor-default"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-visitorPhone">Visitor Phone</Label>
-                <Input
-                  id="edit-visitorPhone"
-                  value={editRecord.visitorPhone}
-                  readOnly
-                  className="bg-muted/50 cursor-default font-mono"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-odometer">Odometer (km)</Label>
-                <Input
-                  id="edit-odometer"
-                  type="number"
-                  value={editRecord.odometer}
-                  readOnly
-                  className="bg-muted/50 cursor-default"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-status">Status *</Label>
-                <select
-                  id="edit-status"
-                  value={editRecord.rawStatus}
-                  onChange={(e) => setEditRecord({ 
-                    ...editRecord, 
-                    rawStatus: e.target.value,
-                    status: mapApiStatus(e.target.value)
-                  })}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="CHECKED_IN">Checked In</option>
-                  <option value="IN_DIAGNOSIS">In Diagnosis</option>
-                  <option value="WAITING_CUSTOMER_APPROVAL">Waiting Customer Approval</option>
-                  <option value="PROCESSING">Processing</option>
-                  <option value="READY_FOR_PICKUP">Ready for Pickup</option>
-                  <option value="COMPLETED">Completed</option>
-                  <option value="CANCELLED">Cancelled</option>
-                </select>
-              </div>
-
-              <div className="grid gap-2">
-                <div className="flex items-center justify-between mb-2">
-                  <Label>Cases ({editRecord.cases?.length || 0})</Label>
-                </div>
-                {editRecord.cases && editRecord.cases.length > 0 ? (
-                  <div className="space-y-2 max-h-60 overflow-y-auto border rounded-lg p-2">
-                    {editRecord.cases.map((caseNote, index) => (
-                      <div key={caseNote.id} className="p-3 bg-muted/50 rounded-md border">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Badge variant="outline" className="text-xs">Case {index + 1}</Badge>
-                            <span className="text-xs text-muted-foreground">{formatDate(caseNote.createdAt)}</span>
-                          </div>
-                          <p className="text-sm break-words">{caseNote.text}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="p-3 bg-muted/20 rounded-md border border-dashed">
-                    <p className="text-sm text-muted-foreground italic">No cases available.</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid gap-2">
-                <Label className="text-muted-foreground">Created Date</Label>
-                <p className="text-sm">{selectedRecord && formatDate(selectedRecord.createdAt)}</p>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-              <>
-                <Button variant="outline" onClick={() => setIsEditMode(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSaveEdit}>
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Save Changes
-                </Button>
-              </>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -4463,6 +4344,341 @@ const SuperAdvisor = () => {
                   </>
                 )}
               </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Record Details Dialog */}
+      <Dialog open={showViewRecordDialog} onOpenChange={setShowViewRecordDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <FileText className="h-5 w-5" />
+                <span>Processing Record Details</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefreshRecordDetails}
+                disabled={isLoadingRecordDetail}
+                className="ml-4"
+              >
+                {isLoadingRecordDetail ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                      <polyline points="23 4 23 10 17 10"></polyline>
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                    Refresh
+                  </>
+                )}
+              </Button>
+            </DialogTitle>
+            <DialogDescription>
+              Complete information from processing record
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            {isLoadingRecordDetail ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <span className="ml-3 text-muted-foreground">Loading record details...</span>
+              </div>
+            ) : viewRecordData ? (
+              <div className="space-y-6">
+                {/* Basic Information */}
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <h3 className="font-semibold text-lg mb-4 flex items-center">
+                    <Car className="h-5 w-5 mr-2 text-blue-600" />
+                    Basic Information
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs text-gray-600">VIN</Label>
+                      <p className="font-mono font-semibold text-sm">{viewRecordData.vin}</p>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-gray-600">Check-in Date</Label>
+                      <p className="text-sm">{viewRecordData.checkInDate ? new Date(viewRecordData.checkInDate).toLocaleString() : 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-gray-600">Odometer</Label>
+                      <p className="text-sm font-semibold">{viewRecordData.odometer?.toLocaleString()} km</p>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-gray-600">Status</Label>
+                      <div className="mt-1">
+                        {getRawStatusBadge(viewRecordData.status)}
+                      </div>
+                    </div>
+                    {viewRecordData.checkOutDate && (
+                      <div className="col-span-2">
+                        <Label className="text-xs text-gray-600">Check-out Date</Label>
+                        <p className="text-sm font-semibold text-green-600">
+                          {new Date(viewRecordData.checkOutDate).toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Vehicle Information */}
+                {viewRecordData.vehicle && (
+                  <div className="border rounded-lg p-4 bg-blue-50">
+                    <h3 className="font-semibold text-lg mb-4 flex items-center">
+                      <Car className="h-5 w-5 mr-2 text-blue-600" />
+                      Vehicle Information
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-xs text-blue-700">VIN</Label>
+                        <p className="font-mono text-sm">{viewRecordData.vehicle.vin}</p>
+                      </div>
+                      {viewRecordData.vehicle.model && (
+                        <>
+                          <div>
+                            <Label className="text-xs text-blue-700">Model</Label>
+                            <p className="text-sm font-semibold">{viewRecordData.vehicle.model.name}</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-blue-700">Model ID</Label>
+                            <p className="text-xs font-mono">{viewRecordData.vehicle.model.vehicleModelId}</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Technician Information */}
+                {viewRecordData.mainTechnician && (
+                  <div className="border rounded-lg p-4 bg-purple-50">
+                    <h3 className="font-semibold text-lg mb-4 flex items-center">
+                      <User className="h-5 w-5 mr-2 text-purple-600" />
+                      Main Technician
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-xs text-purple-700">Name</Label>
+                        <p className="text-sm font-semibold">{viewRecordData.mainTechnician.name}</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-purple-700">User ID</Label>
+                        <p className="text-xs font-mono">{viewRecordData.mainTechnician.userId}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Created By Staff */}
+                {viewRecordData.createdByStaff && (
+                  <div className="border rounded-lg p-4 bg-green-50">
+                    <h3 className="font-semibold text-lg mb-4 flex items-center">
+                      <User className="h-5 w-5 mr-2 text-green-600" />
+                      Created By
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-xs text-green-700">Name</Label>
+                        <p className="text-sm font-semibold">{viewRecordData.createdByStaff.name}</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-green-700">User ID</Label>
+                        <p className="text-xs font-mono">{viewRecordData.createdByStaff.userId}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Guarantee Cases */}
+                {viewRecordData.guaranteeCases && viewRecordData.guaranteeCases.length > 0 && (
+                  <div className="border rounded-lg p-4 bg-yellow-50">
+                    <h3 className="font-semibold text-lg mb-4 flex items-center justify-between">
+                      <div className="flex items-center">
+                        <Shield className="h-5 w-5 mr-2 text-yellow-600" />
+                        Guarantee Cases ({viewRecordData.guaranteeCases.length})
+                      </div>
+                      {areAllCaselinesCompleted() && (
+                        <Badge className="bg-green-100 text-green-800">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          All Caselines Completed
+                        </Badge>
+                      )}
+                    </h3>
+                    <div className="space-y-3">
+                      {viewRecordData.guaranteeCases.map((gCase: any, index: number) => (
+                        <div key={gCase.guaranteeCaseId || index} className="border border-yellow-200 rounded-lg p-3 bg-white">
+                          <div className="flex items-start justify-between mb-2">
+                            <Badge variant="outline" className="text-xs">
+                              Case #{index + 1}
+                            </Badge>
+                            <Badge className="bg-yellow-100 text-yellow-800 text-xs">
+                              {gCase.status}
+                            </Badge>
+                          </div>
+                          <div className="space-y-2">
+                            <div>
+                              <Label className="text-xs text-gray-600">Case ID</Label>
+                              <p className="text-xs font-mono">{gCase.guaranteeCaseId}</p>
+                            </div>
+                            <div>
+                              <Label className="text-xs text-gray-600">Content</Label>
+                              <p className="text-sm">{gCase.contentGuarantee}</p>
+                            </div>
+                            {/* Caselines Details */}
+                            {gCase.caseLines && gCase.caseLines.length > 0 && (
+                              <div className="mt-3 pt-3 border-t">
+                                <Label className="text-xs text-gray-600 mb-2 block font-semibold">
+                                  Caselines ({gCase.caseLines.length})
+                                </Label>
+                                <div className="space-y-3">
+                                  {gCase.caseLines.map((caseline: any, caselineIndex: number) => (
+                                    <div 
+                                      key={caseline.id || caselineIndex} 
+                                      className={`border rounded-lg p-3 ${
+                                        caseline.status === 'COMPLETED' 
+                                          ? 'bg-green-50 border-green-300' 
+                                          : 'bg-gray-50 border-gray-300'
+                                      }`}
+                                    >
+                                      {/* Caseline Header */}
+                                      <div className="flex items-center justify-between mb-2">
+                                        <Badge variant="outline" className="text-xs">
+                                          Caseline #{caselineIndex + 1}
+                                        </Badge>
+                                        <Badge className={
+                                          caseline.status === 'COMPLETED' 
+                                            ? 'bg-green-100 text-green-800 border-green-300' 
+                                            : caseline.status === 'IN_PROGRESS'
+                                            ? 'bg-blue-100 text-blue-800'
+                                            : caseline.status === 'PENDING_APPROVAL'
+                                            ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                                            : 'bg-gray-100 text-gray-800'
+                                        }>
+                                          {caseline.status === 'COMPLETED' ? (
+                                            <>
+                                              <CheckCircle className="h-3 w-3 mr-1" />
+                                              COMPLETED
+                                            </>
+                                          ) : (
+                                            caseline.status || 'PENDING'
+                                          )}
+                                        </Badge>
+                                      </div>
+
+                                      {/* Caseline Content */}
+                                      <div className="space-y-2 text-xs">
+                                        {/* Diagnosis */}
+                                        {caseline.diagnosisText && (
+                                          <div>
+                                            <Label className="text-xs text-gray-600 font-semibold">Diagnosis:</Label>
+                                            <p className="text-sm mt-1 text-gray-800">{caseline.diagnosisText}</p>
+                                          </div>
+                                        )}
+
+                                        {/* Correction */}
+                                        {caseline.correctionText && (
+                                          <div>
+                                            <Label className="text-xs text-gray-600 font-semibold">Correction:</Label>
+                                            <p className="text-sm mt-1 text-gray-800">{caseline.correctionText}</p>
+                                          </div>
+                                        )}
+
+                                        {/* Quantity */}
+                                        {caseline.quantity && (
+                                          <div>
+                                            <Label className="text-xs text-gray-600 font-semibold">Quantity:</Label>
+                                            <p className="text-sm mt-1 text-gray-800">{caseline.quantity}</p>
+                                          </div>
+                                        )}
+
+                                        {/* Warranty Status */}
+                                        {caseline.warrantyStatus && (
+                                          <div>
+                                            <Label className="text-xs text-gray-600 font-semibold">Warranty Status:</Label>
+                                            <Badge className={
+                                              caseline.warrantyStatus === 'UNDER_WARRANTY' 
+                                                ? 'bg-green-100 text-green-800 ml-2' 
+                                                : 'bg-red-100 text-red-800 ml-2'
+                                            }>
+                                              {caseline.warrantyStatus === 'UNDER_WARRANTY' ? 'Under Warranty' : 'Out of Warranty'}
+                                            </Badge>
+                                          </div>
+                                        )}
+
+                                        {/* Rejection Reason */}
+                                        {caseline.rejectionReason && (
+                                          <div className="bg-red-50 border border-red-200 rounded p-2 mt-2">
+                                            <Label className="text-xs text-red-700 font-semibold">Rejection Reason:</Label>
+                                            <p className="text-sm text-red-900 mt-1">{caseline.rejectionReason}</p>
+                                          </div>
+                                        )}
+
+                                        {/* Technician IDs */}
+                                        <div className="flex gap-4 text-xs text-gray-500 pt-2 border-t">
+                                          {caseline.diagnosticTechId && (
+                                            <span>Diagnostic Tech: {caseline.diagnosticTechId}</span>
+                                          )}
+                                          {caseline.repairTechId && (
+                                            <span>Repair Tech: {caseline.repairTechId}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-lg">
+                <FileText className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-gray-600 font-medium">No Data Available</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowViewRecordDialog(false)}>
+              Close
+            </Button>
+            {viewRecordData && viewRecordData.status !== 'COMPLETED' && (
+              <>
+                {!areAllCaselinesCompleted() && (
+                  <div className="flex items-center text-sm text-yellow-600 mr-4">
+                    <Clock className="h-4 w-4 mr-2" />
+                    All caselines must be completed first
+                  </div>
+                )}
+                <Button 
+                  onClick={handleCompleteRecord}
+                  disabled={isCompletingRecord || !areAllCaselinesCompleted()}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {isCompletingRecord ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Completing...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Complete Record
+                    </>
+                  )}
+                </Button>
+              </>
             )}
           </DialogFooter>
         </DialogContent>

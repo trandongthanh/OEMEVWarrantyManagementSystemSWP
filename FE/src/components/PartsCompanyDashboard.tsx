@@ -10,14 +10,13 @@ import { useNavigate } from "react-router-dom";
 import {
   Package,
   LogOut,
-  Warehouse as WarehouseIcon,
+  Building2,
   Eye,
   Loader2,
   Calendar,
   User,
   Warehouse,
-  Truck,
-  CheckCircle
+  Truck
 } from "lucide-react";
 
 const API_BASE_URL = 'http://localhost:3000/api/v1';
@@ -60,7 +59,7 @@ interface StockTransferRequest {
   }>;
 }
 
-const PartsCoordinatorDashboard: React.FC = () => {
+const PartsCompanyDashboard: React.FC = () => {
   const { user, logout, getToken } = useAuth();
   const navigate = useNavigate();
 
@@ -68,7 +67,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
   const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
   const [isLoadingRequests, setIsLoadingRequests] = useState<boolean>(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
-  const [isReceiving, setIsReceiving] = useState<boolean>(false);
+  const [isShipping, setIsShipping] = useState<boolean>(false);
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
 
   // Fetch all stock transfer requests
@@ -136,23 +135,23 @@ const PartsCoordinatorDashboard: React.FC = () => {
     fetchStockTransferRequests();
   }, []);
 
-  // Receive stock transfer request
-  const handleReceiveRequest = async (requestId: string) => {
-    setIsReceiving(true);
+  // Ship stock transfer request
+  const handleShipRequest = async (requestId: string) => {
+    setIsShipping(true);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
-      setIsReceiving(false);
+      setIsShipping(false);
       return;
     }
     try {
       const response = await axios.patch(
-        `${API_BASE_URL}/stock-transfer-requests/${requestId}/receive`,
+        `${API_BASE_URL}/stock-transfer-requests/${requestId}/ship`,
         {},
         {
           headers: { Authorization: `Bearer ${token}` }
         }
       );
-      console.log('✅ Request received successfully:', response.data);
+      console.log('✅ Request shipped successfully:', response.data);
       
       // Refresh the list
       await fetchStockTransferRequests();
@@ -162,13 +161,13 @@ const PartsCoordinatorDashboard: React.FC = () => {
         await fetchStockTransferRequestDetail(requestId);
       }
       
-      alert('Request received successfully!');
+      alert('Request shipped successfully!');
     } catch (error: any) {
-      console.error('Failed to receive request:', error);
-      const errorMessage = error.response?.data?.message || 'Failed to receive request';
+      console.error('Failed to ship request:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to ship request';
       alert(`Error: ${errorMessage}`);
     } finally {
-      setIsReceiving(false);
+      setIsShipping(false);
     }
   };
 
@@ -225,7 +224,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
                   <Package className="h-6 w-6 text-primary-foreground" />
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold text-foreground">Parts Coordinator Dashboard</h1>
+                  <h1 className="text-xl font-bold text-foreground">Parts Company Dashboard</h1>
                   <p className="text-sm text-muted-foreground">
                     Welcome, {user?.name || 'Parts Coordinator'}
                   </p>
@@ -233,8 +232,8 @@ const PartsCoordinatorDashboard: React.FC = () => {
               </div>
               <div className="flex items-center space-x-3">
                 <Badge variant="outline" className="text-xs">
-                  <WarehouseIcon className="mr-1 h-3 w-3" />
-                  Parts Coordinator Service Center
+                  <Building2 className="mr-1 h-3 w-3" />
+                  Parts Coordinator Company
                 </Badge>
                 <Button variant="outline" onClick={handleLogout}>
                   <LogOut className="mr-2 h-4 w-4" />
@@ -251,7 +250,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
             <CardHeader>
               <CardTitle>Stock Transfer Requests</CardTitle>
               <CardDescription>
-                View stock transfer requests for your service center
+                Manage stock transfer requests from service centers
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -318,15 +317,15 @@ const PartsCoordinatorDashboard: React.FC = () => {
                                 <Eye className="mr-1 h-3 w-3" />
                                 View Details
                               </Button>
-                              {request.status === 'SHIPPED' && (
+                              {request.status === 'APPROVED' && (
                                 <Button
                                   size="sm"
                                   variant="default"
-                                  onClick={() => handleReceiveRequest(request.id)}
-                                  disabled={isReceiving}
+                                  onClick={() => handleShipRequest(request.id)}
+                                  disabled={isShipping}
                                 >
-                                  <CheckCircle className="mr-1 h-3 w-3" />
-                                  {isReceiving ? 'Receiving...' : 'Receive'}
+                                  <Truck className="mr-1 h-3 w-3" />
+                                  {isShipping ? 'Shipping...' : 'Ship'}
                                 </Button>
                               )}
                             </div>
@@ -347,15 +346,15 @@ const PartsCoordinatorDashboard: React.FC = () => {
             <DialogHeader>
               <DialogTitle className="flex items-center justify-between">
                 <span>Stock Transfer Request Details</span>
-                {selectedStockRequest && selectedStockRequest.status === 'SHIPPED' && (
+                {selectedStockRequest && selectedStockRequest.status === 'APPROVED' && (
                   <Button
                     size="sm"
                     variant="default"
-                    onClick={() => handleReceiveRequest(selectedStockRequest.id)}
-                    disabled={isReceiving}
+                    onClick={() => handleShipRequest(selectedStockRequest.id)}
+                    disabled={isShipping}
                   >
-                    <CheckCircle className="mr-1 h-4 w-4" />
-                    {isReceiving ? 'Receiving...' : 'Receive Request'}
+                    <Truck className="mr-1 h-4 w-4" />
+                    {isShipping ? 'Shipping...' : 'Ship Request'}
                   </Button>
                 )}
               </DialogTitle>
@@ -514,4 +513,4 @@ const PartsCoordinatorDashboard: React.FC = () => {
   );
 };
 
-export default PartsCoordinatorDashboard;
+export default PartsCompanyDashboard;

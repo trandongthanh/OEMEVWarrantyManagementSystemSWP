@@ -17,6 +17,7 @@ import CampaignProgress from "./components/CampaignProgress";
 import WarrantyClaims from "./components/WarrantyClaims";
 import WarrantyClaimDetail from "./components/WarrantyClaimDetail";
 import WarrantyDashboard from "./components/WarrantyDashboard";
+import PartsCompanyDashboard from "./components/PartsCompanyDashboard";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 const queryClient = new QueryClient();
@@ -79,6 +80,11 @@ const App = () => (
             <Route path="/warranty-dashboard" element={
               <ProtectedRoute allowedRoles={['emv_admin', 'emv_staff']}>
                 <WarrantyDashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/parts-company" element={
+              <ProtectedRoute allowedRoles={['parts_coordinator_company']}>
+                <PartsCompanyDashboard />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
