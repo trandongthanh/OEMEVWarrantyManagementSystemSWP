@@ -54,7 +54,7 @@ export const updateCaselineBodySchema = Joi.object({
 });
 
 export const getCaseLineByIdParamsSchema = Joi.object({
-  caseId: Joi.string().uuid({ version: "uuidv4" }).required(),
+  // caseId: Joi.string().uuid({ version: "uuidv4" }).required(),
   caselineId: Joi.string().uuid({ version: "uuidv4" }).required(),
 });
 

@@ -54,11 +54,12 @@ class CaseLineService {
     companyId,
   }) => {
     const rawResult = await db.sequelize.transaction(async (transaction) => {
-      const guaranteeCase = await this.#validateGuaranteeCaseForCaseLines(
-        guaranteeCaseId,
-        transaction,
-        techId
-      );
+      const guaranteeCase =
+        await this.#validateInputGuaranteeCaseAndTechnicianForCaseLines(
+          guaranteeCaseId,
+          transaction,
+          techId
+        );
 
       const typeComponents =
         await this.#warehouseService.searchCompatibleComponentsInStock({
@@ -214,9 +215,7 @@ class CaseLineService {
   };
 
   getCaseLineById = async (
-    userId,
-    roleName,
-    caselineId,
+    { userId, roleName, caselineId, companyId, serviceCenterId },
     transaction = null,
     lock = null
   ) => {
@@ -230,17 +229,52 @@ class CaseLineService {
       throw new NotFoundError("Case line not found");
     }
 
-    const isDiagnosticTech = caseLine.diagnosticTechnician.userId === userId;
-
-    const repairTech = caseLine.repairTechnician?.repairTechId === userId;
+    const diagnosticTechId = caseLine?.diagnosticTechnician?.userId || null;
+    const repairTechId = caseLine?.repairTechnician?.userId || null;
 
     if (roleName === "service_center_technician") {
-      if (!isDiagnosticTech && !repairTech) {
+      if (diagnosticTechId !== userId && repairTechId !== userId) {
         throw new ForbiddenError(
           "User does not have permission to access this case line"
         );
       }
     }
+
+    const createdByStaff =
+      caseLine.guaranteeCase?.vehicleProcessingRecord?.createdByStaff;
+
+    const recordServiceCenterId = createdByStaff?.serviceCenterId || null;
+    const recordCompanyId =
+      createdByStaff?.vehicleCompanyId ||
+      createdByStaff?.serviceCenter?.vehicleCompanyId ||
+      null;
+
+    const serviceCenterRoles = [
+      "service_center_technician",
+      "service_center_staff",
+      "service_center_manager",
+    ];
+
+    if (serviceCenterRoles.includes(roleName)) {
+      if (!serviceCenterId || !recordServiceCenterId) {
+        throw new ForbiddenError(
+          "Unable to verify service center ownership for this case line"
+        );
+      }
+
+      if (recordServiceCenterId !== serviceCenterId) {
+        throw new ForbiddenError(
+          "User does not have permission to access this case line"
+        );
+      }
+    }
+
+    if (companyId && recordCompanyId && recordCompanyId !== companyId) {
+      throw new ForbiddenError(
+        "User does not have permission to access this case line"
+      );
+    }
+
     return caseLine;
   };
 
@@ -1041,7 +1075,7 @@ class CaseLineService {
     return reservations;
   };
 
-  #validateGuaranteeCaseForCaseLines = async (
+  #validateInputGuaranteeCaseAndTechnicianForCaseLines = async (
     guaranteeCaseId,
     transaction,
     techId

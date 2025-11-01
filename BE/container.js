@@ -56,6 +56,7 @@ import ComponentReservationsController from "./src/api/controller/componentReser
 import ComponentReservationService from "./src/service/componentReservation.service.js";
 import WarehouseController from "./src/api/controller/warehouse.controller.js";
 import TypeComponentRepository from "./src/repository/typeComponent.repository.js";
+import InventoryAdjustmentRepository from "./src/repository/inventoryAdjustment.repository.js";
 
 const container = createContainer();
 
@@ -199,6 +200,9 @@ export function setupContainer({ io, notificationNamespace, chatNamespace }) {
       lifetime: Lifetime.SCOPED,
     }),
     workScheduleRepository: asClass(WorkScheduleRepository, {
+      lifetime: Lifetime.SCOPED,
+    }),
+    inventoryAdjustmentRepository: asClass(InventoryAdjustmentRepository, {
       lifetime: Lifetime.SCOPED,
     }),
   });
