@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import type { AxiosResponse } from "axios";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -835,14 +836,14 @@ const TechnicianDashboard = ({
       
       // Call API to get case lines where repairTechId matches current user
       // Try without status filter first to see all case lines
-      const response = await apiService.get<{ status: string; data: { caseLines: AssignedCaseLine[]; pagination?: { page: number; limit: number; total: number } } }>('/case-lines', {
+      const response = await apiService.get('/case-lines', {
         params: {
           repairTechId: user.id,
           // status: 'IN_REPAIR,READY_FOR_REPAIR,PENDING', // Comment out to see all
           sortBy: 'createdAt',
           sortOrder: 'DESC'
         }
-      });
+      }) as AxiosResponse<{ status: string; data: { caseLines: AssignedCaseLine[]; pagination?: { page: number; limit: number; total: number } } }>;
       
       console.log('📦 Full API Response:', JSON.stringify(response.data, null, 2));
       console.log('📊 Case Lines:', response.data?.data?.caseLines);
@@ -1311,7 +1312,7 @@ const TechnicianDashboard = ({
         photoFiles: [], // No need to store files anymore
         createdDate: new Date(serverCreatedCaseLines[0].createdAt).toLocaleDateString('en-GB'),
         status: serverCreatedCaseLines[0].status === 'pending' ? 'submitted' : 'approved',
-        evidenceImageUrls // Store Cloudinary URLs
+        evidenceImageUrls: evidenceImageUrls // Store Cloudinary URLs
       };
 
       // Ensure no duplicate caseLine IDs in UI list
@@ -1692,9 +1693,8 @@ const TechnicianDashboard = ({
       <div className="container mx-auto px-6 py-6">
       
   <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3">
                       <TabsTrigger value="processing-records">Processing Records</TabsTrigger>
-                      <TabsTrigger value="case-lines">Issue Diagnosis</TabsTrigger>
                       <TabsTrigger value="assigned-tasks">Assigned Tasks</TabsTrigger>
                       <TabsTrigger value="work-schedules">Work Schedules</TabsTrigger>
                     </TabsList>
@@ -1881,121 +1881,6 @@ const TechnicianDashboard = ({
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
-
-          {/* Issue Diagnosis Tab */}
-          <TabsContent value="case-lines" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>My Issue Diagnoses</CardTitle>
-                <CardDescription>
-                  View and manage issue diagnoses you've created for warranty cases
-                </CardDescription>
-                {/* Bulk delete removed per request */}
-              </CardHeader>
-              <CardContent>
-                {caseLines.length === 0 ? (
-                  <div className="text-center py-12">
-                    <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-foreground mb-2">No Issue Diagnoses Yet</h3>
-                    <p className="text-muted-foreground mb-6">
-                      Create issue diagnoses by clicking the green "+" button on warranty cases
-                    </p>
-                  </div>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Diagnosis ID</TableHead>
-                        <TableHead>Case ID</TableHead>
-                        <TableHead>Damage Level</TableHead>
-                        <TableHead>Repair Possibility</TableHead>
-                        <TableHead>Decision</TableHead>
-                        <TableHead>Photos</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {caseLines.filter(cl => !isCaseLineCompleted(cl.status)).map((caseLine) => (
-                        <TableRow key={caseLine.id}>
-                          <TableCell className="font-mono text-sm">
-                            {caseLine.id}
-                          </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {caseLine.caseId}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="capitalize">
-                              {caseLine.damageLevel}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={caseLine.repairPossibility === 'repairable' ? 'default' : 'destructive'}>
-                              {caseLine.repairPossibility}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={
-                              caseLine.warrantyDecision === 'approved' ? 'default' :
-                              caseLine.warrantyDecision === 'rejected' ? 'destructive' :
-                              'secondary'
-                            }>
-                              {caseLine.warrantyDecision}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              <Camera className="h-4 w-4 text-gray-500" />
-                              <span className="text-sm">{caseLine.photos.length}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={
-                              caseLine.status === 'submitted' ? 'default' :
-                              caseLine.status === 'approved' ? 'default' :
-                              caseLine.status === 'rejected' ? 'destructive' :
-                              'secondary'
-                            }>
-                              {caseLine.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {caseLine.createdDate}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-1">
-                              <Button 
-                                onClick={() => handleViewCaseLine(caseLine)}
-                                variant="outline" 
-                                size="sm"
-                                title="View Details"
-                              >
-                                <Eye className="h-3 w-3" />
-                              </Button>
-
-                              {/* Delete removed: no Remove button shown in UI */}
-
-                              {caseLine.status === 'draft' && (
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  title="Edit"
-                                >
-                                  <Settings className="h-3 w-3" />
-                                </Button>
-                              )}
-                              
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
           </TabsContent>
 
           {/* Assigned Tasks Tab */}
