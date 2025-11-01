@@ -36,6 +36,19 @@ interface StockTransferRequest {
   };
 }
 
+interface CaselineInfo {
+  caselineId: string;
+  diagnosisText: string;
+  correctionText: string;
+  typeComponent: {
+    name: string;
+    sku: string;
+    category: string;
+    description?: string;
+    price?: number;
+  };
+}
+
 interface TypeComponentInfo {
   typeComponentId: string;
   name: string;
@@ -53,6 +66,7 @@ interface StockTransferRequestDetail extends StockTransferRequest {
     quantityApproved?: number | null;
     caselineId?: string;
     typeComponent?: TypeComponentInfo; // Thông tin chi tiết component
+    caselineInfo?: CaselineInfo; // Thông tin caseline
   }>;
 }
 
@@ -140,6 +154,54 @@ const WarrantyDashboard: React.FC = () => {
     fetchStockTransferRequests();
   };
 
+  // Fetch caseline info for a single item
+  const fetchCaselineInfo = async (caselineId: string, token: string): Promise<CaselineInfo | null> => {
+    try {
+      console.log(`🔍 Fetching caseline info for: ${caselineId}`);
+      
+      const response = await fetch(`${API_BASE_URL}/case-lines/${caselineId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const data = await response.json();
+      console.log(`📋 Caseline API Response for ${caselineId}:`, data);
+      
+      if (!response.ok) {
+        console.warn(`⚠️ Failed to fetch caseline ${caselineId}:`, response.status, data);
+        return null;
+      }
+      
+      // Extract caseline info from API response (backend returns 'caseLine' not 'caseline')
+      if (data.status === 'success' && data.data?.caseLine) {
+        const caseline = data.data.caseLine;
+        console.log(`✅ Caseline data:`, caseline);
+        console.log(`📦 TypeComponent:`, caseline.typeComponent);
+        
+        return {
+          caselineId: caseline.id,
+          diagnosisText: caseline.diagnosisText || 'N/A',
+          correctionText: caseline.correctionText || 'N/A',
+          typeComponent: {
+            name: caseline.typeComponent?.name || 'N/A',
+            sku: caseline.typeComponent?.sku || 'N/A',
+            category: caseline.typeComponent?.category || 'N/A',
+            description: caseline.typeComponent?.description,
+            price: caseline.typeComponent?.price
+          }
+        };
+      }
+      
+      console.warn(`⚠️ Unexpected caseline response structure:`, data);
+      return null;
+    } catch (error) {
+      console.error(`💥 Error fetching caseline ${caselineId}:`, error);
+      return null;
+    }
+  };
+
   const fetchRequestDetail = async (requestId: string) => {
     setIsLoadingDetail(true);
     try {
@@ -173,6 +235,23 @@ const WarrantyDashboard: React.FC = () => {
           itemsCount: requestDetail.items?.length || 0,
           items: requestDetail.items
         });
+        
+        // Fetch caseline info for each item that has a caselineId
+        if (requestDetail.items && requestDetail.items.length > 0) {
+          console.log('🔄 Fetching caseline info for items...');
+          const itemsWithCaselineInfo = await Promise.all(
+            requestDetail.items.map(async (item: any) => {
+              if (item.caselineId) {
+                const caselineInfo = await fetchCaselineInfo(item.caselineId, token || '');
+                return { ...item, caselineInfo };
+              }
+              return item;
+            })
+          );
+          
+          requestDetail.items = itemsWithCaselineInfo;
+          console.log('✅ Caseline info loaded for items');
+        }
         
         setSelectedRequest(requestDetail);
         setIsDetailDialogOpen(true);
@@ -542,7 +621,6 @@ const WarrantyDashboard: React.FC = () => {
                       <div>
                         <span className="text-xs text-gray-500">Requesting Warehouse:</span>
                         <p className="font-medium">🏢 {selectedRequest.requestingWarehouse.name}</p>
-                        <p className="text-sm text-gray-600">ID: {selectedRequest.requestingWarehouse.warehouseId.substring(0, 8)}...</p>
                       </div>
                     )}
                   </CardContent>
@@ -557,7 +635,6 @@ const WarrantyDashboard: React.FC = () => {
                       <div>
                         <span className="text-xs text-gray-500">Requested By:</span>
                         <p className="font-medium">👤 {selectedRequest.requester.name}</p>
-                        <p className="text-sm text-gray-600">User ID: {selectedRequest.requester.userId.substring(0, 8)}...</p>
                       </div>
                     )}
                     <div>
@@ -582,52 +659,66 @@ const WarrantyDashboard: React.FC = () => {
                   <CardContent>
                     <div className="space-y-4">
                       {selectedRequest.items.map((item) => (
-                        <div key={item.id} className="border rounded-lg p-4 space-y-3 hover:shadow-md transition-shadow bg-gray-50">
-                          {/* Top Row: Request ID & Type Component ID */}
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <span className="text-xs text-gray-500 block mb-1">Request ID</span>
-                              <span className="text-sm font-medium text-gray-900">
-                                #{item.requestId?.substring(0, 8) || 'N/A'}...
-                              </span>
-                            </div>
-                            <div>
-                              <span className="text-xs text-gray-500 block mb-1">Type Component ID</span>
-                              {item.typeComponentId ? (
-                                <div className="flex items-center gap-1">
-                                  <span className="text-sm font-mono text-indigo-600">
-                                    #{item.typeComponentId.substring(0, 8)}...
-                                  </span>
-                                  <button
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(item.typeComponentId || '');
-                                      alert('Copied to clipboard!');
-                                    }}
-                                    className="text-xs text-gray-400 hover:text-gray-600"
-                                    title="Copy full ID"
-                                  >
-                                    📋
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="text-sm text-gray-400 italic">N/A</span>
-                              )}
-                            </div>
+                        <div key={item.id} className="border rounded-lg p-4 space-y-3 hover:shadow-md transition-shadow bg-white">
+                          {/* Request ID */}
+                          <div className="pb-2 border-b">
+                            <span className="text-xs text-gray-500">Request ID:</span>
+                            <p className="text-sm font-medium text-gray-900 mt-1">
+                              #{item.id.substring(0, 8)}...
+                            </p>
                           </div>
-                          
-                          {/* Bottom Row: Quantity Requested & Caseline ID */}
-                          <div className="grid grid-cols-2 gap-3 pt-3 border-t">
-                            <div>
-                              <span className="text-xs text-gray-500 block mb-1">Quantity Requested</span>
+
+                          {/* Type Component Section */}
+                          {item.caselineInfo ? (
+                            <div className="bg-blue-50 p-3 rounded-lg space-y-2">
+                              <h4 className="text-sm font-semibold text-blue-800 mb-2">📦 Type Component</h4>
+                              
+                              <div>
+                                <span className="text-xs text-gray-600">Name:</span>
+                                <p className="font-medium text-gray-900">{item.caselineInfo.typeComponent.name}</p>
+                              </div>
+                              
+                              <div>
+                                <span className="text-xs text-gray-600">SKU:</span>
+                                <p className="font-medium text-gray-900">{item.caselineInfo.typeComponent.sku}</p>
+                              </div>
+                              
+                              {item.caselineInfo.typeComponent.price && (
+                                <div>
+                                  <span className="text-xs text-gray-600">Price:</span>
+                                  <p className="font-medium text-green-600">${item.caselineInfo.typeComponent.price.toFixed(2)}</p>
+                                </div>
+                              )}
+                              
+                              <div className="pt-2 border-t border-blue-200">
+                                <span className="text-xs text-gray-600">🔍 Diagnosis:</span>
+                                <p className="text-sm text-gray-700 mt-1">{item.caselineInfo.diagnosisText}</p>
+                              </div>
+                              
+                              <div className="pt-2 border-t border-blue-200">
+                                <span className="text-xs text-gray-600">🔧 Correction:</span>
+                                <p className="text-sm text-gray-700 mt-1">{item.caselineInfo.correctionText}</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="bg-gray-100 p-3 rounded-lg">
+                              <p className="text-sm text-gray-500 italic">Component information not available</p>
+                            </div>
+                          )}
+
+                          {/* Quantity Requested & Caseline ID */}
+                          <div className="grid grid-cols-2 gap-3 pt-2">
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-xs text-gray-500">Quantity Requested:</span>
                               <div className="flex flex-col gap-1">
-                                <span className="font-bold text-blue-600 text-xl">{item.quantityRequested}</span>
+                                <span className="font-bold text-blue-600 text-lg">{item.quantityRequested}</span>
                                 {item.quantityApproved !== null && item.quantityApproved !== undefined && (
                                   <span className="text-xs text-green-600 font-medium">✓ Approved: {item.quantityApproved}</span>
                                 )}
                               </div>
                             </div>
-                            <div>
-                              <span className="text-xs text-gray-500 block mb-1">Caseline ID</span>
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-xs text-gray-500">Caseline ID:</span>
                               {item.caselineId ? (
                                 <span className="text-sm font-medium text-gray-900">
                                   #{item.caselineId.substring(0, 8)}...
