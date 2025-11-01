@@ -9,6 +9,7 @@ const {
   ComponentReservation,
   Component,
   VehicleProcessingRecord,
+  ServiceCenter,
 } = db;
 
 class CaseLineRepository {
@@ -124,6 +125,22 @@ class CaseLineRepository {
               as: "vehicleProcessingRecord",
               attributes: ["vehicleProcessingRecordId", "vin"],
               required: true,
+              include: [
+                {
+                  model: User,
+                  as: "createdByStaff",
+                  attributes: ["userId", "serviceCenterId", "vehicleCompanyId"],
+                  required: false,
+                  include: [
+                    {
+                      model: ServiceCenter,
+                      as: "serviceCenter",
+                      attributes: ["serviceCenterId", "vehicleCompanyId"],
+                      required: false,
+                    },
+                  ],
+                },
+              ],
             },
           ],
         },
@@ -276,8 +293,16 @@ class CaseLineRepository {
             {
               model: VehicleProcessingRecord,
               as: "vehicleProcessingRecord",
-              attributes: ["vin"],
+              attributes: ["vehicleProcessingRecordId", "vin"],
               required: true,
+              include: [
+                {
+                  model: User,
+                  as: "createdByStaff",
+                  attributes: ["userId", "serviceCenterId"],
+                  required: false,
+                },
+              ],
             },
           ],
         },
