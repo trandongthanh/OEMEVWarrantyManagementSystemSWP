@@ -13,36 +13,47 @@ import { useAuth } from "@/contexts/AuthContext";
 const API_BASE_URL = 'http://localhost:3000/api/v1';
 
 interface StockTransferRequest {
-  id: number;
-  requestingWarehouseId: number;
-  requestedByUserId: number;
+  id: string; // UUID from API
+  requestingWarehouseId: string; // UUID from API
+  requestedByUserId: string; // UUID from API
   requestedAt: string;
-  approvedByUserId: number | null;
+  approvedByUserId: string | null; // UUID from API
+  rejectedByUserId?: string | null;
+  cancelledByUserId?: string | null;
   status: string;
+  createdAt?: string;
+  updatedAt?: string;
+  requester?: {
+    userId: string;
+    name: string;
+    serviceCenterId?: string;
+  };
+  requestingWarehouse?: {
+    warehouseId: string;
+    name: string;
+    serviceCenterId?: string;
+    vehicleCompanyId?: string;
+  };
+}
+
+interface TypeComponentInfo {
+  typeComponentId: string;
+  name: string;
+  sku: string;
+  category: string;
+  price?: number;
 }
 
 interface StockTransferRequestDetail extends StockTransferRequest {
   items?: Array<{
-    id: number;
-    componentId: number;
-    requestedQuantity: number;
-    approvedQuantity?: number;
+    id: string;
+    requestId?: string;
+    typeComponentId?: string;
+    quantityRequested: number;
+    quantityApproved?: number | null;
+    caselineId?: string;
+    typeComponent?: TypeComponentInfo; // Thông tin chi tiết component
   }>;
-  warehouse?: {
-    id: number;
-    name: string;
-    address: string;
-  };
-  requestedByUser?: {
-    id: string;
-    name: string;
-    email: string;
-  };
-  approvedByUser?: {
-    id: string;
-    name: string;
-    email: string;
-  } | null;
 }
 
 const WarrantyDashboard: React.FC = () => {
@@ -56,6 +67,9 @@ const WarrantyDashboard: React.FC = () => {
   const [selectedRequest, setSelectedRequest] = useState<StockTransferRequestDetail | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState<boolean>(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
+  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState<boolean>(false);
+  const [rejectionReason, setRejectionReason] = useState<string>('');
+  const [isRejecting, setIsRejecting] = useState<boolean>(false);
   const { user } = useAuth();
   
   useEffect(() => {
@@ -68,11 +82,25 @@ const WarrantyDashboard: React.FC = () => {
   const fetchStockTransferRequests = async () => {
     setIsLoadingTransfers(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('ev_warranty_token');
+      
+      if (!token) {
+        console.error('❌ No authentication token found');
+        alert('Authentication token not found. Please login again.');
+        navigate('/login');
+        return;
+      }
+      
       const queryParams = new URLSearchParams({
         page: page.toString(),
         limit: limit.toString(),
         status: status
+      });
+      
+      console.log('🔍 Fetching stock transfer requests:', {
+        page,
+        limit,
+        status
       });
       
       const response = await fetch(`${API_BASE_URL}/stock-transfer-requests?${queryParams}`, {
@@ -82,82 +110,26 @@ const WarrantyDashboard: React.FC = () => {
         }
       });
       
+      const data = await response.json();
+      console.log('📦 API Response:', data);
+      
       if (!response.ok) {
-        console.warn(`API returned status ${response.status}. Using mock data for testing.`);
-        // Use mock data for testing
-        const mockData: StockTransferRequest[] = [
-          {
-            id: 1,
-            requestingWarehouseId: 3,
-            requestedByUserId: 5,
-            requestedAt: "2025-10-31T02:22:20.725Z",
-            approvedByUserId: null,
-            status: "PENDING_APPROVAL"
-          },
-          {
-            id: 2,
-            requestingWarehouseId: 7,
-            requestedByUserId: 12,
-            requestedAt: "2025-10-30T14:15:10.500Z",
-            approvedByUserId: 8,
-            status: "APPROVED"
-          },
-          {
-            id: 3,
-            requestingWarehouseId: 2,
-            requestedByUserId: 9,
-            requestedAt: "2025-10-29T09:45:30.123Z",
-            approvedByUserId: null,
-            status: "PENDING_APPROVAL"
-          }
-        ];
-        setStockTransferRequests(mockData);
-        setTotalPages(1);
-        setIsLoadingTransfers(false);
-        return;
+        console.error('❌ API Error:', response.status, data);
+        throw new Error(data.message || `API returned status ${response.status}`);
       }
       
-      const data = await response.json();
-      
-      // Handle both paginated and non-paginated responses
-      if (data.data && Array.isArray(data.data)) {
-        setStockTransferRequests(data.data);
-        if (data.totalPages) setTotalPages(data.totalPages);
-      } else if (Array.isArray(data)) {
-        setStockTransferRequests(data);
+      // Handle API response structure: { status: "success", data: { stockTransferRequests: [...] } }
+      if (data.status === 'success' && data.data?.stockTransferRequests) {
+        setStockTransferRequests(data.data.stockTransferRequests);
+        setTotalPages(data.data.totalPages || 1);
       } else {
         setStockTransferRequests([]);
+        setTotalPages(1);
       }
     } catch (error) {
-      console.error('Error fetching stock transfer requests:', error);
-      // Use mock data on error
-      const mockData: StockTransferRequest[] = [
-        {
-          id: 1,
-          requestingWarehouseId: 3,
-          requestedByUserId: 5,
-          requestedAt: "2025-10-31T02:22:20.725Z",
-          approvedByUserId: null,
-          status: "PENDING_APPROVAL"
-        },
-        {
-          id: 2,
-          requestingWarehouseId: 7,
-          requestedByUserId: 12,
-          requestedAt: "2025-10-30T14:15:10.500Z",
-          approvedByUserId: 8,
-          status: "APPROVED"
-        },
-        {
-          id: 3,
-          requestingWarehouseId: 2,
-          requestedByUserId: 9,
-          requestedAt: "2025-10-29T09:45:30.123Z",
-          approvedByUserId: null,
-          status: "PENDING_APPROVAL"
-        }
-      ];
-      setStockTransferRequests(mockData);
+      console.error('💥 Error fetching stock transfer requests:', error);
+      alert(`Error: ${error instanceof Error ? error.message : 'Failed to load data'}`);
+      setStockTransferRequests([]);
       setTotalPages(1);
     } finally {
       setIsLoadingTransfers(false);
@@ -168,10 +140,13 @@ const WarrantyDashboard: React.FC = () => {
     fetchStockTransferRequests();
   };
 
-  const fetchRequestDetail = async (requestId: number) => {
+  const fetchRequestDetail = async (requestId: string) => {
     setIsLoadingDetail(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('ev_warranty_token');
+      
+      console.log('🔍 Fetching request detail for ID:', requestId);
+      
       const response = await fetch(`${API_BASE_URL}/stock-transfer-requests/${requestId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -179,96 +154,92 @@ const WarrantyDashboard: React.FC = () => {
         }
       });
       
+      const data = await response.json();
+      console.log('📋 Detail API Response:', data);
+      
       if (!response.ok) {
-        console.warn(`API returned status ${response.status}. Using mock detail data.`);
-        // Mock detail data
-        const mockDetail: StockTransferRequestDetail = {
-          id: requestId,
-          requestingWarehouseId: 3,
-          requestedByUserId: 5,
-          requestedAt: "2025-10-31T02:22:20.725Z",
-          approvedByUserId: null,
-          status: "PENDING_APPROVAL",
-          items: [
-            {
-              id: 1,
-              componentId: 101,
-              requestedQuantity: 10,
-              approvedQuantity: 0
-            },
-            {
-              id: 2,
-              componentId: 205,
-              requestedQuantity: 5,
-              approvedQuantity: 0
-            }
-          ],
-          warehouse: {
-            id: 3,
-            name: "Warehouse Hanoi",
-            address: "123 Nguyen Trai, Hanoi"
-          },
-          requestedByUser: {
-            id: "761e6148-bc8e-46d7-be4a-f6860ace8f5c",
-            name: "Nguyễn Thị Xuân",
-            email: "manager_hcm@vinfast.vn"
-          },
-          approvedByUser: null
-        };
-        setSelectedRequest(mockDetail);
-        setIsDetailDialogOpen(true);
-        setIsLoadingDetail(false);
-        return;
+        console.error('❌ Detail API Error:', response.status, data);
+        throw new Error(data.message || `API returned status ${response.status}`);
       }
       
-      const data = await response.json();
-      setSelectedRequest(data);
-      setIsDetailDialogOpen(true);
+      // Handle API response structure: { status: "success", data: { stockTransferRequest: {...} } }
+      if (data.status === 'success' && data.data?.stockTransferRequest) {
+        const requestDetail = data.data.stockTransferRequest;
+        
+        console.log('✅ Request detail loaded:', {
+          id: requestDetail.id,
+          requester: requestDetail.requester,
+          requestingWarehouse: requestDetail.requestingWarehouse,
+          itemsCount: requestDetail.items?.length || 0,
+          items: requestDetail.items
+        });
+        
+        setSelectedRequest(requestDetail);
+        setIsDetailDialogOpen(true);
+      } else {
+        console.warn('⚠️ Unexpected detail response structure:', data);
+        setSelectedRequest(null);
+      }
     } catch (error) {
-      console.error('Error fetching request detail:', error);
-      // Use mock data on error
-      const mockDetail: StockTransferRequestDetail = {
-        id: requestId,
-        requestingWarehouseId: 3,
-        requestedByUserId: 5,
-        requestedAt: "2025-10-31T02:22:20.725Z",
-        approvedByUserId: null,
-        status: "PENDING_APPROVAL",
-        items: [
-          {
-            id: 1,
-            componentId: 101,
-            requestedQuantity: 10,
-            approvedQuantity: 0
-          },
-          {
-            id: 2,
-            componentId: 205,
-            requestedQuantity: 5,
-            approvedQuantity: 0
-          }
-        ],
-        warehouse: {
-          id: 3,
-          name: "Warehouse Hanoi",
-          address: "123 Nguyen Trai, Hanoi"
-        },
-        requestedByUser: {
-          id: "761e6148-bc8e-46d7-be4a-f6860ace8f5c",
-          name: "Nguyễn Thị Xuân",
-          email: "manager_hcm@vinfast.vn"
-        },
-        approvedByUser: null
-      };
-      setSelectedRequest(mockDetail);
-      setIsDetailDialogOpen(true);
+      console.error('💥 Error fetching request detail:', error);
+      alert(`Error: ${error instanceof Error ? error.message : 'Failed to load detail'}`);
+      setSelectedRequest(null);
     } finally {
       setIsLoadingDetail(false);
     }
   };
 
-  const handleViewDetails = (requestId: number) => {
+  const handleViewDetails = (requestId: string) => {
     fetchRequestDetail(requestId);
+  };
+
+  const handleRejectClick = () => {
+    setRejectionReason('');
+    setIsRejectDialogOpen(true);
+  };
+
+  const handleRejectSubmit = async () => {
+    if (!selectedRequest) return;
+    
+    if (!rejectionReason.trim()) {
+      alert('Please enter a rejection reason');
+      return;
+    }
+    
+    setIsRejecting(true);
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      const response = await fetch(
+        `${API_BASE_URL}/stock-transfer-requests/${selectedRequest.id}/reject`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            rejectionReason: rejectionReason.trim()
+          })
+        }
+      );
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        alert('Request rejected successfully!');
+        setIsRejectDialogOpen(false);
+        setIsDetailDialogOpen(false);
+        setRejectionReason('');
+        fetchStockTransferRequests();
+      } else {
+        alert(data.message || 'Failed to reject request. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error rejecting request:', error);
+      alert('Error rejecting request. Please try again.');
+    } finally {
+      setIsRejecting(false);
+    }
   };
 
   const getStatusBadgeVariant = (status: string) => {
@@ -448,17 +419,17 @@ const WarrantyDashboard: React.FC = () => {
               <TableBody>
                 {stockTransferRequests.map((request) => (
                   <TableRow key={request.id}>
-                    <TableCell className="font-medium">#{request.id}</TableCell>
+                    <TableCell className="font-medium">#{request.id.substring(0, 8)}...</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <span className="text-blue-600">🏢</span>
-                        Warehouse #{request.requestingWarehouseId}
+                        {request.requestingWarehouse?.name || `Warehouse #${request.requestingWarehouseId.substring(0, 8)}`}
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <span className="text-purple-600">👤</span>
-                        User #{request.requestedByUserId}
+                        {request.requester?.name || `User #${request.requestedByUserId.substring(0, 8)}`}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -470,7 +441,7 @@ const WarrantyDashboard: React.FC = () => {
                       {request.approvedByUserId ? (
                         <div className="flex items-center gap-2">
                           <span className="text-green-600">✓</span>
-                          User #{request.approvedByUserId}
+                          User #{request.approvedByUserId.substring(0, 8)}
                         </div>
                       ) : (
                         <span className="text-gray-400 italic">Not approved</span>
@@ -488,7 +459,7 @@ const WarrantyDashboard: React.FC = () => {
                         onClick={() => handleViewDetails(request.id)}
                         disabled={isLoadingDetail}
                       >
-                        👁️ View Details
+                        View Details
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -565,11 +536,11 @@ const WarrantyDashboard: React.FC = () => {
                       <span className="text-xs text-gray-500">Request Time:</span>
                       <p className="font-medium">{formatDateTime(selectedRequest.requestedAt)}</p>
                     </div>
-                    {selectedRequest.warehouse && (
+                    {selectedRequest.requestingWarehouse && (
                       <div>
-                        <span className="text-xs text-gray-500">Warehouse:</span>
-                        <p className="font-medium">🏢 {selectedRequest.warehouse.name}</p>
-                        <p className="text-sm text-gray-600">{selectedRequest.warehouse.address}</p>
+                        <span className="text-xs text-gray-500">Requesting Warehouse:</span>
+                        <p className="font-medium">🏢 {selectedRequest.requestingWarehouse.name}</p>
+                        <p className="text-sm text-gray-600">ID: {selectedRequest.requestingWarehouse.warehouseId.substring(0, 8)}...</p>
                       </div>
                     )}
                   </CardContent>
@@ -580,25 +551,21 @@ const WarrantyDashboard: React.FC = () => {
                     <CardTitle className="text-sm">User Information</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {selectedRequest.requestedByUser && (
+                    {selectedRequest.requester && (
                       <div>
                         <span className="text-xs text-gray-500">Requested By:</span>
-                        <p className="font-medium">👤 {selectedRequest.requestedByUser.name}</p>
-                        <p className="text-sm text-gray-600">{selectedRequest.requestedByUser.email}</p>
+                        <p className="font-medium">👤 {selectedRequest.requester.name}</p>
+                        <p className="text-sm text-gray-600">User ID: {selectedRequest.requester.userId.substring(0, 8)}...</p>
                       </div>
                     )}
-                    {selectedRequest.approvedByUser ? (
-                      <div>
-                        <span className="text-xs text-gray-500">Approved By:</span>
-                        <p className="font-medium text-green-600">✓ {selectedRequest.approvedByUser.name}</p>
-                        <p className="text-sm text-gray-600">{selectedRequest.approvedByUser.email}</p>
-                      </div>
-                    ) : (
-                      <div>
-                        <span className="text-xs text-gray-500">Approved By:</span>
+                    <div>
+                      <span className="text-xs text-gray-500">Approved By:</span>
+                      {selectedRequest.approvedByUserId ? (
+                        <p className="font-medium text-green-600">✓ User #{selectedRequest.approvedByUserId.substring(0, 8)}...</p>
+                      ) : (
                         <p className="text-sm text-gray-400 italic">Pending approval</p>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -608,31 +575,60 @@ const WarrantyDashboard: React.FC = () => {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-sm">Requested Items</CardTitle>
-                    <CardDescription>Components and quantities</CardDescription>
+                    <CardDescription>Components and quantities for warranty service</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Item ID</TableHead>
-                          <TableHead>Component ID</TableHead>
-                          <TableHead>Requested Quantity</TableHead>
-                          <TableHead>Approved Quantity</TableHead>
+                          <TableHead>Request ID</TableHead>
+                          <TableHead>Type Component ID</TableHead>
+                          <TableHead>Quantity Requested</TableHead>
+                          <TableHead>Caseline ID</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {selectedRequest.items.map((item) => (
                           <TableRow key={item.id}>
-                            <TableCell className="font-medium">#{item.id}</TableCell>
-                            <TableCell>Component #{item.componentId}</TableCell>
-                            <TableCell>
-                              <span className="font-semibold text-blue-600">{item.requestedQuantity}</span>
+                            <TableCell className="font-medium">
+                              <span className="text-sm text-gray-900">#{item.id.substring(0, 8)}...</span>
                             </TableCell>
                             <TableCell>
-                              {item.approvedQuantity ? (
-                                <span className="font-semibold text-green-600">{item.approvedQuantity}</span>
+                              <span className="text-sm text-gray-600">#{item.requestId?.substring(0, 8) || 'N/A'}...</span>
+                            </TableCell>
+                            <TableCell>
+                              {item.typeComponentId ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-mono text-indigo-600">#{item.typeComponentId.substring(0, 8)}...</span>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(item.typeComponentId || '');
+                                      alert('Copied to clipboard!');
+                                    }}
+                                    className="text-xs text-gray-400 hover:text-gray-600"
+                                    title="Copy full ID"
+                                  >
+                                    📋
+                                  </button>
+                                </div>
                               ) : (
-                                <span className="text-gray-400 italic">Pending</span>
+                                <span className="text-gray-400 italic">N/A</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-1">
+                                <span className="font-semibold text-blue-600 text-lg">{item.quantityRequested}</span>
+                                {item.quantityApproved !== null && item.quantityApproved !== undefined && (
+                                  <span className="text-xs text-green-600">✓ Approved: {item.quantityApproved}</span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {item.caselineId ? (
+                                <span className="text-sm text-gray-600">#{item.caselineId.substring(0, 8)}...</span>
+                              ) : (
+                                <span className="text-gray-400 italic text-sm">N/A</span>
                               )}
                             </TableCell>
                           </TableRow>
@@ -652,77 +648,135 @@ const WarrantyDashboard: React.FC = () => {
               >
                 Close
               </Button>
-              <div className="flex gap-3">
-                <Button
-                  variant="destructive"
-                  onClick={async () => {
-                    if (!selectedRequest) return;
-                    if (!confirm('Are you sure you want to reject this request?')) return;
-                    
-                    try {
-                      const token = localStorage.getItem('token');
-                      const response = await fetch(
-                        `${API_BASE_URL}/stock-transfer-requests/${selectedRequest.id}/reject`,
-                        {
-                          method: 'PATCH',
-                          headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                          }
-                        }
-                      );
+              
+              {/* Only show action buttons if status is PENDING_APPROVAL */}
+              {selectedRequest.status === 'PENDING_APPROVAL' && (
+                <div className="flex gap-3">
+                  <Button
+                    variant="destructive"
+                    onClick={handleRejectClick}
+                    className="bg-red-600 hover:bg-red-700"
+                  >
+                    ❌ Reject
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      if (!selectedRequest) return;
+                      if (!confirm('Are you sure you want to approve this request?')) return;
                       
-                      if (response.ok) {
-                        alert('Request rejected successfully!');
-                        setIsDetailDialogOpen(false);
-                        fetchStockTransferRequests(); // Refresh list
-                      } else {
-                        alert('Failed to reject request. Please try again.');
-                      }
-                    } catch (error) {
-                      console.error('Error rejecting request:', error);
-                      alert('Error rejecting request. Please try again.');
-                    }
-                  }}
-                  className="bg-red-600 hover:bg-red-700"
-                >
-                  ❌ Reject
-                </Button>
-                <Button
-                  onClick={async () => {
-                    if (!selectedRequest) return;
-                    if (!confirm('Are you sure you want to approve this request?')) return;
-                    
-                    try {
-                      const token = localStorage.getItem('token');
-                      const response = await fetch(
-                        `${API_BASE_URL}/stock-transfer-requests/${selectedRequest.id}/approve`,
-                        {
-                          method: 'PATCH',
-                          headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
+                      try {
+                        const token = localStorage.getItem('ev_warranty_token');
+                        const response = await fetch(
+                          `${API_BASE_URL}/stock-transfer-requests/${selectedRequest.id}/approve`,
+                          {
+                            method: 'PATCH',
+                            headers: {
+                              'Authorization': `Bearer ${token}`,
+                              'Content-Type': 'application/json'
+                            }
                           }
+                        );
+                        
+                        const data = await response.json();
+                        
+                        if (response.ok) {
+                          alert('Request approved successfully!');
+                          setIsDetailDialogOpen(false);
+                          fetchStockTransferRequests();
+                        } else {
+                          alert(data.message || 'Failed to approve request. Please try again.');
                         }
-                      );
-                      
-                      if (response.ok) {
-                        alert('Request approved successfully!');
-                        setIsDetailDialogOpen(false);
-                        fetchStockTransferRequests(); // Refresh list
-                      } else {
-                        alert('Failed to approve request. Please try again.');
+                      } catch (error) {
+                        console.error('Error approving request:', error);
+                        alert('Error approving request. Please try again.');
                       }
-                    } catch (error) {
-                      console.error('Error approving request:', error);
-                      alert('Error approving request. Please try again.');
-                    }
-                  }}
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  ✓ Approve
-                </Button>
+                    }}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    ✓ Approve
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Confirmation Dialog */}
+      {isRejectDialogOpen && selectedRequest && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            {/* Dialog Header */}
+            <div className="bg-red-50 border-b border-red-200 px-6 py-4 flex items-center justify-between rounded-t-lg">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl">⚠️</span>
+                <div>
+                  <h2 className="text-xl font-bold text-red-900">Reject Request</h2>
+                  <p className="text-sm text-red-600 mt-0.5">This action cannot be undone</p>
+                </div>
               </div>
+              <button
+                onClick={() => setIsRejectDialogOpen(false)}
+                className="text-red-400 hover:text-red-600 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Dialog Content */}
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-2">
+                  Request ID: <span className="font-mono font-semibold">#{selectedRequest.id.substring(0, 8)}...</span>
+                </p>
+                <p className="text-sm text-gray-600">
+                  Requested by: <span className="font-semibold">{selectedRequest.requester?.name || 'Unknown'}</span>
+                </p>
+              </div>
+
+              <div>
+                <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                  Rejection Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="Please provide a clear reason for rejection..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
+                  rows={4}
+                  autoFocus
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {rejectionReason.trim().length} / 500 characters
+                </p>
+              </div>
+
+              {rejectionReason.trim().length === 0 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                  <p className="text-sm text-yellow-800">
+                    ℹ️ Please enter a rejection reason to proceed
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Dialog Footer */}
+            <div className="bg-gray-50 border-t px-6 py-4 flex justify-end gap-3 rounded-b-lg">
+              <Button
+                variant="outline"
+                onClick={() => setIsRejectDialogOpen(false)}
+                disabled={isRejecting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleRejectSubmit}
+                disabled={isRejecting || !rejectionReason.trim()}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                {isRejecting ? '🔄 Rejecting...' : '❌ Confirm Reject'}
+              </Button>
             </div>
           </div>
         </div>
