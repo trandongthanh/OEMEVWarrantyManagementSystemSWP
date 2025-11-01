@@ -112,7 +112,7 @@ router.get(
   authentication,
   authorizationByRole([
     "parts_coordinator_service_center",
-    "service_center_tehcnician",
+    "service_center_technician",
   ]),
   validate(getComponentReservationsQuerySchema, "query"),
   async (req, res, next) => {

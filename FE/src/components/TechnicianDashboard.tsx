@@ -33,7 +33,10 @@ import {
   Gauge,
   AlertCircle,
   RefreshCw,
-  Package
+  Package,
+  Users,
+  Clock,
+  CheckCircle
 } from "lucide-react";
 
 // Work Schedule Interface
@@ -84,6 +87,7 @@ interface CaseLineResponse {
   typeComponentId?: string | null;
   repairTechId?: string | null;
   rejectionReason?: string | null;
+  evidenceImageUrls?: string[];
 }
 
 // Assigned Tasks Interfaces
@@ -217,6 +221,7 @@ interface CaseLine {
   repairTechId?: string;
   rejectionReason?: string | null;
   updatedAt?: string;
+  evidenceImageUrls?: string[];
 }
 
 interface WarrantyCase {
@@ -334,6 +339,8 @@ const TechnicianDashboard = ({
   const [reservations, setReservations] = useState<ComponentReservation[]>([]);
   const [isLoadingReservations, setIsLoadingReservations] = useState(false);
   const [viewReservationsModalOpen, setViewReservationsModalOpen] = useState(false);
+  const [installingReservationId, setInstallingReservationId] = useState<string | null>(null);
+  const [completingCaseLineId, setCompletingCaseLineId] = useState<string | null>(null);
 
   // Handle file upload
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -944,6 +951,159 @@ const TechnicianDashboard = ({
     await fetchReservations(caseLineId);
     setViewReservationsModalOpen(true);
   }, [fetchReservations]);
+
+  // Install component
+  const handleInstallComponent = useCallback(async (reservationId: string) => {
+    try {
+      setInstallingReservationId(reservationId);
+      console.log('🔧 Installing component for reservation:', reservationId);
+
+      const response = await apiService.patch<{ 
+        status: string; 
+        data: { component: ComponentReservation } 
+      }>(`/reservations/${reservationId}/installComponent`);
+
+      console.log('✅ Component installed successfully:', response.data);
+
+      if (response.data?.status === 'success') {
+        toast({
+          title: 'Success',
+          description: 'Component installed successfully',
+        });
+
+        // Update the reservations list
+        setReservations(prev => 
+          prev.map(r => 
+            r.reservationId === reservationId 
+              ? { ...r, status: 'INSTALLED', installedAt: new Date().toISOString() }
+              : r
+          )
+        );
+      }
+    } catch (error) {
+      console.error('❌ Failed to install component:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to install component',
+        variant: 'destructive'
+      });
+    } finally {
+      setInstallingReservationId(null);
+    }
+  }, []);
+
+  // Complete repair for case line
+  const handleCompleteRepair = useCallback(async (caseLineId: string) => {
+    try {
+      setCompletingCaseLineId(caseLineId);
+      console.log('✅ Checking reservations before completing case line:', caseLineId);
+
+      // First, fetch reservations to check if all are installed
+      const reservationsResponse = await apiService.get<{ 
+        status: string; 
+        data: { reservations: ComponentReservation[] } 
+      }>('/reservations', {
+        params: {
+          caseLineId: caseLineId,
+          repairTechId: user?.id,
+          sortBy: 'createdAt',
+          sortOrder: 'DESC'
+        }
+      });
+
+      const caseReservations = reservationsResponse.data?.data?.reservations || [];
+      console.log('📦 Case line reservations:', caseReservations);
+
+      // Check if there are any reservations
+      if (caseReservations.length === 0) {
+        toast({
+          title: 'Warning',
+          description: 'No reservations found for this case line',
+          variant: 'destructive'
+        });
+        setCompletingCaseLineId(null);
+        return;
+      }
+
+      // Check if all reservations are installed
+      const allInstalled = caseReservations.every(r => r.status === 'INSTALLED');
+      const notInstalledCount = caseReservations.filter(r => r.status !== 'INSTALLED').length;
+
+      if (!allInstalled) {
+        toast({
+          title: 'Cannot Complete',
+          description: `All components must be installed first. ${notInstalledCount} component(s) not yet installed.`,
+          variant: 'destructive'
+        });
+        setCompletingCaseLineId(null);
+        return;
+      }
+
+      console.log('✅ All reservations are installed. Proceeding to mark as complete...');
+
+      // All reservations are installed, proceed with completion
+      const response = await apiService.patch<{ 
+        status: string; 
+        data: { caseLine: AssignedCaseLine } 
+      }>(`/case-lines/${caseLineId}/mark-repair-complete`);
+
+      console.log('✅ Repair completed successfully:', response.data);
+
+      if (response.data?.status === 'success') {
+        toast({
+          title: 'Success',
+          description: 'Repair marked as complete successfully',
+        });
+
+        // Update the assigned case lines list
+        setAssignedCaseLines(prev => 
+          prev.map(cl => 
+            cl.id === caseLineId 
+              ? { ...cl, status: 'COMPLETED' }
+              : cl
+          )
+        );
+
+        // Update selected case line if viewing details
+        if (selectedAssignedCaseLine?.id === caseLineId) {
+          setSelectedAssignedCaseLine(prev => 
+            prev ? { ...prev, status: 'COMPLETED' } : null
+          );
+        }
+
+        // Optionally close the modal after completion
+        // setViewAssignedCaseLineModalOpen(false);
+      }
+    } catch (error) {
+      console.error('❌ Failed to complete repair:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to mark repair as complete',
+        variant: 'destructive'
+      });
+    } finally {
+      setCompletingCaseLineId(null);
+    }
+  }, [selectedAssignedCaseLine, user]);
+
+  // Helper function to check if case line can be completed
+  const canCompleteRepair = useCallback((caseLineId: string): boolean => {
+    // Find the case line in assigned tasks
+    const caseLine = assignedCaseLines.find(cl => cl.id === caseLineId);
+    
+    if (!caseLine) return false;
+    if (caseLine.status === 'COMPLETED' || caseLine.status === 'CANCELLED') return false;
+    
+    // If there are reservations in the case line data, check them
+    if (caseLine.reservations && caseLine.reservations.length > 0) {
+      const allInstalled = caseLine.reservations.every(r => r.status === 'INSTALLED');
+      return allInstalled;
+    }
+    
+    // If no reservations data available in case line, allow completion
+    // (validation will happen in handleCompleteRepair)
+    return true;
+  }, [assignedCaseLines]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -1965,6 +2125,26 @@ const TechnicianDashboard = ({
                                 <Package className="h-3 w-3 mr-1" />
                                 Reservations
                               </Button>
+                              {caseLine.status !== 'COMPLETED' && caseLine.status !== 'CANCELLED' && (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleCompleteRepair(caseLine.id)}
+                                  disabled={completingCaseLineId === caseLine.id}
+                                  className="bg-green-600 hover:bg-green-700 text-white"
+                                >
+                                  {completingCaseLineId === caseLine.id ? (
+                                    <>
+                                      <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                                      Completing...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CheckCircle className="h-3 w-3 mr-1" />
+                                      Complete
+                                    </>
+                                  )}
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -4160,6 +4340,37 @@ const TechnicianDashboard = ({
               <p>No case line selected</p>
             </div>
           )}
+
+          {/* Footer with Complete Button */}
+          {selectedAssignedCaseLine && 
+           selectedAssignedCaseLine.status !== 'COMPLETED' && 
+           selectedAssignedCaseLine.status !== 'CANCELLED' && (
+            <div className="flex justify-end gap-3 pt-4 border-t mt-6">
+              <Button
+                variant="outline"
+                onClick={() => setViewAssignedCaseLineModalOpen(false)}
+              >
+                Close
+              </Button>
+              <Button
+                onClick={() => handleCompleteRepair(selectedAssignedCaseLine.id)}
+                disabled={completingCaseLineId === selectedAssignedCaseLine.id}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                {completingCaseLineId === selectedAssignedCaseLine.id ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Completing...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Mark as Complete
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -4194,6 +4405,7 @@ const TechnicianDashboard = ({
                   <TableHead>Picked Up At</TableHead>
                   <TableHead>Installed At</TableHead>
                   <TableHead>Created At</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -4249,6 +4461,37 @@ const TechnicianDashboard = ({
                     </TableCell>
                     <TableCell className="text-xs">
                       {new Date(reservation.createdAt).toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      {reservation.status === 'PICKED_UP' && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleInstallComponent(reservation.reservationId)}
+                          disabled={installingReservationId === reservation.reservationId}
+                          className="bg-green-600 hover:bg-green-700"
+                        >
+                          {installingReservationId === reservation.reservationId ? (
+                            <>
+                              <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                              Installing...
+                            </>
+                          ) : (
+                            <>
+                              <Wrench className="h-3 w-3 mr-1" />
+                              Install
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {reservation.status === 'INSTALLED' && (
+                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Installed
+                        </Badge>
+                      )}
+                      {reservation.status === 'RESERVED' && (
+                        <span className="text-xs text-muted-foreground">Waiting for pickup</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
