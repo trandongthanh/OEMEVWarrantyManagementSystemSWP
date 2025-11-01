@@ -8,6 +8,7 @@ export interface CaseLineRequest {
   componentId?: string | null;
   quantity: number;
   warrantyStatus: 'ELIGIBLE' | 'INELIGIBLE';
+  evidenceImageUrls?: string[]; // Cloudinary image URLs
 }
 
 export interface CaseLine {
@@ -22,6 +23,7 @@ export interface CaseLine {
   status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
   updatedAt: string;
+  evidenceImageUrls?: string[]; // Cloudinary image URLs
 }
 
 export interface CreateCaseLinesResponse {
@@ -77,9 +79,13 @@ export const caseLineService = {
           // backend expects typeComponentId; allow null when no component specified
           typeComponentId: cl.componentId ?? null,
           quantity: cl.quantity,
-          warrantyStatus: cl.warrantyStatus
+          warrantyStatus: cl.warrantyStatus,
+          evidenceImageUrls: cl.evidenceImageUrls || [] // Send Cloudinary URLs
         }))
       };
+
+      console.debug('📤 Payload being sent to backend:', JSON.stringify(payload, null, 2));
+      console.debug('📸 Evidence image URLs in payload:', payload.caselines[0]?.evidenceImageUrls);
 
       const response = await apiClient.post<CreateCaseLinesResponse>(
         `/guarantee-cases/${guaranteeCaseId}/case-lines`,
@@ -106,6 +112,7 @@ export const caseLineService = {
         status: cl.status ?? null,
         createdAt: cl.createdAt ?? cl.created_at ?? null,
         updatedAt: cl.updatedAt ?? cl.updated_at ?? null,
+        evidenceImageUrls: cl.evidenceImageUrls ?? cl.evidence_image_urls ?? [],
       }));
 
       console.debug('Case lines created (normalized): %d items', normalized.length);
@@ -160,6 +167,48 @@ export const caseLineService = {
           throw new Error('Delete failed: missing or invalid authentication (userId). Please login again.');
         }
         throw new Error(backendMessage || 'Failed to delete case line');
+      }
+      throw error;
+    }
+  },
+
+  // Get case line detail by ID
+  getCaseLineById: async (caseLineId: string): Promise<CaseLine> => {
+    try {
+      console.debug('🔍 Fetching case line detail for:', caseLineId);
+      
+      const response = await apiClient.get(`/case-lines/${caseLineId}`);
+      
+      console.debug('✅ Case line detail response:', response.data);
+      
+      // Normalize response shape from backend
+      const cl = response.data?.data?.caseLine;
+      
+      if (!cl) {
+        throw new Error('Case line not found');
+      }
+
+      const normalized: CaseLine = {
+        caseLineId: cl.caseLineId ?? cl.id ?? cl.case_line_id,
+        guaranteeCaseId: cl.guaranteeCaseId ?? cl.guarantee_case_id ?? cl.guaranteeCase?.guaranteeCaseId ?? null,
+        diagnosisText: cl.diagnosisText ?? cl.diagnosis_text ?? '',
+        correctionText: cl.correctionText ?? cl.correction_text ?? '',
+        componentId: cl.componentId ?? cl.typeComponentId ?? cl.type_component_id ?? null,
+        quantity: cl.quantity ?? 0,
+        warrantyStatus: cl.warrantyStatus ?? cl.warranty_status ?? 'INELIGIBLE',
+        techId: cl.techId ?? cl.diagnosticTechId ?? cl.diagnostic_tech_id ?? '',
+        status: cl.status ?? 'pending',
+        createdAt: cl.createdAt ?? cl.created_at ?? '',
+        updatedAt: cl.updatedAt ?? cl.updated_at ?? '',
+        evidenceImageUrls: cl.evidenceImageUrls ?? cl.evidence_image_urls ?? [],
+      };
+
+      console.debug('📸 Evidence images in case line:', normalized.evidenceImageUrls);
+      return normalized;
+    } catch (error) {
+      console.error('❌ Error fetching case line detail:', error);
+      if (axios.isAxiosError(error)) {
+        throw new Error(error.response?.data?.message || 'Failed to fetch case line detail');
       }
       throw error;
     }

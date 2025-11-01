@@ -53,8 +53,9 @@ export const updateCaselineBodySchema = Joi.object({
   rejectionReason: Joi.string().allow(null).optional(),
 });
 
+// Validator for GET /case-lines/:caselineId
+// The route only provides `caselineId` as a path param, so require only that here.
 export const getCaseLineByIdParamsSchema = Joi.object({
-  // caseId: Joi.string().uuid({ version: "uuidv4" }).required(),
   caselineId: Joi.string().uuid({ version: "uuidv4" }).required(),
 });
 

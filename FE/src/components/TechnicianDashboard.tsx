@@ -1078,9 +1078,47 @@ const TechnicianDashboard = ({
       
       console.log('🚀 Creating case line for guarantee case:', guaranteeCase.guaranteeCaseId);
 
+      // Upload images to Cloudinary first (if any)
+      let evidenceImageUrls: string[] = [];
+      if (uploadedFiles.length > 0) {
+        toast({
+          title: "Uploading Images",
+          description: `Uploading ${uploadedFiles.length} image(s) to Cloudinary...`,
+        });
+
+        try {
+          const { uploadImagesToCloudinary } = await import('@/services/cloudinaryService');
+          evidenceImageUrls = await uploadImagesToCloudinary(uploadedFiles, (fileIndex, progress) => {
+            console.log(`Uploading image ${fileIndex + 1}/${uploadedFiles.length}: ${progress.percentage}%`);
+          });
+          
+          console.log('✅ Images uploaded to Cloudinary:', evidenceImageUrls);
+          
+          toast({
+            title: "Images Uploaded",
+            description: `Successfully uploaded ${evidenceImageUrls.length} image(s)`,
+          });
+        } catch (uploadError) {
+          console.error('Failed to upload images:', uploadError);
+          toast({
+            title: "Image Upload Failed",
+            description: uploadError instanceof Error ? uploadError.message : "Failed to upload images to Cloudinary",
+            variant: "destructive"
+          });
+          // Continue without images if upload fails
+          evidenceImageUrls = [];
+        }
+      }
+
+      // Create case line with image URLs
+      const caseLineWithImages = {
+        ...caseLineForm,
+        evidenceImageUrls
+      };
+
       const serverCreatedCaseLines = await caseLineService.createCaseLines(
         guaranteeCase.guaranteeCaseId,
-        [caseLineForm]
+        [caseLineWithImages]
       );
 
       console.log('✅ Case lines created:', serverCreatedCaseLines);
@@ -1109,10 +1147,11 @@ const TechnicianDashboard = ({
         repairPossibility: 'N/A',
         warrantyDecision: serverCreatedCaseLines[0].warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
         technicianNotes: `${serverCreatedCaseLines[0].diagnosisText} | ${serverCreatedCaseLines[0].correctionText}`,
-        photos: [...uploadedFileUrls],
-        photoFiles: [...uploadedFiles],
+        photos: evidenceImageUrls, // Use Cloudinary URLs instead of local URLs
+        photoFiles: [], // No need to store files anymore
         createdDate: new Date(serverCreatedCaseLines[0].createdAt).toLocaleDateString('en-GB'),
-        status: serverCreatedCaseLines[0].status === 'pending' ? 'submitted' : 'approved'
+        status: serverCreatedCaseLines[0].status === 'pending' ? 'submitted' : 'approved',
+        evidenceImageUrls // Store Cloudinary URLs
       };
 
       // Ensure no duplicate caseLine IDs in UI list
@@ -1128,8 +1167,8 @@ const TechnicianDashboard = ({
           : 'N/A';
 
       toast({
-        title: "Issue Diagnosis Created",
-        description: `Case line ${createdIdSuffix} has been created successfully. View it in the Issue Diagnosis tab.`,
+        title: "Case Line Created",
+        description: `Case line ${createdIdSuffix} has been created successfully. View it in the Processing Record details.`,
       });
 
       setCaseLineForm({
@@ -1401,38 +1440,53 @@ const TechnicianDashboard = ({
   // Handle view case line: enrich the lightweight UI caseLine with any detailed
   // response we've previously loaded into `createdCaseLines` so the modal can
   // display the full set of fields returned by the backend.
-  const handleViewCaseLine = (caseLine: CaseLine) => {
+  const handleViewCaseLine = async (caseLine: CaseLine) => {
     try {
-      // Try to find a detailed server response for this caseLine id
-      const detailed = createdCaseLines.find(c => c.caseLineId === caseLine.id || c.caseLineId === (caseLine.id as unknown as string));
+      // Open modal immediately with loading state
+      setViewCaseLineModalOpen(true);
+      
+      console.log('🔍 Fetching case line detail from API for ID:', caseLine.id);
+      
+      // Call API to get full case line detail including images
+      const detailedCaseLine = await caseLineService.getCaseLineById(caseLine.id);
+      
+      console.log('✅ Received detailed case line from API:', detailedCaseLine);
+      console.log('📸 Evidence images:', detailedCaseLine.evidenceImageUrls);
+      
+      // Map backend CaseLine to frontend CaseLine format
+      const enriched: CaseLine = {
+        id: detailedCaseLine.caseLineId,
+        caseId: detailedCaseLine.guaranteeCaseId,
+        damageLevel: 'medium',
+        repairPossibility: 'repairable',
+        warrantyDecision: detailedCaseLine.warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
+        technicianNotes: `${detailedCaseLine.diagnosisText} | ${detailedCaseLine.correctionText}`,
+        photos: detailedCaseLine.evidenceImageUrls || [],
+        evidenceImageUrls: detailedCaseLine.evidenceImageUrls || [],
+        createdDate: new Date(detailedCaseLine.createdAt).toLocaleDateString('en-GB'),
+        status: detailedCaseLine.status === 'pending' ? 'submitted' : 'approved',
+        diagnosisText: detailedCaseLine.diagnosisText,
+        correctionText: detailedCaseLine.correctionText,
+        componentId: detailedCaseLine.componentId,
+        quantity: detailedCaseLine.quantity,
+        warrantyStatus: detailedCaseLine.warrantyStatus,
+        diagnosticTechId: detailedCaseLine.techId,
+        updatedAt: detailedCaseLine.updatedAt
+      };
 
-      if (detailed) {
-        const enriched: CaseLine = {
-          ...caseLine,
-          diagnosisText: detailed.diagnosisText ?? undefined,
-          correctionText: detailed.correctionText ?? undefined,
-          // backend may call this componentId or typeComponentId
-          componentId: detailed.componentId ?? detailed.typeComponentId ?? null,
-          typeComponentId: detailed.typeComponentId ?? detailed.componentId ?? null,
-          quantity: typeof detailed.quantity === 'number' ? detailed.quantity : (detailed.quantity ? Number(detailed.quantity) : undefined),
-          warrantyStatus: detailed.warrantyStatus ?? null,
-          diagnosticTechId: detailed.techId ?? null,
-          // repairTechId / rejectionReason may be present in some responses
-          repairTechId: detailed.repairTechId ?? null,
-          rejectionReason: detailed.rejectionReason ?? null,
-          updatedAt: detailed.updatedAt ?? null,
-        };
-
-        setSelectedCaseLine(enriched);
-      } else {
-        setSelectedCaseLine(caseLine);
-      }
+      console.log('🎨 Enriched case line for display:', enriched);
+      setSelectedCaseLine(enriched);
     } catch (err) {
-      console.warn('Failed to enrich caseLine for details modal', err);
+      console.error('❌ Failed to fetch case line detail from API:', err);
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed to load case line details",
+        variant: "destructive"
+      });
+      
+      // Fallback to local data if API fails
       setSelectedCaseLine(caseLine);
     }
-
-    setViewCaseLineModalOpen(true);
   };
 
   return (
@@ -1600,17 +1654,6 @@ const TechnicianDashboard = ({
                                   title="View Case"
                                 >
                                   <Eye className="h-3 w-3" />
-                                </Button>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  onClick={() => {
-                                    setSelectedRecord(record);
-                                    setViewReportModalOpen(true);
-                                  }}
-                                  title="View Report"
-                                >
-                                  <FileText className="h-3 w-3" />
                                 </Button>
                                 <Button 
                                   variant="default" 
@@ -2927,76 +2970,156 @@ const TechnicianDashboard = ({
             </DialogDescription>
           </DialogHeader>
           
+          {(() => {
+            // Debug: Log selected case line data
+            console.log('🔍 Selected Case Line:', selectedCaseLine);
+            console.log('📸 Evidence Image URLs:', selectedCaseLine?.evidenceImageUrls);
+            console.log('📷 Photos:', selectedCaseLine?.photos);
+            return null;
+          })()}
+          
           <div className="space-y-6">
-            {/* Case Line Information */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Basic Information */}
-              <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                    <FileText className="h-4 w-4 text-white" />
+            {/* Case Line Information - single row split into two sides */}
+            <div className="flex gap-6 items-start">
+              {/* Left side: Basic Information + Diagnosis */}
+              <div className="flex-1 space-y-4">
+                <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                      <FileText className="h-4 w-4 text-white" />
+                    </div>
+                    <h4 className="font-semibold text-lg text-blue-900">Basic Information</h4>
                   </div>
-                  <h4 className="font-semibold text-lg text-blue-900">Basic Information</h4>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-blue-700">Diagnosis ID</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine?.id}</span>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-blue-700">Case ID</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine?.caseId}</span>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-blue-700">Created Date</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.createdDate}</span>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-blue-700">Status</span>
-                    <div className="bg-white px-3 py-2 rounded border">
-                      <Badge 
-                        variant={
-                          selectedCaseLine?.status === 'approved' ? 'default' :
-                          selectedCaseLine?.status === 'rejected' ? 'destructive' :
-                          selectedCaseLine?.status === 'submitted' ? 'secondary' :
-                          'outline'
-                        }
-                        className="text-sm px-3 py-1"
-                      >
-                        {selectedCaseLine?.status}
-                      </Badge>
+                  <div className="space-y-3">
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-sm font-medium text-blue-700">Diagnosis ID</span>
+                      <span className="text-lg bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine?.id}</span>
+                    </div>
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-sm font-medium text-blue-700">Case ID</span>
+                      <span className="text-lg bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine?.caseId}</span>
+                    </div>
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-sm font-medium text-blue-700">Created Date</span>
+                      <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.createdDate || 'N/A'}</span>
+                    </div>
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-sm font-medium text-blue-700">Status</span>
+                      <div className="bg-white px-3 py-2 rounded border">
+                        <Badge 
+                          variant={
+                            selectedCaseLine?.status === 'approved' ? 'default' :
+                            selectedCaseLine?.status === 'rejected' ? 'destructive' :
+                            selectedCaseLine?.status === 'submitted' ? 'secondary' :
+                            'outline'
+                          }
+                          className="text-sm px-3 py-1"
+                        >
+                          {selectedCaseLine?.status}
+                        </Badge>
+                      </div>
                     </div>
                   </div>
                 </div>
+
+                {/* Diagnosis moved into Technician Notes - removed separate block */}
               </div>
 
-              {/* Assessment Details */}
-              <div className="bg-yellow-50 p-6 rounded-lg border border-yellow-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
-                    <Wrench className="h-4 w-4 text-white" />
+              {/* Right side: Component & Warranty + Correction */}
+              <div className="w-1/2 space-y-4">
+                <div className="bg-yellow-50 p-6 rounded-lg border border-yellow-200">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
+                      <Wrench className="h-4 w-4 text-white" />
+                    </div>
+                    <h4 className="font-semibold text-lg text-yellow-900">Component & Warranty Details</h4>
                   </div>
-                  <h4 className="font-semibold text-lg text-yellow-900">Assessment Details</h4>
+                  <div className="space-y-3">
+                    {selectedCaseLine?.componentId && (
+                      <div className="flex flex-col space-y-1">
+                        <span className="text-sm font-medium text-yellow-700">Component ID</span>
+                        <span className="text-sm bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine.componentId}</span>
+                      </div>
+                    )}
+                    {selectedCaseLine?.quantity !== undefined && (
+                      <div className="flex flex-col space-y-1">
+                        <span className="text-sm font-medium text-yellow-700">Quantity</span>
+                        <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine.quantity}</span>
+                      </div>
+                    )}
+                    {selectedCaseLine?.warrantyStatus && (
+                      <div className="flex flex-col space-y-1">
+                        <span className="text-sm font-medium text-yellow-700">Warranty Status</span>
+                        <div className="bg-white px-3 py-2 rounded border">
+                          <Badge 
+                            variant={selectedCaseLine.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}
+                            className="text-sm px-3 py-1"
+                          >
+                            {selectedCaseLine.warrantyStatus}
+                          </Badge>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="space-y-3">
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-yellow-700">Damage Level</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.damageLevel}</span>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-yellow-700">Repair Possibility</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.repairPossibility}</span>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-yellow-700">Warranty Decision</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.warrantyDecision}</span>
-                  </div>
-                </div>
+
+                {/* Correction moved into Technician Notes - removed separate block */}
               </div>
             </div>
 
-            {/* Technician Notes */}
-            {selectedCaseLine?.technicianNotes && (
+            {/* Technician Information */}
+            {(selectedCaseLine?.diagnosticTechId || selectedCaseLine?.repairTechId) && (
+              <div className="bg-indigo-50 p-6 rounded-lg border border-indigo-200">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center">
+                    <User className="h-4 w-4 text-white" />
+                  </div>
+                  <h4 className="font-semibold text-lg text-indigo-900">Technician Information</h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {selectedCaseLine?.diagnosticTechId && (
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-sm font-medium text-indigo-700">Diagnostic Technician ID</span>
+                      <span className="text-sm bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine.diagnosticTechId}</span>
+                    </div>
+                  )}
+                  {selectedCaseLine?.repairTechId && (
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-sm font-medium text-indigo-700">Repair Technician ID</span>
+                      <span className="text-sm bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine.repairTechId}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Rejection Reason (if any) */}
+            {selectedCaseLine?.rejectionReason && (
+              <div className="bg-red-50 p-6 rounded-lg border border-red-200">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                    <AlertCircle className="h-4 w-4 text-white" />
+                  </div>
+                  <h4 className="font-semibold text-lg text-red-900">Rejection Reason</h4>
+                </div>
+                <div className="bg-white p-4 rounded-lg border">
+                  <p className="text-base leading-relaxed text-red-800">{selectedCaseLine.rejectionReason}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Updated Date */}
+            {selectedCaseLine?.updatedAt && (
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-700">Last Updated:</span>
+                  <span className="text-sm text-slate-900">{new Date(selectedCaseLine.updatedAt).toLocaleString()}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Technician Notes split into two fields: Diagnosis and Correction */}
+            {selectedCaseLine && (
               <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center">
@@ -3004,76 +3127,92 @@ const TechnicianDashboard = ({
                   </div>
                   <h4 className="font-semibold text-lg text-gray-900">Technician Notes</h4>
                 </div>
-                <div className="bg-white p-4 rounded-lg border">
-                  <p className="text-base leading-relaxed text-gray-800">{selectedCaseLine.technicianNotes}</p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-sm font-medium text-gray-700">Diagnosis Text</span>
+                    <div className="bg-white p-3 rounded-lg border mt-2">
+                      <p className="text-sm text-gray-800">{selectedCaseLine.diagnosisText || 'N/A'}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-sm font-medium text-gray-700">Correction Text</span>
+                    <div className="bg-white p-3 rounded-lg border mt-2">
+                      <p className="text-sm text-gray-800">{selectedCaseLine.correctionText || 'N/A'}</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Photos */}
-            {selectedCaseLine?.photos && selectedCaseLine.photos.length > 0 && (
-              <div className="bg-green-50 p-6 rounded-lg border border-green-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                    <Camera className="h-4 w-4 text-white" />
+            {/* Evidence Photos from Cloudinary */}
+            {(() => {
+              const photoUrls = selectedCaseLine?.evidenceImageUrls || selectedCaseLine?.photos || [];
+              return photoUrls.length > 0 ? (
+                <div className="bg-green-50 p-6 rounded-lg border border-green-200">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                      <Camera className="h-4 w-4 text-white" />
+                    </div>
+                    <h4 className="font-semibold text-lg text-green-900">Evidence Photos ({photoUrls.length})</h4>
                   </div>
-                  <h4 className="font-semibold text-lg text-green-900">Attached Photos ({selectedCaseLine.photos.length})</h4>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {selectedCaseLine.photos.map((photo, index) => (
-                    <div key={index} className="bg-white p-3 rounded-lg border border-green-300 hover:shadow-lg transition-shadow">
-                      <div className="aspect-square mb-3 overflow-hidden rounded">
-                        <img 
-                          src={photo} 
-                          alt={`Damage Photo ${index + 1}`}
-                          className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                          onClick={() => {
-                            setPreviewImageUrl(photo);
-                            setImagePreviewModalOpen(true);
-                          }}
-                          title="Click to view full size"
-                          onError={(e) => {
-                            console.error('Image load error for photo:', photo);
-                            e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik04NyA3NEw5MCA3N0wxMTMgMTAwTDE0MyA3MEwxNTcgODRWMTI2SDQzVjc0SDg3WiIgZmlsbD0iI0Q1REREOCIvPgo8Y2lyY2xlIGN4PSI3NSIgY3k9IjkxIiByPSI5IiBmaWxsPSIjRDVEREQ4Ii8+Cjx0ZXh0IHg9IjEwMCIgeT0iMTUwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iLWFwcGxlLXN5c3RlbSwgQmxpbmtNYWNTeXN0ZW1Gb250LCBTZWdvZSBVSSwgUm9ib3RvLCBPeHlnZW4sIFVidW50dSwgQ2FudGFyZWxsLCBGaXJhIFNhbnMsIERyb2lkIFNhbnMsIEhlbHZldGljYSBOZXVlLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmaWxsPSIjOUI5QkE0Ij5JbWFnZSBub3QgYXZhaWxhYmxlPC90ZXh0Pgo8L3N2Zz4K';
-                            e.currentTarget.style.cursor = 'default';
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-sm text-center text-green-700 font-medium">Damage Photo {index + 1}</p>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {photoUrls.map((photo, index) => (
+                      <div key={index} className="bg-white p-3 rounded-lg border border-green-300 hover:shadow-lg transition-shadow">
+                        <div className="aspect-square mb-3 overflow-hidden rounded">
+                          <img 
+                            src={photo} 
+                            alt={`Evidence Photo ${index + 1}`}
+                            className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
                             onClick={() => {
                               setPreviewImageUrl(photo);
                               setImagePreviewModalOpen(true);
                             }}
-                            className="text-xs flex-1"
-                          >
-                            View Full Size
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              navigator.clipboard.writeText(photo);
-                              toast({
-                                title: "URL Copied",
-                                description: `Photo ${index + 1} URL copied to clipboard`,
-                              });
+                            title="Click to view full size"
+                            onError={(e) => {
+                              console.error('Image load error for photo:', photo);
+                              e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik04NyA3NEw5MCA3N0wxMTMgMTAwTDE0MyA3MEwxNTcgODRWMTI2SDQzVjc0SDg3WiIgZmlsbD0iI0Q1REREOCIvPgo8Y2lyY2xlIGN4PSI3NSIgY3k9IjkxIiByPSI5IiBmaWxsPSIjRDVEREQ4Ii8+Cjx0ZXh0IHg9IjEwMCIgeT0iMTUwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iLWFwcGxlLXN5c3RlbSwgQmxpbmtNYWNTeXN0ZW1Gb250LCBTZWdvZSBVSSwgUm9ib3RvLCBPeHlnZW4sIFVidW50dSwgQ2FudGFyZWxsLCBGaXJhIFNhbnMsIERyb2lkIFNhbnMsIEhlbHZldGljYSBOZXVlLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmaWxsPSIjOUI5QkE0Ij5JbWFnZSBub3QgYXZhaWxhYmxlPC90ZXh0Pgo8L3N2Zz4K';
+                              e.currentTarget.style.cursor = 'default';
                             }}
-                            className="text-xs"
-                          >
-                            Copy URL
-                          </Button>
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-sm text-center text-green-700 font-medium">Evidence Photo {index + 1}</p>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setPreviewImageUrl(photo);
+                                setImagePreviewModalOpen(true);
+                              }}
+                              className="text-xs flex-1"
+                            >
+                              View Full Size
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                navigator.clipboard.writeText(photo);
+                                toast({
+                                  title: "URL Copied",
+                                  description: `Photo ${index + 1} URL copied to clipboard`,
+                                });
+                              }}
+                              className="text-xs"
+                            >
+                              Copy URL
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              ) : null;
+            })()}
           </div>
           
           <div className="flex justify-end gap-3 pt-6 border-t">
@@ -3142,111 +3281,279 @@ const TechnicianDashboard = ({
 
       {/* View Case Modal from Processing Records */}
       <Dialog open={viewCaseModalOpen} onOpenChange={setViewCaseModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Processing Record Details</DialogTitle>
-            <DialogDescription>
-              <div>VIN: {selectedRecord?.vin}</div>
-              {selectedRecord?.recordId && (
-                <div className="text-xs text-slate-400 font-mono mt-1">
-                  Record ID: {selectedRecord.recordId}
-                </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="text-2xl font-bold">Processing Record Details</DialogTitle>
+                <DialogDescription className="text-sm text-slate-500 mt-1">
+                  VIN: {selectedRecord?.vin}
+                </DialogDescription>
+              </div>
+              {selectedRecord && (
+                <Badge 
+                  variant={getStatusBadgeVariant(selectedRecord.status)} 
+                  className="text-sm px-3 py-1"
+                >
+                  {getStatusLabel(selectedRecord.status)}
+                </Badge>
               )}
-            </DialogDescription>
+            </div>
           </DialogHeader>
+          
           {selectedRecord && (
-            <div className="space-y-4">
-              {selectedRecord.recordId && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="space-y-6 mt-4">
+              {/* Basic Information Section */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="p-2 bg-blue-600 rounded-lg">
+                    <Car className="h-5 w-5 text-white" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-800">Basic Information</h3>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-6">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-600">VIN</p>
+                    <p className="text-sm font-bold text-slate-900">{selectedRecord.vin}</p>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-600">Vehicle Model</p>
+                    <p className="text-sm font-bold text-slate-900">{selectedRecord.vehicle.model.name}</p>
+                    <p className="text-xs text-slate-500">Model ID: {selectedRecord.vehicle.model.vehicleModelId}</p>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-600">Odometer</p>
+                    <p className="text-sm font-bold text-slate-900">{selectedRecord.odometer.toLocaleString()} km</p>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-600">Check-in Date</p>
+                    <p className="text-sm font-bold text-slate-900">{formatDate(selectedRecord.checkInDate)}</p>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-600">Created by Staff</p>
+                    <p className="text-sm font-bold text-slate-900">{selectedRecord.createdByStaff.name}</p>
+                    <p className="text-xs text-slate-500">Staff ID: {selectedRecord.createdByStaff.userId}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Guarantee Cases with nested Case Lines */}
+              {selectedRecord?.guaranteeCases && selectedRecord.guaranteeCases.length > 0 && (
+                <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-blue-600" />
-                    <div className="flex-1">
-                      <p className="text-xs text-blue-600 font-medium">Record ID</p>
-                      <p className="text-sm font-mono text-blue-800">{selectedRecord.recordId}</p>
-                    </div>
+                    <FileText className="h-5 w-5 text-blue-600" />
+                    <h3 className="text-lg font-bold text-slate-800">Guarantee Cases</h3>
+                    <span className="text-sm text-slate-500">({selectedRecord.guaranteeCases.length})</span>
                   </div>
-                </div>
-              )}
-              
-              <div className="grid grid-cols-2 gap-4 p-4 bg-white border rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Car className="h-4 w-4 text-slate-500" />
-                  <div>
-                    <p className="text-xs text-slate-500">Vehicle Model</p>
-                    <p className="text-sm font-semibold">{selectedRecord.vehicle.model.name}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Gauge className="h-4 w-4 text-slate-500" />
-                  <div>
-                    <p className="text-xs text-slate-500">Odometer</p>
-                    <p className="text-sm font-semibold">{selectedRecord.odometer.toLocaleString()} km</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-slate-500" />
-                  <div>
-                    <p className="text-xs text-slate-500">Check-in Date</p>
-                    <p className="text-sm font-semibold">{formatDate(selectedRecord.checkInDate)}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={getStatusBadgeVariant(selectedRecord.status)}>
-                    {getStatusLabel(selectedRecord.status)}
-                  </Badge>
-                </div>
-              </div>
-
-              <div className="p-4 bg-white border rounded-lg">
-                <div className="flex items-start gap-2">
-                  <Wrench className="h-4 w-4 text-slate-600 mt-1" />
-                  <div className="flex-1">
-                    <p className="text-xs text-slate-600 font-medium">Main Technician</p>
-                    <p className="text-sm font-semibold">{selectedRecord.mainTechnician.name}</p>
-                    <p className="text-xs text-slate-500">ID: {selectedRecord.mainTechnician.userId}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-4 bg-white border rounded-lg">
-                <div className="flex items-start gap-2">
-                  <User className="h-4 w-4 text-slate-600 mt-1" />
-                  <div className="flex-1">
-                    <p className="text-xs text-slate-600 font-medium">Created By</p>
-                    <p className="text-sm font-semibold">{selectedRecord.createdByStaff.name}</p>
-                    <p className="text-xs text-slate-500">ID: {selectedRecord.createdByStaff.userId}</p>
-                  </div>
-                </div>
-              </div>
-
-              {selectedRecord?.guaranteeCases && (selectedRecord.guaranteeCases?.length ?? 0) > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                    <FileText className="h-4 w-4" />
-                    Guarantee Cases ({selectedRecord?.guaranteeCases?.length ?? 0})
-                  </div>
-                  {selectedRecord.guaranteeCases.map((guaranteeCase, index) => (
-                    <div key={guaranteeCase.guaranteeCaseId} className="p-4 bg-white rounded-lg border">
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="text-xs font-medium text-slate-700">Case #{index + 1}</span>
-                        <Badge variant="outline" className="text-xs">
-                          {guaranteeCase.status}
-                        </Badge>
+                  
+                  {selectedRecord.guaranteeCases.map((guaranteeCase, gcIndex) => {
+                    // Filter case lines for this guarantee case
+                    const caseLinesForCase = createdCaseLines.filter(
+                      cl => cl.guaranteeCaseId === guaranteeCase.guaranteeCaseId
+                    );
+                    
+                    return (
+                      <div key={guaranteeCase.guaranteeCaseId} className="border border-slate-300 rounded-xl overflow-hidden">
+                        {/* Guarantee Case Header */}
+                        <div className="bg-gradient-to-r from-slate-50 to-slate-100 p-4 border-b">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-sm font-bold text-slate-700">Guarantee Case #{gcIndex + 1}</span>
+                                <Badge variant="outline" className="text-xs">
+                                  {guaranteeCase.status}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-slate-600">
+                                <span className="font-medium">Content:</span> {guaranteeCase.contentGuarantee}
+                              </p>
+                              <p className="text-xs text-slate-400 mt-1 font-mono">
+                                ID: {guaranteeCase.guaranteeCaseId}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Case Lines nested under Guarantee Case */}
+                        {caseLinesForCase.length > 0 ? (
+                          <div className="p-4 space-y-3 bg-white">
+                            {caseLinesForCase.map((caseLine, clIndex) => (
+                              <div key={caseLine.caseLineId} className="border border-slate-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex items-center gap-2">
+                                    <span className="flex items-center justify-center w-6 h-6 bg-blue-600 text-white text-xs font-bold rounded-full">
+                                      {clIndex + 1}
+                                    </span>
+                                    <span className="text-xs font-mono text-slate-500">
+                                      {caseLine.caseLineId}
+                                    </span>
+                                  </div>
+                                  <Badge 
+                                    variant={
+                                      caseLine.warrantyStatus === 'ELIGIBLE' ? 'default' : 
+                                      caseLine.status === 'rejected' ? 'destructive' : 
+                                      'secondary'
+                                    }
+                                    className="text-xs"
+                                  >
+                                    {caseLine.warrantyStatus || caseLine.status}
+                                  </Badge>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-3 mb-3">
+                                  {/* Diagnosis */}
+                                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                    <p className="text-xs font-semibold text-orange-700 mb-1">Diagnosis</p>
+                                    <p className="text-sm text-slate-800">{caseLine.diagnosisText || 'N/A'}</p>
+                                  </div>
+                                  
+                                  {/* Correction */}
+                                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                                    <p className="text-xs font-semibold text-green-700 mb-1">Correction</p>
+                                    <p className="text-sm text-slate-800">{caseLine.correctionText || 'N/A'}</p>
+                                  </div>
+                                </div>
+                                
+                                {/* Component Info */}
+                                {caseLine.componentId && (
+                                  <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg mb-3">
+                                    <div className="p-2 bg-blue-100 rounded">
+                                      <Package className="h-4 w-4 text-blue-600" />
+                                    </div>
+                                    <div className="flex-1">
+                                      <p className="text-xs text-slate-600">Component</p>
+                                      <p className="text-sm font-semibold text-slate-900">
+                                        Component ID: {caseLine.componentId}
+                                      </p>
+                                      <p className="text-xs text-slate-500">Quantity: {caseLine.quantity}</p>
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* Evidence Photos */}
+                                {caseLine.evidenceImageUrls && caseLine.evidenceImageUrls.length > 0 && (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <Camera className="h-4 w-4 text-slate-600" />
+                                      <p className="text-xs font-semibold text-slate-700">Evidence Photos ({caseLine.evidenceImageUrls.length})</p>
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-2">
+                                      {caseLine.evidenceImageUrls.map((url, imgIndex) => (
+                                        <div 
+                                          key={imgIndex}
+                                          className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-80 transition-opacity"
+                                          onClick={() => window.open(url, '_blank')}
+                                        >
+                                          <img 
+                                            src={url} 
+                                            alt={`Evidence ${imgIndex + 1}`}
+                                            className="w-full h-full object-cover"
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* View Details Button */}
+                                <div className="mt-3 pt-3 border-t border-slate-200">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full"
+                                    onClick={() => {
+                                      // Convert to CaseLine format for view modal
+                                      const formattedCaseLine: CaseLine = {
+                                        id: caseLine.caseLineId,
+                                        caseId: caseLine.guaranteeCaseId,
+                                        damageLevel: 'medium',
+                                        repairPossibility: 'repairable',
+                                        warrantyDecision: caseLine.warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
+                                        technicianNotes: `${caseLine.diagnosisText} | ${caseLine.correctionText}`,
+                                        photos: caseLine.evidenceImageUrls || [],
+                                        evidenceImageUrls: caseLine.evidenceImageUrls || [],
+                                        createdDate: new Date(caseLine.createdAt).toLocaleDateString('en-GB'),
+                                        status: caseLine.status === 'pending' ? 'submitted' : 'approved',
+                                        diagnosisText: caseLine.diagnosisText,
+                                        correctionText: caseLine.correctionText,
+                                        componentId: caseLine.componentId,
+                                        quantity: caseLine.quantity,
+                                        warrantyStatus: caseLine.warrantyStatus,
+                                        diagnosticTechId: caseLine.techId,
+                                        updatedAt: caseLine.updatedAt
+                                      };
+                                      handleViewCaseLine(formattedCaseLine);
+                                    }}
+                                  >
+                                    <Eye className="h-3 w-3 mr-2" />
+                                    View Full Details
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-6 text-center text-slate-500 bg-slate-50">
+                            <FileText className="h-10 w-10 text-slate-400 mx-auto mb-2" />
+                            <p className="text-sm">No case lines created for this guarantee case yet.</p>
+                          </div>
+                        )}
                       </div>
-                      <p className="text-sm text-slate-700 mb-2">
-                        <span className="font-medium">Content:</span> {guaranteeCase.contentGuarantee}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        ID: {guaranteeCase.guaranteeCaseId}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
-              <div className="pt-2 border-t">
-                <p className="text-xs text-slate-500">VIN: {selectedRecord.vin}</p>
-                <p className="text-xs text-slate-500">Model ID: {selectedRecord.vehicle.model.vehicleModelId}</p>
+              {/* Assigned Technicians Section */}
+              <div className="bg-white border border-slate-300 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Users className="h-5 w-5 text-blue-600" />
+                  <h3 className="text-lg font-bold text-slate-800">Assigned Technicians</h3>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                    <div className="p-2 bg-blue-100 rounded-full">
+                      <User className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{selectedRecord.mainTechnician.name}</p>
+                      <p className="text-xs text-slate-500">Main Technician • ID: {selectedRecord.mainTechnician.userId}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Timeline Section */}
+              <div className="bg-white border border-slate-300 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Clock className="h-5 w-5 text-blue-600" />
+                  <h3 className="text-lg font-bold text-slate-800">Timeline</h3>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-green-100 rounded-full mt-0.5">
+                      <Calendar className="h-4 w-4 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Case Submitted</p>
+                      <p className="text-xs text-slate-500">{formatDate(selectedRecord.checkInDate)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-blue-100 rounded-full mt-0.5">
+                      <CheckCircle className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Vehicle Check-in</p>
+                      <p className="text-xs text-slate-500">{formatDate(selectedRecord.checkInDate)}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}
