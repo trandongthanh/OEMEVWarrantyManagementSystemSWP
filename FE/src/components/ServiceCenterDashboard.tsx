@@ -65,6 +65,61 @@ interface CaseLine {
   typeComponent?: ComponentInfo;
 }
 
+interface DetailedCaseLine {
+  id: string;
+  diagnosisText: string;
+  correctionText: string;
+  warrantyStatus: string;
+  status: string;
+  typeComponentId: string;
+  quantity: number;
+  rejectionReason: string | null;
+  evidenceImageUrls?: string[];
+  updatedAt: string;
+  guaranteeCase?: {
+    guaranteeCaseId: string;
+    contentGuarantee: string;
+    status: string;
+    vehicleProcessingRecord?: {
+      vehicleProcessingRecordId: string;
+      vin: string;
+      createdByStaff?: {
+        userId: string;
+        serviceCenterId: string;
+        vehicleCompanyId: string | null;
+        serviceCenter?: {
+          serviceCenterId: string;
+          vehicleCompanyId: string;
+        };
+      };
+    };
+  };
+  diagnosticTechnician?: {
+    userId: string;
+    name: string;
+  };
+  repairTechnician?: {
+    userId: string;
+    name: string;
+  };
+  typeComponent?: {
+    typeComponentId: string;
+    sku: string;
+    name: string;
+    price: number;
+  };
+  reservations?: Array<{
+    reservationId: string;
+    caseLineId: string;
+    status: string;
+    component?: {
+      componentId: string;
+      serialNumber: string;
+      status: string;
+    };
+  }>;
+}
+
 interface GuaranteeCase {
   guaranteeCaseId: string;
   contentGuarantee: string;
@@ -414,6 +469,13 @@ const ServiceCenterDashboard = () => {
     caseLineId: string;
   } | null>(null);
 
+  // Case line detail modal states
+  const [showCaseLineDetailModal, setShowCaseLineDetailModal] = useState(false);
+  const [selectedCaseLineDetail, setSelectedCaseLineDetail] = useState<DetailedCaseLine | null>(null);
+  const [isLoadingCaseLineDetail, setIsLoadingCaseLineDetail] = useState(false);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  const [showImageModal, setShowImageModal] = useState(false);
+
   // Cancel stock request states
   const [showCancelRequestModal, setShowCancelRequestModal] = useState(false);
   const [cancelRequestId, setCancelRequestId] = useState<string | null>(null);
@@ -655,6 +717,53 @@ const ServiceCenterDashboard = () => {
     } catch (error) {
       console.error('Failed to fetch stock transfer request detail:', error);
       return null;
+    }
+  };
+
+  // Fetch detailed case line information
+  const fetchCaseLineDetail = async (caseLineId: string) => {
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      console.error('❌ No auth token available');
+      alert('Authentication token not found. Please log in again.');
+      return null;
+    }
+
+    setIsLoadingCaseLineDetail(true);
+    try {
+      console.log('🔍 Fetching case line detail for ID:', caseLineId);
+      console.log('🔍 API URL:', `${API_BASE_URL}/case-lines/${caseLineId}`);
+      
+      const response = await axios.get(`${API_BASE_URL}/case-lines/${caseLineId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      console.log('📦 Full API Response:', response);
+      console.log('📦 Response data:', response.data);
+      console.log('📦 Response data.data:', response.data?.data);
+      
+      const caseLineData = response.data?.data?.caseLine || null;
+      console.log('✅ Case line detail parsed:', caseLineData);
+      
+      if (caseLineData) {
+        setSelectedCaseLineDetail(caseLineData);
+        setShowCaseLineDetailModal(true);
+      } else {
+        console.warn('⚠️ No case line data found in response');
+        alert('No case line data found. The response structure may be different.');
+      }
+      
+      return caseLineData;
+    } catch (error: any) {
+      console.error('❌ Failed to fetch case line detail:', error);
+      console.error('❌ Error response:', error.response);
+      console.error('❌ Error message:', error.message);
+      
+      const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
+      alert(`Failed to load case line details: ${errorMsg}`);
+      return null;
+    } finally {
+      setIsLoadingCaseLineDetail(false);
     }
   };
 
@@ -1672,15 +1781,6 @@ const ServiceCenterDashboard = () => {
                             </p>
                           )}
                         </div>
-                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
-                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
-                            <DollarSign className="h-3 w-3" />
-                            Estimated Cost
-                          </label>
-                          <p className="text-sm font-semibold text-green-600 mt-0.5">
-                            {selectedClaimForDetail.estimatedCost.toLocaleString()} VND
-                          </p>
-                        </div>
                       </div>
                     </div>
                   </CardContent>
@@ -1914,6 +2014,18 @@ const ServiceCenterDashboard = () => {
                                                       Assign Technician
                                                     </Button>
                                                   )}
+                                                  
+                                                  {/* View Details button - always show */}
+                                                  <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => fetchCaseLineDetail(line.id)}
+                                                    disabled={isLoadingCaseLineDetail}
+                                                    className="text-gray-700 hover:bg-gray-50 border-gray-300 text-xs h-6 px-2"
+                                                  >
+                                                    <Eye className="h-3 w-3 mr-1" />
+                                                    {isLoadingCaseLineDetail ? 'Loading...' : 'View Details'}
+                                                  </Button>
                                                 </div>
                                               </div>
                                             </div>
@@ -2657,6 +2769,310 @@ const ServiceCenterDashboard = () => {
           </DialogContent>
         </Dialog>
 
+        {/* Case Line Detail Modal */}
+        <Dialog open={showCaseLineDetailModal} onOpenChange={(open) => {
+          setShowCaseLineDetailModal(open);
+          if (!open) {
+            setSelectedCaseLineDetail(null);
+          }
+        }}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-blue-600" />
+                Case Line Details
+              </DialogTitle>
+              <DialogDescription>
+                Complete information about this case line
+              </DialogDescription>
+            </DialogHeader>
+
+            {isLoadingCaseLineDetail ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">Loading case line details...</p>
+              </div>
+            ) : selectedCaseLineDetail ? (
+              <div className="space-y-4 mt-4">
+                {/* Case Line Information Card */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-blue-600" />
+                      Case Line Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Case Line ID</p>
+                        <p className="text-sm font-mono">{selectedCaseLineDetail.id}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Status</p>
+                        <Badge variant={getCaseLineStatusVariant(selectedCaseLineDetail.status)}>
+                          {getDisplayStatus(selectedCaseLineDetail.status)}
+                        </Badge>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Warranty Status</p>
+                        <Badge variant={selectedCaseLineDetail.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}>
+                          {selectedCaseLineDetail.warrantyStatus}
+                        </Badge>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Quantity</p>
+                        <p className="text-sm font-medium">{selectedCaseLineDetail.quantity}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 pt-2">
+                      <div className="p-3 bg-amber-50/80 dark:bg-amber-900/10 rounded border-l-2 border-amber-400">
+                        <div className="flex items-center gap-1 mb-1">
+                          <AlertCircle className="h-4 w-4 text-amber-600" />
+                          <span className="font-semibold text-sm text-amber-700 dark:text-amber-400">Diagnosis</span>
+                        </div>
+                        <p className="text-sm text-gray-700 dark:text-gray-300">{selectedCaseLineDetail.diagnosisText}</p>
+                      </div>
+                      
+                      <div className="p-3 bg-green-50/80 dark:bg-green-900/10 rounded border-l-2 border-green-400">
+                        <div className="flex items-center gap-1 mb-1">
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <span className="font-semibold text-sm text-green-700 dark:text-green-400">Correction</span>
+                        </div>
+                        <p className="text-sm text-gray-700 dark:text-gray-300">{selectedCaseLineDetail.correctionText}</p>
+                      </div>
+                    </div>
+
+                    {/* Evidence Images */}
+                    {selectedCaseLineDetail.evidenceImageUrls && selectedCaseLineDetail.evidenceImageUrls.length > 0 && (
+                      <div className="pt-2">
+                        <p className="text-xs text-muted-foreground mb-2">Evidence Images ({selectedCaseLineDetail.evidenceImageUrls.length})</p>
+                        <div className="grid grid-cols-4 gap-2">
+                          {selectedCaseLineDetail.evidenceImageUrls.map((url, idx) => (
+                            <img
+                              key={idx}
+                              src={url}
+                              alt={`Evidence ${idx + 1}`}
+                              className="w-full h-24 object-cover rounded border cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => {
+                                setSelectedImageUrl(url);
+                                setShowImageModal(true);
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Component Information Card */}
+                {selectedCaseLineDetail.typeComponent && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Package className="h-4 w-4 text-blue-600" />
+                        Component Information
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Component Name</p>
+                          <p className="text-sm font-medium">{selectedCaseLineDetail.typeComponent.name}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">SKU</p>
+                          <p className="text-sm font-mono">{selectedCaseLineDetail.typeComponent.sku}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Price</p>
+                          <p className="text-sm font-medium">{formatCurrency(selectedCaseLineDetail.typeComponent.price)}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Guarantee Case & Vehicle Information */}
+                {selectedCaseLineDetail.guaranteeCase && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Car className="h-4 w-4 text-blue-600" />
+                        Guarantee Case & Vehicle Information
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Guarantee Case ID</p>
+                        <p className="text-sm font-mono">{selectedCaseLineDetail.guaranteeCase.guaranteeCaseId}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Content</p>
+                        <p className="text-sm bg-blue-50 dark:bg-blue-900/30 p-2 rounded">
+                          {selectedCaseLineDetail.guaranteeCase.contentGuarantee}
+                        </p>
+                      </div>
+                      
+                      {selectedCaseLineDetail.guaranteeCase.vehicleProcessingRecord && (
+                        <div className="pt-2 border-t">
+                          <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Vehicle Details</p>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-1">VIN</p>
+                              <p className="text-sm font-mono">{selectedCaseLineDetail.guaranteeCase.vehicleProcessingRecord.vin}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-1">Processing Record ID</p>
+                              <p className="text-sm font-mono text-xs">{selectedCaseLineDetail.guaranteeCase.vehicleProcessingRecord.vehicleProcessingRecordId}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Technicians Information */}
+                {(selectedCaseLineDetail.diagnosticTechnician || selectedCaseLineDetail.repairTechnician) && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Users className="h-4 w-4 text-blue-600" />
+                        Assigned Technicians
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 gap-4">
+                        {selectedCaseLineDetail.diagnosticTechnician && (
+                          <div className="p-3 bg-blue-50/80 dark:bg-blue-900/10 rounded border-l-2 border-blue-400">
+                            <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-2">Diagnostic Technician</p>
+                            <p className="text-sm font-medium">{selectedCaseLineDetail.diagnosticTechnician.name}</p>
+                            <p className="text-xs text-muted-foreground font-mono">ID: {selectedCaseLineDetail.diagnosticTechnician.userId}</p>
+                          </div>
+                        )}
+                        
+                        {selectedCaseLineDetail.repairTechnician && (
+                          <div className="p-3 bg-purple-50/80 dark:bg-purple-900/10 rounded border-l-2 border-purple-400">
+                            <p className="text-xs font-semibold text-purple-700 dark:text-purple-400 mb-2">Repair Technician</p>
+                            <p className="text-sm font-medium">{selectedCaseLineDetail.repairTechnician.name}</p>
+                            <p className="text-xs text-muted-foreground font-mono">ID: {selectedCaseLineDetail.repairTechnician.userId}</p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Reservations Information */}
+                {selectedCaseLineDetail.reservations && selectedCaseLineDetail.reservations.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Package className="h-4 w-4 text-blue-600" />
+                        Component Reservations ({selectedCaseLineDetail.reservations.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="rounded-lg border overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs">Reservation ID</TableHead>
+                              <TableHead className="text-xs">Serial Number</TableHead>
+                              <TableHead className="text-xs">Component Status</TableHead>
+                              <TableHead className="text-xs">Reservation Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {selectedCaseLineDetail.reservations.map((reservation) => (
+                              <TableRow key={reservation.reservationId}>
+                                <TableCell className="font-mono text-xs">
+                                  {reservation.reservationId.substring(0, 8)}...
+                                </TableCell>
+                                <TableCell className="font-mono text-xs">
+                                  {reservation.component?.serialNumber || 'N/A'}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={
+                                      reservation.component?.status === 'INSTALLED' ? 'success' :
+                                      reservation.component?.status === 'PICKED_UP' ? 'default' :
+                                      'outline'
+                                    }
+                                    className="text-xs"
+                                  >
+                                    {reservation.component?.status || 'N/A'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={
+                                      reservation.status === 'INSTALLED' ? 'success' :
+                                      reservation.status === 'PICKED_UP' ? 'default' :
+                                      'outline'
+                                    }
+                                    className="text-xs"
+                                  >
+                                    {reservation.status.replace(/_/g, ' ')}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Timestamps */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-blue-600" />
+                      Timestamps
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Last Updated At</p>
+                        <p className="text-sm">
+                          {new Date(selectedCaseLineDetail.updatedAt).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">No case line details available</p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowCaseLineDetailModal(false);
+                  setSelectedCaseLineDetail(null);
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Stock Transfer Requests List Modal */}
         <Dialog open={showStockRequestsModal} onOpenChange={(open) => {
           setShowStockRequestsModal(open);
@@ -3195,6 +3611,44 @@ const ServiceCenterDashboard = () => {
                 <XCircle className="h-4 w-4 mr-2" />
                 Confirm Cancellation
               </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Image Full View Modal */}
+        <Dialog open={showImageModal} onOpenChange={setShowImageModal}>
+          <DialogContent className="max-w-4xl max-h-[95vh] p-2">
+            <DialogHeader>
+              <DialogTitle className="text-sm">Evidence Image - Full View</DialogTitle>
+            </DialogHeader>
+            <div className="flex items-center justify-center p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+              {selectedImageUrl && (
+                <img
+                  src={selectedImageUrl}
+                  alt="Full size evidence"
+                  className="max-w-full max-h-[80vh] object-contain rounded"
+                />
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowImageModal(false);
+                  setSelectedImageUrl(null);
+                }}
+              >
+                Close
+              </Button>
+              {selectedImageUrl && (
+                <Button
+                  variant="default"
+                  onClick={() => window.open(selectedImageUrl, '_blank')}
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  Open in New Tab
+                </Button>
+              )}
             </div>
           </DialogContent>
         </Dialog>

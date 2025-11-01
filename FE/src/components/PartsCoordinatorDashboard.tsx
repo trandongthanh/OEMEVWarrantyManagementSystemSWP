@@ -2235,7 +2235,15 @@ const PartsCoordinatorDashboard: React.FC = () => {
                       );
                       if (!firstReservation) return null;
                       
-                      const tech = firstReservation.caseLine.repairTechnician;
+                      const tech = firstReservation.caseLine?.repairTechnician;
+                      if (!tech) {
+                        return (
+                          <div className="text-sm text-amber-700 p-3 bg-amber-50 rounded border border-amber-200">
+                            No technician assigned yet
+                          </div>
+                        );
+                      }
+                      
                       return (
                         <div className="flex items-center gap-3 p-3 bg-white rounded-lg border">
                           <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100">
@@ -2243,8 +2251,8 @@ const PartsCoordinatorDashboard: React.FC = () => {
                           </div>
                           <div>
                             <p className="font-semibold text-sm text-green-900">{tech.name}</p>
-                            <p className="text-xs text-green-700">{tech.email}</p>
-                            <p className="text-xs text-green-700">{tech.phone}</p>
+                            {tech.email && <p className="text-xs text-green-700">{tech.email}</p>}
+                            {tech.phone && <p className="text-xs text-green-700">{tech.phone}</p>}
                           </div>
                         </div>
                       );
