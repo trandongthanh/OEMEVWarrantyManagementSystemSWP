@@ -572,7 +572,7 @@ const WarrantyDashboard: React.FC = () => {
                 </Card>
               </div>
 
-              {/* Items Table */}
+              {/* Items Grid */}
               {selectedRequest.items && selectedRequest.items.length > 0 && (
                 <Card>
                   <CardHeader>
@@ -580,29 +580,24 @@ const WarrantyDashboard: React.FC = () => {
                     <CardDescription>Components and quantities for warranty service</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Item ID</TableHead>
-                          <TableHead>Request ID</TableHead>
-                          <TableHead>Type Component ID</TableHead>
-                          <TableHead>Quantity Requested</TableHead>
-                          <TableHead>Caseline ID</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {selectedRequest.items.map((item) => (
-                          <TableRow key={item.id}>
-                            <TableCell className="font-medium">
-                              <span className="text-sm text-gray-900">#{item.id.substring(0, 8)}...</span>
-                            </TableCell>
-                            <TableCell>
-                              <span className="text-sm text-gray-600">#{item.requestId?.substring(0, 8) || 'N/A'}...</span>
-                            </TableCell>
-                            <TableCell>
+                    <div className="space-y-4">
+                      {selectedRequest.items.map((item) => (
+                        <div key={item.id} className="border rounded-lg p-4 space-y-3 hover:shadow-md transition-shadow bg-gray-50">
+                          {/* Top Row: Request ID & Type Component ID */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <span className="text-xs text-gray-500 block mb-1">Request ID</span>
+                              <span className="text-sm font-medium text-gray-900">
+                                #{item.requestId?.substring(0, 8) || 'N/A'}...
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500 block mb-1">Type Component ID</span>
                               {item.typeComponentId ? (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-mono text-indigo-600">#{item.typeComponentId.substring(0, 8)}...</span>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-sm font-mono text-indigo-600">
+                                    #{item.typeComponentId.substring(0, 8)}...
+                                  </span>
                                   <button
                                     onClick={() => {
                                       navigator.clipboard.writeText(item.typeComponentId || '');
@@ -615,28 +610,36 @@ const WarrantyDashboard: React.FC = () => {
                                   </button>
                                 </div>
                               ) : (
-                                <span className="text-gray-400 italic">N/A</span>
+                                <span className="text-sm text-gray-400 italic">N/A</span>
                               )}
-                            </TableCell>
-                            <TableCell>
+                            </div>
+                          </div>
+                          
+                          {/* Bottom Row: Quantity Requested & Caseline ID */}
+                          <div className="grid grid-cols-2 gap-3 pt-3 border-t">
+                            <div>
+                              <span className="text-xs text-gray-500 block mb-1">Quantity Requested</span>
                               <div className="flex flex-col gap-1">
-                                <span className="font-semibold text-blue-600 text-lg">{item.quantityRequested}</span>
+                                <span className="font-bold text-blue-600 text-xl">{item.quantityRequested}</span>
                                 {item.quantityApproved !== null && item.quantityApproved !== undefined && (
-                                  <span className="text-xs text-green-600">✓ Approved: {item.quantityApproved}</span>
+                                  <span className="text-xs text-green-600 font-medium">✓ Approved: {item.quantityApproved}</span>
                                 )}
                               </div>
-                            </TableCell>
-                            <TableCell>
+                            </div>
+                            <div>
+                              <span className="text-xs text-gray-500 block mb-1">Caseline ID</span>
                               {item.caselineId ? (
-                                <span className="text-sm text-gray-600">#{item.caselineId.substring(0, 8)}...</span>
+                                <span className="text-sm font-medium text-gray-900">
+                                  #{item.caselineId.substring(0, 8)}...
+                                </span>
                               ) : (
-                                <span className="text-gray-400 italic text-sm">N/A</span>
+                                <span className="text-sm text-gray-400 italic">N/A</span>
                               )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </CardContent>
                 </Card>
               )}
