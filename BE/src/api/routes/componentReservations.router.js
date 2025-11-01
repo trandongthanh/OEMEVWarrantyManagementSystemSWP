@@ -110,7 +110,10 @@ const router = express.Router();
 router.get(
   "/",
   authentication,
-  authorizationByRole(["parts_coordinator_service_center"]),
+  authorizationByRole([
+    "parts_coordinator_service_center",
+    "service_center_tehcnician",
+  ]),
   validate(getComponentReservationsQuerySchema, "query"),
   async (req, res, next) => {
     const componentReservationsController = req.container.resolve(

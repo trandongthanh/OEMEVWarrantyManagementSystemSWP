@@ -7,7 +7,7 @@ import {
 } from "../middleware/index.js";
 import {
   createInventoryAdjustmentBodySchema,
-  createInventoryAdjustmentQuerySchema,
+  // createInventoryAdjustmentQuerySchema,
 } from "../../validators/inventory.validator.js";
 
 const router = express.Router();
@@ -366,7 +366,7 @@ router.post(
     "parts_coordinator_service_center",
   ]),
   validate(createInventoryAdjustmentBodySchema, "body"),
-  validate(createInventoryAdjustmentQuerySchema, "query"),
+  // validate(createInventoryAdjustmentQuerySchema, "query"),
   attachCompanyContext,
 
   async (req, res, next) => {
