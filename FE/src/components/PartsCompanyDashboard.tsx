@@ -64,6 +64,8 @@ const PartsCompanyDashboard: React.FC = () => {
   const navigate = useNavigate();
 
   const [stockTransferRequests, setStockTransferRequests] = useState<StockTransferRequest[]>([]);
+  const [filteredRequests, setFilteredRequests] = useState<StockTransferRequest[]>([]);
+  const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
   const [isLoadingRequests, setIsLoadingRequests] = useState<boolean>(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
@@ -134,6 +136,15 @@ const PartsCompanyDashboard: React.FC = () => {
   useEffect(() => {
     fetchStockTransferRequests();
   }, []);
+
+  // Filter requests by status
+  useEffect(() => {
+    if (selectedStatus === 'ALL') {
+      setFilteredRequests(stockTransferRequests);
+    } else {
+      setFilteredRequests(stockTransferRequests.filter(req => req.status === selectedStatus));
+    }
+  }, [selectedStatus, stockTransferRequests]);
 
   // Ship stock transfer request
   const handleShipRequest = async (requestId: string) => {
@@ -254,12 +265,32 @@ const PartsCompanyDashboard: React.FC = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {/* Status Filter */}
+              <div className="mb-4 flex items-center gap-2 flex-wrap">
+                {['ALL', 'PENDING_APPROVAL', 'APPROVED', 'SHIPPED', 'RECEIVED', 'REJECTED', 'CANCELLED'].map((status) => {
+                  const count = status === 'ALL' 
+                    ? stockTransferRequests.length 
+                    : stockTransferRequests.filter(req => req.status === status).length;
+                  return (
+                    <Button
+                      key={status}
+                      variant={status === selectedStatus ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setSelectedStatus(status)}
+                      className="border-dashed"
+                    >
+                      {status === 'ALL' ? 'All' : status.replace(/_/g, ' ')} ({count})
+                    </Button>
+                  );
+                })}
+              </div>
+
               {isLoadingRequests ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   <span className="ml-3 text-muted-foreground">Loading requests...</span>
                 </div>
-              ) : stockTransferRequests.length === 0 ? (
+              ) : filteredRequests.length === 0 ? (
                 <div className="flex items-center justify-center py-12">
                   <div className="text-center">
                     <Package className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
@@ -267,7 +298,10 @@ const PartsCompanyDashboard: React.FC = () => {
                       No Stock Transfer Requests
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      There are no stock transfer requests at the moment.
+                      {selectedStatus === 'ALL' 
+                        ? 'There are no stock transfer requests at the moment.'
+                        : `No requests with status "${selectedStatus}"`
+                      }
                     </p>
                   </div>
                 </div>
@@ -285,7 +319,7 @@ const PartsCompanyDashboard: React.FC = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {stockTransferRequests.map((request) => (
+                      {filteredRequests.map((request) => (
                         <TableRow key={request.id}>
                           <TableCell className="font-mono text-xs">
                             #{request.id.substring(0, 8)}
