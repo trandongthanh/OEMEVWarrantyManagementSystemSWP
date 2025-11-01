@@ -16,7 +16,8 @@ import {
   Calendar,
   User,
   Warehouse,
-  Truck
+  Truck,
+  CheckCircle
 } from "lucide-react";
 
 const API_BASE_URL = 'http://localhost:3000/api/v1';
@@ -59,7 +60,7 @@ interface StockTransferRequest {
   }>;
 }
 
-const PartsCompanyDashboard: React.FC = () => {
+const PartsCoordinatorDashboard: React.FC = () => {
   const { user, logout, getToken } = useAuth();
   const navigate = useNavigate();
 
@@ -67,6 +68,7 @@ const PartsCompanyDashboard: React.FC = () => {
   const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
   const [isLoadingRequests, setIsLoadingRequests] = useState<boolean>(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
+  const [isReceiving, setIsReceiving] = useState<boolean>(false);
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
 
   // Fetch all stock transfer requests
@@ -133,6 +135,42 @@ const PartsCompanyDashboard: React.FC = () => {
   useEffect(() => {
     fetchStockTransferRequests();
   }, []);
+
+  // Receive stock transfer request
+  const handleReceiveRequest = async (requestId: string) => {
+    setIsReceiving(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsReceiving(false);
+      return;
+    }
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/stock-transfer-requests/${requestId}/receive`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+      console.log('✅ Request received successfully:', response.data);
+      
+      // Refresh the list
+      await fetchStockTransferRequests();
+      
+      // If modal is open, refresh the detail
+      if (showDetailModal && selectedStockRequest?.id === requestId) {
+        await fetchStockTransferRequestDetail(requestId);
+      }
+      
+      alert('Request received successfully!');
+    } catch (error: any) {
+      console.error('Failed to receive request:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to receive request';
+      alert(`Error: ${errorMessage}`);
+    } finally {
+      setIsReceiving(false);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -270,15 +308,28 @@ const PartsCompanyDashboard: React.FC = () => {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => fetchStockTransferRequestDetail(request.id)}
-                              disabled={isLoadingDetail}
-                            >
-                              <Eye className="mr-1 h-3 w-3" />
-                              View Details
-                            </Button>
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => fetchStockTransferRequestDetail(request.id)}
+                                disabled={isLoadingDetail}
+                              >
+                                <Eye className="mr-1 h-3 w-3" />
+                                View Details
+                              </Button>
+                              {request.status === 'SHIPPED' && (
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  onClick={() => handleReceiveRequest(request.id)}
+                                  disabled={isReceiving}
+                                >
+                                  <CheckCircle className="mr-1 h-3 w-3" />
+                                  {isReceiving ? 'Receiving...' : 'Receive'}
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -294,7 +345,20 @@ const PartsCompanyDashboard: React.FC = () => {
         <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
           <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Stock Transfer Request Details</DialogTitle>
+              <DialogTitle className="flex items-center justify-between">
+                <span>Stock Transfer Request Details</span>
+                {selectedStockRequest && selectedStockRequest.status === 'SHIPPED' && (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => handleReceiveRequest(selectedStockRequest.id)}
+                    disabled={isReceiving}
+                  >
+                    <CheckCircle className="mr-1 h-4 w-4" />
+                    {isReceiving ? 'Receiving...' : 'Receive Request'}
+                  </Button>
+                )}
+              </DialogTitle>
               <DialogDescription>
                 Detailed information about the stock transfer request
               </DialogDescription>
@@ -450,4 +514,4 @@ const PartsCompanyDashboard: React.FC = () => {
   );
 };
 
-export default PartsCompanyDashboard;
+export default PartsCoordinatorDashboard;
