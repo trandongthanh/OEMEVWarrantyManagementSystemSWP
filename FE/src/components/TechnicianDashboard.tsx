@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import type { AxiosResponse } from "axios";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,7 +34,10 @@ import {
   Gauge,
   AlertCircle,
   RefreshCw,
-  Package
+  Package,
+  Users,
+  Clock,
+  CheckCircle
 } from "lucide-react";
 
 // Work Schedule Interface
@@ -84,6 +88,7 @@ interface CaseLineResponse {
   typeComponentId?: string | null;
   repairTechId?: string | null;
   rejectionReason?: string | null;
+  evidenceImageUrls?: string[];
 }
 
 // Assigned Tasks Interfaces
@@ -217,6 +222,7 @@ interface CaseLine {
   repairTechId?: string;
   rejectionReason?: string | null;
   updatedAt?: string;
+  evidenceImageUrls?: string[];
 }
 
 interface WarrantyCase {
@@ -828,14 +834,14 @@ const TechnicianDashboard = ({
       
       // Call API to get case lines where repairTechId matches current user
       // Try without status filter first to see all case lines
-      const response = await apiService.get<{ status: string; data: { caseLines: AssignedCaseLine[]; pagination?: any } }>('/case-lines', {
+      const response = await apiService.get('/case-lines', {
         params: {
           repairTechId: user.id,
           // status: 'IN_REPAIR,READY_FOR_REPAIR,PENDING', // Comment out to see all
           sortBy: 'createdAt',
           sortOrder: 'DESC'
         }
-      });
+      }) as AxiosResponse<{ status: string; data: { caseLines: AssignedCaseLine[]; pagination?: { page: number; limit: number; total: number } } }>;
       
       console.log('📦 Full API Response:', JSON.stringify(response.data, null, 2));
       console.log('📊 Case Lines:', response.data?.data?.caseLines);
@@ -1151,7 +1157,7 @@ const TechnicianDashboard = ({
         photoFiles: [], // No need to store files anymore
         createdDate: new Date(serverCreatedCaseLines[0].createdAt).toLocaleDateString('en-GB'),
         status: serverCreatedCaseLines[0].status === 'pending' ? 'submitted' : 'approved',
-        evidenceImageUrls // Store Cloudinary URLs
+        evidenceImageUrls: evidenceImageUrls // Store Cloudinary URLs
       };
 
       // Ensure no duplicate caseLine IDs in UI list
