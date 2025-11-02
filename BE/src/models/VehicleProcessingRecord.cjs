@@ -1,4 +1,4 @@
-const { default: dayjs } = require("dayjs");
+const dayjs = require("dayjs");
 
 module.exports = (sequelize, DataTypes) => {
   const VehicleProcessingRecord = sequelize.define(
