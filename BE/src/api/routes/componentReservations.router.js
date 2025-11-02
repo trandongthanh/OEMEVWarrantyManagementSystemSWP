@@ -7,7 +7,6 @@ import {
 import {
   getComponentReservationsQuerySchema,
   pickupReservedComponentSchema,
-  returnReservedComponentSchema,
 } from "../../validators/componentReservation.validator.js";
 
 const router = express.Router();
@@ -41,7 +40,7 @@ const router = express.Router();
  *         name: status
  *         schema:
  *           type: string
- *           enum: [RESERVED, PICKED_UP, INSTALLED, RETURNED, CANCELLED]
+ *           enum: [RESERVED, PICKED_UP, INSTALLED, CANCELLED]
  *           default: RESERVED
  *         description: Filter reservations by status
  *       - in: query
@@ -303,110 +302,6 @@ router.patch(
     );
 
     await componentReservationsController.installComponent(req, res, next);
-  }
-);
-
-/**
- * @swagger
- * /component-reservations/{reservationId}/return:
- *   patch:
- *     summary: Return old component after replacement
- *     description: Parts coordinator returns the old component that was replaced. Updates reservation status to RETURNED and marks old component as returned.
- *     tags: [Component Reservations]
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: reservationId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: Reservation ID
- *         example: "d1e8d13d-7088-400e-a3d2-fdd584140176"
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - serialNumber
- *             properties:
- *               serialNumber:
- *                 type: string
- *                 description: Serial number of the old component being returned
- *                 example: "BMS-CTRL-01-SN-OLD-001"
- *     responses:
- *       200:
- *         description: Old component returned successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: "success"
- *                 data:
- *                   type: object
- *                   properties:
- *                     reservation:
- *                       type: object
- *                       properties:
- *                         reservationId:
- *                           type: string
- *                           format: uuid
- *                         status:
- *                           type: string
- *                           example: "RETURNED"
- *                         oldComponentSerial:
- *                           type: string
- *                           example: "BMS-CTRL-01-SN-OLD-001"
- *                         oldComponentReturned:
- *                           type: boolean
- *                           example: true
- *                         returnedAt:
- *                           type: string
- *                           format: date-time
- *                     component:
- *                       type: object
- *                       properties:
- *                         componentId:
- *                           type: string
- *                           format: uuid
- *                         serialNumber:
- *                           type: string
- *                           example: "BMS-CTRL-01-SN-OLD-001"
- *                         status:
- *                           type: string
- *                           example: "RETURNED"
- *       400:
- *         description: Bad request - Invalid reservation ID or serial number
- *       401:
- *         description: Unauthorized
- *       403:
- *         description: Forbidden - requires parts_coordinator_service_center role
- *       404:
- *         description: Reservation or component not found
- *       409:
- *         description: Conflict - Reservation not in INSTALLED status or component mismatch
- */
-router.patch(
-  "/:reservationId/return",
-  authentication,
-  authorizationByRole(["parts_coordinator_service_center"]),
-  validate(returnReservedComponentSchema, "body"),
-  async (req, res, next) => {
-    const componentReservationsController = req.container.resolve(
-      "componentReservationsController"
-    );
-
-    await componentReservationsController.returnReservedComponent(
-      req,
-      res,
-      next
-    );
   }
 );
 

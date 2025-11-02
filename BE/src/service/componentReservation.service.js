@@ -8,35 +8,32 @@ class ComponentReservationService {
   #componentRepository;
   #caselineRepository;
   #warehouseRepository;
-  #taskAssignmentRepository;
 
   constructor({
     componentReservationRepository,
     componentRepository,
     caselineRepository,
     warehouseRepository,
-    taskAssignmentRepository,
   }) {
     this.#componentReservationRepository = componentReservationRepository;
     this.#componentRepository = componentRepository;
     this.#caselineRepository = caselineRepository;
     this.#warehouseRepository = warehouseRepository;
-    this.#taskAssignmentRepository = taskAssignmentRepository;
   }
 
   #validateReservationById = async (reservationId, transaction) => {
-    const existingConversation =
+    const existingReservation =
       await this.#componentReservationRepository.findById(
         reservationId,
         transaction,
         Transaction.LOCK.UPDATE
       );
 
-    if (!existingConversation) {
+    if (!existingReservation) {
       throw new Error("Reservation not found");
     }
 
-    if (existingConversation.status !== "RESERVED") {
+    if (existingReservation.status !== "RESERVED") {
       throw new Error("Only RESERVED components can be picked up");
     }
   };
@@ -89,11 +86,7 @@ class ComponentReservationService {
     );
   };
 
-  pickupReservedComponents = async ({
-    reservationIds,
-    serviceCenterId,
-    pickedUpByTechId,
-  }) => {
+  pickupReservedComponents = async ({ reservationIds, pickedUpByTechId }) => {
     const uniqueReservationIds = Array.from(new Set(reservationIds));
 
     const rawResult = await db.sequelize.transaction(async (transaction) => {
@@ -107,7 +100,6 @@ class ComponentReservationService {
           await this.#componentReservationRepository.updateReservationStatusPickUp(
             {
               reservationId,
-              serviceCenterId,
               pickedUpByTechId,
               pickedUpAt: formatUTCtzHCM(dayjs()),
               status: "PICKED_UP",
@@ -167,18 +159,18 @@ class ComponentReservationService {
 
   installComponent = async ({ reservationId }) => {
     const rawResult = await db.sequelize.transaction(async (transaction) => {
-      const existingConversation =
+      const existingReservation =
         await this.#componentReservationRepository.findById(
           reservationId,
           transaction,
           Transaction.LOCK.UPDATE
         );
 
-      if (!existingConversation) {
+      if (!existingReservation) {
         throw new Error("Reservation not found");
       }
 
-      if (existingConversation.status !== "PICKED_UP") {
+      if (existingReservation.status !== "PICKED_UP") {
         throw new Error("Only PICKED_UP components can be installed");
       }
 
@@ -235,101 +227,6 @@ class ComponentReservationService {
     return rawResult;
   };
 
-  returnReservedComponent = async ({ reservationId, serialNumber }) => {
-    const rawResult = await db.sequelize.transaction(async (transaction) => {
-      const existingConversation = await this.#validateReturnReservationById(
-        reservationId,
-        transaction
-      );
-
-      const existingComponent = await this.#componentRepository.findById(
-        existingConversation.componentId,
-        transaction,
-        Transaction.LOCK.UPDATE
-      );
-
-      if (existingComponent.serialNumber === serialNumber) {
-        throw new Error(
-          "Returning component must be different from the installed one"
-        );
-      }
-
-      const existingReturnComponentBySerial =
-        await this.#componentRepository.findBySerialNumber(
-          serialNumber,
-          transaction,
-          Transaction.LOCK.UPDATE
-        );
-
-      if (!existingReturnComponentBySerial) {
-        throw new Error("Component to return not found in the system");
-      }
-
-      if (existingReturnComponentBySerial.status !== "INSTALLED") {
-        throw new Error("Only INSTALLED components can be used for return");
-      }
-
-      const typeComponentIdOfComponentReturn =
-        existingReturnComponentBySerial.typeComponentId;
-
-      const typeComponentIdOfInstalledComponent =
-        existingComponent.typeComponentId;
-
-      if (
-        typeComponentIdOfComponentReturn !== typeComponentIdOfInstalledComponent
-      ) {
-        throw new Error(
-          "Component type mismatch between installed and returning component"
-        );
-      }
-
-      const caseLineId = existingConversation.caseLineId;
-
-      const caseline = await this.#caselineRepository.getVinById(
-        caseLineId,
-        transaction,
-        Transaction.LOCK.SHARE
-      );
-
-      const vin = caseline?.guaranteeCase?.vehicleProcessingRecord?.vin;
-
-      const component = await this.#componentRepository.belongToProcessingByVin(
-        existingReturnComponentBySerial.serialNumber,
-        vin,
-        transaction
-      );
-
-      if (!component) {
-        throw new Error(
-          "The return component does not belong to the vehicle under processing"
-        );
-      }
-
-      const updatedReservation =
-        await this.#componentReservationRepository.updateReservationStatusReturn(
-          {
-            reservationId,
-            oldComponentSerial: existingReturnComponentBySerial.serialNumber,
-            oldComponentReturned: true,
-            returnedAt: formatUTCtzHCM(dayjs()),
-            status: "RETURNED",
-          },
-          transaction
-        );
-
-      const updatedComponent =
-        await this.#componentRepository.updateStatusComponentReturn(
-          existingReturnComponentBySerial.componentId,
-          { status: "RETURNED" },
-          transaction
-        );
-
-      return { updatedReservation, updatedComponent };
-    });
-
-    return rawResult;
-  };
-
   getComponentReservations = async ({
     page = 1,
     limit = 10,
@@ -365,29 +262,6 @@ class ComponentReservationService {
     );
 
     return result;
-  };
-
-  #validateReturnReservationById = async (reservationId, transaction) => {
-    const existingReservation =
-      await this.#componentReservationRepository.findById(
-        reservationId,
-        transaction,
-        Transaction.LOCK.UPDATE
-      );
-
-    if (!existingReservation) {
-      throw new Error("Reservation not found");
-    }
-
-    const STATUS_CONSERVATION_CAN_RETURN = ["PICKED_UP", "INSTALLED"];
-
-    if (!STATUS_CONSERVATION_CAN_RETURN.includes(existingReservation.status)) {
-      throw new Error(
-        "Only conservation PICKED_UP or INSTALLED components can be returned"
-      );
-    }
-
-    return existingReservation;
   };
 }
 

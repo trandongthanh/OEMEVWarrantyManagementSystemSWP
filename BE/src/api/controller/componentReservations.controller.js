@@ -46,14 +46,11 @@ class ComponentReservationsController {
   };
 
   pickupReservedComponents = async (req, res, next) => {
-    const { serviceCenterId } = req.user;
-
     const { reservationIds, pickedUpByTechId } = req.body;
 
     const updatedReservations =
       await this.#componentReservationsService.pickupReservedComponents({
         reservationIds,
-        serviceCenterId,
         pickedUpByTechId,
       });
 
@@ -67,38 +64,16 @@ class ComponentReservationsController {
 
   installComponent = async (req, res, next) => {
     const { reservationId } = req.params;
-    const { serviceCenterId, userId } = req.user;
 
     const updatedComponent =
       await this.#componentReservationsService.installComponent({
         reservationId,
-        serviceCenterId,
-        installedByTechId: userId,
       });
 
     res.status(200).json({
       status: "success",
       data: {
         component: updatedComponent,
-      },
-    });
-  };
-
-  returnReservedComponent = async (req, res, next) => {
-    const { reservationId } = req.params;
-    const { serialNumber } = req.body;
-
-    const result =
-      await this.#componentReservationsService.returnReservedComponent({
-        reservationId,
-        serialNumber,
-      });
-
-    res.status(200).json({
-      status: "success",
-      data: {
-        reservation: result.updatedReservation,
-        component: result.updatedComponent,
       },
     });
   };

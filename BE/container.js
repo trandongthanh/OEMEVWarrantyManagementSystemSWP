@@ -47,11 +47,6 @@ import UserService from "./src/service/user.service.js";
 import redisClient from "./src/util/redisClient.js";
 import transporter from "./src/util/emailTransporter.js";
 import NotificationService from "./src/service/notification.service.js";
-import ChatController from "./src/api/controller/chat.controller.js";
-import ChatService from "./src/service/chat.service.js";
-import GuestRepository from "./src/repository/guest.repository.js";
-import ConversationRepository from "./src/repository/conversation.repository.js";
-import MessageRepository from "./src/repository/message.repository.js";
 import ComponentReservationsController from "./src/api/controller/componentReservations.controller.js";
 import ComponentReservationService from "./src/service/componentReservation.service.js";
 import WarehouseController from "./src/api/controller/warehouse.controller.js";
@@ -60,14 +55,11 @@ import InventoryAdjustmentRepository from "./src/repository/inventoryAdjustment.
 
 const container = createContainer();
 
-export function setupContainer({ io, notificationNamespace, chatNamespace }) {
+export function setupContainer({ io, notificationNamespace }) {
   container.register({
     //asValue
     io: asValue(io),
     notifications: asValue(notificationNamespace, {
-      lifetime: Lifetime.SINGLETON,
-    }),
-    chats: asValue(chatNamespace, {
       lifetime: Lifetime.SINGLETON,
     }),
     redis: asValue(redisClient, { lifetime: Lifetime.SCOPED }),
@@ -89,7 +81,6 @@ export function setupContainer({ io, notificationNamespace, chatNamespace }) {
       lifetime: Lifetime.SCOPED,
     }),
     userController: asClass(UserController, { lifetime: Lifetime.SCOPED }),
-    chatController: asClass(ChatController, { lifetime: Lifetime.SCOPED }),
     mailController: asClass(MailController, { lifetime: Lifetime.SCOPED }),
 
     componentReservationsController: asClass(ComponentReservationsController, {
@@ -127,7 +118,6 @@ export function setupContainer({ io, notificationNamespace, chatNamespace }) {
     notificationService: asClass(NotificationService, {
       lifetime: Lifetime.SCOPED,
     }),
-    chatService: asClass(ChatService, { lifetime: Lifetime.SCOPED }),
     componentReservationsService: asClass(ComponentReservationService, {
       lifetime: Lifetime.SCOPED,
     }),
@@ -167,15 +157,6 @@ export function setupContainer({ io, notificationNamespace, chatNamespace }) {
       lifetime: Lifetime.SCOPED,
     }),
     taskAssignmentRepository: asClass(TaskAssignmentRepository, {
-      lifetime: Lifetime.SCOPED,
-    }),
-    conversationRepository: asClass(ConversationRepository, {
-      lifetime: Lifetime.SCOPED,
-    }),
-    guestRepository: asClass(GuestRepository, {
-      lifetime: Lifetime.SCOPED,
-    }),
-    messageRepository: asClass(MessageRepository, {
       lifetime: Lifetime.SCOPED,
     }),
     componentRepository: asClass(ComponentRepository, {

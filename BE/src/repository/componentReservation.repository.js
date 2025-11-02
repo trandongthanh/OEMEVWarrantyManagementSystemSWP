@@ -95,45 +95,6 @@ class ComponentReservationRepository {
     return updatedReservation ? updatedReservation.toJSON() : null;
   };
 
-  updateReservationStatusReturn = async (
-    {
-      reservationId,
-      oldComponentSerial,
-      oldComponentReturned,
-      returnedAt,
-      status = "RETURNED",
-    },
-    transaction = null
-  ) => {
-    const [affectedRows] = await ComponentReservation.update(
-      {
-        status: status,
-        returnedAt: returnedAt,
-        oldComponentSerial: oldComponentSerial,
-        oldComponentReturned: oldComponentReturned,
-      },
-      {
-        where: {
-          reservationId: reservationId,
-        },
-        transaction: transaction,
-      }
-    );
-
-    if (affectedRows === 0) {
-      return null;
-    }
-
-    const updatedReservation = await ComponentReservation.findByPk(
-      reservationId,
-      {
-        transaction: transaction,
-      }
-    );
-
-    return updatedReservation ? updatedReservation.toJSON() : null;
-  };
-
   findByCaselineId = async (caseLineId, transaction = null, lock = null) => {
     const reservations = await ComponentReservation.findAll({
       where: { caseLineId },
