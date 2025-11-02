@@ -445,19 +445,21 @@ class VehicleProcessingRecordService {
               caseLine.id
             } is in status ${
               caseLine.status
-            }. All case lines must be in status (${finalStatuses.join(
+            }. All case lines must be in a final state (${finalStatuses.join(
               ", "
             )}) before completing the record.`
           );
         }
       }
 
+      const checkOutDate = dayjs().toDate();
+
       const completedRecord =
         await this.#vehicleProcessingRecordRepository.completeRecord(
           {
             vehicleProcessingRecordId,
             status: "COMPLETED",
-            checkOutDate: formatUTCtzHCM(dayjs()),
+            checkOutDate: checkOutDate,
           },
           transaction
         );
@@ -465,7 +467,16 @@ class VehicleProcessingRecordService {
       return completedRecord;
     });
 
-    return rawResult;
+    if (!rawResult) {
+      return rawResult;
+    }
+
+    return {
+      ...rawResult,
+      checkOutDate: rawResult.checkOutDate
+        ? formatUTCtzHCM(rawResult.checkOutDate)
+        : null,
+    };
   };
 
   makeDiagnosisCompleted = async ({

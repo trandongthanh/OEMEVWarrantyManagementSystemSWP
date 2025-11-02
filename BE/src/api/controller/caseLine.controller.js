@@ -36,6 +36,7 @@ class CaseLineController {
       quantity,
       warrantyStatus,
       evidenceImageUrls,
+      rejectionReason,
     } = req.body;
 
     const { serviceCenterId, userId } = req.user;
@@ -52,6 +53,7 @@ class CaseLineController {
       techId: userId,
       companyId: companyId,
       evidenceImageUrls,
+      rejectionReason,
     });
 
     res.status(201).json({
