@@ -349,6 +349,7 @@ const SuperAdvisor = () => {
 
   useEffect(() => {
     loadProcessingRecords();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // OTP countdown timer
@@ -1531,7 +1532,7 @@ const SuperAdvisor = () => {
           // Check component warranties for display purposes only (not blocking)
           const componentWarranties = warrantyData.componentWarranties || [];
           let hasExpiredComponent = false;
-          let expiredComponents = [];
+          const expiredComponents = [];
           
           for (const comp of componentWarranties) {
             const compDurationValid = 
@@ -2848,9 +2849,9 @@ const SuperAdvisor = () => {
                                         // Xác định màu sắc:
                                         // EXPIRED = xám nhạt background, chữ đậm hơn
                                         // ACTIVE = trắng
-                                        let bgColor = isExpired ? 'bg-gray-400' : 'bg-white';
-                                        let borderColor = isExpired ? 'border-gray-500' : 'border-gray-200';
-                                        let textColor = isExpired ? 'text-gray-800' : 'text-gray-800';
+                                        const bgColor = isExpired ? 'bg-gray-400' : 'bg-white';
+                                        const borderColor = isExpired ? 'border-gray-500' : 'border-gray-200';
+                                        const textColor = isExpired ? 'text-gray-800' : 'text-gray-800';
                                         
                                         return (
                                         <div key={index} className={`${bgColor} border ${borderColor} rounded p-3`}>
@@ -3688,9 +3689,9 @@ const SuperAdvisor = () => {
                       // Xác định màu sắc:
                       // EXPIRED = xám nhạt background, chữ đỏ
                       // ACTIVE = xanh
-                      let bgColor = isExpired ? 'bg-gray-400' : 'bg-green-50';
-                      let borderColor = isExpired ? 'border-gray-500' : 'border-green-200';
-                      let textColor = isExpired ? 'text-gray-800' : 'text-gray-800';
+                      const bgColor = isExpired ? 'bg-gray-400' : 'bg-green-50';
+                      const borderColor = isExpired ? 'border-gray-500' : 'border-green-200';
+                      const textColor = isExpired ? 'text-gray-800' : 'text-gray-800';
                       
                       return (
                         <div key={component.typeComponentId || index} className={`p-3 rounded-lg border ${bgColor} ${borderColor}`}>
