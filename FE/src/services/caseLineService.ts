@@ -20,7 +20,7 @@ export interface CaseLine {
   quantity: number;
   warrantyStatus: 'ELIGIBLE' | 'INELIGIBLE';
   techId: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'CUSTOMER_APPROVED' | 'REJECTED_BY_CUSTOMER' | 'PARTS_AVAILABLE' | 'READY_FOR_REPAIR' | 'COMPLETED' | 'pending' | 'approved' | 'rejected';
   createdAt: string;
   updatedAt: string;
   evidenceImageUrls?: string[]; // Cloudinary image URLs
@@ -92,30 +92,32 @@ export const caseLineService = {
         payload
       );
       
-  console.debug('Case lines created (raw):', response.data);
+      console.debug('✅ Case lines created (raw response):', response.data);
 
-      // Normalize response shape: backend may return `id` instead of `caseLineId` and `typeComponentId` instead of `componentId`.
+      // Backend returns response.data.data.caseLines with structure:
+      // { id, diagnosisText, correctionText, typeComponentId, quantity, warrantyStatus, 
+      //   evidenceImageUrls, status, guaranteeCaseId, diagnosticTechId, createdAt, updatedAt }
       const rawCaseLines = response.data?.data?.caseLines || [];
 
-  // rawCaseLines comes from backend and may have snake_case or different keys; allow flexible mapping
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const normalized = rawCaseLines.map((cl: any) => ({
-        caseLineId: cl.caseLineId ?? cl.id ?? cl.case_line_id,
-        guaranteeCaseId:
-          cl.guaranteeCaseId ?? cl.guarantee_case_id ?? cl.guaranteeCase?.guaranteeCaseId ?? null,
-        diagnosisText: cl.diagnosisText ?? cl.diagnosis_text ?? null,
-        correctionText: cl.correctionText ?? cl.correction_text ?? null,
-        componentId: cl.componentId ?? cl.typeComponentId ?? cl.type_component_id ?? null,
-        quantity: cl.quantity ?? 0,
-        warrantyStatus: cl.warrantyStatus ?? cl.warranty_status ?? null,
-        techId: cl.techId ?? cl.diagnosticTechId ?? cl.diagnostic_tech_id ?? null,
-        status: cl.status ?? null,
-        createdAt: cl.createdAt ?? cl.created_at ?? null,
-        updatedAt: cl.updatedAt ?? cl.updated_at ?? null,
-        evidenceImageUrls: cl.evidenceImageUrls ?? cl.evidence_image_urls ?? [],
+      // Normalize: backend returns `id` (not caseLineId) and `diagnosticTechId` (not techId)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const normalized = rawCaseLines.map((cl: any) => ({
+        caseLineId: cl.id, // Backend returns `id`
+        guaranteeCaseId: cl.guaranteeCaseId,
+        diagnosisText: cl.diagnosisText,
+        correctionText: cl.correctionText,
+        componentId: cl.typeComponentId, // Backend returns `typeComponentId`
+        quantity: cl.quantity,
+        warrantyStatus: cl.warrantyStatus,
+        techId: cl.diagnosticTechId, // Backend returns `diagnosticTechId`
+        status: cl.status,
+        createdAt: cl.createdAt,
+        updatedAt: cl.updatedAt,
+        evidenceImageUrls: cl.evidenceImageUrls || [],
       }));
 
-      console.debug('Case lines created (normalized): %d items', normalized.length);
+      console.debug('📦 Case lines normalized: %d items', normalized.length);
+      console.debug('📸 Evidence URLs:', normalized[0]?.evidenceImageUrls);
       return normalized;
     } catch (error) {
       console.debug('Error creating case lines');
@@ -181,7 +183,7 @@ export const caseLineService = {
       
       console.debug('✅ Case line detail response:', response.data);
       
-      // Normalize response shape from backend
+      // Backend returns response.data.data.caseLine with structure matching create response
       const cl = response.data?.data?.caseLine;
       
       if (!cl) {
@@ -189,18 +191,18 @@ export const caseLineService = {
       }
 
       const normalized: CaseLine = {
-        caseLineId: cl.caseLineId ?? cl.id ?? cl.case_line_id,
-        guaranteeCaseId: cl.guaranteeCaseId ?? cl.guarantee_case_id ?? cl.guaranteeCase?.guaranteeCaseId ?? null,
-        diagnosisText: cl.diagnosisText ?? cl.diagnosis_text ?? '',
-        correctionText: cl.correctionText ?? cl.correction_text ?? '',
-        componentId: cl.componentId ?? cl.typeComponentId ?? cl.type_component_id ?? null,
-        quantity: cl.quantity ?? 0,
-        warrantyStatus: cl.warrantyStatus ?? cl.warranty_status ?? 'INELIGIBLE',
-        techId: cl.techId ?? cl.diagnosticTechId ?? cl.diagnostic_tech_id ?? '',
-        status: cl.status ?? 'pending',
-        createdAt: cl.createdAt ?? cl.created_at ?? '',
-        updatedAt: cl.updatedAt ?? cl.updated_at ?? '',
-        evidenceImageUrls: cl.evidenceImageUrls ?? cl.evidence_image_urls ?? [],
+        caseLineId: cl.id, // Backend returns `id`
+        guaranteeCaseId: cl.guaranteeCaseId,
+        diagnosisText: cl.diagnosisText,
+        correctionText: cl.correctionText,
+        componentId: cl.typeComponentId, // Backend returns `typeComponentId`
+        quantity: cl.quantity,
+        warrantyStatus: cl.warrantyStatus,
+        techId: cl.diagnosticTechId, // Backend returns `diagnosticTechId`
+        status: cl.status,
+        createdAt: cl.createdAt,
+        updatedAt: cl.updatedAt,
+        evidenceImageUrls: cl.evidenceImageUrls || [],
       };
 
       console.debug('📸 Evidence images in case line:', normalized.evidenceImageUrls);

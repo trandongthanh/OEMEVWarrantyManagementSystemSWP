@@ -328,7 +328,7 @@ const TechnicianDashboard = ({
   const [componentQuery, setComponentQuery] = useState<string>("");
 
   // Compatible components for Processing Records modal
-  const [compatibleComponents, setCompatibleComponents] = useState<Array<{ typeComponentId: string; name: string }>>([]);
+  const [compatibleComponents, setCompatibleComponents] = useState<Array<{ typeComponentId: string; name: string; isUnderWarranty: boolean }>>([]);
   const [componentSearchQuery, setComponentSearchQuery] = useState<string>("");
   const [isLoadingComponents, setIsLoadingComponents] = useState(false);
 
@@ -573,14 +573,14 @@ const TechnicianDashboard = ({
       console.log('Fetching all processing records...');
       
       // Get all records
-      const allRecords = await processingRecordsService.getAllProcessingRecords();
+      const { records: allRecords, total } = await processingRecordsService.getAllProcessingRecords();
       setProcessingRecords(allRecords);
       
       // Group records by status
       const groupedRecords = await processingRecordsService.getProcessingRecordsGroupedByStatus();
       setRecordsByStatus(groupedRecords);
       
-      console.log('Fetched processing records:', allRecords);
+      console.log('Fetched processing records:', allRecords, 'Total:', total);
       console.log('Grouped by status:', groupedRecords);
       
       toast({
@@ -607,9 +607,9 @@ const TechnicianDashboard = ({
       setIsLoadingRecords(true);
       console.log('📡 Fetching records with status: IN_DIAGNOSIS');
       
-      const inDiagnosisRecords = await processingRecordsService.getProcessingRecordsByStatus('IN_DIAGNOSIS');
+      const { records: inDiagnosisRecords, total } = await processingRecordsService.getProcessingRecordsByStatus({ status: 'IN_DIAGNOSIS' });
 
-      console.log('📦 Received records:', inDiagnosisRecords);
+      console.log('📦 Received records:', inDiagnosisRecords, 'Total:', total);
       console.log(`✅ Loaded ${inDiagnosisRecords.length} records in diagnosis`);
 
       // Normalize record id field: backend may return id under different keys (recordId, id, vehicleProcessingRecordId, processing_record_id)
@@ -1167,38 +1167,7 @@ const TechnicianDashboard = ({
         recordId,
         { searchName }
       );
-      console.log('✅ Fetched components:', components);
-      // Set components directly without transformation since API doesn't provide isUnderWarranty
-      setCompatibleComponents(Array.isArray(components) ? components : []);
-    } catch (error) {
-      console.error('❌ Failed to search components:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to search components",
-        variant: "destructive"
-      });
-      setCompatibleComponents([]);
-    } finally {
-      setIsLoadingComponents(false);
-    }
-  }, []);
-
-  // Search components without recordId dependency
-  const searchComponents = useCallback(async (searchName: string) => {
-    if (!searchName || searchName.length < 2) {
-      setCompatibleComponents([]);
-      return;
-    }
-
-    try {
-      setIsLoadingComponents(true);
-      console.log('🔍 Searching components with name:', searchName);
-
-      const components = await processingRecordsService.searchComponents(
-        { searchName }
-      );
-      console.log('✅ Fetched components:', components);
-      // Set components directly without transformation since API doesn't provide isUnderWarranty
+      console.log('✅ Fetched components with warranty info:', components);
       setCompatibleComponents(Array.isArray(components) ? components : []);
     } catch (error) {
       console.error('❌ Failed to search components:', error);
@@ -1311,7 +1280,9 @@ const TechnicianDashboard = ({
         photos: evidenceImageUrls, // Use Cloudinary URLs instead of local URLs
         photoFiles: [], // No need to store files anymore
         createdDate: new Date(serverCreatedCaseLines[0].createdAt).toLocaleDateString('en-GB'),
-        status: serverCreatedCaseLines[0].status === 'pending' ? 'submitted' : 'approved',
+        status: serverCreatedCaseLines[0].status === 'DRAFT' ? 'submitted' : 
+                serverCreatedCaseLines[0].status === 'PENDING_APPROVAL' ? 'submitted' : 
+                serverCreatedCaseLines[0].status === 'CUSTOMER_APPROVED' ? 'approved' : 'submitted',
         evidenceImageUrls: evidenceImageUrls // Store Cloudinary URLs
       };
 
@@ -3881,19 +3852,18 @@ const TechnicianDashboard = ({
                               );
 
                               if (candidateId) {
-                                // Use record-scoped compatible components endpoint (provides more relevant results)
+                                // Use record-scoped compatible components endpoint (provides warranty info)
                                 fetchCompatibleComponents(candidateId, q).catch((err) => {
                                   console.error('Failed to fetch compatible components for search:', err);
-                                  // fallback to generic search if record-scoped endpoint fails
-                                  searchComponents(q).catch(() => setCompatibleComponents([]));
+                                  setCompatibleComponents([]);
                                 });
                               } else {
-                                // No selected record / id available — fall back to generic search
-                                searchComponents(q);
+                                console.warn('No recordId available for component search');
+                                setCompatibleComponents([]);
                               }
                             } catch (err) {
                               console.error('Error while searching components:', err);
-                              searchComponents(q).catch(() => setCompatibleComponents([]));
+                              setCompatibleComponents([]);
                             }
                           } else {
                             setCompatibleComponents([]);
@@ -3914,14 +3884,26 @@ const TechnicianDashboard = ({
                               key={component.typeComponentId}
                               className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between"
                               onClick={() => {
-                                setCaseLineForm(prev => ({ ...prev, componentId: component.typeComponentId }));
+                                // Auto-set warranty status based on isUnderWarranty
+                                const warrantyStatus = component.isUnderWarranty ? 'ELIGIBLE' : 'INELIGIBLE';
+                                setCaseLineForm(prev => ({ 
+                                  ...prev, 
+                                  componentId: component.typeComponentId,
+                                  warrantyStatus: warrantyStatus
+                                }));
                                 setComponentSearchQuery(component.name);
+                                console.log('🎯 Component selected:', component.name, '| Warranty:', warrantyStatus);
                               }}
                             >
                               <div className="flex-1">
                                 <span className="text-sm font-medium">{component.name}</span>
                                 <div className="flex items-center gap-2 mt-1">
                                   <span className="text-xs text-gray-400">{component.typeComponentId.slice(0, 8)}...</span>
+                                  {component.isUnderWarranty ? (
+                                    <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">Under Warranty</span>
+                                  ) : (
+                                    <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded">Not Covered</span>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -3950,18 +3932,24 @@ const TechnicianDashboard = ({
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="warrantyStatus">Warranty Status *</Label>
-                    <Select 
-                      value={caseLineForm.warrantyStatus} 
-                      onValueChange={(value: 'ELIGIBLE' | 'INELIGIBLE') => setCaseLineForm(prev => ({ ...prev, warrantyStatus: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select status..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ELIGIBLE">✅ Eligible</SelectItem>
-                        <SelectItem value="INELIGIBLE">❌ Ineligible</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="relative">
+                      <Input
+                        id="warrantyStatus"
+                        value={caseLineForm.warrantyStatus === 'ELIGIBLE' ? '✅ ELIGIBLE - Covered by Warranty' : caseLineForm.warrantyStatus === 'INELIGIBLE' ? '❌ INELIGIBLE - Not Covered' : 'Select a component first'}
+                        readOnly
+                        disabled
+                        className={`font-medium ${
+                          caseLineForm.warrantyStatus === 'ELIGIBLE' 
+                            ? 'bg-green-50 text-green-700 border-green-300' 
+                            : caseLineForm.warrantyStatus === 'INELIGIBLE'
+                            ? 'bg-red-50 text-red-700 border-red-300'
+                            : 'bg-gray-50 text-gray-500'
+                        }`}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        ℹ️ Warranty status is automatically determined based on the selected component
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
