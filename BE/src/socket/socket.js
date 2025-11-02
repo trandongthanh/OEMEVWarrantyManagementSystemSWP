@@ -1,8 +1,5 @@
 import { Server } from "socket.io";
-import { socketAuth, optionalSocketAuth } from "./socketAuth.js";
-import { messageSchema } from "../validators/message.validator.js";
-import dayjs from "dayjs";
-import container from "../../container.js";
+import { socketAuth } from "./socketAuth.js";
 
 export function initializeSocket(httpServer) {
   const io = new Server(httpServer, {
@@ -12,11 +9,8 @@ export function initializeSocket(httpServer) {
   });
 
   const notificationNamespace = io.of("/notifications");
-  const chatNamespace = io.of("/chats");
 
   notificationNamespace.use(socketAuth);
-
-  chatNamespace.use(optionalSocketAuth);
   notificationNamespace.on("connection", (socket) => {
     const { userId, roleName, serviceCenterId, companyId } = socket.user;
 
@@ -56,82 +50,5 @@ export function initializeSocket(httpServer) {
     });
   });
 
-  chatNamespace.on("connection", (socket) => {
-    socket.container = container;
-
-    socket.on("joinRoom", ({ conversationId }) => {
-      socket.join(`conversation_${conversationId}`);
-    });
-
-    socket.on("typing", ({ conversationId }) => {
-      socket.broadcast.to(`conversation_${conversationId}`).emit("userTyping", {
-        userId: socket.id,
-        message: "typing....",
-      });
-    });
-
-    socket.on("sendMessage", async (dataMessage, acknowledgment) => {
-      try {
-        const { conversationId, senderId, senderType, content } = dataMessage;
-
-        const { error } = messageSchema.validate({
-          conversationId,
-          senderId,
-          senderType,
-          content,
-        });
-
-        if (error) {
-          const errorMessage = error.details[0].message;
-
-          if (acknowledgment && typeof acknowledgment === "function") {
-            acknowledgment({
-              success: false,
-              error: errorMessage,
-            });
-          }
-
-          return;
-        }
-
-        const chatService = socket.container.resolve("chatService");
-
-        const rawResult = await chatService.sendMessage({
-          conversationId,
-          senderId,
-          senderType,
-          content,
-        });
-
-        socket.to(`conversation_${conversationId}`).emit("newMessage", {
-          sendAt: dayjs(),
-          newMessage: rawResult,
-        });
-
-        if (acknowledgment && typeof acknowledgment === "function") {
-          acknowledgment({
-            success: true,
-            data: rawResult,
-          });
-        }
-      } catch (error) {
-        if (acknowledgment && typeof acknowledgment === "function") {
-          acknowledgment({
-            success: false,
-            error: error.message || "Failed to send message",
-          });
-        }
-
-        socket.emit("messageError", {
-          error: error.message || "Failed to send message",
-          timestamp: dayjs(),
-        });
-      }
-    });
-    socket.on("disconnect", () => {
-      console.log("User disconnected from chat: " + socket.id);
-    });
-  });
-
-  return { io, notificationNamespace, chatNamespace };
+  return { io, notificationNamespace };
 }

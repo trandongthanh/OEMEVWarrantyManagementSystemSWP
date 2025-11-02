@@ -9,9 +9,9 @@ configDotenv();
 const PORT = process.env.PORT;
 const server = http.createServer(app);
 
-const { io, notificationNamespace, chatNamespace } = initializeSocket(server);
+const { io, notificationNamespace } = initializeSocket(server);
 
-setupContainer({ io, notificationNamespace, chatNamespace });
+setupContainer({ io, notificationNamespace });
 
 db.sequelize
   .authenticate()

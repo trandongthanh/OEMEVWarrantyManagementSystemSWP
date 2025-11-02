@@ -22,13 +22,7 @@ module.exports = (sequelize, DataTypes) => {
       },
 
       status: {
-        type: DataTypes.ENUM(
-          "RESERVED",
-          "PICKED_UP",
-          "INSTALLED",
-          "RETURNED",
-          "CANCELLED"
-        ),
+        type: DataTypes.ENUM("RESERVED", "PICKED_UP", "INSTALLED", "CANCELLED"),
         allowNull: false,
         defaultValue: "RESERVED",
         field: "status",
@@ -50,31 +44,6 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.DATE,
         allowNull: true,
         field: "installed_at",
-      },
-
-      oldComponentSerial: {
-        type: DataTypes.STRING(100),
-        allowNull: true,
-        field: "old_component_serial",
-      },
-
-      // oldComponentCondition: {
-      //   type: DataTypes.ENUM("DEFECTIVE", "DAMAGED"),
-      //   allowNull: true,
-      //   field: "old_component_condition",
-      // },
-
-      oldComponentReturned: {
-        type: DataTypes.BOOLEAN,
-        allowNull: false,
-        defaultValue: false,
-        field: "old_component_returned",
-      },
-
-      returnedAt: {
-        type: DataTypes.DATE,
-        allowNull: true,
-        field: "returned_at",
       },
 
       cancelledAt: {

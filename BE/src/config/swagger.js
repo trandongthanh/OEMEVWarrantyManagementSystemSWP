@@ -413,13 +413,7 @@ const options = {
             },
             status: {
               type: "string",
-              enum: [
-                "RESERVED",
-                "PICKED_UP",
-                "INSTALLED",
-                "RETURNED",
-                "CANCELLED",
-              ],
+              enum: ["RESERVED", "PICKED_UP", "INSTALLED", "CANCELLED"],
             },
             pickedUpBy: {
               type: "string",
@@ -430,16 +424,6 @@ const options = {
               format: "date-time",
             },
             installedAt: {
-              type: "string",
-              format: "date-time",
-            },
-            oldComponentSerial: {
-              type: "string",
-            },
-            oldComponentReturned: {
-              type: "boolean",
-            },
-            returnedAt: {
               type: "string",
               format: "date-time",
             },
@@ -724,10 +708,6 @@ const options = {
       {
         name: "Work Schedule",
         description: "API endpoints quản lý lịch làm việc của kỹ thuật viên",
-      },
-      {
-        name: "Chat",
-        description: "API endpoints cho hệ thống chat hỗ trợ khách hàng",
       },
     ],
     security: [

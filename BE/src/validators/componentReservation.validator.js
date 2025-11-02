@@ -4,7 +4,7 @@ export const getComponentReservationsQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(10),
   status: Joi.string()
-    .valid("RESERVED", "PICKED_UP", "INSTALLED", "RETURNED", "CANCELLED")
+    .valid("RESERVED", "PICKED_UP", "INSTALLED", "CANCELLED")
     .default("RESERVED"),
   warehouseId: Joi.string().uuid().optional(),
   typeComponentId: Joi.string().uuid().optional(),
@@ -23,8 +23,4 @@ export const pickupReservedComponentSchema = Joi.object({
     .min(1)
     .required(),
   pickedUpByTechId: Joi.string().uuid({ version: "uuidv4" }).required(),
-});
-
-export const returnReservedComponentSchema = Joi.object({
-  serialNumber: Joi.string().required(),
 });

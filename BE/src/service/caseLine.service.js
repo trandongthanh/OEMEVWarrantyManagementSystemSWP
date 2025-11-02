@@ -956,18 +956,10 @@ class CaseLineService {
             );
           }
 
-          const hasOldComponent = !!reservation.oldComponentSerial;
+          const isReservationInstalled = reservation.status === "INSTALLED";
 
-          const isReservationComplete = hasOldComponent
-            ? reservation.status === "RETURNED" &&
-              reservation.oldComponentReturned &&
-              reservation.returnedAt
-            : reservation.status === "INSTALLED";
-
-          if (!isReservationComplete) {
-            const reason = hasOldComponent
-              ? `Old component ${reservation.oldComponentSerial} must be returned before marking repair as completed`
-              : `Component ${component.serialNumber} must be installed before marking repair as completed`;
+          if (!isReservationInstalled) {
+            const reason = `Component ${component.serialNumber} must be installed before marking repair as completed`;
             throw new ConflictError(reason);
           }
         }
