@@ -697,7 +697,7 @@ router.patch(
   authentication,
   authorizationByRole(["service_center_staff"]),
   validate(approveCaselineBodySchema, "body"),
-  ensureOtpVerified,
+  // ensureOtpVerified,
   async (req, res, next) => {
     const caseLineController = req.container.resolve("caseLineController");
     await caseLineController.approveCaseline(req, res, next);
