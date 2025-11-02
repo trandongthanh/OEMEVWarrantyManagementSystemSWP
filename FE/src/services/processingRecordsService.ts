@@ -71,68 +71,110 @@ apiClient.interceptors.request.use(
 );
 
 export const processingRecordsService = {
-  // Get all processing records
-  getAllProcessingRecords: async (): Promise<ProcessingRecord[]> => {
+  // Get all processing records with pagination
+  getAllProcessingRecords: async (params?: { page?: number; limit?: number; status?: string }): Promise<{ records: ProcessingRecord[]; total: number }> => {
     try {
-      const response = await apiClient.get('/processing-records');
+      const queryParams = new URLSearchParams();
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
+      if (params?.status) queryParams.append('status', params.status);
+      
+      const url = `/processing-records${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      console.log('🔍 Fetching processing records:', url);
+      
+      const response = await apiClient.get(url);
       
       // Handle different possible response structures
       if (response.data?.data?.records?.records) {
-        return response.data.data.records.records;
+        return {
+          records: response.data.data.records.records,
+          total: response.data.data.records.recordsCount || 0
+        };
       } else if (response.data?.data?.records) {
-        return response.data.data.records;
+        return {
+          records: response.data.data.records,
+          total: response.data.data.recordsCount || response.data.data.records.length
+        };
       } else if (response.data?.records) {
-        return response.data.records;
+        return {
+          records: response.data.records,
+          total: response.data.recordsCount || response.data.records.length
+        };
       } else if (Array.isArray(response.data?.data)) {
-        return response.data.data;
+        return {
+          records: response.data.data,
+          total: response.data.data.length
+        };
       } else if (Array.isArray(response.data)) {
-        return response.data;
+        return {
+          records: response.data,
+          total: response.data.length
+        };
       } else {
         console.warn('⚠️ Unexpected response structure, returning empty array');
-        return [];
+        return { records: [], total: 0 };
       }
     } catch (error) {
       // Expected network/backend errors are noisy in dev - downgrade to warn and return empty list
       console.warn('Warning: failed to fetch all processing records:', error?.message || error);
-      return [] as ProcessingRecord[];
+      return { records: [], total: 0 };
     }
   },
 
-  // Get processing records by status
-  getProcessingRecordsByStatus: async (status?: string): Promise<ProcessingRecord[]> => {
+  // Get processing records by status (with pagination)
+  getProcessingRecordsByStatus: async (params?: { status?: string; page?: number; limit?: number }): Promise<{ records: ProcessingRecord[]; total: number }> => {
     try {
-      const url = status ? `/processing-records?status=${status}` : '/processing-records';
-      const response = await apiClient.get(url);
+      const queryParams = new URLSearchParams();
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.limit) queryParams.append('limit', params.limit.toString());
       
-    // avoid noisy full dumps in console in production
-    console.log('🔍 API Response status:', response.status);
+      const url = `/processing-records${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      console.log('🔍 Fetching processing records by status:', url);
+      
+      const response = await apiClient.get(url);
       
       // Handle different possible response structures
       if (response.data?.data?.records?.records) {
-        return response.data.data.records.records;
+        return {
+          records: response.data.data.records.records,
+          total: response.data.data.records.recordsCount || 0
+        };
       } else if (response.data?.data?.records) {
-        return response.data.data.records;
+        return {
+          records: response.data.data.records,
+          total: response.data.data.recordsCount || response.data.data.records.length
+        };
       } else if (response.data?.records) {
-        return response.data.records;
+        return {
+          records: response.data.records,
+          total: response.data.recordsCount || response.data.records.length
+        };
       } else if (Array.isArray(response.data?.data)) {
-        return response.data.data;
+        return {
+          records: response.data.data,
+          total: response.data.data.length
+        };
       } else if (Array.isArray(response.data)) {
-        return response.data;
+        return {
+          records: response.data,
+          total: response.data.length
+        };
       } else {
         console.warn('⚠️ Unexpected response structure, returning empty array');
-        return [];
+        return { records: [], total: 0 };
       }
     } catch (error) {
       // Downgrade noisy errors to warn and return empty list so UI can handle gracefully
-      console.warn(`Warning: Error fetching processing records${status ? ` with status ${status}` : ''}:`, error?.message || error);
-      return [] as ProcessingRecord[];
+      console.warn(`Warning: Error fetching processing records${params?.status ? ` with status ${params.status}` : ''}:`, error?.message || error);
+      return { records: [], total: 0 };
     }
   },
 
   // Get processing records grouped by status
   getProcessingRecordsGroupedByStatus: async (): Promise<ProcessingRecordsByStatus> => {
     try {
-      const allRecords = await processingRecordsService.getAllProcessingRecords();
+      const { records: allRecords } = await processingRecordsService.getAllProcessingRecords();
       
       const groupedRecords: ProcessingRecordsByStatus = {
         CHECKED_IN: [],
@@ -161,7 +203,7 @@ export const processingRecordsService = {
   getCompatibleComponents: async (
     recordId: string, 
     params?: { category?: string; searchName?: string }
-  ): Promise<Array<{ typeComponentId: string; name: string }>> => {
+  ): Promise<Array<{ typeComponentId: string; name: string; isUnderWarranty: boolean }>> => {
     try {
       const queryParams = new URLSearchParams();
       if (params?.category) queryParams.append('category', params.category);
@@ -176,31 +218,6 @@ export const processingRecordsService = {
       return response.data?.data?.result || [];
     } catch (error) {
       console.error('❌ Error fetching compatible components:', error);
-      throw error;
-    }
-  },
-
-  // Search components without recordId dependency
-  searchComponents: async (
-    params: { category?: string; searchName?: string }
-  ): Promise<Array<{ typeComponentId: string; name: string }>> => {
-    try {
-      const queryParams = new URLSearchParams();
-      if (params?.category) queryParams.append('category', params.category);
-      if (params?.searchName) queryParams.append('searchName', params.searchName);
-      
-      // Use a dummy recordId for now since the API still requires it in the path
-      // This will be updated when the API is modified to not require recordId
-      const dummyRecordId = 'e2539a11-9dc5-45d9-9091-2e9641eeedde'; // From user's example
-      const url = `/processing-records/${dummyRecordId}/compatible-components${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-      
-      console.log('🔍 Searching components:', url);
-      const response = await apiClient.get(url);
-      console.log('✅ Component search response:', response.data);
-      
-      return response.data?.data?.result || [];
-    } catch (error) {
-      console.error('❌ Error searching components:', error);
       throw error;
     }
   },

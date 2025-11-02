@@ -277,6 +277,9 @@ const getStatusBadgeVariant = (status?: string) => {
     case 'IN_DIAGNOSIS':
     case 'PROCESSING':
       return 'default';
+    // Ready for pickup - green/success
+    case 'READY_FOR_PICKUP':
+      return 'success';
     // Success states - green
     case 'COMPLETED':
     case 'DELIVERED':
@@ -296,6 +299,7 @@ const STATUS_LABELS: Record<string, string> = {
   IN_DIAGNOSIS: 'In Diagnosis',
   WAITING_CUSTOMER_APPROVAL: 'Waiting Customer Approval',
   PROCESSING: 'Processing',
+  READY_FOR_PICKUP: 'Ready for Pickup',
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
 
@@ -424,6 +428,7 @@ const ServiceCenterDashboard = () => {
     'IN_DIAGNOSIS',
     'WAITING_CUSTOMER_APPROVAL',
     'PROCESSING',
+    'READY_FOR_PICKUP',
     'COMPLETED',
     'CANCELLED'
   ];
@@ -491,6 +496,7 @@ const ServiceCenterDashboard = () => {
     try {
       const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
       const apiRecords = res.data?.data?.records?.records || [];
+      console.log('🔍 Raw API records:', apiRecords);
       const mapped: WarrantyClaim[] = apiRecords.map((r: any) => {
         const mainTech = r.mainTechnician ? [{ 
           id: r.mainTechnician.userId, 
@@ -499,26 +505,31 @@ const ServiceCenterDashboard = () => {
           workload: typeof r.mainTechnician.activeTaskCount === 'number' ? r.mainTechnician.activeTaskCount : undefined, 
           status: r.mainTechnician.workSchedule?.[0]?.status || r.mainTechnician.status 
         }] : [];
-        const cases: GuaranteeCase[] = Array.isArray(r.guaranteeCases) ? r.guaranteeCases.map((gc: any) => ({
-          guaranteeCaseId: gc.guaranteeCaseId || gc.id || '',
-          contentGuarantee: gc.contentGuarantee || '',
-          status: gc.status,
-          caseLines: Array.isArray(gc.caseLines) ? gc.caseLines.map((cl: any) => ({
-            id: cl.id || '',
-            diagnosisText: cl.diagnosisText || '',
-            correctionText: cl.correctionText || '',
-            warrantyStatus: cl.warrantyStatus || '',
-            status: cl.status || '',
-            rejectionReason: cl.rejectionReason || null,
-            repairTechId: cl.repairTechId || null,
-            quantity: cl.quantity || 0,
-            typeComponent: cl.typeComponent ? {
-              typeComponentId: cl.typeComponent.typeComponentId || '',
-              name: cl.typeComponent.name || '',
-              category: cl.typeComponent.category || ''
-            } : undefined
-          })) : []
-        })) : [];
+        const cases: GuaranteeCase[] = Array.isArray(r.guaranteeCases) ? r.guaranteeCases.map((gc: any) => {
+          console.log(`📦 Guarantee Case ${gc.guaranteeCaseId} has ${gc.caseLines?.length || 0} case lines`);
+          return {
+            guaranteeCaseId: gc.guaranteeCaseId || gc.id || '',
+            contentGuarantee: gc.contentGuarantee || '',
+            status: gc.status,
+            caseLines: Array.isArray(gc.caseLines) ? gc.caseLines.map((cl: any) => ({
+              id: cl.id || '',
+              diagnosisText: cl.diagnosisText || '',
+              correctionText: cl.correctionText || '',
+              warrantyStatus: cl.warrantyStatus || '',
+              status: cl.status || '',
+              rejectionReason: cl.rejectionReason || null,
+              repairTechId: cl.repairTechId || null,
+              diagnosticTechId: cl.diagnosticTechId || null,
+              quantity: cl.quantity || 0,
+              typeComponent: cl.typeComponent ? {
+                typeComponentId: cl.typeComponent.typeComponentId || '',
+                name: cl.typeComponent.name || '',
+                category: cl.typeComponent.category || ''
+              } : undefined
+            })) : []
+          };
+        }) : [];
+        console.log('✅ Mapped cases:', cases);
         const primaryCase = cases.length > 0 ? cases[0] : null;
         return {
           recordId: r.vehicleProcessingRecordId || r.recordId || r.processing_record_id || r.id || '',
