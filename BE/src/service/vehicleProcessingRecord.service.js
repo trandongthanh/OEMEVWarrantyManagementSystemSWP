@@ -93,7 +93,7 @@ class VehicleProcessingRecordService {
             createdByStaffId,
             vin,
             visitorInfo,
-            checkInDate: dayjs(),
+            checkInDate: formatUTCtzHCM(new Date()),
           },
           t
         );
@@ -452,14 +452,12 @@ class VehicleProcessingRecordService {
         }
       }
 
-      const checkOutDate = dayjs().toDate();
-
       const completedRecord =
         await this.#vehicleProcessingRecordRepository.completeRecord(
           {
             vehicleProcessingRecordId,
             status: "COMPLETED",
-            checkOutDate: checkOutDate,
+            checkOutDate: dayjs(),
           },
           transaction
         );
