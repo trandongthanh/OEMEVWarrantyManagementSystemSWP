@@ -2096,9 +2096,14 @@ const SuperAdvisor = () => {
       const result = await response.json();
 
       if (result.status === 'success' && result.data?.record) {
-        setViewRecordData(result.data.record);
+        // Map vehicleProcessingRecordId to id for easier access
+        const recordData = {
+          ...result.data.record,
+          id: result.data.record.vehicleProcessingRecordId || result.data.record.id
+        };
+        setViewRecordData(recordData);
         setIsLoadingRecordDetail(false);
-        return result.data.record;
+        return recordData;
       } else {
         throw new Error('Failed to fetch record details');
       }
@@ -2138,6 +2143,15 @@ const SuperAdvisor = () => {
       return false; // No caselines = cannot complete
     }
 
+    // Final statuses that allow record completion (matching backend logic)
+    const FINAL_CASELINE_STATUSES = [
+      'COMPLETED',
+      'CANCELLED',
+      'REJECTED_BY_OUT_OF_WARRANTY',
+      'REJECTED_BY_TECH',
+      'REJECTED_BY_CUSTOMER'
+    ];
+
     // Check all guarantee cases for their caselines
     for (const guaranteeCase of viewRecordData.guaranteeCases) {
       // If no caselines in this case, it's not ready
@@ -2145,12 +2159,12 @@ const SuperAdvisor = () => {
         return false;
       }
 
-      // Check if all caselines in this case are completed
-      const allCompleted = guaranteeCase.caseLines.every(
-        (caseline: any) => caseline.status === 'COMPLETED'
+      // Check if all caselines in this case are in a final state
+      const allInFinalState = guaranteeCase.caseLines.every(
+        (caseline: any) => FINAL_CASELINE_STATUSES.includes(caseline.status)
       );
 
-      if (!allCompleted) {
+      if (!allInFinalState) {
         return false;
       }
     }
