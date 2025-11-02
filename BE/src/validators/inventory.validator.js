@@ -8,6 +8,6 @@ export const createInventoryAdjustmentBodySchema = Joi.object({
   note: Joi.string().allow(null, "").optional(),
 });
 
-export const createInventoryAdjustmentQuerySchema = Joi.object({
-  adjustedByUserId: Joi.string().uuid().required(),
-});
+// export const createInventoryAdjustmentQuerySchema = Joi.object({
+//   adjustedByUserId: Joi.string().uuid().required(),
+// });

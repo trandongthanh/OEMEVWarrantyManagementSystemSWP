@@ -4,6 +4,7 @@ import PartsCoordinatorDashboard from '@/components/PartsCoordinatorDashboard';
 import ManufacturerDashboard from '@/components/ManufacturerDashboard';
 import TechnicianDashboard from '@/components/TechnicianDashboard';
 import WarrantyDashboard from '@/components/WarrantyDashboard';
+import PartsCompanyDashboard from '@/components/PartsCompanyDashboard';
 import SuperAdvisor from "@/components/SuperAdvisor";
 
 const Dashboard = () => {
@@ -31,6 +32,10 @@ const Dashboard = () => {
 
 	if (user.role === "emv_staff") {
 		return <WarrantyDashboard />;
+	}
+
+	if (user.role === "parts_coordinator_company") {
+		return <PartsCompanyDashboard />;
 	}
 
 	if (user.role === "service_center_staff") {

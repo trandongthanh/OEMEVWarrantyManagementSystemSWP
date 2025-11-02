@@ -1,4 +1,4 @@
-
+﻿
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCircle, Save, Clock, FileText } from 'lucide-react';
+import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCircle, Save, Clock, FileText, Shield } from 'lucide-react';
 
 
 // API Base URL
@@ -93,17 +93,13 @@ interface WarrantyRecord {
   id: string;
   vinNumber: string;
   customerName: string;
+  customerEmail?: string;
   odometer: number;
   purchaseDate?: string;
   cases?: CaseNote[];
   status: 'pending' | 'in-progress' | 'completed';
   rawStatus?: string; // Store actual API status
   createdAt: string;
-}
-
-interface VinDataState {
-  vinNumber: string;
-  warrantyStatus: string;
 }
 
 interface VehicleSearchResult {
@@ -139,7 +135,6 @@ const SuperAdvisor = () => {
   const [searchMode, setSearchMode] = useState<'warranty' | 'customer' | 'phone'>('phone');
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
-  const [isDialogSearch, setIsDialogSearch] = useState(false);
   
   // Record State
   const [selectedRecord, setSelectedRecord] = useState<WarrantyRecord | null>(null);
@@ -147,10 +142,6 @@ const SuperAdvisor = () => {
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
   
   // Form States
-  const [vinData, setVinData] = useState<VinDataState>({
-    vinNumber: "",
-    warrantyStatus: ""
-  });
   const [vehicleSearchResult, setVehicleSearchResult] = useState<VehicleSearchResult | null>(null);
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
   const [ownerForm, setOwnerForm] = useState<OwnerForm>({
@@ -180,6 +171,12 @@ const SuperAdvisor = () => {
   const [selectedRecordForCaseline, setSelectedRecordForCaseline] = useState<WarrantyRecord | null>(null);
   const [caselines, setCaselines] = useState<any[]>([]);
   const [isLoadingCaselines, setIsLoadingCaselines] = useState(false);
+
+  // View Record dialog states
+  const [showViewRecordDialog, setShowViewRecordDialog] = useState(false);
+  const [viewRecordData, setViewRecordData] = useState<any>(null);
+  const [isLoadingRecordDetail, setIsLoadingRecordDetail] = useState(false);
+  const [isCompletingRecord, setIsCompletingRecord] = useState(false);
   const [selectedCaselineIds, setSelectedCaselineIds] = useState<{
     approved: string[];
     rejected: string[];
@@ -200,6 +197,7 @@ const SuperAdvisor = () => {
     customerName: '',
     cases: [],
     visitorFullName: '',
+    visitorPhone: '',
     customerEmail: ''
   });
   const [warrantyRecordCaseText, setWarrantyRecordCaseText] = useState('');
@@ -211,6 +209,14 @@ const SuperAdvisor = () => {
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
   const [otpCountdown, setOtpCountdown] = useState(0);
+
+  // Caseline OTP states
+  const [caselineApproverEmail, setCaselineApproverEmail] = useState('');
+  const [caselineOtpCode, setCaselineOtpCode] = useState('');
+  const [isSendingCaselineOtp, setIsSendingCaselineOtp] = useState(false);
+  const [caselineOtpSent, setCaselineOtpSent] = useState(false);
+  const [caselineOtpVerified, setCaselineOtpVerified] = useState(false);
+  const [caselineOtpCountdown, setCaselineOtpCountdown] = useState(0);
 
   // Warranty check states
   const [odometer, setOdometer] = useState('');
@@ -237,17 +243,6 @@ const SuperAdvisor = () => {
     status: 'pending' as 'pending' | 'in-progress' | 'completed',
     rawStatus: 'CHECKED_IN' // Store actual API status
   });
-
-  // Transform form data to API format
-  const transformToApiFormat = (formData: { vinNumber: string; odometer: string; cases: CaseNote[] }) => {
-    return {
-      vin: formData.vinNumber,
-      odometer: parseInt(formData.odometer),
-      guaranteeCases: formData.cases.map(caseItem => ({
-        contentGuarantee: caseItem.text
-      }))
-    };
-  };
 
   const [records, setRecords] = useState<WarrantyRecord[]>([]);
 
@@ -278,6 +273,12 @@ const SuperAdvisor = () => {
                    record.customer?.fullName ||
                    record.vehicle?.customer?.fullName ||
                    'Unknown Customer',
+      customerEmail: record.customerEmail ||
+                    record.vehicle?.owner?.email ||
+                    record.owner?.email ||
+                    record.customer?.email ||
+                    record.vehicle?.customer?.email ||
+                    '',
       odometer: record.odometer || 0,
       cases: record.guaranteeCases?.map((gCase: any, idx: number) => ({
         id: gCase.guaranteeCaseId || `case-${idx}`,
@@ -294,12 +295,8 @@ const SuperAdvisor = () => {
   const loadProcessingRecords = async () => {
     try {
       const token = localStorage.getItem('ev_warranty_token');
-      console.log('🔑 Current token:', token);
       
       const response = await fetchProcessingRecords();
-      
-      console.log('📡 API Response:', response);
-      console.log('📊 Records data:', response.data);
       
       if (response.status === 'success' && response.data?.records?.records) {
         // API returns nested structure: data.records.records
@@ -372,96 +369,23 @@ const SuperAdvisor = () => {
     }
   }, [otpCountdown, otpSent, toast]);
 
-  const handleSearchWarranty = async () => {
-  try {
-    if (!searchVin.trim()) {
+  // Caseline OTP countdown timer
+  useEffect(() => {
+    if (caselineOtpCountdown > 0) {
+      const timer = setTimeout(() => {
+        setCaselineOtpCountdown(prev => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (caselineOtpCountdown === 0 && caselineOtpSent) {
+      setCaselineOtpSent(false);
+      setCaselineOtpCode('');
       toast({
-        title: 'Error',
-        description: 'Please enter VIN',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    const vin = searchVin.trim();
-    const odometer = 0;
-
-    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-    if (!token) {
-      console.error("No token found (checked AuthContext.getToken and localStorage 'ev_warranty_token')");
-      toast({
-        title: 'Error',
-        description: 'Không tìm thấy token đăng nhập',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    const url = `${API_BASE_URL}/vehicles/${vin}/warranty?odometer=${odometer}`;
-    
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-      },
-    });
-
-    const data = await response.json();
-    
-    if (!response.ok || data.status !== 'success') {
-      toast({
-        title: 'Unable to find warranty',
-        variant: 'destructive'
-      });
-      return;
-    }    if (data && data.status === 'success' && data.data && data.data.vehicle) {
-      const vehicle = data.data.vehicle;
-      
-      // Lấy warranty status từ response hoặc từ generalWarranty
-      let warrantyStatus = 'N/A';
-      if (vehicle.warrantyStatus) {
-        warrantyStatus = vehicle.warrantyStatus;
-      } else if (vehicle.generalWarranty) {
-        // Nếu không có warrantyStatus trực tiếp, lấy từ generalWarranty
-        const durationStatus = vehicle.generalWarranty.duration?.status;
-        const mileageStatus = vehicle.generalWarranty.mileage?.status;
-        
-        if (durationStatus === 'ACTIVE' && mileageStatus === 'ACTIVE') {
-          warrantyStatus = 'Active';
-        } else if (durationStatus === 'INACTIVE' && mileageStatus === 'INACTIVE') {
-          warrantyStatus = 'Expired (Time & Odometer)';
-        } else if (durationStatus === 'INACTIVE') {
-          warrantyStatus = 'Expired (Time)';
-        } else if (mileageStatus === 'INACTIVE') {
-          warrantyStatus = 'Expired (Odometer)';
-        }
-      }
-      
-      setVinData({
-        vinNumber: vehicle.vin || '',
-        warrantyStatus
-      });
-
-      setIsDialogSearch(true);
-
-      toast({
-        title: 'Thành công',
-        description: 'Đã tải thông tin VIN',
-      });
-    } else {
-      toast({
-        title: 'Không có dữ liệu',
-        description: 'Không tìm thấy thông tin xe',
-        variant: 'destructive'
+        title: 'OTP Expired',
+        description: 'Please request a new OTP code',
+        variant: 'default'
       });
     }
-
-  } catch (error) {
-    console.error("Failed to fetch VIN warranty info:", error);
-    
-  }
-};
+  }, [caselineOtpCountdown, caselineOtpSent, toast]);
 
   const handleSearchCustomer = async (vinToSearch?: string) => {
     try {
@@ -506,8 +430,7 @@ const SuperAdvisor = () => {
 
       if (response.data && response.data.status === 'success' && response.data.data && response.data.data.vehicle) {
         const vehicle = response.data.data.vehicle;
-        console.log('🚗 Vehicle data received:', vehicle); // Debug log
-        console.log('👤 Vehicle owner:', vehicle.owner); // Debug owner specifically
+
         setVehicleSearchResult({
           vin: vehicle.vin,
           dateOfManufacture: vehicle.dateOfManufacture,
@@ -640,28 +563,9 @@ const SuperAdvisor = () => {
           
           setHasSearchedCustomer(true);
           
-          // Only reset if coming from Register New Vehicle flow (indicated by registrationFlowPhone)
-          if (registrationFlowPhone) {
-            console.log('🔄 Resetting Register New Vehicle flow...');
-            
-            // Reset Register New Vehicle section after successful search
-            setNewVehicleVin('');
-            setRegistrationFlowPhone('');
-            
-            // Reset vehicle search result and warranty info to show only "Check Warranty" button
-            setVehicleSearchResult(null);
-            setWarrantyStatus(null);
-            setWarrantyDetails(null);
-            setOdometer('');
-            setSearchVin('');
-            
-            // Reset selected vehicle for warranty check in customer's vehicle list
-            setSelectedVehicleForWarranty(null);
-            setVehicleOdometer('');
-            setVehicleWarrantyStatus(null);
-          } else {
-            console.log('✅ Regular search - keeping vehicle info intact');
-          }
+          // Don't reset vehicle info here - user still needs to complete registration
+          // Only keep the registrationFlowPhone marker for later cleanup
+
         } else {
           setFoundCustomer(null);
           
@@ -951,7 +855,7 @@ const SuperAdvisor = () => {
     // Save the phone from registration flow before switching modes
     if (customerSearchPhone.trim()) {
       setRegistrationFlowPhone(customerSearchPhone.trim());
-      console.log('💾 Saved registration flow phone:', customerSearchPhone.trim());
+
     }
 
     // Switch to customer mode (Find Vehicle by VIN) and auto search
@@ -1002,6 +906,7 @@ const SuperAdvisor = () => {
       customerName: foundCustomer.fullName || foundCustomer.name,
       cases: [],
       visitorFullName: foundCustomer.fullName || foundCustomer.name || '',
+      visitorPhone: foundCustomer.phone || '',
       customerEmail: foundCustomer.email || ''
     });
     
@@ -1026,20 +931,28 @@ const SuperAdvisor = () => {
     setIsSendingOtp(true);
 
     try {
-      const response = await fetch(`${API_BASE}/mail/send`, {
+      const response = await fetch(`${API_BASE_URL}/mail/otp/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
         },
         body: JSON.stringify({
-          email: warrantyRecordForm.customerEmail
+          email: warrantyRecordForm.customerEmail,
+          vin: warrantyRecordForm.vin
         })
       });
 
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server error response:', errorText);
+        throw new Error(`Server error: ${response.status}`);
+      }
+
       const result = await response.json();
 
-      if (response.ok && result.status === 'success') {
+
+      if (result.status === 'success') {
         setOtpSent(true);
         setOtpCountdown(300); // 5 minutes
         toast({
@@ -1073,7 +986,7 @@ const SuperAdvisor = () => {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/mail/verify`, {
+      const response = await fetch(`${API_BASE_URL}/mail/otp/verify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1098,6 +1011,118 @@ const SuperAdvisor = () => {
       }
     } catch (error) {
       console.error('Error verifying OTP:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to verify OTP. Please try again.',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Handle send OTP for caseline approval
+  const handleSendCaselineOtp = async () => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!caselineApproverEmail || !emailRegex.test(caselineApproverEmail)) {
+      toast({
+        title: 'Error',
+        description: 'Please enter a valid approver email address',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!selectedRecordForCaseline?.vinNumber) {
+      toast({
+        title: 'Error',
+        description: 'VIN not found for this record',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsSendingCaselineOtp(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/mail/otp/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
+        },
+        body: JSON.stringify({
+          email: caselineApproverEmail,
+          vin: selectedRecordForCaseline.vinNumber
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server error response:', errorText);
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+
+      if (result.status === 'success') {
+        setCaselineOtpSent(true);
+        setCaselineOtpCountdown(300); // 5 minutes
+        toast({
+          title: 'OTP Sent',
+          description: `OTP code has been sent to ${caselineApproverEmail}. Please check your email inbox.`,
+        });
+      } else {
+        throw new Error(result.message || 'Failed to send OTP');
+      }
+    } catch (error) {
+      console.error('Error sending caseline OTP:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to send OTP. Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsSendingCaselineOtp(false);
+    }
+  };
+
+  // Handle verify OTP for caseline approval
+  const handleVerifyCaselineOtp = async () => {
+    if (!caselineOtpCode || caselineOtpCode.length !== 6) {
+      toast({
+        title: 'Error',
+        description: 'Please enter a valid 6-digit OTP code',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/mail/otp/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
+        },
+        body: JSON.stringify({
+          email: caselineApproverEmail,
+          otp: caselineOtpCode
+        })
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.status === 'success' && result.isValid) {
+        setCaselineOtpVerified(true);
+        toast({
+          title: 'Success',
+          description: 'OTP verified successfully. You can now approve or reject caselines.',
+        });
+      } else {
+        throw new Error(result.message || 'Invalid or expired OTP code');
+      }
+    } catch (error) {
+      console.error('Error verifying caseline OTP:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to verify OTP. Please try again.',
@@ -1159,21 +1184,11 @@ const SuperAdvisor = () => {
       return;
     }
 
-    // Validate phone number format (10 digits)
-    if (!/^\d{10}$/.test(warrantyRecordForm.visitorPhone.trim())) {
-      toast({
-        title: 'Error',
-        description: 'Phone number must be exactly 10 digits',
-        variant: 'destructive'
-      });
-      return;
-    }
-
     // Validate OTP verification - MUST verify OTP before creating record
     if (!otpVerified) {
       toast({
         title: 'OTP Verification Required',
-        description: 'Please send and verify OTP for the phone number before creating record',
+        description: 'Please send and verify OTP for the email address before creating record',
         variant: 'destructive'
       });
       return;
@@ -1191,7 +1206,8 @@ const SuperAdvisor = () => {
         })),
         visitorInfo: {
           fullName: warrantyRecordForm.visitorFullName.trim(),
-          phone: warrantyRecordForm.visitorPhone.trim()
+          phone: warrantyRecordForm.visitorPhone.trim(),
+          email: warrantyRecordForm.customerEmail.trim()
         }
       };
       
@@ -1202,9 +1218,13 @@ const SuperAdvisor = () => {
       await loadProcessingRecords();
       
       // Reset forms and close dialogs
-      setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '' });
+      setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
       setWarrantyRecordCaseText('');
       setShowCreateWarrantyDialog(false);
+      setOtpSent(false);
+      setOtpVerified(false);
+      setOtpCode('');
+      setOtpCountdown(0);
       setVehicleWarrantyStatus(null);
       setVehicleOdometer('');
       
@@ -1332,6 +1352,12 @@ const SuperAdvisor = () => {
             title: 'Success',
             description: 'Vehicle registered to existing customer successfully!',
           });
+          
+          // Reset Register New Vehicle flow after successful registration
+          if (registrationFlowPhone) {
+            setNewVehicleVin('');
+            setRegistrationFlowPhone('');
+          }
         }
       }
       // Case 3: Have form data but no customer ID - Search by phone or create new
@@ -1340,7 +1366,7 @@ const SuperAdvisor = () => {
         let customerIdToUse = null;
         
         try {
-          const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers?phone=${ownerForm.phone.trim()}`, {
+          const searchResponse = await axios.get(`${API_BASE_URL}/customers?phone=${ownerForm.phone.trim()}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
@@ -1380,7 +1406,7 @@ const SuperAdvisor = () => {
 
         // Register vehicle with PATCH /vehicles/{VIN}
         const response = await axios.patch(
-          `http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}`,
+          `${API_BASE_URL}/vehicles/${vehicleSearchResult.vin}`,
           requestBody,
           {
             headers: {
@@ -1405,6 +1431,12 @@ const SuperAdvisor = () => {
               ? 'Vehicle registered to existing customer successfully!'
               : 'New customer created and vehicle registered successfully!',
           });
+          
+          // Reset Register New Vehicle flow after successful registration
+          if (registrationFlowPhone) {
+            setNewVehicleVin('');
+            setRegistrationFlowPhone('');
+          }
         }
       }
 
@@ -1461,7 +1493,7 @@ const SuperAdvisor = () => {
 
    
       const response = await axios.post(
-        `http://localhost:3000/api/v1/vehicles/${vehicleSearchResult.vin}/warranty/preview`,
+        `${API_BASE_URL}/vehicles/${vehicleSearchResult.vin}/warranty/preview`,
         {
           odometer: parseInt(odometer),
           purchaseDate: vehicleSearchResult.purchaseDate
@@ -1533,10 +1565,6 @@ const SuperAdvisor = () => {
               description: `General warranty valid for ${generalWarranty.duration.remainingDays} more days and ${generalWarranty.mileage.remainingMileage} km.${componentWarning}`,
             });
 
-            console.log('🚗 Current vehicleSearchResult:', vehicleSearchResult);
-            console.log('👤 vehicleSearchResult.owner:', vehicleSearchResult.owner);
-            console.log('📞 Current customerSearchPhone:', customerSearchPhone);
-            console.log('📞 Saved registrationFlowPhone:', registrationFlowPhone);
 
             // Check for owner phone from two sources:
             // 1. If vehicle already has owner (existing customer)
@@ -1556,7 +1584,6 @@ const SuperAdvisor = () => {
             }
 
             if (phoneToSearch) {
-              console.log('🔍 Auto-filling customer phone:', phoneToSearch);
               
               // Fill customer search phone if not already filled
               if (!customerSearchPhone.trim()) {
@@ -1565,7 +1592,6 @@ const SuperAdvisor = () => {
               
               // Auto-trigger phone search by passing phone directly
               setTimeout(async () => {
-                console.log('🔍 Auto-triggering customer search for phone:', phoneToSearch);
                 try {
                   await handleSearchCustomerByPhone(phoneToSearch);
                 } catch (error) {
@@ -1649,7 +1675,7 @@ const SuperAdvisor = () => {
       // First, find or create customer
       let customerData = null;
 
-      const searchResponse = await axios.get(`http://localhost:3000/api/v1/customers/`, {
+      const searchResponse = await axios.get(`${API_BASE_URL}/customers/`, {
         params: {
           phone: ownerForm.phone.trim()
         },
@@ -1663,7 +1689,7 @@ const SuperAdvisor = () => {
         customerData = searchResponse.data.data.customer;
       } else {
         // Create new customer
-        const createResponse = await axios.post(`http://localhost:3000/api/v1/customers/`, {
+        const createResponse = await axios.post(`${API_BASE_URL}/customers/`, {
           fullName: ownerForm.fullName.trim(),
           email: ownerForm.email.trim(),
           phone: ownerForm.phone.trim(),
@@ -1692,7 +1718,7 @@ const SuperAdvisor = () => {
       };
 
       // Register owner to vehicle
-      const response = await axios.patch(`http://localhost:3000/api/v1/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
+      const response = await axios.patch(`${API_BASE_URL}/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -1762,7 +1788,8 @@ const SuperAdvisor = () => {
       customerName: vehicleSearchResult.owner.fullName,
       cases: [],
       visitorFullName: vehicleSearchResult.owner.fullName || '',
-      visitorPhone: vehicleSearchResult.owner.phone || ''
+      visitorPhone: vehicleSearchResult.owner.phone || '',
+      customerEmail: vehicleSearchResult.owner.email || ''
     });
     
     // Open create dialog
@@ -1770,9 +1797,6 @@ const SuperAdvisor = () => {
   };
 
   const handleEditRecord = async (record: WarrantyRecord) => {
-    console.log('📝 Opening edit dialog for record:', record);
-    console.log('📋 Cases in record:', record.cases);
-    console.log('📊 Status - mapped:', record.status, 'raw:', record.rawStatus);
     
     setSelectedRecord(record);
     
@@ -1788,7 +1812,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      const response = await fetch(`http://localhost:3000/api/v1/processing-records/${record.id}`, {
+      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -1801,23 +1825,12 @@ const SuperAdvisor = () => {
       if (result.status === 'success' && result.data?.record) {
         const recordData = result.data.record;
         
-        console.log('🔍 Full API record data:', recordData);
-        console.log('� Vehicle object:', recordData.vehicle);
-        console.log('�👤 Customer fields:', {
-          customerName: recordData.customerName,
-          vehicleOwner: recordData.vehicle?.owner,
-          vehicleCustomer: recordData.vehicle?.customer,
-          owner: recordData.owner,
-          customer: recordData.customer,
-          createdByStaff: recordData.createdByStaff
-        });
-        
         // Get customer name from API response
         // Note: processing-record API doesn't include vehicle owner, need to call vehicle API separately
         let apiCustomerName = 'Unknown Customer';
         
         try {
-          const vehicleResponse = await fetch(`http://localhost:3000/api/v1/vehicles/${recordData.vin}`, {
+          const vehicleResponse = await fetch(`${API_BASE_URL}/vehicles/${recordData.vin}`, {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -1826,11 +1839,9 @@ const SuperAdvisor = () => {
           });
           
           const vehicleResult = await vehicleResponse.json();
-          console.log('🚗 Vehicle details from vehicle API:', vehicleResult);
           
           if (vehicleResult.status === 'success' && vehicleResult.data?.vehicle?.owner) {
             apiCustomerName = vehicleResult.data.vehicle.owner.fullName || 'Unknown Customer';
-            console.log('✅ Found customer name from vehicle API:', apiCustomerName);
           }
         } catch (vehicleError) {
           console.error('❌ Error fetching vehicle details:', vehicleError);
@@ -1841,6 +1852,7 @@ const SuperAdvisor = () => {
           odometer: record.odometer.toString(),
           visitorFullName: recordData.visitorInfo?.fullName || '',
           visitorPhone: recordData.visitorInfo?.phone || '',
+          customerEmail: recordData.visitorInfo?.email || '',
           cases: record.cases || [],
           purchaseDate: record.purchaseDate || '',
           status: record.status,
@@ -1853,6 +1865,7 @@ const SuperAdvisor = () => {
           odometer: record.odometer.toString(),
           visitorFullName: '',
           visitorPhone: '',
+          customerEmail: '',
           cases: record.cases || [],
           purchaseDate: record.purchaseDate || '',
           status: record.status,
@@ -1867,27 +1880,15 @@ const SuperAdvisor = () => {
         odometer: record.odometer.toString(),
         visitorFullName: '',
         visitorPhone: '',
+        customerEmail: '',
         cases: record.cases || [],
         purchaseDate: record.purchaseDate || '',
         status: record.status,
         rawStatus: record.rawStatus || 'CHECKED_IN'
-        });
+      });
     }
     
     setIsEditMode(true);
-  };
-
-  const handleDeleteRecord = (record: WarrantyRecord) => {
-    if (window.confirm(`Are you sure you want to delete this warranty record for VIN: ${record.vinNumber}?`)) {
-      // Remove from local state only
-      const updatedRecords = records.filter(r => r.id !== record.id);
-      setRecords(updatedRecords);
-      
-      toast({
-        title: 'Record Deleted',
-        description: `Warranty record for VIN ${record.vinNumber} has been deleted`,
-      });
-    }
   };
 
   const handleSaveEdit = () => {
@@ -1974,6 +1975,14 @@ const SuperAdvisor = () => {
     setShowCaselineDialog(true);
     setIsLoadingCaselines(true);
     setCaselines([]);
+    
+    // Reset all states when opening dialog (fresh start)
+    setSelectedCaselineIds({ approved: [], rejected: [] });
+    setCaselineApproverEmail('');
+    setCaselineOtpCode('');
+    setCaselineOtpSent(false);
+    setCaselineOtpVerified(false);
+    setCaselineOtpCountdown(0);
 
     try {
       const token = localStorage.getItem('ev_warranty_token');
@@ -1988,7 +1997,7 @@ const SuperAdvisor = () => {
       }
 
       // Fetch record details with caselines
-      const response = await fetch(`http://localhost:3000/api/v1/processing-records/${record.id}`, {
+      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -2000,6 +2009,7 @@ const SuperAdvisor = () => {
 
       if (result.status === 'success' && result.data?.record) {
         const recordData = result.data.record;
+        
         const allCaselines: any[] = [];
 
         // Extract caselines from all guarantee cases
@@ -2015,6 +2025,22 @@ const SuperAdvisor = () => {
               });
             }
           });
+        }
+
+        // Auto-fill approver email from visitorInfo
+        const ownerEmail = recordData.visitorInfo?.email || 
+                          recordData.vehicle?.owner?.email || 
+                          recordData.owner?.email || 
+                          recordData.customer?.email ||
+                          recordData.vehicle?.customer?.email ||
+                          record.customerEmail ||
+                          '';
+        
+        
+        if (ownerEmail) {
+          setCaselineApproverEmail(ownerEmail);
+        } else {
+          console.warn('⚠️ No email found in API response!');
         }
 
         setCaselines(allCaselines);
@@ -2039,6 +2065,181 @@ const SuperAdvisor = () => {
         description: 'Failed to load caselines',
         variant: 'destructive'
       });
+    }
+  };
+
+  // Fetch record details (can be called to refresh)
+  const fetchRecordDetails = async (recordId: string) => {
+    setIsLoadingRecordDetail(true);
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'Authentication token not found',
+          variant: 'destructive'
+        });
+        setIsLoadingRecordDetail(false);
+        return null;
+      }
+
+      // Fetch record details
+      const response = await fetch(`${API_BASE_URL}/processing-records/${recordId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.status === 'success' && result.data?.record) {
+        setViewRecordData(result.data.record);
+        setIsLoadingRecordDetail(false);
+        return result.data.record;
+      } else {
+        throw new Error('Failed to fetch record details');
+      }
+    } catch (error) {
+      console.error('Error fetching record details:', error);
+      setIsLoadingRecordDetail(false);
+      toast({
+        title: 'Error',
+        description: 'Failed to load record details',
+        variant: 'destructive'
+      });
+      return null;
+    }
+  };
+
+  // Handle view record details
+  const handleViewRecord = async (record: WarrantyRecord) => {
+    setShowViewRecordDialog(true);
+    setViewRecordData(null);
+    await fetchRecordDetails(record.id);
+  };
+
+  // Handle refresh record details
+  const handleRefreshRecordDetails = async () => {
+    if (viewRecordData?.id) {
+      await fetchRecordDetails(viewRecordData.id);
+      toast({
+        title: 'Refreshed',
+        description: 'Record details have been updated',
+      });
+    }
+  };
+
+  // Check if all caselines are completed
+  const areAllCaselinesCompleted = () => {
+    if (!viewRecordData?.guaranteeCases || viewRecordData.guaranteeCases.length === 0) {
+      return false; // No caselines = cannot complete
+    }
+
+    // Check all guarantee cases for their caselines
+    for (const guaranteeCase of viewRecordData.guaranteeCases) {
+      // If no caselines in this case, it's not ready
+      if (!guaranteeCase.caseLines || guaranteeCase.caseLines.length === 0) {
+        return false;
+      }
+
+      // Check if all caselines in this case are completed
+      const allCompleted = guaranteeCase.caseLines.every(
+        (caseline: any) => caseline.status === 'COMPLETED'
+      );
+
+      if (!allCompleted) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  // Handle complete record
+  const handleCompleteRecord = async () => {
+    if (!viewRecordData?.id) {
+      toast({
+        title: 'Error',
+        description: 'No record selected',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Check if record is already completed
+    if (viewRecordData.status === 'COMPLETED') {
+      toast({
+        title: 'Already Completed',
+        description: 'This record has already been completed',
+        variant: 'default'
+      });
+      return;
+    }
+
+    // Check if all caselines are completed
+    if (!areAllCaselinesCompleted()) {
+      toast({
+        title: 'Cannot Complete',
+        description: 'All caselines must be completed before completing the record',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsCompletingRecord(true);
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+
+      const response = await fetch(`${API_BASE_URL}/processing-records/${viewRecordData.id}/completed`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result.status !== 'success') {
+        throw new Error(result.message || 'Failed to complete record');
+      }
+
+      toast({
+        title: 'Record Completed Successfully',
+        description: `Record has been marked as completed. Check-out date: ${new Date(result.data.checkOutDate).toLocaleString()}`,
+      });
+
+      // Update the view record data with new status
+      setViewRecordData({
+        ...viewRecordData,
+        status: result.data.status,
+        checkOutDate: result.data.checkOutDate
+      });
+
+      // Reload processing records to update the table
+      await loadProcessingRecords();
+
+      // Close dialog after a short delay
+      setTimeout(() => {
+        setShowViewRecordDialog(false);
+      }, 1500);
+
+    } catch (error) {
+      console.error('Error completing record:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to complete record',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsCompletingRecord(false);
     }
   };
 
@@ -2091,6 +2292,16 @@ const SuperAdvisor = () => {
       return;
     }
 
+    // Check OTP verification
+    if (!caselineOtpVerified) {
+      toast({
+        title: 'OTP Required',
+        description: 'Please verify OTP before approving or rejecting caselines',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setIsProcessingCaselines(true);
 
     try {
@@ -2107,7 +2318,8 @@ const SuperAdvisor = () => {
         },
         body: JSON.stringify({
           approvedCaseLineIds: selectedCaselineIds.approved.map(id => ({ id })),
-          rejectedCaseLineIds: selectedCaselineIds.rejected.map(id => ({ id }))
+          rejectedCaseLineIds: selectedCaselineIds.rejected.map(id => ({ id })),
+          approverEmail: caselineApproverEmail
         })
       });
 
@@ -2122,8 +2334,13 @@ const SuperAdvisor = () => {
         description: `Processed ${selectedCaselineIds.approved.length} approved and ${selectedCaselineIds.rejected.length} rejected caselines`,
       });
 
-      // Reset selections
+      // Reset selections and OTP states
       setSelectedCaselineIds({ approved: [], rejected: [] });
+      setCaselineApproverEmail('');
+      setCaselineOtpCode('');
+      setCaselineOtpSent(false);
+      setCaselineOtpVerified(false);
+      setCaselineOtpCountdown(0);
 
       // Reload caselines
       if (selectedRecordForCaseline) {
@@ -2202,8 +2419,8 @@ const SuperAdvisor = () => {
                 onClick={() => setSearchMode('warranty')}
                 className={searchMode === 'warranty' ? 'bg-blue-600 hover:bg-blue-700' : ''}
               >
-                <Search className="h-4 w-4 mr-2" />
-                Check Warranty by VIN
+                <FileText className="h-4 w-4 mr-2" />
+                View Warranty Records
               </Button>
             </div>
 
@@ -2305,28 +2522,20 @@ const SuperAdvisor = () => {
                             <Button
                               variant="outline"
                               size="sm"
+                              onClick={() => handleViewRecord(record)}
+                              className="text-green-600 hover:bg-green-50"
+                            >
+                              <FileText className="h-4 w-4 mr-1" />
+                              View Record
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
                               onClick={() => handleViewCaselines(record)}
                               className="text-blue-600 hover:bg-blue-50"
                             >
                               <FileText className="h-4 w-4 mr-1" />
                               View Caselines
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleEditRecord(record)}
-                            >
-                              <Edit className="h-4 w-4 mr-1" />
-                              Edit
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-red-600 hover:bg-red-50"
-                              onClick={() => handleDeleteRecord(record)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-1" />
-                              Delete
                             </Button>
                           </div>
                         </TableCell>
@@ -2337,11 +2546,7 @@ const SuperAdvisor = () => {
               </Table>
             </div>
 
-              {records.length > 0 && (
-              <div className="mt-4 text-center">
-                <Button variant="outline">View All Records</Button>
-              </div>
-            )}
+             
           </CardContent>
         </Card>
         )}
@@ -3125,44 +3330,6 @@ const SuperAdvisor = () => {
         )}
       </main>
 
-      {/* dialog search */}
-      <Dialog open={isDialogSearch} onOpenChange={setIsDialogSearch}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center space-x-2">
-              <Car className="h-5 w-5" />
-              <span>VIN Warranty</span>
-            </DialogTitle>
-            <DialogDescription>
-              Vehicle warranty information and coverage details
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="grid gap-4 py-4" >
-            <div className="grid gap-2">
-              <Label>VIN Number</Label>
-              <Input
-                id="vinNumber"
-                placeholder="VIN" 
-                value={vinData.vinNumber}
-                readOnly              
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label>Warranty Status</Label>
-              <Input
-                id="Status"
-                placeholder="Warranty status"
-                value={vinData.warrantyStatus}
-                readOnly
-              />
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-      
-
       {/* Nested New Case Dialog */}
       <Dialog open={isAddNewcaseOpen} onOpenChange={(open) => {
         setIsAddNewcaseOpen(open);
@@ -3244,131 +3411,6 @@ const SuperAdvisor = () => {
             }}>
               {editingCaseId ? 'Update Case' : 'Add Case'}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* View/Edit Record Dialog */}
-      <Dialog open={isEditMode} onOpenChange={(open) => {
-        if (!open) setIsEditMode(false);
-      }}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <span>View Warranty Record</span>
-            </DialogTitle>
-            <DialogDescription>
-              View warranty details and update status
-            </DialogDescription>
-          </DialogHeader>
-
-          {isEditMode && (
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="edit-vinNumber">VIN Number</Label>
-                <Input
-                  id="edit-vinNumber"
-                  value={editRecord.vinNumber}
-                  readOnly
-                  className="bg-muted/50 cursor-default"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-visitorFullName">Visitor Full Name</Label>
-                <Input
-                  id="edit-visitorFullName"
-                  value={editRecord.visitorFullName}
-                  readOnly
-                  className="bg-muted/50 cursor-default"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-visitorPhone">Visitor Phone</Label>
-                <Input
-                  id="edit-visitorPhone"
-                  value={editRecord.visitorPhone}
-                  readOnly
-                  className="bg-muted/50 cursor-default font-mono"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-odometer">Odometer (km)</Label>
-                <Input
-                  id="edit-odometer"
-                  type="number"
-                  value={editRecord.odometer}
-                  readOnly
-                  className="bg-muted/50 cursor-default"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="edit-status">Status *</Label>
-                <select
-                  id="edit-status"
-                  value={editRecord.rawStatus}
-                  onChange={(e) => setEditRecord({ 
-                    ...editRecord, 
-                    rawStatus: e.target.value,
-                    status: mapApiStatus(e.target.value)
-                  })}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="CHECKED_IN">Checked In</option>
-                  <option value="IN_DIAGNOSIS">In Diagnosis</option>
-                  <option value="WAITING_CUSTOMER_APPROVAL">Waiting Customer Approval</option>
-                  <option value="PROCESSING">Processing</option>
-                  <option value="READY_FOR_PICKUP">Ready for Pickup</option>
-                  <option value="COMPLETED">Completed</option>
-                  <option value="CANCELLED">Cancelled</option>
-                </select>
-              </div>
-
-              <div className="grid gap-2">
-                <div className="flex items-center justify-between mb-2">
-                  <Label>Cases ({editRecord.cases?.length || 0})</Label>
-                </div>
-                {editRecord.cases && editRecord.cases.length > 0 ? (
-                  <div className="space-y-2 max-h-60 overflow-y-auto border rounded-lg p-2">
-                    {editRecord.cases.map((caseNote, index) => (
-                      <div key={caseNote.id} className="p-3 bg-muted/50 rounded-md border">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Badge variant="outline" className="text-xs">Case {index + 1}</Badge>
-                            <span className="text-xs text-muted-foreground">{formatDate(caseNote.createdAt)}</span>
-                          </div>
-                          <p className="text-sm break-words">{caseNote.text}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="p-3 bg-muted/20 rounded-md border border-dashed">
-                    <p className="text-sm text-muted-foreground italic">No cases available.</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="grid gap-2">
-                <Label className="text-muted-foreground">Created Date</Label>
-                <p className="text-sm">{selectedRecord && formatDate(selectedRecord.createdAt)}</p>
-              </div>
-            </div>
-          )}
-
-          <DialogFooter>
-              <>
-                <Button variant="outline" onClick={() => setIsEditMode(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSaveEdit}>
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Save Changes
-                </Button>
-              </>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3513,7 +3555,11 @@ const SuperAdvisor = () => {
                   <div>
                     <span className="font-medium">Purchase Date:</span> {
                       currentVehicleForWarranty?.purchaseDate 
-                        ? new Date(currentVehicleForWarranty.purchaseDate).toLocaleDateString()
+                        ? new Date(currentVehicleForWarranty.purchaseDate).toLocaleDateString('en-GB', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric'
+                          })
                         : 'N/A'
                     }
                   </div>
@@ -3823,6 +3869,19 @@ const SuperAdvisor = () => {
               />
             </div>
 
+            {/* Visitor Phone - Editable */}
+            <div className="grid gap-2">
+              <Label htmlFor="visitor-phone">Visitor Phone *</Label>
+              <Input
+                id="visitor-phone"
+                type="tel"
+                value={warrantyRecordForm.visitorPhone}
+                onChange={(e) => setWarrantyRecordForm(prev => ({ ...prev, visitorPhone: e.target.value }))}
+                placeholder="Enter visitor's phone number"
+                className="border-green-300 focus:border-green-500"
+              />
+            </div>
+
             {/* Customer Email - Editable */}
             <div className="grid gap-2">
               <Label htmlFor="customer-email">Customer Email *</Label>
@@ -3973,7 +4032,7 @@ const SuperAdvisor = () => {
               variant="outline" 
               onClick={() => {
                 setShowCreateWarrantyDialog(false);
-                setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '' });
+                setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
                 setWarrantyRecordCaseText('');
                 // Reset OTP states
                 setOtpCode('');
@@ -3986,7 +4045,7 @@ const SuperAdvisor = () => {
             </Button>
             <Button 
               onClick={handleSubmitWarrantyRecord}
-              disabled={warrantyRecordForm.cases.length === 0 || isCreatingRecord || !warrantyRecordForm.visitorFullName.trim() || !warrantyRecordForm.visitorPhone.trim() || !otpVerified}
+              disabled={warrantyRecordForm.cases.length === 0 || isCreatingRecord || !warrantyRecordForm.visitorFullName.trim() || !warrantyRecordForm.visitorPhone.trim() || !warrantyRecordForm.customerEmail.trim() || !otpVerified}
               className="bg-blue-600 hover:bg-blue-700"
             >
               <Plus className="h-4 w-4 mr-2" />
@@ -4172,6 +4231,81 @@ const SuperAdvisor = () => {
               </div>
               </>
             )}
+
+            {/* OTP Verification Section - Show when caselines are selected */}
+            {(selectedCaselineIds.approved.length > 0 || selectedCaselineIds.rejected.length > 0) && (
+              <div className="mt-6 p-4 border-t border-gray-200 bg-blue-50 rounded-lg space-y-4">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Shield className="h-5 w-5 text-blue-600" />
+                  <h3 className="font-semibold text-blue-900">OTP Verification Required</h3>
+                </div>
+                <p className="text-sm text-blue-700 mb-3">
+                  Please verify your identity with OTP before approving or rejecting caselines.
+                </p>
+
+                {/* Email Input */}
+                <div>
+                  <Label htmlFor="caselineApproverEmail">Approver Email *</Label>
+                  <Input
+                    id="caselineApproverEmail"
+                    type="email"
+                    placeholder="Enter approver email address"
+                    value={caselineApproverEmail}
+                    onChange={(e) => setCaselineApproverEmail(e.target.value)}
+                    disabled={caselineOtpVerified}
+                    className="mt-1"
+                  />
+                </div>
+
+                {/* Send OTP Button */}
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleSendCaselineOtp}
+                    disabled={!caselineApproverEmail || isSendingCaselineOtp || caselineOtpVerified || (caselineOtpSent && caselineOtpCountdown > 0)}
+                    className="flex-1 bg-blue-600 hover:bg-blue-700"
+                  >
+                    {isSendingCaselineOtp ? 'Sending...' : caselineOtpSent && caselineOtpCountdown > 0 ? `Resend (${Math.floor(caselineOtpCountdown / 60)}:${(caselineOtpCountdown % 60).toString().padStart(2, '0')})` : caselineOtpVerified ? 'Verified ✓' : 'Send OTP'}
+                  </Button>
+                </div>
+
+                {/* OTP Input and Verify Button */}
+                {caselineOtpSent && !caselineOtpVerified && (
+                  <div className="space-y-2">
+                    <Label htmlFor="caselineOtpCode">OTP Code *</Label>
+                    <div className="text-xs text-blue-600 mb-1">
+                      Valid for {Math.floor(caselineOtpCountdown / 60)}:{(caselineOtpCountdown % 60).toString().padStart(2, '0')} minutes.
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        id="caselineOtpCode"
+                        type="text"
+                        placeholder="Enter 6-digit OTP code"
+                        value={caselineOtpCode}
+                        onChange={(e) => setCaselineOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        maxLength={6}
+                        className="flex-1"
+                      />
+                      <Button
+                        onClick={handleVerifyCaselineOtp}
+                        disabled={caselineOtpCode.length !== 6}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        <Shield className="h-4 w-4 mr-2" />
+                        Verify OTP
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Verification Success Message */}
+                {caselineOtpVerified && (
+                  <div className="flex items-center space-x-2 text-green-700 bg-green-50 p-3 rounded">
+                    <CheckCircle className="h-5 w-5" />
+                    <span className="text-sm font-medium">OTP verified successfully. You can now submit your decisions.</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
@@ -4183,13 +4317,19 @@ const SuperAdvisor = () => {
             <Button variant="outline" onClick={() => {
               setShowCaselineDialog(false);
               setSelectedCaselineIds({ approved: [], rejected: [] });
+              // Reset OTP states when closing
+              setCaselineApproverEmail('');
+              setCaselineOtpCode('');
+              setCaselineOtpSent(false);
+              setCaselineOtpVerified(false);
+              setCaselineOtpCountdown(0);
             }}>
               Close
             </Button>
             {(selectedCaselineIds.approved.length > 0 || selectedCaselineIds.rejected.length > 0) && (
               <Button 
                 onClick={handleSubmitCaselineDecisions}
-                disabled={isProcessingCaselines}
+                disabled={isProcessingCaselines || !caselineOtpVerified}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 {isProcessingCaselines ? (
@@ -4204,6 +4344,341 @@ const SuperAdvisor = () => {
                   </>
                 )}
               </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Record Details Dialog */}
+      <Dialog open={showViewRecordDialog} onOpenChange={setShowViewRecordDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <FileText className="h-5 w-5" />
+                <span>Processing Record Details</span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefreshRecordDetails}
+                disabled={isLoadingRecordDetail}
+                className="ml-4"
+              >
+                {isLoadingRecordDetail ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                      <polyline points="23 4 23 10 17 10"></polyline>
+                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                    Refresh
+                  </>
+                )}
+              </Button>
+            </DialogTitle>
+            <DialogDescription>
+              Complete information from processing record
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            {isLoadingRecordDetail ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <span className="ml-3 text-muted-foreground">Loading record details...</span>
+              </div>
+            ) : viewRecordData ? (
+              <div className="space-y-6">
+                {/* Basic Information */}
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <h3 className="font-semibold text-lg mb-4 flex items-center">
+                    <Car className="h-5 w-5 mr-2 text-blue-600" />
+                    Basic Information
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-xs text-gray-600">VIN</Label>
+                      <p className="font-mono font-semibold text-sm">{viewRecordData.vin}</p>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-gray-600">Check-in Date</Label>
+                      <p className="text-sm">{viewRecordData.checkInDate ? new Date(viewRecordData.checkInDate).toLocaleString() : 'N/A'}</p>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-gray-600">Odometer</Label>
+                      <p className="text-sm font-semibold">{viewRecordData.odometer?.toLocaleString()} km</p>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-gray-600">Status</Label>
+                      <div className="mt-1">
+                        {getRawStatusBadge(viewRecordData.status)}
+                      </div>
+                    </div>
+                    {viewRecordData.checkOutDate && (
+                      <div className="col-span-2">
+                        <Label className="text-xs text-gray-600">Check-out Date</Label>
+                        <p className="text-sm font-semibold text-green-600">
+                          {new Date(viewRecordData.checkOutDate).toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Vehicle Information */}
+                {viewRecordData.vehicle && (
+                  <div className="border rounded-lg p-4 bg-blue-50">
+                    <h3 className="font-semibold text-lg mb-4 flex items-center">
+                      <Car className="h-5 w-5 mr-2 text-blue-600" />
+                      Vehicle Information
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-xs text-blue-700">VIN</Label>
+                        <p className="font-mono text-sm">{viewRecordData.vehicle.vin}</p>
+                      </div>
+                      {viewRecordData.vehicle.model && (
+                        <>
+                          <div>
+                            <Label className="text-xs text-blue-700">Model</Label>
+                            <p className="text-sm font-semibold">{viewRecordData.vehicle.model.name}</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-blue-700">Model ID</Label>
+                            <p className="text-xs font-mono">{viewRecordData.vehicle.model.vehicleModelId}</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Technician Information */}
+                {viewRecordData.mainTechnician && (
+                  <div className="border rounded-lg p-4 bg-purple-50">
+                    <h3 className="font-semibold text-lg mb-4 flex items-center">
+                      <User className="h-5 w-5 mr-2 text-purple-600" />
+                      Main Technician
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-xs text-purple-700">Name</Label>
+                        <p className="text-sm font-semibold">{viewRecordData.mainTechnician.name}</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-purple-700">User ID</Label>
+                        <p className="text-xs font-mono">{viewRecordData.mainTechnician.userId}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Created By Staff */}
+                {viewRecordData.createdByStaff && (
+                  <div className="border rounded-lg p-4 bg-green-50">
+                    <h3 className="font-semibold text-lg mb-4 flex items-center">
+                      <User className="h-5 w-5 mr-2 text-green-600" />
+                      Created By
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-xs text-green-700">Name</Label>
+                        <p className="text-sm font-semibold">{viewRecordData.createdByStaff.name}</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs text-green-700">User ID</Label>
+                        <p className="text-xs font-mono">{viewRecordData.createdByStaff.userId}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Guarantee Cases */}
+                {viewRecordData.guaranteeCases && viewRecordData.guaranteeCases.length > 0 && (
+                  <div className="border rounded-lg p-4 bg-yellow-50">
+                    <h3 className="font-semibold text-lg mb-4 flex items-center justify-between">
+                      <div className="flex items-center">
+                        <Shield className="h-5 w-5 mr-2 text-yellow-600" />
+                        Guarantee Cases ({viewRecordData.guaranteeCases.length})
+                      </div>
+                      {areAllCaselinesCompleted() && (
+                        <Badge className="bg-green-100 text-green-800">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          All Caselines Completed
+                        </Badge>
+                      )}
+                    </h3>
+                    <div className="space-y-3">
+                      {viewRecordData.guaranteeCases.map((gCase: any, index: number) => (
+                        <div key={gCase.guaranteeCaseId || index} className="border border-yellow-200 rounded-lg p-3 bg-white">
+                          <div className="flex items-start justify-between mb-2">
+                            <Badge variant="outline" className="text-xs">
+                              Case #{index + 1}
+                            </Badge>
+                            <Badge className="bg-yellow-100 text-yellow-800 text-xs">
+                              {gCase.status}
+                            </Badge>
+                          </div>
+                          <div className="space-y-2">
+                            <div>
+                              <Label className="text-xs text-gray-600">Case ID</Label>
+                              <p className="text-xs font-mono">{gCase.guaranteeCaseId}</p>
+                            </div>
+                            <div>
+                              <Label className="text-xs text-gray-600">Content</Label>
+                              <p className="text-sm">{gCase.contentGuarantee}</p>
+                            </div>
+                            {/* Caselines Details */}
+                            {gCase.caseLines && gCase.caseLines.length > 0 && (
+                              <div className="mt-3 pt-3 border-t">
+                                <Label className="text-xs text-gray-600 mb-2 block font-semibold">
+                                  Caselines ({gCase.caseLines.length})
+                                </Label>
+                                <div className="space-y-3">
+                                  {gCase.caseLines.map((caseline: any, caselineIndex: number) => (
+                                    <div 
+                                      key={caseline.id || caselineIndex} 
+                                      className={`border rounded-lg p-3 ${
+                                        caseline.status === 'COMPLETED' 
+                                          ? 'bg-green-50 border-green-300' 
+                                          : 'bg-gray-50 border-gray-300'
+                                      }`}
+                                    >
+                                      {/* Caseline Header */}
+                                      <div className="flex items-center justify-between mb-2">
+                                        <Badge variant="outline" className="text-xs">
+                                          Caseline #{caselineIndex + 1}
+                                        </Badge>
+                                        <Badge className={
+                                          caseline.status === 'COMPLETED' 
+                                            ? 'bg-green-100 text-green-800 border-green-300' 
+                                            : caseline.status === 'IN_PROGRESS'
+                                            ? 'bg-blue-100 text-blue-800'
+                                            : caseline.status === 'PENDING_APPROVAL'
+                                            ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                                            : 'bg-gray-100 text-gray-800'
+                                        }>
+                                          {caseline.status === 'COMPLETED' ? (
+                                            <>
+                                              <CheckCircle className="h-3 w-3 mr-1" />
+                                              COMPLETED
+                                            </>
+                                          ) : (
+                                            caseline.status || 'PENDING'
+                                          )}
+                                        </Badge>
+                                      </div>
+
+                                      {/* Caseline Content */}
+                                      <div className="space-y-2 text-xs">
+                                        {/* Diagnosis */}
+                                        {caseline.diagnosisText && (
+                                          <div>
+                                            <Label className="text-xs text-gray-600 font-semibold">Diagnosis:</Label>
+                                            <p className="text-sm mt-1 text-gray-800">{caseline.diagnosisText}</p>
+                                          </div>
+                                        )}
+
+                                        {/* Correction */}
+                                        {caseline.correctionText && (
+                                          <div>
+                                            <Label className="text-xs text-gray-600 font-semibold">Correction:</Label>
+                                            <p className="text-sm mt-1 text-gray-800">{caseline.correctionText}</p>
+                                          </div>
+                                        )}
+
+                                        {/* Quantity */}
+                                        {caseline.quantity && (
+                                          <div>
+                                            <Label className="text-xs text-gray-600 font-semibold">Quantity:</Label>
+                                            <p className="text-sm mt-1 text-gray-800">{caseline.quantity}</p>
+                                          </div>
+                                        )}
+
+                                        {/* Warranty Status */}
+                                        {caseline.warrantyStatus && (
+                                          <div>
+                                            <Label className="text-xs text-gray-600 font-semibold">Warranty Status:</Label>
+                                            <Badge className={
+                                              caseline.warrantyStatus === 'UNDER_WARRANTY' 
+                                                ? 'bg-green-100 text-green-800 ml-2' 
+                                                : 'bg-red-100 text-red-800 ml-2'
+                                            }>
+                                              {caseline.warrantyStatus === 'UNDER_WARRANTY' ? 'Under Warranty' : 'Out of Warranty'}
+                                            </Badge>
+                                          </div>
+                                        )}
+
+                                        {/* Rejection Reason */}
+                                        {caseline.rejectionReason && (
+                                          <div className="bg-red-50 border border-red-200 rounded p-2 mt-2">
+                                            <Label className="text-xs text-red-700 font-semibold">Rejection Reason:</Label>
+                                            <p className="text-sm text-red-900 mt-1">{caseline.rejectionReason}</p>
+                                          </div>
+                                        )}
+
+                                        {/* Technician IDs */}
+                                        <div className="flex gap-4 text-xs text-gray-500 pt-2 border-t">
+                                          {caseline.diagnosticTechId && (
+                                            <span>Diagnostic Tech: {caseline.diagnosticTechId}</span>
+                                          )}
+                                          {caseline.repairTechId && (
+                                            <span>Repair Tech: {caseline.repairTechId}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-lg">
+                <FileText className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                <p className="text-gray-600 font-medium">No Data Available</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowViewRecordDialog(false)}>
+              Close
+            </Button>
+            {viewRecordData && viewRecordData.status !== 'COMPLETED' && (
+              <>
+                {!areAllCaselinesCompleted() && (
+                  <div className="flex items-center text-sm text-yellow-600 mr-4">
+                    <Clock className="h-4 w-4 mr-2" />
+                    All caselines must be completed first
+                  </div>
+                )}
+                <Button 
+                  onClick={handleCompleteRecord}
+                  disabled={isCompletingRecord || !areAllCaselinesCompleted()}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {isCompletingRecord ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Completing...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Complete Record
+                    </>
+                  )}
+                </Button>
+              </>
             )}
           </DialogFooter>
         </DialogContent>

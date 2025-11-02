@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig, AxiosError } from 'axios';
 
 // Base API configuration
 const API_BASE_URL = 'http://localhost:3000/api/v1';
@@ -63,81 +63,63 @@ api.interceptors.request.use(
 
 // Response interceptor for handling common responses and errors
 api.interceptors.response.use(
-  (response: AxiosResponse) => {
-    // Successfully response
-    return response;
-  },
-  (error) => {
-    // Handle common error scenarios
-    if (error.response) {
-      const { status, data } = error.response;
-      
+  (response: AxiosResponse) => response,
+  (err: unknown) => {
+    // Use axios.isAxiosError to get typed error info
+    if (axios.isAxiosError(err)) {
+      const error = err as AxiosError<unknown>;
+      const status = error.response?.status;
+      const data = error.response?.data;
+
       switch (status) {
         case 401:
-          // Unauthorized - token expired or invalid
           console.error('Unauthorized: Token expired or invalid');
-          // Clear token from localStorage
           localStorage.removeItem('ev_warranty_token');
-          // Redirect to login page
-          window.location.href = '/login';
+          try {
+            window.location.href = '/login';
+          } catch (_) {
+            // ignore in non-browser environments
+          }
           break;
-          
         case 403:
-          // Forbidden - insufficient permissions
           console.error('Forbidden: Insufficient permissions');
           break;
-          
         case 404:
-          // Not found
           console.error('Resource not found');
           break;
-          
         case 500:
-          // Internal server error
           console.error('Internal server error');
           break;
-          
         default:
-          console.error(`API Error ${status}:`, data);
+          console.error(`API Error ${status ?? 'unknown'}:`, data ?? error.message);
       }
-    } else if (error.request) {
-      // Network error
-      console.error('Network error:', error.message);
+    } else if (err instanceof Error) {
+      // Non-Axios error
+      console.error('API Error:', err.message);
     } else {
-      // Other error
-      console.error('API Error:', error.message);
+      console.error('Unknown API error:', err);
     }
-    
-    return Promise.reject(error);
+
+    return Promise.reject(err);
   }
 );
 
 // API methods
 export const apiService = {
   // GET request
-  get: <T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
-    return api.get<T>(url, config);
-  },
+  get: <T = unknown>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => api.get<T>(url, config),
 
   // POST request
-  post: <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
-    return api.post<T>(url, data, config);
-  },
+  post: <T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => api.post<T>(url, data, config),
 
   // PUT request
-  put: <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
-    return api.put<T>(url, data, config);
-  },
+  put: <T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => api.put<T>(url, data, config),
 
   // PATCH request
-  patch: <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
-    return api.patch<T>(url, data, config);
-  },
+  patch: <T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => api.patch<T>(url, data, config),
 
   // DELETE request
-  delete: <T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => {
-    return api.delete<T>(url, config);
-  },
+  delete: <T = unknown>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> => api.delete<T>(url, config),
 };
 
 // Specific API endpoints
@@ -170,12 +152,12 @@ export const claimsAPI = {
   },
 
   // Create new claim
-  createClaim: (claimData: any) => {
+  createClaim: (claimData: unknown) => {
     return apiService.post('/claims', claimData);
   },
 
   // Update claim
-  updateClaim: (id: string, claimData: any) => {
+  updateClaim: (id: string, claimData: unknown) => {
     return apiService.put(`/claims/${id}`, claimData);
   },
 
@@ -192,7 +174,7 @@ export const vehicleAPI = {
   },
 
   // Register new vehicle
-  registerVehicle: (vehicleData: any) => {
+  registerVehicle: (vehicleData: unknown) => {
     return apiService.post('/vehicles', vehicleData);
   },
 
@@ -209,7 +191,7 @@ export const customerAPI = {
   },
 
   // Add new customer
-  addCustomer: (customerData: any) => {
+  addCustomer: (customerData: unknown) => {
     return apiService.post('/customers', customerData);
   },
 

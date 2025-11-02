@@ -32,7 +32,8 @@ import {
   Package,
   BoxIcon as Box,
   Edit,
-  Trash
+  Trash,
+  Eye
 } from "lucide-react";
 
 interface Technician {
@@ -41,6 +42,9 @@ interface Technician {
   workload?: number; // maps to activeTaskCount
   isAvailable: boolean;
   status?: string; // AVAILABLE | UNAVAILABLE
+  specialty?: string;
+  experience?: number;
+  rating?: number;
 }
 
 interface ComponentInfo {
@@ -59,6 +63,61 @@ interface CaseLine {
   repairTechId: string | null;
   quantity: number;
   typeComponent?: ComponentInfo;
+}
+
+interface DetailedCaseLine {
+  id: string;
+  diagnosisText: string;
+  correctionText: string;
+  warrantyStatus: string;
+  status: string;
+  typeComponentId: string;
+  quantity: number;
+  rejectionReason: string | null;
+  evidenceImageUrls?: string[];
+  updatedAt: string;
+  guaranteeCase?: {
+    guaranteeCaseId: string;
+    contentGuarantee: string;
+    status: string;
+    vehicleProcessingRecord?: {
+      vehicleProcessingRecordId: string;
+      vin: string;
+      createdByStaff?: {
+        userId: string;
+        serviceCenterId: string;
+        vehicleCompanyId: string | null;
+        serviceCenter?: {
+          serviceCenterId: string;
+          vehicleCompanyId: string;
+        };
+      };
+    };
+  };
+  diagnosticTechnician?: {
+    userId: string;
+    name: string;
+  };
+  repairTechnician?: {
+    userId: string;
+    name: string;
+  };
+  typeComponent?: {
+    typeComponentId: string;
+    sku: string;
+    name: string;
+    price: number;
+  };
+  reservations?: Array<{
+    reservationId: string;
+    caseLineId: string;
+    status: string;
+    component?: {
+      componentId: string;
+      serialNumber: string;
+      status: string;
+    };
+  }>;
 }
 
 interface GuaranteeCase {
@@ -134,7 +193,48 @@ interface StockTransferRequest {
     name: string;
     serviceCenterId: string;
   };
+  items?: Array<{
+    id: string;
+    quantityRequested: number;
+    quantityApproved: number | null;
+    typeComponentId: string;
+    caselineId?: string; // Add caselineId from backend response
+    typeComponent?: {
+      typeComponentId: string;
+      nameComponent: string;
+      description: string | null;
+    };
+  }>;
+  caseLines?: Array<{
+    id: string;
+    diagnosisText: string;
+    correctionText: string;
+    warrantyStatus: string;
+    status: string;
+    rejectionReason: string | null;
+    quantity: number;
+    typeComponent?: ComponentInfo;
+  }>;
 }
+
+// Helper: Save and recover caselineIds mapping in localStorage
+const saveCaseLineIdsToLocal = (requestId: string, caseLineIds: string[]) => {
+  try {
+    if (!requestId || !Array.isArray(caseLineIds) || caseLineIds.length === 0) return;
+    localStorage.setItem(`stockRequestCaseLines:${requestId}`, JSON.stringify(caseLineIds));
+  } catch (e) {
+    console.warn('Failed to persist stockRequestCaseLines mapping', e);
+  }
+};
+
+const recoverCaseLineIdsFromLocal = (requestId: string): string[] => {
+  try {
+    const raw = localStorage.getItem(`stockRequestCaseLines:${requestId}`);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch {
+    return [];
+  }
+};
 
 // Helper functions moved outside component to prevent re-creation on every render
 const formatCurrency = (amount: number) => {
@@ -165,21 +265,23 @@ const getPriorityBadgeVariant = (priority: 'Low' | 'Medium' | 'High' | 'Urgent' 
 
 const getStatusBadgeVariant = (status?: string) => {
   switch ((status || '').toUpperCase()) {
+    // Pending/Initial states - gray
     case 'CHECKED_IN':
     case 'PENDING_DIAGNOSIS':
       return 'secondary';
+    // Waiting states - amber/outline
     case 'WAITING_CUSTOMER_APPROVAL':
-    case 'WAITING_FOR_PARTS':
       return 'outline';
+    // Active processing states - blue
     case 'IN_PROGRESS':
     case 'IN_DIAGNOSIS':
     case 'PROCESSING':
-    case 'IN_REPAIR':
       return 'default';
+    // Success states - green
     case 'COMPLETED':
     case 'DELIVERED':
-    case 'PAID':
       return 'success';
+    // Error/Cancelled states - red
     case 'REJECTED':
     case 'CANCELLED':
       return 'destructive';
@@ -194,10 +296,7 @@ const STATUS_LABELS: Record<string, string> = {
   IN_DIAGNOSIS: 'In Diagnosis',
   WAITING_CUSTOMER_APPROVAL: 'Waiting Customer Approval',
   PROCESSING: 'Processing',
-  WAITING_FOR_PARTS: 'Waiting for Parts',
-  IN_REPAIR: 'In Repair',
   COMPLETED: 'Completed',
-  PAID: 'Paid',
   CANCELLED: 'Cancelled',
 
   // Technician statuses
@@ -208,6 +307,7 @@ const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
   PENDING_APPROVAL: 'Pending Approval',
   CUSTOMER_APPROVED: 'Customer Approved',
+  PARTS_AVAILABLE: 'Parts Available',
   REJECTED_BY_OUT_OF_WARRANTY: 'Rejected (Out of Warranty)',
   REJECTED_BY_TECH: 'Rejected by Tech',
   REJECTED_BY_CUSTOMER: 'Rejected by Customer',
@@ -254,22 +354,26 @@ const getTechBadgeVariant = (status?: string) => {
 
 const getCaseLineStatusVariant = (status?: string) => {
   switch ((status || '').toUpperCase()) {
-    case 'CUSTOMER_APPROVED':
-    case 'READY_FOR_REPAIR':
-    case 'COMPLETED':
-      return 'default';
+    // Pending/Draft states - gray
     case 'PENDING_APPROVAL':
     case 'DRAFT':
       return 'secondary';
+    // Approved but waiting for parts - blue
+    case 'CUSTOMER_APPROVED':
+      return 'default';
+    // Parts available and ready states - green
+    case 'PARTS_AVAILABLE':
+    case 'READY_FOR_REPAIR':
+      return 'success';
+    // Completed - green
+    case 'COMPLETED':
+      return 'success';
+    // Rejected/Cancelled - red
     case 'REJECTED_BY_OUT_OF_WARRANTY':
     case 'REJECTED_BY_TECH':
     case 'REJECTED_BY_CUSTOMER':
     case 'CANCELLED':
       return 'destructive';
-    case 'IN_REPAIR':
-      return 'default';
-    case 'WAITING_FOR_PARTS':
-      return 'secondary';
     default:
       return 'outline';
   }
@@ -313,7 +417,6 @@ const getStatusBadge = (status: string) => {
 const ServiceCenterDashboard = () => {
   const [warrantyClaims, setWarrantyClaims] = useState<WarrantyClaim[]>([]);
   const [availableTechnicians, setAvailableTechnicians] = useState<Technician[]>([]);
-  const [isLoadingClaims, setIsLoadingClaims] = useState<boolean>(false);
   const [techFilterStatus, setTechFilterStatus] = useState<string>('AVAILABLE');
   // Status tabs
   const STATUSES = [
@@ -321,10 +424,7 @@ const ServiceCenterDashboard = () => {
     'IN_DIAGNOSIS',
     'WAITING_CUSTOMER_APPROVAL',
     'PROCESSING',
-    'WAITING_FOR_PARTS',
-    'IN_REPAIR',
     'COMPLETED',
-    'PAID',
     'CANCELLED'
   ];
   const [claimsByStatus, setClaimsByStatus] = useState<Record<string, WarrantyClaim[]>>({});
@@ -336,26 +436,6 @@ const ServiceCenterDashboard = () => {
   const [selectedClaimForDetail, setSelectedClaimForDetail] = useState<WarrantyClaim | null>(null);
 
   // Track case lines with out of stock status
-  const [outOfStockCaseLines, setOutOfStockCaseLines] = useState<Set<string>>(() => {
-    // Load from localStorage on mount
-    try {
-      const saved = localStorage.getItem('outOfStockCaseLines');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
-
-  // Track case lines that have been requested from manufacturer
-  const [requestedFromManufacturer, setRequestedFromManufacturer] = useState<Set<string>>(() => {
-    try {
-      const saved = localStorage.getItem('requestedFromManufacturer');
-      return saved ? new Set(JSON.parse(saved)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
-
   // Technician Records Modal States
   const [showTechnicianRecordsModal, setShowTechnicianRecordsModal] = useState(false);
   const [selectedTechnicianForRecords, setSelectedTechnicianForRecords] = useState<Technician | null>(null);
@@ -375,11 +455,31 @@ const ServiceCenterDashboard = () => {
     quantity: number;
     guaranteeCaseId: string;
   } | null>(null);
+  const [caseLineToRequestMap, setCaseLineToRequestMap] = useState<Map<string, string>>(new Map()); // Map caselineId -> requestId
   const [stockTransferRequests, setStockTransferRequests] = useState<StockTransferRequest[]>([]);
   const [isLoadingStockRequests, setIsLoadingStockRequests] = useState(false);
   const [showStockRequestsModal, setShowStockRequestsModal] = useState(false);
   const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
   const [showStockRequestDetailModal, setShowStockRequestDetailModal] = useState(false);
+
+  // Technician assignment for case line states
+  const [showTechnicianSelectionModal, setShowTechnicianSelectionModal] = useState(false);
+  const [selectedCaseLineForTechnician, setSelectedCaseLineForTechnician] = useState<{
+    guaranteeCaseId: string;
+    caseLineId: string;
+  } | null>(null);
+
+  // Case line detail modal states
+  const [showCaseLineDetailModal, setShowCaseLineDetailModal] = useState(false);
+  const [selectedCaseLineDetail, setSelectedCaseLineDetail] = useState<DetailedCaseLine | null>(null);
+  const [isLoadingCaseLineDetail, setIsLoadingCaseLineDetail] = useState(false);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  const [showImageModal, setShowImageModal] = useState(false);
+
+  // Cancel stock request states
+  const [showCancelRequestModal, setShowCancelRequestModal] = useState(false);
+  const [cancelRequestId, setCancelRequestId] = useState<string | null>(null);
+  const [cancellationReason, setCancellationReason] = useState('');
 
   const { user, logout, getToken } = useAuth();
 
@@ -448,38 +548,14 @@ const ServiceCenterDashboard = () => {
 
   // Fetch all statuses (moved outside useEffect to be reusable)
   const fetchAllStatuses = async () => {
-    setIsLoadingClaims(true);
     const results = await Promise.all(STATUSES.map(s => fetchForStatus(s)));
     const byStatus: Record<string, WarrantyClaim[]> = {};
     STATUSES.forEach((s, idx) => { byStatus[s] = results[idx] || []; });
     setClaimsByStatus(byStatus);
     setWarrantyClaims(byStatus[activeStatus] || []);
-    setIsLoadingClaims(false);
 
-    // Clean up requestedFromManufacturer for case lines that backend has updated
-    const allCaseLines = Object.values(byStatus).flat().flatMap(claim => 
-      claim.guaranteeCases.flatMap(gc => gc.caseLines || [])
-    );
-    
-    setRequestedFromManufacturer(prev => {
-      const newSet = new Set(prev);
-      let updated = false;
-      
-      // Remove case lines that are no longer in CUSTOMER_APPROVED status
-      prev.forEach(caseLineId => {
-        const caseLine = allCaseLines.find(cl => cl.id === caseLineId);
-        if (caseLine && caseLine.status !== 'CUSTOMER_APPROVED') {
-          newSet.delete(caseLineId);
-          updated = true;
-        }
-      });
-      
-      if (updated) {
-        localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
-      }
-      
-      return newSet;
-    });
+    // Return byStatus data for immediate use by caller
+    return byStatus;
   };
 
   // Fetch warehouses
@@ -503,8 +579,8 @@ const ServiceCenterDashboard = () => {
     }
   };
 
-  // Fetch stock transfer requests
-  const fetchStockTransferRequests = async (status = 'PENDING_APPROVAL') => {
+  // Fetch all stock transfer requests
+  const fetchStockTransferRequests = async () => {
     setIsLoadingStockRequests(true);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
@@ -512,11 +588,61 @@ const ServiceCenterDashboard = () => {
       return;
     }
     try {
-      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests?status=${status}`, {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const requestsData = response.data?.data?.stockTransferRequests || [];
+      console.log('📦 Fetched all stock transfer requests:', requestsData);
       setStockTransferRequests(requestsData);
+      
+      // For each request, fetch detail to get caselineId and build mapping
+      console.log('🔄 Building caselineId → requestId mapping...');
+      const mappingPromises = requestsData.map(async (request: StockTransferRequest) => {
+        try {
+          const detailResponse = await axios.get(
+            `${API_BASE_URL}/stock-transfer-requests/${request.id}`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          
+          const detailData = detailResponse.data?.data?.stockTransferRequest;
+          if (detailData?.items && Array.isArray(detailData.items)) {
+            return {
+              requestId: request.id,
+              caselineIds: detailData.items
+                .map((item: any) => item.caselineId)
+                .filter(Boolean)
+            };
+          }
+          return null;
+        } catch (err) {
+          console.error(`Failed to fetch detail for request ${request.id}:`, err);
+          return null;
+        }
+      });
+      
+      const mappings = await Promise.all(mappingPromises);
+      
+      // Build the caseLineToRequestMap
+      setCaseLineToRequestMap(prev => {
+        const newMap = new Map(prev);
+        mappings.forEach(mapping => {
+          if (mapping && mapping.caselineIds.length > 0) {
+            mapping.caselineIds.forEach((caselineId: string) => {
+              newMap.set(caselineId, mapping.requestId);
+              console.log(`💾 Mapped caselineId ${caselineId} → requestId ${mapping.requestId}`);
+            });
+            // Persist mapping to localStorage for durability
+            try {
+              saveCaseLineIdsToLocal(mapping.requestId, mapping.caselineIds);
+            } catch (e) {
+              console.warn('Failed to persist mapping to localStorage:', e);
+            }
+          }
+        });
+        console.log('✅ Total mappings:', newMap.size, 'entries:', Array.from(newMap.entries()));
+        return newMap;
+      });
+      
     } catch (error) {
       console.error('Failed to fetch stock transfer requests:', error);
     } finally {
@@ -524,54 +650,151 @@ const ServiceCenterDashboard = () => {
     }
   };
 
+  // Fetch detailed stock transfer request with case lines
+  const fetchStockTransferRequestDetail = async (requestId: string) => {
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      return null;
+    }
+    try {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests/${requestId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      let detailData = response.data?.data?.stockTransferRequest || null;
+      console.log('📦 Stock Transfer Request Detail:', detailData);
+      console.log('📦 Detail Items:', detailData?.items);
+      
+      // If items don't have caselineId from API, try to recover from localStorage
+      if (detailData && detailData.items) {
+        const recoveredIds = recoverCaseLineIdsFromLocal(requestId);
+        if (recoveredIds.length > 0) {
+          detailData.items.forEach((item: any, idx: number) => {
+            if (!item.caselineId && recoveredIds[idx]) {
+              item.caselineId = recoveredIds[idx];
+            }
+          });
+        }
+      }
+      
+      // Map case line details from existing records data (already loaded via GET all records)
+      if (detailData && detailData.items && detailData.items.length > 0) {
+        // Ensure we have claims data to map caseline -> full case line info
+        let allClaims = Object.values(claimsByStatus).flat();
+        if (allClaims.length === 0) {
+          console.log('⚠️ Claims not loaded yet, fetching now...');
+          const byStatus = await fetchAllStatuses();
+          allClaims = Object.values(byStatus).flat();
+          console.log('✅ Loaded', allClaims.length, 'claims for mapping');
+        }
+        
+        // Map caselineId to full case line data from records
+        const caseLineDetails = detailData.items
+          .filter((item: any) => item.caselineId)
+          .map((item: any) => {
+            // Search through all claims to find matching case line
+            for (const claim of allClaims) {
+              for (const gc of claim.guaranteeCases || []) {
+                const foundCaseLine = gc.caseLines?.find(cl => cl.id === item.caselineId);
+                if (foundCaseLine) {
+                  console.log('✅ Found case line in records:', foundCaseLine);
+                  return foundCaseLine;
+                }
+              }
+            }
+            console.warn('⚠️ Could not find case line in records:', item.caselineId);
+            return null;
+          })
+          .filter(cl => cl !== null);
+        
+        if (caseLineDetails.length > 0) {
+          detailData.caseLines = caseLineDetails;
+          console.log('✅ Mapped', caseLineDetails.length, 'case lines from records data');
+        }
+      }
+      
+      console.log('📦 Final Detail with Case Lines:', detailData);
+      return detailData;
+    } catch (error) {
+      console.error('Failed to fetch stock transfer request detail:', error);
+      return null;
+    }
+  };
+
+  // Fetch detailed case line information
+  const fetchCaseLineDetail = async (caseLineId: string) => {
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      console.error('❌ No auth token available');
+      alert('Authentication token not found. Please log in again.');
+      return null;
+    }
+
+    setIsLoadingCaseLineDetail(true);
+    try {
+      console.log('🔍 Fetching case line detail for ID:', caseLineId);
+      console.log('🔍 API URL:', `${API_BASE_URL}/case-lines/${caseLineId}`);
+      
+      const response = await axios.get(`${API_BASE_URL}/case-lines/${caseLineId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      console.log('📦 Full API Response:', response);
+      console.log('📦 Response data:', response.data);
+      console.log('📦 Response data.data:', response.data?.data);
+      
+      const caseLineData = response.data?.data?.caseLine || null;
+      console.log('✅ Case line detail parsed:', caseLineData);
+      
+      if (caseLineData) {
+        setSelectedCaseLineDetail(caseLineData);
+        setShowCaseLineDetailModal(true);
+      } else {
+        console.warn('⚠️ No case line data found in response');
+        alert('No case line data found. The response structure may be different.');
+      }
+      
+      return caseLineData;
+    } catch (error: any) {
+      console.error('❌ Failed to fetch case line detail:', error);
+      console.error('❌ Error response:', error.response);
+      console.error('❌ Error message:', error.message);
+      
+      const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
+      alert(`Failed to load case line details: ${errorMsg}`);
+      return null;
+    } finally {
+      setIsLoadingCaseLineDetail(false);
+    }
+  };
+
   // Load warranty claims and technicians data
   useEffect(() => {
     let cancelled = false;
 
-    // Fetch technicians from backend instead of using mock data
-    const fetchTechnicians = async (status = 'AVAILABLE') => {
-      setIsLoadingTechnicians(true);
-      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-      if (!token) {
-        setIsLoadingTechnicians(false);
-        return [] as Technician[];
-      }
+    // Initialize data on mount - ensure claims loaded before fetching stock requests
+    const initializeData = async () => {
       try {
-        const url = status ? `${API_BASE_URL}/users/technicians?status=${status}` : `${API_BASE_URL}/users/technicians`;
-        const res = await axios.get(url, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const records = res.data?.data || [];
-        const mapped: Technician[] = records.map((t: any) => {
-          // Status is in workSchedule array, not at root level
-          const rawStatus = t.workSchedule?.[0]?.status || t.status || '';
-          const normalizedStatus = String(rawStatus).trim().toUpperCase().replace(/\s+/g, '_') || undefined;
-
-          return {
-            id: t.userId || t.id || String(t.techId || ''),
-            name: t.name || t.fullName || '',
-            workload: t.activeTaskCount,
-            isAvailable: (normalizedStatus || '') === 'AVAILABLE',
-            status: normalizedStatus
-          } as Technician;
-        });
-        setIsLoadingTechnicians(false);
-        return mapped;
-      } catch (err) {
-        console.error('Failed to fetch technicians', err);
-        setIsLoadingTechnicians(false);
-        return [] as Technician[];
+        // 1. Fetch all claims first (needed for mapping requestId -> caselineId -> guaranteeCaseId)
+        if (cancelled) return;
+        await fetchAllStatuses();
+        
+        // 2. Load technicians
+        if (cancelled) return;
+        await refreshTechnicians('');
+        
+        // 3. Load warehouses
+        if (cancelled) return;
+        await fetchWarehouses();
+        
+        // 4. Load stock transfer requests and build caselineId → requestId mapping
+        if (cancelled) return;
+        await fetchStockTransferRequests();
+      } catch (error) {
+        console.error('Failed to initialize data:', error);
       }
     };
 
-    // Fetch all statuses on mount
-    fetchAllStatuses();
-
-    // Load technicians from API (AVAILABLE / UNAVAILABLE)
-    refreshTechnicians('').then(() => { });
-
-    // Load warehouses
-    fetchWarehouses();
+    initializeData();
 
     return () => { cancelled = true; };
   }, []);
@@ -617,10 +840,19 @@ const ServiceCenterDashboard = () => {
         setSelectedCaseForAssignment('');
 
         // Refresh all data to ensure UI is up-to-date
-        await fetchAllStatuses();
+        const updatedData = await fetchAllStatuses();
 
         // Refresh technicians list to update workload
         await refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
+        
+        // Update the detail modal with fresh data if open
+        if (selectedClaimForDetail && updatedData) {
+          const updatedClaims = Object.values(updatedData).flat();
+          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
+          if (updatedClaim) {
+            setSelectedClaimForDetail(updatedClaim);
+          }
+        }
       }
     } catch (error: any) {
       console.error('Failed to assign technician:', error);
@@ -653,8 +885,9 @@ const ServiceCenterDashboard = () => {
     };
 
     // Without specialty information, recommend by availability and workload (less loaded first)
+    // Only show technicians with AVAILABLE status
     return availableTechnicians
-      .filter(tech => tech.isAvailable)
+      .filter(tech => tech.status === 'AVAILABLE' && tech.isAvailable)
       .sort((a, b) => {
         const aw = a.workload || 0;
         const bw = b.workload || 0;
@@ -681,6 +914,9 @@ const ServiceCenterDashboard = () => {
   const closeTechnicianModal = () => {
     setShowTechnicianModal(false);
     setSelectedCaseForAssignment('');
+    // Refresh data when closing modal
+    fetchAllStatuses();
+    refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
   };
 
   // View technician's assigned records
@@ -704,6 +940,8 @@ const ServiceCenterDashboard = () => {
     setShowTechnicianRecordsModal(false);
     setSelectedTechnicianForRecords(null);
     setTechnicianRecords([]);
+    // Refresh data when closing modal
+    fetchAllStatuses();
   };
 
   // View warehouse details
@@ -715,12 +953,20 @@ const ServiceCenterDashboard = () => {
   const closeWarehouseDetailModal = () => {
     setShowWarehouseDetailModal(false);
     setSelectedWarehouse(null);
+    // Refresh data when closing modal
+    fetchWarehouses();
   };
 
   // Allocate component for case line
   const handleAllocateComponent = async (guaranteeCaseId: string, caseLineId: string) => {
+    console.log('🎯 Allocating component with params:', {
+      guaranteeCaseId,
+      caseLineId,
+      url: `${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/allocate-stock`
+    });
+    
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('ev_warranty_token');
+      const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
       const response = await axios.post(
         `${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/allocate-stock`,
         {},
@@ -732,45 +978,80 @@ const ServiceCenterDashboard = () => {
       );
 
       if (response.status === 200 || response.status === 201) {
+        console.log('✅ Allocation successful!');
         alert('Component allocated successfully!');
 
-        // Remove from out of stock list if it was there
-        setOutOfStockCaseLines(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(caseLineId);
-          // Save to localStorage
-          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
-          return newSet;
+        // Remove from case line to request mapping (allocation successful, no longer need the request reference)
+        setCaseLineToRequestMap(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(caseLineId);
+          // Also update localStorage
+          const currentMap: Record<string, string> = {};
+          newMap.forEach((requestId, clId) => {
+            currentMap[clId] = requestId;
+          });
+          localStorage.setItem('caseLineToRequestMap', JSON.stringify(currentMap));
+          return newMap;
         });
 
+        // Clear the mapping from localStorage to ensure clean state
+        const storedMapping = localStorage.getItem('caseLineToRequestMap');
+        if (storedMapping) {
+          try {
+            const mapping = JSON.parse(storedMapping);
+            delete mapping[caseLineId];
+            localStorage.setItem('caseLineToRequestMap', JSON.stringify(mapping));
+          } catch (e) {
+            console.error('Error updating localStorage mapping:', e);
+          }
+        }
+
         // Refresh all data to ensure UI is up-to-date
-        await fetchAllStatuses();
+        const updatedData = await fetchAllStatuses();
+        
+        // Also refresh stock transfer requests to update the mapping
+        await fetchStockTransferRequests();
+        
+        // Update the detail modal with fresh data
+        if (selectedClaimForDetail && updatedData) {
+          const updatedClaims = Object.values(updatedData).flat();
+          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
+          if (updatedClaim) {
+            setSelectedClaimForDetail(updatedClaim);
+          }
+        }
       }
     } catch (error: any) {
       console.error('Error allocating component:', error);
       const errorMessage = error.response?.data?.message || 'Failed to allocate component. Please try again.';
 
-      // Check if error is 409 Conflict (out of stock)
+      // Check if error is 409 Conflict (out of stock)  
       if (error.response?.status === 409) {
-        // Mark this case line as out of stock
-        setOutOfStockCaseLines(prev => {
-          const newSet = new Set([...prev, caseLineId]);
-          // Save to localStorage
-          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
-          return newSet;
-        });
-        alert('⚠️ Out of Stock! No available component in warehouse. Please request from manufacturer.');
-      } else if (error.response?.status === 404 && errorMessage.includes('No available stock found')) {
-        // Also handle 404 as out of stock
-        setOutOfStockCaseLines(prev => {
-          const newSet = new Set([...prev, caseLineId]);
-          // Save to localStorage
-          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
-          return newSet;
-        });
-        alert('⚠️ Out of Stock! No available component in warehouse. Please request from manufacturer.');
+        const shouldRequest = window.confirm(
+          `⚠️ Out of Stock!\n\n${errorMessage}\n\nWould you like to request this component from manufacturer?`
+        );
+        
+        if (shouldRequest) {
+          // Find the case line to get component info
+          const allCaseLines = Object.values(claimsByStatus)
+            .flat()
+            .flatMap(claim => claim.guaranteeCases.flatMap(gc => gc.caseLines || []));
+          const caseLine = allCaseLines.find(cl => cl.id === caseLineId);
+          
+          if (caseLine && caseLine.typeComponent) {
+            handleRequestFromManufacturer(
+              guaranteeCaseId,
+              caseLineId,
+              caseLine.typeComponent.typeComponentId,
+              caseLine.quantity
+            );
+          } else {
+            alert('Cannot find component information to create request.');
+          }
+        }
       } else {
-        alert(errorMessage);
+        // Show error message for other errors
+        alert(`⚠️ ${errorMessage}`);
       }
     }
   };
@@ -794,23 +1075,79 @@ const ServiceCenterDashboard = () => {
     setShowWarehouseSelectionModal(true);
   };
 
+  // Assign technician to case line
+  const handleAssignTechnicianToCaseLine = async (guaranteeCaseId: string, caseLineId: string, technicianId: string) => {
+    try {
+      const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
+      if (!token) {
+        alert('Authentication required');
+        return;
+      }
+
+      console.log('🔧 Assigning technician to case line:', {
+        guaranteeCaseId,
+        caseLineId,
+        technicianId,
+        url: `${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/assign-technician`
+      });
+
+      const response = await axios.patch(
+        `${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}/assign-technician`,
+        { technicianId },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (response.status === 200 || response.status === 201) {
+        console.log('✅ Technician assigned successfully');
+        alert('Technician assigned to case line successfully!');
+        
+        // Close modal
+        setShowTechnicianSelectionModal(false);
+        setSelectedCaseLineForTechnician(null);
+        
+        // Refresh data to update UI
+        const updatedData = await fetchAllStatuses();
+        
+        // Refresh technicians list to update workload
+        await refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
+        
+        // Update the detail modal with fresh data
+        if (selectedClaimForDetail && updatedData) {
+          const updatedClaims = Object.values(updatedData).flat();
+          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
+          if (updatedClaim) {
+            setSelectedClaimForDetail(updatedClaim);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Error assigning technician to case line:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to assign technician. Please try again.';
+      alert(errorMessage);
+    }
+  };
+
   // Submit stock transfer request after warehouse is selected
   const submitStockTransferRequest = async (warehouseId: string) => {
     if (!pendingStockRequest) return;
 
     try {
-      const token = localStorage.getItem('token') || localStorage.getItem('ev_warranty_token');
+      const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
       if (!token) {
         alert('Authentication required');
         return;
       }
 
       const requestBody = {
-        caselineIds: [pendingStockRequest.caseLineId],
         items: [
           {
             quantityRequested: pendingStockRequest.quantity,
-            typeComponentId: pendingStockRequest.typeComponentId
+            typeComponentId: pendingStockRequest.typeComponentId,
+            caselineId: pendingStockRequest.caseLineId
           }
         ],
         requestingWarehouseId: warehouseId
@@ -823,19 +1160,54 @@ const ServiceCenterDashboard = () => {
       );
 
       if (response.status === 200 || response.status === 201) {
-        // Remove from out of stock list since request has been sent
-        setOutOfStockCaseLines(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(pendingStockRequest.caseLineId);
-          localStorage.setItem('outOfStockCaseLines', JSON.stringify(Array.from(newSet)));
-          return newSet;
-        });
+        const createdRequestId = response.data?.data?.stockTransferRequest?.newStockTransferRequest?.id ||
+                                 response.data?.data?.stockTransferRequest?.id ||
+                                 response.data?.data?.id;
+        
+        console.log('✅ Stock transfer request created with ID:', createdRequestId);
+        
+        // Fetch the detail to get accurate caselineId from API
+        if (createdRequestId) {
+          try {
+            const detailResponse = await axios.get(
+              `${API_BASE_URL}/stock-transfer-requests/${createdRequestId}`,
+              { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+            
+            const detailData = detailResponse.data?.data?.stockTransferRequest;
+            console.log('📦 Fetched request detail:', detailData);
+            
+            if (detailData?.items && Array.isArray(detailData.items)) {
+              const caselineIds = detailData.items
+                .map((item: any) => item.caselineId)
+                .filter(Boolean);
+              
+              if (caselineIds.length > 0) {
+                saveCaseLineIdsToLocal(createdRequestId, caselineIds);
+                console.log('💾 Saved stock request mapping from detail API:', createdRequestId, '→', caselineIds);
+              }
+            }
+          } catch (err) {
+            console.error('Failed to fetch request detail for mapping:', err);
+            // Fallback to original method
+            const toSave = pendingStockRequest?.caseLineId ? [pendingStockRequest.caseLineId] : [];
+            if (toSave.length > 0) {
+              saveCaseLineIdsToLocal(createdRequestId, toSave);
+              console.log('💾 Saved stock request mapping (fallback):', createdRequestId, '→', toSave);
+            }
+          }
+        }
 
-        // Add to requested from manufacturer list to prevent showing allocate button
-        setRequestedFromManufacturer(prev => {
-          const newSet = new Set([...prev, pendingStockRequest.caseLineId]);
-          localStorage.setItem('requestedFromManufacturer', JSON.stringify(Array.from(newSet)));
-          return newSet;
+        // Save mapping from caselineId to requestId for "View Request" button
+        setCaseLineToRequestMap(prev => {
+          const newMap = new Map(prev);
+          newMap.set(pendingStockRequest.caseLineId, createdRequestId);
+          console.log('💾 Saved caseLineToRequestMap:', {
+            caseLineId: pendingStockRequest.caseLineId,
+            requestId: createdRequestId,
+            allMappings: Array.from(newMap.entries())
+          });
+          return newMap;
         });
 
         alert('Stock transfer request sent successfully!');
@@ -844,9 +1216,11 @@ const ServiceCenterDashboard = () => {
         setShowWarehouseSelectionModal(false);
         setPendingStockRequest(null);
 
-        // Refresh data from backend to get updated status
+        // Refresh data from backend to get updated status - IMPORTANT: fetch records first
         await fetchAllStatuses();
         await fetchWarehouses();
+        // Refresh stock transfer requests list to include the newly created request
+        await fetchStockTransferRequests();
         
         // Refresh claim detail modal with updated data from backend
         if (selectedClaimForDetail) {
@@ -860,6 +1234,62 @@ const ServiceCenterDashboard = () => {
     } catch (error: any) {
       console.error('Error requesting from manufacturer:', error);
       const errorMessage = error.response?.data?.message || 'Failed to send request to manufacturer. Please try again.';
+      alert(errorMessage);
+    }
+  };
+
+  // Cancel stock transfer request
+  const handleCancelStockRequest = async () => {
+    if (!cancelRequestId || !cancellationReason.trim()) {
+      alert('Please provide a cancellation reason');
+      return;
+    }
+
+    try {
+      const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
+      if (!token) {
+        alert('Authentication required');
+        return;
+      }
+
+      const response = await axios.patch(
+        `${API_BASE_URL}/stock-transfer-requests/${cancelRequestId}/cancel`,
+        { cancellationReason: cancellationReason.trim() },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (response.status === 200 || response.status === 201) {
+        alert('Stock transfer request cancelled successfully!');
+        
+        // Close modal and reset
+        setShowCancelRequestModal(false);
+        setCancelRequestId(null);
+        setCancellationReason('');
+        
+        // Close detail modal if open
+        setShowStockRequestDetailModal(false);
+        setSelectedStockRequest(null);
+        
+        // Refresh data
+        const updatedData = await fetchAllStatuses();
+        await fetchStockTransferRequests();
+        
+        // Update detail modal if open
+        if (selectedClaimForDetail && updatedData) {
+          const updatedClaims = Object.values(updatedData).flat();
+          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
+          if (updatedClaim) {
+            setSelectedClaimForDetail(updatedClaim);
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('Error cancelling stock request:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to cancel request. Please try again.';
       alert(errorMessage);
     }
   };
@@ -1173,12 +1603,12 @@ const ServiceCenterDashboard = () => {
                         variant="default" 
                         size="sm" 
                         onClick={() => {
-                          fetchStockTransferRequests('PENDING_APPROVAL');
+                          fetchStockTransferRequests();
                           setShowStockRequestsModal(true);
                         }}
                       >
                         <Clock className="h-4 w-4 mr-2" />
-                        View Stock Requests
+                        View All Requests
                       </Button>
                       <Button 
                         variant="outline" 
@@ -1271,7 +1701,14 @@ const ServiceCenterDashboard = () => {
         </div>
 
         {/* Claim Detail Modal */}
-        <Dialog open={showClaimDetailModal} onOpenChange={setShowClaimDetailModal}>
+        <Dialog open={showClaimDetailModal} onOpenChange={(open) => {
+          setShowClaimDetailModal(open);
+          // Refresh data when closing modal to ensure latest state
+          if (!open) {
+            fetchAllStatuses();
+            fetchStockTransferRequests();
+          }
+        }}>
           <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
             <DialogHeader className="pb-4 border-b">
               <DialogTitle className="flex items-center gap-2 text-lg">
@@ -1343,15 +1780,6 @@ const ServiceCenterDashboard = () => {
                               ID: {selectedClaimForDetail.createdByStaffId}
                             </p>
                           )}
-                        </div>
-                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
-                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
-                            <DollarSign className="h-3 w-3" />
-                            Estimated Cost
-                          </label>
-                          <p className="text-sm font-semibold text-green-600 mt-0.5">
-                            {selectedClaimForDetail.estimatedCost.toLocaleString()} VND
-                          </p>
                         </div>
                       </div>
                     </div>
@@ -1477,52 +1905,157 @@ const ServiceCenterDashboard = () => {
                                                   </Badge>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
-                                                  {/* Show Allocate button only when record is PROCESSING and case line is CUSTOMER_APPROVED */}
-                                                  {/* Components can only be allocated when all case lines are approved/rejected and record moves to PROCESSING */}
-                                                  {/* Don't show if already requested from manufacturer */}
-                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && hasPermission(user, 'attach_parts') && !outOfStockCaseLines.has(line.id) && !requestedFromManufacturer.has(line.id) && (
-                                                    <Button
-                                                      size="sm"
-                                                      variant="default"
-                                                      onClick={() => handleAllocateComponent(gc.guaranteeCaseId, line.id)}
-                                                      className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-6 px-2"
-                                                    >
+                                                  {/* Show Allocate button based on case line status: */}
+                                                  {/* 1. PARTS_AVAILABLE - stock received from manufacturer (green button) */}
+                                                  {/* 2. CUSTOMER_APPROVED - first allocation from warehouse (blue button) */}
+                                                  {(() => {
+                                                    const isPartsAvailable = line.status === 'PARTS_AVAILABLE';
+                                                    const isCustomerApproved = line.status === 'CUSTOMER_APPROVED';
+                                                    
+                                                    // Show allocate for PARTS_AVAILABLE (after stock received)
+                                                    if (isPartsAvailable && hasPermission(user, 'attach_parts')) {
+                                                      return (
+                                                        <Button
+                                                          size="sm"
+                                                          variant="default"
+                                                          onClick={() => handleAllocateComponent(gc.guaranteeCaseId, line.id)}
+                                                          className="bg-green-600 hover:bg-green-700 text-white text-xs h-6 px-2"
+                                                        >
+                                                          <Package className="h-3 w-3 mr-1" />
+                                                          Allocate Component
+                                                        </Button>
+                                                      );
+                                                    }
+                                                    
+                                                    // Show allocate for CUSTOMER_APPROVED (first allocation)
+                                                    if (isCustomerApproved && 
+                                                        selectedClaimForDetail.status === 'PROCESSING' && 
+                                                        hasPermission(user, 'attach_parts')) {
+                                                      return (
+                                                        <Button
+                                                          size="sm"
+                                                          variant="default"
+                                                          onClick={() => handleAllocateComponent(gc.guaranteeCaseId, line.id)}
+                                                          className="bg-blue-600 hover:bg-blue-700 text-white text-xs h-6 px-2"
+                                                        >
+                                                          <Package className="h-3 w-3 mr-1" />
+                                                          Allocate Component
+                                                        </Button>
+                                                      );
+                                                    }
+                                                    
+                                                    return null;
+                                                  })()}
+                                                  
+                                                  {/* Show "View Request" button if case line has active stock request (but not PARTS_AVAILABLE yet) */}
+                                                  {caseLineToRequestMap.has(line.id) && line.status !== 'PARTS_AVAILABLE' && (() => {
+                                                    const requestId = caseLineToRequestMap.get(line.id);
+                                                    const matchingRequest = stockTransferRequests.find(req => req.id === requestId);
+                                                    
+                                                    // Show "View Request" button for pending requests
+                                                    return (
+                                                      <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={async () => {
+                                                          if (requestId) {
+                                                            // Ensure claims are loaded before fetching request detail
+                                                            if (Object.keys(claimsByStatus).length === 0) {
+                                                              await fetchAllStatuses();
+                                                            }
+                                                            const requestDetail = await fetchStockTransferRequestDetail(requestId);
+                                                            if (requestDetail) {
+                                                              setSelectedStockRequest(requestDetail);
+                                                              setShowStockRequestDetailModal(true);
+                                                            }
+                                                          }
+                                                        }}
+                                                        className="text-blue-600 hover:bg-blue-50 border-blue-600 text-xs h-6 px-2"
+                                                      >
+                                                        <Eye className="h-3 w-3 mr-1" />
+                                                        View Request
+                                                      </Button>
+                                                    );
+                                                  })()}
+                                                  
+                                                  {/* Show PARTS_AVAILABLE badge with special styling */}
+                                                  {line.status === 'PARTS_AVAILABLE' && (
+                                                    <Badge variant="outline" className="text-xs bg-green-50 border-green-400 text-green-700">
                                                       <Package className="h-3 w-3 mr-1" />
-                                                      Allocate
-                                                    </Button>
-                                                  )}
-                                                  {/* Show Request button if record is PROCESSING, case line is CUSTOMER_APPROVED but out of stock */}
-                                                  {/* Don't show if already requested */}
-                                                  {selectedClaimForDetail.status === 'PROCESSING' && line.status === 'CUSTOMER_APPROVED' && outOfStockCaseLines.has(line.id) && !requestedFromManufacturer.has(line.id) && hasPermission(user, 'attach_parts') && line.typeComponent && (
-                                                    <Button
-                                                      size="sm"
-                                                      variant="outline"
-                                                      onClick={() => handleRequestFromManufacturer(
-                                                        gc.guaranteeCaseId, 
-                                                        line.id, 
-                                                        line.typeComponent.typeComponentId,
-                                                        line.quantity
-                                                      )}
-                                                      className="bg-orange-600 hover:bg-orange-700 text-white border-orange-600 text-xs h-6 px-2"
-                                                    >
-                                                      <AlertCircle className="h-3 w-3 mr-1" />
-                                                      Request from Manufacturer
-                                                    </Button>
-                                                  )}
-                                                  {/* Show "Requested" badge if request has been sent but backend hasn't updated yet */}
-                                                  {requestedFromManufacturer.has(line.id) && line.status === 'CUSTOMER_APPROVED' && (
-                                                    <Badge variant="outline" className="text-xs bg-yellow-50 border-yellow-400 text-yellow-700">
-                                                      <Clock className="h-3 w-3 mr-1" />
-                                                      Requested - Pending
+                                                      Parts Available
                                                     </Badge>
                                                   )}
-                                                  {/* Show status badge if already allocated or backend has updated status */}
-                                                  {line.status !== 'CUSTOMER_APPROVED' && line.status !== 'DRAFT' && line.status !== 'PENDING_APPROVAL' && (
+                                                  
+                                                  {/* Show status badge for other statuses (not CUSTOMER_APPROVED, PARTS_AVAILABLE, DRAFT, PENDING_APPROVAL) */}
+                                                  {line.status !== 'CUSTOMER_APPROVED' && 
+                                                   line.status !== 'PARTS_AVAILABLE' && 
+                                                   line.status !== 'DRAFT' && 
+                                                   line.status !== 'PENDING_APPROVAL' && (
                                                     <Badge variant="success" className="text-xs">
                                                       ✓ {getDisplayStatus(line.status)}
                                                     </Badge>
                                                   )}
+                                                  
+                                                  {/* Show "Assign Technician" button if status is READY_FOR_REPAIR */}
+                                                  {line.status === 'READY_FOR_REPAIR' && hasPermission(user, 'assign_technicians') && (
+                                                    <Button
+                                                      size="sm"
+                                                      variant="outline"
+                                                      onClick={() => {
+                                                        setSelectedCaseLineForTechnician({
+                                                          guaranteeCaseId: gc.guaranteeCaseId,
+                                                          caseLineId: line.id
+                                                        });
+                                                        setShowTechnicianSelectionModal(true);
+                                                      }}
+                                                      className="bg-purple-600 hover:bg-purple-700 text-white border-purple-600 text-xs h-6 px-2"
+                                                    >
+                                                      <User className="h-3 w-3 mr-1" />
+                                                      Assign Technician
+                                                    </Button>
+                                                  )}
+                                                  
+                                                  {/* View Details button - always show */}
+                                                  <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => fetchCaseLineDetail(line.id)}
+                                                    disabled={isLoadingCaseLineDetail}
+                                                    className="text-gray-700 hover:bg-gray-50 border-gray-300 text-xs h-6 px-2"
+                                                  >
+                                                    <Eye className="h-3 w-3 mr-1" />
+                                                    {isLoadingCaseLineDetail ? 'Loading...' : 'View Details'}
+                                                  </Button>
                                                 </div>
+                                              </div>
+                                            </div>
+                                          )}
+
+                                          {/* Assigned Repair Technician */}
+                                          {line.repairTechId && (
+                                            <div className="mt-2 p-2 bg-purple-50/80 dark:bg-purple-900/10 rounded border-l-2 border-purple-400">
+                                              <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                  <div className="w-7 h-7 bg-purple-100 dark:bg-purple-900/40 rounded-full flex items-center justify-center">
+                                                    <User className="h-4 w-4 text-purple-600" />
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-xs font-semibold text-purple-700 dark:text-purple-400 mb-0.5">
+                                                      Repair Technician Assigned
+                                                    </p>
+                                                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                                      {(() => {
+                                                        const tech = availableTechnicians.find(t => t.id === line.repairTechId);
+                                                        return tech ? tech.name : 'Technician';
+                                                      })()}
+                                                    </p>
+                                                    <p className="text-xs text-muted-foreground font-mono">ID: {line.repairTechId}</p>
+                                                  </div>
+                                                </div>
+                                                <Badge variant="outline" className="text-xs bg-purple-100 border-purple-300 text-purple-700">
+                                                  <User className="h-3 w-3 mr-1" />
+                                                  Assigned
+                                                </Badge>
                                               </div>
                                             </div>
                                           )}
@@ -1983,7 +2516,14 @@ const ServiceCenterDashboard = () => {
         </Dialog>
 
         {/* Warehouse Selection Modal for Stock Transfer Request */}
-        <Dialog open={showWarehouseSelectionModal} onOpenChange={setShowWarehouseSelectionModal}>
+        <Dialog open={showWarehouseSelectionModal} onOpenChange={(open) => {
+          setShowWarehouseSelectionModal(open);
+          // Refresh data when closing modal
+          if (!open) {
+            fetchAllStatuses();
+            fetchStockTransferRequests();
+          }
+        }}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -2087,16 +2627,469 @@ const ServiceCenterDashboard = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Stock Transfer Requests Modal */}
-        <Dialog open={showStockRequestsModal} onOpenChange={setShowStockRequestsModal}>
+        {/* Technician Selection Modal for Case Line Assignment */}
+        <Dialog open={showTechnicianSelectionModal} onOpenChange={(open) => {
+          setShowTechnicianSelectionModal(open);
+          if (!open) {
+            setSelectedCaseLineForTechnician(null);
+            // Refresh data when closing modal
+            fetchAllStatuses();
+            refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
+          }
+        }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <User className="h-5 w-5 text-purple-600" />
+                Assign Technician to Case Line
+              </DialogTitle>
+              <DialogDescription>
+                Select a technician to assign to this case line for repair work
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 mt-4">
+              {selectedCaseLineForTechnician && (
+                <Card className="bg-purple-50 dark:bg-purple-900/20 border-purple-200">
+                  <CardContent className="p-4">
+                    <div className="space-y-2">
+                      <p className="text-sm font-semibold text-purple-900 dark:text-purple-100">
+                        Case Line Details:
+                      </p>
+                      <div className="text-sm text-purple-800 dark:text-purple-200">
+                        <p>• Guarantee Case ID: <span className="font-mono text-xs">{selectedCaseLineForTechnician.guaranteeCaseId}</span></p>
+                        <p>• Case Line ID: <span className="font-mono text-xs">{selectedCaseLineForTechnician.caseLineId}</span></p>
+                        <p>• Status: <span className="font-semibold">Ready for Repair</span></p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              <div>
+                <h4 className="font-medium text-sm mb-3">Available Technicians:</h4>
+                {availableTechnicians.length === 0 ? (
+                  <div className="text-center py-8">
+                    <User className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No technicians available</p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-4"
+                      onClick={() => refreshTechnicians('AVAILABLE')}
+                    >
+                      Load Technicians
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 max-h-[400px] overflow-y-auto">
+                    {availableTechnicians
+                      .filter(tech => tech.status === 'AVAILABLE')
+                      .map((tech) => (
+                      <Card 
+                        key={tech.id} 
+                        className="p-4 cursor-pointer transition-colors hover:bg-purple-50 dark:hover:bg-purple-900/20 border-2 hover:border-purple-400"
+                        onClick={() => {
+                          if (selectedCaseLineForTechnician) {
+                            handleAssignTechnicianToCaseLine(
+                              selectedCaseLineForTechnician.guaranteeCaseId,
+                              selectedCaseLineForTechnician.caseLineId,
+                              tech.id
+                            );
+                            // Modal will be closed in handleAssignTechnicianToCaseLine after success
+                          }
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/40 rounded-full flex items-center justify-center">
+                                <User className="h-5 w-5 text-purple-600" />
+                              </div>
+                              <div>
+                                <h5 className="font-semibold">{tech.name}</h5>
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  {typeof tech.workload === 'number' && (
+                                    <Badge variant="outline" className="text-xs">
+                                      Active Tasks: {tech.workload}
+                                    </Badge>
+                                  )}
+                                  {tech.status && (
+                                    <Badge 
+                                      variant={tech.status === 'AVAILABLE' ? 'default' : 'secondary'}
+                                      className="text-xs"
+                                    >
+                                      {tech.status}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground font-mono">
+                              ID: {tech.id}
+                            </p>
+                          </div>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="bg-purple-600 hover:bg-purple-700"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (selectedCaseLineForTechnician) {
+                                handleAssignTechnicianToCaseLine(
+                                  selectedCaseLineForTechnician.guaranteeCaseId,
+                                  selectedCaseLineForTechnician.caseLineId,
+                                  tech.id
+                                );
+                                // Modal will be closed in handleAssignTechnicianToCaseLine after success
+                              }
+                            }}
+                          >
+                            Assign
+                          </Button>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowTechnicianSelectionModal(false);
+                  setSelectedCaseLineForTechnician(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Case Line Detail Modal */}
+        <Dialog open={showCaseLineDetailModal} onOpenChange={(open) => {
+          setShowCaseLineDetailModal(open);
+          if (!open) {
+            setSelectedCaseLineDetail(null);
+          }
+        }}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-blue-600" />
+                Case Line Details
+              </DialogTitle>
+              <DialogDescription>
+                Complete information about this case line
+              </DialogDescription>
+            </DialogHeader>
+
+            {isLoadingCaseLineDetail ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">Loading case line details...</p>
+              </div>
+            ) : selectedCaseLineDetail ? (
+              <div className="space-y-4 mt-4">
+                {/* Case Line Information Card */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-blue-600" />
+                      Case Line Information
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Case Line ID</p>
+                        <p className="text-sm font-mono">{selectedCaseLineDetail.id}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Status</p>
+                        <Badge variant={getCaseLineStatusVariant(selectedCaseLineDetail.status)}>
+                          {getDisplayStatus(selectedCaseLineDetail.status)}
+                        </Badge>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Warranty Status</p>
+                        <Badge variant={selectedCaseLineDetail.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}>
+                          {selectedCaseLineDetail.warrantyStatus}
+                        </Badge>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Quantity</p>
+                        <p className="text-sm font-medium">{selectedCaseLineDetail.quantity}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 pt-2">
+                      <div className="p-3 bg-amber-50/80 dark:bg-amber-900/10 rounded border-l-2 border-amber-400">
+                        <div className="flex items-center gap-1 mb-1">
+                          <AlertCircle className="h-4 w-4 text-amber-600" />
+                          <span className="font-semibold text-sm text-amber-700 dark:text-amber-400">Diagnosis</span>
+                        </div>
+                        <p className="text-sm text-gray-700 dark:text-gray-300">{selectedCaseLineDetail.diagnosisText}</p>
+                      </div>
+                      
+                      <div className="p-3 bg-green-50/80 dark:bg-green-900/10 rounded border-l-2 border-green-400">
+                        <div className="flex items-center gap-1 mb-1">
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <span className="font-semibold text-sm text-green-700 dark:text-green-400">Correction</span>
+                        </div>
+                        <p className="text-sm text-gray-700 dark:text-gray-300">{selectedCaseLineDetail.correctionText}</p>
+                      </div>
+                    </div>
+
+                    {/* Evidence Images */}
+                    {selectedCaseLineDetail.evidenceImageUrls && selectedCaseLineDetail.evidenceImageUrls.length > 0 && (
+                      <div className="pt-2">
+                        <p className="text-xs text-muted-foreground mb-2">Evidence Images ({selectedCaseLineDetail.evidenceImageUrls.length})</p>
+                        <div className="grid grid-cols-4 gap-2">
+                          {selectedCaseLineDetail.evidenceImageUrls.map((url, idx) => (
+                            <img
+                              key={idx}
+                              src={url}
+                              alt={`Evidence ${idx + 1}`}
+                              className="w-full h-24 object-cover rounded border cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => {
+                                setSelectedImageUrl(url);
+                                setShowImageModal(true);
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Component Information Card */}
+                {selectedCaseLineDetail.typeComponent && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Package className="h-4 w-4 text-blue-600" />
+                        Component Information
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Component Name</p>
+                          <p className="text-sm font-medium">{selectedCaseLineDetail.typeComponent.name}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">SKU</p>
+                          <p className="text-sm font-mono">{selectedCaseLineDetail.typeComponent.sku}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Price</p>
+                          <p className="text-sm font-medium">{formatCurrency(selectedCaseLineDetail.typeComponent.price)}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Guarantee Case & Vehicle Information */}
+                {selectedCaseLineDetail.guaranteeCase && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Car className="h-4 w-4 text-blue-600" />
+                        Guarantee Case & Vehicle Information
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Guarantee Case ID</p>
+                        <p className="text-sm font-mono">{selectedCaseLineDetail.guaranteeCase.guaranteeCaseId}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Content</p>
+                        <p className="text-sm bg-blue-50 dark:bg-blue-900/30 p-2 rounded">
+                          {selectedCaseLineDetail.guaranteeCase.contentGuarantee}
+                        </p>
+                      </div>
+                      
+                      {selectedCaseLineDetail.guaranteeCase.vehicleProcessingRecord && (
+                        <div className="pt-2 border-t">
+                          <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Vehicle Details</p>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-1">VIN</p>
+                              <p className="text-sm font-mono">{selectedCaseLineDetail.guaranteeCase.vehicleProcessingRecord.vin}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-1">Processing Record ID</p>
+                              <p className="text-sm font-mono text-xs">{selectedCaseLineDetail.guaranteeCase.vehicleProcessingRecord.vehicleProcessingRecordId}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Technicians Information */}
+                {(selectedCaseLineDetail.diagnosticTechnician || selectedCaseLineDetail.repairTechnician) && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Users className="h-4 w-4 text-blue-600" />
+                        Assigned Technicians
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 gap-4">
+                        {selectedCaseLineDetail.diagnosticTechnician && (
+                          <div className="p-3 bg-blue-50/80 dark:bg-blue-900/10 rounded border-l-2 border-blue-400">
+                            <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-2">Diagnostic Technician</p>
+                            <p className="text-sm font-medium">{selectedCaseLineDetail.diagnosticTechnician.name}</p>
+                            <p className="text-xs text-muted-foreground font-mono">ID: {selectedCaseLineDetail.diagnosticTechnician.userId}</p>
+                          </div>
+                        )}
+                        
+                        {selectedCaseLineDetail.repairTechnician && (
+                          <div className="p-3 bg-purple-50/80 dark:bg-purple-900/10 rounded border-l-2 border-purple-400">
+                            <p className="text-xs font-semibold text-purple-700 dark:text-purple-400 mb-2">Repair Technician</p>
+                            <p className="text-sm font-medium">{selectedCaseLineDetail.repairTechnician.name}</p>
+                            <p className="text-xs text-muted-foreground font-mono">ID: {selectedCaseLineDetail.repairTechnician.userId}</p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Reservations Information */}
+                {selectedCaseLineDetail.reservations && selectedCaseLineDetail.reservations.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Package className="h-4 w-4 text-blue-600" />
+                        Component Reservations ({selectedCaseLineDetail.reservations.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="rounded-lg border overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="text-xs">Reservation ID</TableHead>
+                              <TableHead className="text-xs">Serial Number</TableHead>
+                              <TableHead className="text-xs">Component Status</TableHead>
+                              <TableHead className="text-xs">Reservation Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {selectedCaseLineDetail.reservations.map((reservation) => (
+                              <TableRow key={reservation.reservationId}>
+                                <TableCell className="font-mono text-xs">
+                                  {reservation.reservationId.substring(0, 8)}...
+                                </TableCell>
+                                <TableCell className="font-mono text-xs">
+                                  {reservation.component?.serialNumber || 'N/A'}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={
+                                      reservation.component?.status === 'INSTALLED' ? 'success' :
+                                      reservation.component?.status === 'PICKED_UP' ? 'default' :
+                                      'outline'
+                                    }
+                                    className="text-xs"
+                                  >
+                                    {reservation.component?.status || 'N/A'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={
+                                      reservation.status === 'INSTALLED' ? 'success' :
+                                      reservation.status === 'PICKED_UP' ? 'default' :
+                                      'outline'
+                                    }
+                                    className="text-xs"
+                                  >
+                                    {reservation.status.replace(/_/g, ' ')}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Timestamps */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-blue-600" />
+                      Timestamps
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1">Last Updated At</p>
+                        <p className="text-sm">
+                          {new Date(selectedCaseLineDetail.updatedAt).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">No case line details available</p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowCaseLineDetailModal(false);
+                  setSelectedCaseLineDetail(null);
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Stock Transfer Requests List Modal */}
+        <Dialog open={showStockRequestsModal} onOpenChange={(open) => {
+          setShowStockRequestsModal(open);
+          if (!open) {
+            // Refresh data when closing modal
+            fetchAllStatuses();
+            fetchStockTransferRequests();
+          }
+        }}>
           <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Clock className="h-5 w-5 text-blue-600" />
-                Stock Transfer Requests
+                All Stock Transfer Requests
               </DialogTitle>
               <DialogDescription>
-                View all pending stock transfer requests from warehouses
+                View all stock transfer requests from warehouses
               </DialogDescription>
             </DialogHeader>
 
@@ -2108,13 +3101,14 @@ const ServiceCenterDashboard = () => {
               ) : stockTransferRequests.length === 0 ? (
                 <div className="text-center py-8">
                   <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No pending stock transfer requests</p>
+                  <p className="text-muted-foreground">No stock transfer requests found</p>
                 </div>
               ) : (
-                <div className="rounded-lg border">
+                <div className="rounded-lg border overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead>Request ID</TableHead>
                         <TableHead>Requester</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Requested At</TableHead>
@@ -2124,10 +3118,13 @@ const ServiceCenterDashboard = () => {
                     <TableBody>
                       {stockTransferRequests.map((request) => (
                         <TableRow key={request.id}>
+                          <TableCell className="font-mono text-xs">
+                            {request.id.substring(0, 8)}...
+                          </TableCell>
                           <TableCell>
                             <p className="font-medium text-sm">{request.requester?.name || 'Unknown'}</p>
                             <p className="text-xs text-muted-foreground">
-                              Service Center: {request.requester?.serviceCenterId || 'N/A'}
+                              SC: {request.requester?.serviceCenterId?.substring(0, 8) || 'N/A'}
                             </p>
                           </TableCell>
                           <TableCell>
@@ -2135,8 +3132,10 @@ const ServiceCenterDashboard = () => {
                               variant={
                                 request.status === 'PENDING_APPROVAL' ? 'outline' :
                                 request.status === 'APPROVED' ? 'default' :
+                                request.status === 'SHIPPED' ? 'secondary' :
+                                request.status === 'RECEIVED' ? 'success' :
                                 request.status === 'REJECTED' ? 'destructive' :
-                                'secondary'
+                                'outline'
                               }
                               className="text-xs"
                             >
@@ -2156,8 +3155,14 @@ const ServiceCenterDashboard = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => {
-                                setSelectedStockRequest(request);
+                              onClick={async () => {
+                                // Fetch full request details including case lines
+                                const detailedRequest = await fetchStockTransferRequestDetail(request.id);
+                                if (detailedRequest) {
+                                  setSelectedStockRequest(detailedRequest);
+                                } else {
+                                  setSelectedStockRequest(request);
+                                }
                                 setShowStockRequestDetailModal(true);
                               }}
                             >
@@ -2188,7 +3193,15 @@ const ServiceCenterDashboard = () => {
         </Dialog>
 
         {/* Stock Transfer Request Detail Modal */}
-        <Dialog open={showStockRequestDetailModal} onOpenChange={setShowStockRequestDetailModal}>
+        <Dialog open={showStockRequestDetailModal} onOpenChange={(open) => {
+          setShowStockRequestDetailModal(open);
+          if (!open) {
+            setSelectedStockRequest(null);
+            // Refresh data when closing modal
+            fetchAllStatuses();
+            fetchStockTransferRequests();
+          }
+        }}>
           <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -2313,10 +3326,228 @@ const ServiceCenterDashboard = () => {
                     )}
                   </CardContent>
                 </Card>
+
+                {/* Requested Items */}
+                {selectedStockRequest.items && selectedStockRequest.items.length > 0 && (
+                  <Card className="shadow-md border">
+                    <CardHeader className="bg-gradient-to-r from-purple-50 to-transparent dark:from-purple-900/20 pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <div className="p-2 bg-purple-100 dark:bg-purple-900/40 rounded-lg">
+                          <Package className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        Requested Items ({selectedStockRequest.items.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                      <div className="space-y-3">
+                        {selectedStockRequest.items.map((item, index) => {
+                          // Find component info from case line using caselineId
+                          let componentName = 'Unknown Component';
+                          let componentDescription = '';
+                          let relatedCaseLine = null;
+                          
+                          // First try to find from fetched case lines using caselineId
+                          if (item.caselineId && selectedStockRequest.caseLines) {
+                            relatedCaseLine = selectedStockRequest.caseLines.find(cl => cl.id === item.caselineId);
+                            if (relatedCaseLine?.typeComponent) {
+                              componentName = relatedCaseLine.typeComponent.name;
+                            }
+                          }
+                          
+                          // Fallback to API response if available
+                          if (componentName === 'Unknown Component' && item.typeComponent?.nameComponent) {
+                            componentName = item.typeComponent.nameComponent;
+                            componentDescription = item.typeComponent.description || '';
+                          }
+                          
+                          return (
+                          <div key={item.id} className="p-4 bg-white dark:bg-gray-800 rounded-lg border shadow-sm">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div className="space-y-2">
+                                <div>
+                                  <label className="text-xs font-semibold text-muted-foreground uppercase">Component Name</label>
+                                  <p className="font-medium text-base mt-1">
+                                    {componentName}
+                                  </p>
+                                  {componentDescription && (
+                                    <p className="text-xs text-muted-foreground mt-1">{componentDescription}</p>
+                                  )}
+                                </div>
+                                {item.caselineId && (
+                                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200">
+                                    <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase">
+                                      Case Line ID
+                                    </label>
+                                    <p className="font-mono text-xs text-blue-900 dark:text-blue-100 mt-1">
+                                      {item.caselineId}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-muted-foreground uppercase">Quantity Requested</label>
+                                <p className="font-semibold text-lg mt-1 text-blue-600 dark:text-blue-400">
+                                  {item.quantityRequested}
+                                </p>
+                              </div>
+                              {item.quantityApproved !== null && item.quantityApproved !== undefined && (
+                                <div>
+                                  <label className="text-xs font-semibold text-muted-foreground uppercase">Quantity Approved</label>
+                                  <p className="font-semibold text-lg mt-1 text-green-600 dark:text-green-400">
+                                    {item.quantityApproved}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Case Lines Information */}
+                {selectedStockRequest.caseLines && selectedStockRequest.caseLines.length > 0 && (
+                  <Card className="shadow-md border">
+                    <CardHeader className="bg-gradient-to-r from-green-50 to-transparent dark:from-green-900/20 pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <div className="p-2 bg-green-100 dark:bg-green-900/40 rounded-lg">
+                          <FileText className="h-4 w-4 text-green-600 dark:text-green-400" />
+                        </div>
+                        Related Case Lines ({selectedStockRequest.caseLines.length})
+                        {selectedStockRequest.status === 'RECEIVED' && (
+                          <Badge className="ml-2 bg-green-600">Stock Received - Ready to Allocate</Badge>
+                        )}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                      <div className="space-y-4">
+                        {selectedStockRequest.caseLines.map((caseLine, index) => {
+                          // Find the record this case line belongs to
+                          let relatedRecord: WarrantyClaim | null = null;
+                          for (const status in claimsByStatus) {
+                            const found = claimsByStatus[status].find(claim =>
+                              claim.guaranteeCases?.some(gc =>
+                                gc.caseLines?.some(cl => cl.id === caseLine.id)
+                              )
+                            );
+                            if (found) {
+                              relatedRecord = found;
+                              break;
+                            }
+                          }
+                          
+                          return (
+                          <div 
+                            key={caseLine.id} 
+                            className="p-5 bg-white dark:bg-gray-800 rounded-lg border shadow-sm"
+                          >
+                            <div className="flex items-start justify-between mb-4">
+                              <div className="flex-1 space-y-3">
+                                <div>
+                                  <p className="font-mono text-xs text-muted-foreground mb-2">
+                                    Case Line ID: {caseLine.id}
+                                  </p>
+                                  {relatedRecord && (
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <p className="font-mono text-sm font-semibold text-blue-700 dark:text-blue-400">
+                                          Record: {relatedRecord.recordId}
+                                        </p>
+                                      </div>
+                                      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                                        <span className="font-medium">VIN: {relatedRecord.vin}</span>
+                                        <span>•</span>
+                                        <span>{relatedRecord.model}</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Badge 
+                                    variant={
+                                      caseLine.status === 'CUSTOMER_APPROVED' || caseLine.status === 'READY_FOR_REPAIR' ? 'default' :
+                                      caseLine.status === 'REJECTED_BY_CUSTOMER' ? 'destructive' :
+                                      'outline'
+                                    }
+                                  >
+                                    {caseLine.status.replace(/_/g, ' ')}
+                                  </Badge>
+                                  <Badge 
+                                    variant={
+                                      caseLine.warrantyStatus === 'APPROVED' ? 'default' :
+                                      caseLine.warrantyStatus === 'REJECTED' ? 'destructive' :
+                                      'outline'
+                                    }
+                                  >
+                                    Warranty: {caseLine.warrantyStatus}
+                                  </Badge>
+                                </div>
+                              </div>
+                              {caseLine.typeComponent && (
+                                <div className="text-right ml-4">
+                                  <label className="text-xs font-semibold text-muted-foreground uppercase">Component</label>
+                                  <p className="font-semibold text-base mt-1">{caseLine.typeComponent.name}</p>
+                                  <p className="text-sm text-muted-foreground mt-1">Quantity: {caseLine.quantity}</p>
+                                  {caseLine.typeComponent.category && (
+                                    <p className="text-xs text-muted-foreground mt-1">Category: {caseLine.typeComponent.category}</p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                              <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded">
+                                <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
+                                  <FileText className="h-3 w-3" />
+                                  Diagnosis
+                                </label>
+                                <p className="text-sm mt-1">{caseLine.diagnosisText || 'N/A'}</p>
+                              </div>
+                              <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded">
+                                <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
+                                  <Wrench className="h-3 w-3" />
+                                  Correction
+                                </label>
+                                <p className="text-sm mt-1">{caseLine.correctionText || 'N/A'}</p>
+                              </div>
+                            </div>
+                            
+                            {caseLine.rejectionReason && (
+                              <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 mb-4">
+                                <label className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase">Rejection Reason</label>
+                                <p className="text-sm text-red-900 dark:text-red-100 mt-1">{caseLine.rejectionReason}</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             )}
 
             <div className="flex justify-end gap-2 pt-4 border-t">
+              {/* Show Cancel button if request is not in terminal state */}
+              {selectedStockRequest && 
+               selectedStockRequest.status !== 'CANCELLED' && 
+               selectedStockRequest.status !== 'REJECTED' && 
+               selectedStockRequest.status !== 'RECEIVED' && 
+               hasPermission(user, 'attach_parts') && (
+                <Button 
+                  variant="destructive"
+                  onClick={() => {
+                    setCancelRequestId(selectedStockRequest.id);
+                    setShowCancelRequestModal(true);
+                  }}
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Cancel Request
+                </Button>
+              )}
               <Button 
                 variant="outline" 
                 onClick={() => {
@@ -2326,6 +3557,98 @@ const ServiceCenterDashboard = () => {
               >
                 Close
               </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Cancel Request Modal */}
+        <Dialog open={showCancelRequestModal} onOpenChange={setShowCancelRequestModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-600">
+                <XCircle className="h-5 w-5" />
+                Cancel Stock Transfer Request
+              </DialogTitle>
+              <DialogDescription>
+                Please provide a reason for cancelling this request. This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 mt-4">
+              <div>
+                <label className="text-sm font-semibold mb-2 block">
+                  Cancellation Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={cancellationReason}
+                  onChange={(e) => setCancellationReason(e.target.value)}
+                  placeholder="Enter the reason for cancelling this request..."
+                  className="w-full min-h-[100px] p-3 border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-red-500"
+                  maxLength={500}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {cancellationReason.length}/500 characters
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowCancelRequestModal(false);
+                  setCancelRequestId(null);
+                  setCancellationReason('');
+                }}
+              >
+                Keep Request
+              </Button>
+              <Button 
+                variant="destructive"
+                onClick={handleCancelStockRequest}
+                disabled={!cancellationReason.trim()}
+              >
+                <XCircle className="h-4 w-4 mr-2" />
+                Confirm Cancellation
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Image Full View Modal */}
+        <Dialog open={showImageModal} onOpenChange={setShowImageModal}>
+          <DialogContent className="max-w-4xl max-h-[95vh] p-2">
+            <DialogHeader>
+              <DialogTitle className="text-sm">Evidence Image - Full View</DialogTitle>
+            </DialogHeader>
+            <div className="flex items-center justify-center p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+              {selectedImageUrl && (
+                <img
+                  src={selectedImageUrl}
+                  alt="Full size evidence"
+                  className="max-w-full max-h-[80vh] object-contain rounded"
+                />
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowImageModal(false);
+                  setSelectedImageUrl(null);
+                }}
+              >
+                Close
+              </Button>
+              {selectedImageUrl && (
+                <Button
+                  variant="default"
+                  onClick={() => window.open(selectedImageUrl, '_blank')}
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  Open in New Tab
+                </Button>
+              )}
             </div>
           </DialogContent>
         </Dialog>

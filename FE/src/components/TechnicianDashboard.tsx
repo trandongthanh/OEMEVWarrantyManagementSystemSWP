@@ -1,14 +1,9 @@
 import React, { useState, useEffect, useCallback } from "react";
-
-// Defensive: ensure a module-scoped fallback for any leftover dev-only variable
-// (some HMR edits previously added/removed pickup UI and a variable named
-// `reservationIdInput` accidentally; declare it here to avoid ReferenceError
-// during development while we fully remove any stale usage).
-let reservationIdInput: string | undefined;
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import type { AxiosResponse } from "axios";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
+import { apiService } from "@/utils/api";
 import { toast } from "@/hooks/use-toast";
 import { processingRecordsService, ProcessingRecord, ProcessingRecordsByStatus } from "@/services/processingRecordsService";
 import { caseLineService, CaseLineRequest } from "@/services/caseLineService";
@@ -34,100 +30,37 @@ import {
   SearchIcon,
   Plus,
   Car,
-  Trash2,
   Calendar,
   Gauge,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Package,
+  Users,
+  Clock,
+  CheckCircle
 } from "lucide-react";
 
-interface Component {
-  id: string;
-  name: string;
-  partNumber: string;
-  category: 'battery' | 'motor' | 'paint' | 'general';
-  inStockServiceCenter: number;
-  inStockManufacturer: number;
-  warrantyKm?: number;
-  warrantyMonths?: number;
-  requiresVehicleCheck: boolean;
-  description: string;
-}
-
-interface Vehicle {
-  id: string;
-  vin: string;
-  model: string;
-  year: number;
-  currentKm: number;
-  purchaseDate: string;
-  hasActiveCase: boolean;
-}
-
-interface Staff {
-  id: string;
-  name: string;
-  specialty: string;
-  currentWorkload: number;
-  isAvailable: boolean;
-}
-
-interface Task {
-  id: string;
-  vehicleVin: string;
-  vehicleModel: string;
-  customer: string;
-  component: Component;
-  assignedStaff: Staff[];
-  status: 'pending' | 'in-progress' | 'completed' | 'blocked';
-  priority: 'high' | 'medium' | 'low';
-  createdDate: string;
-  dueDate: string;
-  progress: number;
-  warrantyValid: boolean;
-  notes: string;
-}
-
-interface WarrantyCase {
-  id: string;
-  vehicleVin: string;
-  vehicleModel: string;
-  customerName: string;
-  customerPhone?: string;
-  diagnosis: string;
-  components: {
-    id: string;
+// Work Schedule Interface
+interface WorkSchedule {
+  scheduleId: string;
+  technicianId: string;
+  workDate: string; // YYYY-MM-DD
+  status: 'AVAILABLE' | 'UNAVAILABLE' | string;
+  notes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  technician_id?: string;
+  technician?: {
+    userId: string;
     name: string;
-    quantity: number;
-    status: 'pending' | 'approved' | 'rejected' | 'shipped';
-  }[];
-  status: 'submitted' | 'approved' | 'rejected' | 'in-progress' | 'completed';
-  createdDate: string;
-  updatedDate?: string;
-  technicianNotes?: string;
-  manufacturerResponse?: string;
+    email?: string;
+  } | null;
 }
 
-interface CaseLine {
-  id: string;
-  caseId: string;
-  damageLevel: string;
-  repairPossibility: string;
-  warrantyDecision: string;
-  technicianNotes: string;
-  photos: string[];
-  photoFiles?: File[]; // Store actual File objects for blob URLs
-  createdDate: string;
-  status: 'draft' | 'submitted' | 'approved' | 'rejected';
-}
-
-interface IssueDiagnosisForm {
-  affectedComponent: string;
-  damageLevel: string;
-  repairPossibility: string;
-  warrantyDecision: string;
-  technicianNotes: string;
-}
+type WorkSchedulesResponse = {
+  status?: string;
+  data: WorkSchedule[];
+} | WorkSchedule[];
 
 // API Interface cho Guarantee Cases
 
@@ -150,6 +83,175 @@ interface CaseLineResponse {
   techId: string;
   status: string;
   createdAt: string;
+  updatedAt?: string | null;
+  // Optional fields that may appear in different backend shapes
+  typeComponentId?: string | null;
+  repairTechId?: string | null;
+  rejectionReason?: string | null;
+  evidenceImageUrls?: string[];
+}
+
+// Assigned Tasks Interfaces
+interface AssignedCaseLine {
+  id: string;
+  diagnosisText?: string;
+  correctionText?: string;
+  typeComponentId?: string;
+  quantity?: number;
+  warrantyStatus?: string;
+  status: string;
+  rejectionReason?: string | null;
+  evidenceImageUrls?: string[];
+  updatedAt?: string;
+  guaranteeCase?: {
+    guaranteeCaseId: string;
+    contentGuarantee?: string;
+    status: string;
+    vehicleProcessingRecord?: {
+      vehicleProcessingRecordId: string;
+      vin: string;
+      createdByStaff?: {
+        userId: string;
+        serviceCenterId?: string;
+        name: string;
+      };
+    };
+  };
+  diagnosticTechnician?: {
+    userId: string;
+    name: string;
+  };
+  repairTechnician?: {
+    userId: string;
+    name: string;
+  } | null;
+  typeComponent?: {
+    typeComponentId: string;
+    sku: string;
+    name: string;
+    price: number;
+  };
+  reservations?: ComponentReservation[];
+}
+
+interface ComponentReservation {
+  reservationId: string;
+  caseLineId: string;
+  componentId: string;
+  status: string;
+  pickedUpBy?: string | null;
+  pickedUpAt?: string | null;
+  installedAt?: string | null;
+  oldComponentSerial?: string | null;
+  oldComponentReturned?: boolean;
+  returnedAt?: string | null;
+  cancelledAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  component?: {
+    componentId: string;
+    serialNumber: string;
+    status: string;
+    warehouseId?: string | null;
+    typeComponentId: string;
+  };
+  pickedUpByTech?: {
+    userId: string;
+    name: string;
+    email: string;
+    phone: string;
+  };
+  caseLine?: {
+    id: string;
+    guaranteeCaseId: string;
+    typeComponentId: string;
+    quantity: number;
+    status: string;
+    diagnosticTechId?: string;
+    repairTechId?: string;
+    diagnosticTechnician?: {
+      userId: string;
+      name: string;
+      email: string;
+      phone: string;
+    };
+    repairTechnician?: {
+      userId: string;
+      name: string;
+      email: string;
+      phone: string;
+    };
+    guaranteeCase?: {
+      guaranteeCaseId: string;
+      vehicleProcessingRecordId: string;
+      status: string;
+      vehicleProcessingRecord?: {
+        vehicleProcessingRecordId: string;
+        vin: string;
+        createdByStaffId: string;
+        createdByStaff?: {
+          userId: string;
+          serviceCenterId?: string;
+          name: string;
+        };
+      };
+    };
+  };
+}
+
+// Legacy interfaces for existing Issue Diagnosis tab functionality
+interface CaseLine {
+  id: string;
+  caseId: string;
+  damageLevel: string;
+  repairPossibility: string;
+  warrantyDecision: string;
+  technicianNotes: string;
+  photos: string[];
+  photoFiles?: File[];
+  createdDate: string;
+  status: string;
+  // Additional fields from API response
+  diagnosisText?: string;
+  correctionText?: string;
+  componentId?: string | null;
+  typeComponentId?: string | null;
+  quantity?: number;
+  warrantyStatus?: string;
+  diagnosticTechId?: string;
+  repairTechId?: string;
+  rejectionReason?: string | null;
+  updatedAt?: string;
+  evidenceImageUrls?: string[];
+}
+
+interface WarrantyCase {
+  id: string;
+  vehicleVin: string;
+  customerName: string;
+  vehicleModel: string;
+  status: string;
+  createdDate: string;
+  // Optional fields
+  vin?: string;
+  issueType?: string;
+  submissionDate?: string;
+  updatedDate?: string;
+  technicianName?: string;
+  photos?: string[];
+  diagnosis?: string;
+  customerPhone?: string;
+  components?: Array<{ id?: string; name: string; quantity: number; status: string }>;
+  technicianNotes?: string;
+  manufacturerResponse?: string;
+}
+
+interface IssueDiagnosisForm {
+  affectedComponent: string;
+  damageLevel: string;
+  repairPossibility: string;
+  warrantyDecision: string;
+  technicianNotes: string;
 }
 
 interface TechnicianDashboardProps {
@@ -167,15 +269,10 @@ const TechnicianDashboard = ({
 }: TechnicianDashboardProps) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [appliedSearchTerm, setAppliedSearchTerm] = useState("");
-  const [componentSearch, setComponentSearch] = useState("");
-  const [componentCategoryFilter, setComponentCategoryFilter] = useState<string>("all");
   const [viewCaseLineModalOpen, setViewCaseLineModalOpen] = useState(false);
   const [selectedCaseLine, setSelectedCaseLine] = useState<CaseLine | null>(null);
   const [imagePreviewModalOpen, setImagePreviewModalOpen] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string>("");
-  const [confirmRemoveModalOpen, setConfirmRemoveModalOpen] = useState(false);
-  const [caseLineToRemove, setCaseLineToRemove] = useState<string | null>(null);
-  // NOTE: createCaseLineModalOpen is not used - modal exists but no trigger button
 
   const [reportPreviewModalOpen, setReportPreviewModalOpen] = useState(false);
   const [updateDetailsModalOpen, setUpdateDetailsModalOpen] = useState(false);
@@ -205,6 +302,9 @@ const TechnicianDashboard = ({
   const [viewReportModalOpen, setViewReportModalOpen] = useState(false);
   const [createIssueDiagnosisModalOpen, setCreateIssueDiagnosisModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Loading state for completing a processing record
+  const [isCompleting, setIsCompleting] = useState(false);
+  
   
   // Processing Records form (uses CaseLineRequest for API)
   const [caseLineForm, setCaseLineForm] = useState<CaseLineRequest>({
@@ -231,6 +331,17 @@ const TechnicianDashboard = ({
   const [compatibleComponents, setCompatibleComponents] = useState<Array<{ typeComponentId: string; name: string }>>([]);
   const [componentSearchQuery, setComponentSearchQuery] = useState<string>("");
   const [isLoadingComponents, setIsLoadingComponents] = useState(false);
+
+  // Assigned Tasks state
+  const [assignedCaseLines, setAssignedCaseLines] = useState<AssignedCaseLine[]>([]);
+  const [isLoadingAssignedTasks, setIsLoadingAssignedTasks] = useState(false);
+  const [selectedAssignedCaseLine, setSelectedAssignedCaseLine] = useState<AssignedCaseLine | null>(null);
+  const [viewAssignedCaseLineModalOpen, setViewAssignedCaseLineModalOpen] = useState(false);
+  const [reservations, setReservations] = useState<ComponentReservation[]>([]);
+  const [isLoadingReservations, setIsLoadingReservations] = useState(false);
+  const [viewReservationsModalOpen, setViewReservationsModalOpen] = useState(false);
+  const [installingReservationId, setInstallingReservationId] = useState<string | null>(null);
+  const [completingCaseLineId, setCompletingCaseLineId] = useState<string | null>(null);
 
   // Handle file upload
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -280,7 +391,58 @@ const TechnicianDashboard = ({
   // State cho API data
   const [selectedGuaranteeCase, setSelectedGuaranteeCase] = useState<GuaranteeCase | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>('processing-records');
   const [createdCaseLines, setCreatedCaseLines] = useState<CaseLineResponse[]>([]);
+  // Work schedules state
+  const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
+  const [isLoadingSchedules, setIsLoadingSchedules] = useState(false);
+  const [schedulesError, setSchedulesError] = useState<string | null>(null);
+  // Helper: robustly extract a canonical caseLineId from various API shapes
+  const extractCaseLineId = React.useCallback((obj: unknown): string | null => {
+    if (!obj || typeof obj !== 'object') return null;
+    const o = obj as Record<string, unknown>;
+    const val = o['caseLineId'] ?? o['id'] ?? o['case_line_id'] ?? o['caseLine_Id'];
+    if (typeof val === 'string' && val.length > 0) return val;
+    if (typeof val === 'number') return String(val);
+    return null;
+  }, []);
+
+  // Helper: normalize various backend shapes into CaseLineResponse (best-effort)
+  const normalizeCaseLineResponse = React.useCallback((raw: unknown): CaseLineResponse | null => {
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Record<string, unknown>;
+    const caseLineId = extractCaseLineId(r);
+    if (!caseLineId) return null;
+    const guaranteeCaseId = (r['guaranteeCaseId'] ?? r['guarantee_case_id'] ?? (r['guaranteeCase'] && (r['guaranteeCase'] as Record<string, unknown>)['guaranteeCaseId'])) as string | undefined ?? '';
+    const diagnosisText = (r['diagnosisText'] ?? r['diagnosis_text']) as string | undefined ?? '';
+    const correctionText = (r['correctionText'] ?? r['correction_text']) as string | undefined ?? '';
+    const componentId = (r['componentId'] ?? r['typeComponentId'] ?? r['type_component_id']) as string | null ?? null;
+    const quantity = (typeof r['quantity'] === 'number' ? r['quantity'] as number : Number(r['quantity'] ?? 0)) as number;
+    const warrantyStatus = (r['warrantyStatus'] ?? r['warranty_status']) as string | undefined ?? null;
+    const createdAt = (r['createdAt'] ?? r['created_at']) as string | undefined ?? null;
+    const updatedAt = (r['updatedAt'] ?? r['updated_at']) as string | undefined ?? null;
+    // diagnostic technician may be present as a flat field (diagnosticTechId)
+    // or as a nested object (diagnosticTechnician: { userId }). Read both.
+    const techIdFromFlat = (r['techId'] ?? r['diagnosticTechId'] ?? r['diagnostic_tech_id']) as string | undefined ?? null;
+    const diagObj = r['diagnosticTechnician'] ?? r['diagnostic_technician'] ?? null;
+    const techIdFromNested = diagObj && typeof diagObj === 'object' ? ((diagObj as Record<string, unknown>)['userId'] ?? (diagObj as Record<string, unknown>)['user_id']) as string | undefined ?? null : null;
+
+    const techId = techIdFromFlat || techIdFromNested || null;
+
+    return {
+      caseLineId,
+      guaranteeCaseId,
+      diagnosisText,
+      correctionText,
+      componentId,
+      quantity,
+      warrantyStatus: (warrantyStatus as 'ELIGIBLE' | 'INELIGIBLE' | null),
+      techId,
+      status: (r['status'] as string) ?? null,
+      createdAt,
+      updatedAt,
+    } as CaseLineResponse;
+  }, [extractCaseLineId]);
 
   // Load persisted created case lines from localStorage on mount so UI survives F5
   useEffect(() => {
@@ -343,10 +505,9 @@ const TechnicianDashboard = ({
   // Helper function để lấy token
   const getAuthToken = () => {
     const token = localStorage.getItem('ev_warranty_token');
-    console.log('🔑 Checking token:', token ? `${token.substring(0, 20)}...` : 'No token found');
-    
+    // avoid logging tokens to console; signal auth presence only
     if (!token) {
-      console.error('❌ No authentication token in localStorage');
+      console.debug('No auth token found in localStorage');
       toast({
         title: "Authentication Error",
         description: "No authentication token found. Please login again.",
@@ -361,7 +522,6 @@ const TechnicianDashboard = ({
   const apiCall = useCallback(async (endpoint: string, options: RequestInit = {}) => {
     const token = getAuthToken();
     if (!token) throw new Error('No authentication token');
-
     const defaultHeaders = {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
@@ -375,18 +535,33 @@ const TechnicianDashboard = ({
       }
     };
 
-    console.log(`API Call: ${options.method || 'GET'} ${API_BASE_URL}${endpoint}`);
-    
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-    
-    console.log(`Response: ${response.status} ${response.statusText}`);
+    console.debug(`API Call: ${options.method || 'GET'} ${API_BASE_URL}${endpoint}`);
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+    console.debug(`Response: ${response.status} ${response.statusText}`);
+
+    // If no content, return null to caller
+    if (response.status === 204) return null;
+
+    // Try to parse JSON only when content-type is JSON
+    const contentType = response.headers.get('content-type') || '';
+  let body: unknown = null;
+    if (contentType.includes('application/json')) {
+      try {
+        body = await response.json();
+      } catch (err) {
+        // Parsing failed - treat as null payload but surface a helpful error for non-ok
+        body = null;
+      }
     }
 
-    return response.json();
+    if (!response.ok) {
+      const msgFromBody = (body && typeof body === 'object' && 'message' in (body as Record<string, unknown>)) ? ((body as Record<string, unknown>)['message'] as string) : undefined;
+      const message = msgFromBody || `HTTP ${response.status}: ${response.statusText}`;
+      throw new Error(message);
+    }
+
+    return body;
   }, []);
 
   // Fetch all processing records using axios service
@@ -502,48 +677,49 @@ const TechnicianDashboard = ({
 
           const merged = Object.values(dedupMap);
           if (merged.length > 0) {
-            // Merge into createdCaseLines state (avoid duplicates)
-            setCreatedCaseLines(prev => {
-              const existingKeys = new Set(prev.map(p => p.caseLineId));
-              const toAdd = (merged as unknown[]).filter((m: unknown) => {
-                  const mm = m as Record<string, unknown>;
-                  const k = (mm['caseLineId'] ?? mm['id'] ?? mm['case_line_id']) as string | undefined;
-                  return !!k && !existingKeys.has(k);
-                }) as unknown[];
-              // Cast to CaseLineResponse[] for state compatibility (we don't have full typing for external API shape)
-              return [...prev, ...(toAdd as unknown as CaseLineResponse[])];
-            });
+            // Normalize merged items into CaseLineResponse and dedupe reliably
+            const normalized = merged
+              .map(m => normalizeCaseLineResponse(m))
+              .filter((x): x is CaseLineResponse => x !== null);
 
-            // Also surface them in the lightweight caseLines UI list if they match expected fields
-            setCaseLines(prev => {
-              const existing = new Set(prev.map(c => c.id));
-              const toAdd = (merged as unknown[]).map((m: unknown) => {
-                const mm = m as Record<string, unknown>;
-                const id = (mm['caseLineId'] ?? mm['id'] ?? mm['case_line_id']) as string | undefined || '';
-                const caseId = (mm['guaranteeCaseId'] ?? mm['guarantee_case_id'] ?? mm['guaranteeCaseId']) as string | undefined || '';
-                const damageLevel = (mm['damageLevel'] as string) ?? 'N/A';
-                const warrantyStatus = (mm['warrantyStatus'] as string) ?? (mm['warranty_status'] as string) ?? null;
-                const diag = (mm['diagnosisText'] ?? mm['diagnosis_text']) as string | undefined || '';
-                const corr = (mm['correctionText'] ?? mm['correction_text']) as string | undefined || '';
-                const photos = Array.isArray(mm['photos']) ? (mm['photos'] as string[]) : [];
-                const createdAt = (mm['createdAt'] ?? mm['created_at']) as string | undefined || new Date().toLocaleDateString('en-GB');
-                const status = (mm['status'] as string) ?? 'submitted';
+            if (normalized.length > 0) {
+              setCreatedCaseLines(prev => {
+                const map = new Map<string, CaseLineResponse>();
+                prev.forEach(p => map.set(p.caseLineId, p));
+                normalized.forEach(n => map.set(n.caseLineId, n));
+                return Array.from(map.values());
+              });
 
-                return {
-                  id,
-                  caseId,
-                  damageLevel,
-                  repairPossibility: 'N/A',
-                  warrantyDecision: warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
-                  technicianNotes: `${diag} | ${corr}`,
-                  photos,
-                  createdDate: createdAt,
-                  status
-                } as CaseLine;
-              }).filter((c: CaseLine) => c.id && !existing.has(c.id));
+              // Also surface them in the lightweight caseLines UI list if they match expected fields
+              setCaseLines(prev => {
+                const existing = new Set(prev.map(c => c.id));
+                const toAdd = normalized.map((mm) => {
+                  const id = mm.caseLineId || '';
+                  const caseId = mm.guaranteeCaseId || '';
+                  const damageLevel = mm.diagnosisText || 'N/A';
+                  const warrantyStatus = mm.warrantyStatus || null;
+                  const diag = mm.diagnosisText || '';
+                  const corr = mm.correctionText || '';
+                  const photos: string[] = [];
+                  const createdAt = mm.createdAt ?? new Date().toLocaleDateString('en-GB');
+                  const status = (mm.status as string) ?? 'submitted';
 
-              return [...prev, ...toAdd];
-            });
+                  return {
+                    id,
+                    caseId,
+                    damageLevel,
+                    repairPossibility: 'N/A',
+                    warrantyDecision: warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
+                    technicianNotes: `${diag} | ${corr}`,
+                    photos,
+                    createdDate: createdAt,
+                    status
+                  } as CaseLine;
+                }).filter((c: CaseLine) => c.id && !existing.has(c.id));
+
+                return [...prev, ...toAdd];
+              });
+            }
           }
         }
       } catch (err) {
@@ -572,7 +748,7 @@ const TechnicianDashboard = ({
     } finally {
       setIsLoadingRecords(false);
     }
-  }, []);
+  }, [normalizeCaseLineResponse]);
 
   // Helper functions for Processing Records
   const getStatusBadgeVariant = (status: string) => {
@@ -601,6 +777,335 @@ const TechnicianDashboard = ({
     return labels[status] || status;
   };
 
+  // Complete a processing record by calling the backend PATCH endpoint
+  // Endpoint: PATCH /processing-records/{id}/complete-diagnosis
+  const completeProcessingRecord = useCallback(async (recordId?: string) => {
+    if (!recordId) {
+      toast({ title: 'Missing Record ID', description: 'Cannot complete record without an ID', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setIsCompleting(true);
+      const nowIso = new Date().toISOString();
+      // apiService is an axios wrapper with baseURL = http://localhost:3000/api/v1
+      const resp = await apiService.patch(`/processing-records/${recordId}/complete-diagnosis`, {
+        checkOutDate: nowIso
+      });
+
+      toast({ title: 'Record Completed', description: `Processing record ${recordId} marked as completed.` });
+
+      // Update local selectedRecord state if it refers to the same record we just completed.
+      if (selectedRecord) {
+        // Backend may return the id under different keys (recordId, id). Normalize safely without using `any`.
+        const maybeId = ((selectedRecord as unknown) as Record<string, unknown>)['id'];
+        const selId = typeof selectedRecord.recordId === 'string' && selectedRecord.recordId.length > 0
+          ? selectedRecord.recordId
+          : (typeof maybeId === 'string' ? maybeId : (typeof maybeId === 'number' ? String(maybeId) : ''));
+
+        if (selId === recordId) {
+          setSelectedRecord(prev => prev ? ({ ...prev, status: 'COMPLETED', checkOutDate: nowIso } as ProcessingRecord) : prev);
+        }
+      }
+
+      // Refresh processing records to reflect status change
+      try { await fetchProcessingRecords(); } catch (e) { /* ignore refresh error */ }
+      setViewCaseModalOpen(false);
+      return resp?.data;
+    } catch (err) {
+      console.error('Failed to complete processing record', err);
+      toast({ title: 'Complete Failed', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
+      throw err;
+    } finally {
+      setIsCompleting(false);
+    }
+  }, [fetchProcessingRecords, selectedRecord]);
+
+  // Fetch assigned case lines for the current technician
+  const fetchAssignedTasks = useCallback(async () => {
+    if (!user?.id) {
+      console.warn('No user logged in');
+      return;
+    }
+
+    try {
+      setIsLoadingAssignedTasks(true);
+      
+      console.log('🔍 Fetching assigned tasks for user:', user.id);
+      console.log('📋 User details:', { id: user.id, name: user.name, role: user.role });
+      
+      // Call API to get case lines where repairTechId matches current user
+      // Try without status filter first to see all case lines
+      const response = await apiService.get('/case-lines', {
+        params: {
+          repairTechId: user.id,
+          // status: 'IN_REPAIR,READY_FOR_REPAIR,PENDING', // Comment out to see all
+          sortBy: 'createdAt',
+          sortOrder: 'DESC'
+        }
+      }) as AxiosResponse<{ status: string; data: { caseLines: AssignedCaseLine[]; pagination?: { page: number; limit: number; total: number } } }>;
+      
+      console.log('📦 Full API Response:', JSON.stringify(response.data, null, 2));
+      console.log('📊 Case Lines:', response.data?.data?.caseLines);
+      console.log('📊 Case Lines Count:', response.data?.data?.caseLines?.length || 0);
+      
+      if (response.data?.status === 'success') {
+        const caseLines = response.data?.data?.caseLines || [];
+        setAssignedCaseLines(Array.isArray(caseLines) ? caseLines : []);
+        console.log('✅ Loaded case lines:', caseLines.length);
+        if (caseLines.length > 0) {
+          console.log('📋 First case line sample:', JSON.stringify(caseLines[0], null, 2));
+        }
+      } else {
+        console.warn('⚠️ No case lines found or invalid response structure');
+        setAssignedCaseLines([]);
+      }
+    } catch (error) {
+      console.error('❌ Failed to fetch assigned tasks:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load assigned tasks',
+        variant: 'destructive'
+      });
+      setAssignedCaseLines([]);
+    } finally {
+      setIsLoadingAssignedTasks(false);
+    }
+  }, [user]);
+
+  // Fetch reservations for a specific case line
+  const fetchReservations = useCallback(async (caseLineId: string) => {
+    if (!user?.id) {
+      console.warn('⚠️ No user logged in - cannot fetch reservations');
+      return;
+    }
+
+    try {
+      setIsLoadingReservations(true);
+      console.log('🔍 Fetching reservations for case line:', caseLineId);
+      console.log('👤 User ID (repairTechId):', user.id);
+      
+      // URL format: /reservations?caseLineId={id}&repairTechId={userId}&sortBy=createdAt&sortOrder=DESC
+      const response = await apiService.get<{ status: string; data: { reservations: ComponentReservation[] } }>('/reservations', {
+        params: {
+          caseLineId: caseLineId,
+          repairTechId: user.id,
+          sortBy: 'createdAt',
+          sortOrder: 'DESC'
+        }
+      });
+
+      console.log('📦 Reservations Response:', JSON.stringify(response.data, null, 2));
+
+      if (response.data?.status === 'success' && Array.isArray(response.data?.data?.reservations)) {
+        console.log('✅ Found', response.data.data.reservations.length, 'reservations');
+        setReservations(response.data.data.reservations);
+      } else {
+        console.warn('⚠️ No reservations found or invalid response structure');
+        setReservations([]);
+      }
+    } catch (error) {
+      console.error('❌ Failed to fetch reservations:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load reservations',
+        variant: 'destructive'
+      });
+      setReservations([]);
+    } finally {
+      setIsLoadingReservations(false);
+    }
+  }, [user]);
+
+  // View assigned case line details
+  const viewAssignedCaseLineDetails = useCallback(async (caseLineId: string) => {
+    try {
+      console.log('🔍 Fetching case line details for:', caseLineId);
+      const response = await apiService.get<{ status: string; data: { caseLine: AssignedCaseLine } }>(`/case-lines/${caseLineId}`);
+      
+      console.log('📦 Case Line Detail Response:', JSON.stringify(response.data, null, 2));
+      
+      if (response.data?.status === 'success' && response.data?.data?.caseLine) {
+        setSelectedAssignedCaseLine(response.data.data.caseLine);
+        setViewAssignedCaseLineModalOpen(true);
+        console.log('✅ Loaded case line details');
+      } else {
+        console.warn('⚠️ Invalid response structure');
+        toast({
+          title: 'Error',
+          description: 'Failed to load case line details - invalid response',
+          variant: 'destructive'
+        });
+      }
+    } catch (error) {
+      console.error('❌ Failed to fetch case line details:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load case line details',
+        variant: 'destructive'
+      });
+    }
+  }, []);
+
+  // View reservations modal
+  const viewReservationsModal = useCallback(async (caseLineId: string) => {
+    await fetchReservations(caseLineId);
+    setViewReservationsModalOpen(true);
+  }, [fetchReservations]);
+
+  // Install component
+  const handleInstallComponent = useCallback(async (reservationId: string) => {
+    try {
+      setInstallingReservationId(reservationId);
+      console.log('🔧 Installing component for reservation:', reservationId);
+
+      const response = await apiService.patch<{ 
+        status: string; 
+        data: { component: ComponentReservation } 
+      }>(`/reservations/${reservationId}/installComponent`);
+
+      console.log('✅ Component installed successfully:', response.data);
+
+      if (response.data?.status === 'success') {
+        toast({
+          title: 'Success',
+          description: 'Component installed successfully',
+        });
+
+        // Update the reservations list
+        setReservations(prev => 
+          prev.map(r => 
+            r.reservationId === reservationId 
+              ? { ...r, status: 'INSTALLED', installedAt: new Date().toISOString() }
+              : r
+          )
+        );
+      }
+    } catch (error) {
+      console.error('❌ Failed to install component:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to install component',
+        variant: 'destructive'
+      });
+    } finally {
+      setInstallingReservationId(null);
+    }
+  }, []);
+
+  // Complete repair for case line
+  const handleCompleteRepair = useCallback(async (caseLineId: string) => {
+    try {
+      setCompletingCaseLineId(caseLineId);
+      console.log('✅ Checking reservations before completing case line:', caseLineId);
+
+      // First, fetch reservations to check if all are installed
+      const reservationsResponse = await apiService.get<{ 
+        status: string; 
+        data: { reservations: ComponentReservation[] } 
+      }>('/reservations', {
+        params: {
+          caseLineId: caseLineId,
+          repairTechId: user?.id,
+          sortBy: 'createdAt',
+          sortOrder: 'DESC'
+        }
+      });
+
+      const caseReservations = reservationsResponse.data?.data?.reservations || [];
+      console.log('📦 Case line reservations:', caseReservations);
+
+      // Check if there are any reservations
+      if (caseReservations.length === 0) {
+        toast({
+          title: 'Warning',
+          description: 'No reservations found for this case line',
+          variant: 'destructive'
+        });
+        setCompletingCaseLineId(null);
+        return;
+      }
+
+      // Check if all reservations are installed
+      const allInstalled = caseReservations.every(r => r.status === 'INSTALLED');
+      const notInstalledCount = caseReservations.filter(r => r.status !== 'INSTALLED').length;
+
+      if (!allInstalled) {
+        toast({
+          title: 'Cannot Complete',
+          description: `All components must be installed first. ${notInstalledCount} component(s) not yet installed.`,
+          variant: 'destructive'
+        });
+        setCompletingCaseLineId(null);
+        return;
+      }
+
+      console.log('✅ All reservations are installed. Proceeding to mark as complete...');
+
+      // All reservations are installed, proceed with completion
+      const response = await apiService.patch<{ 
+        status: string; 
+        data: { caseLine: AssignedCaseLine } 
+      }>(`/case-lines/${caseLineId}/mark-repair-complete`);
+
+      console.log('✅ Repair completed successfully:', response.data);
+
+      if (response.data?.status === 'success') {
+        toast({
+          title: 'Success',
+          description: 'Repair marked as complete successfully',
+        });
+
+        // Update the assigned case lines list
+        setAssignedCaseLines(prev => 
+          prev.map(cl => 
+            cl.id === caseLineId 
+              ? { ...cl, status: 'COMPLETED' }
+              : cl
+          )
+        );
+
+        // Update selected case line if viewing details
+        if (selectedAssignedCaseLine?.id === caseLineId) {
+          setSelectedAssignedCaseLine(prev => 
+            prev ? { ...prev, status: 'COMPLETED' } : null
+          );
+        }
+
+        // Optionally close the modal after completion
+        // setViewAssignedCaseLineModalOpen(false);
+      }
+    } catch (error) {
+      console.error('❌ Failed to complete repair:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to mark repair as complete',
+        variant: 'destructive'
+      });
+    } finally {
+      setCompletingCaseLineId(null);
+    }
+  }, [selectedAssignedCaseLine, user]);
+
+  // Helper function to check if case line can be completed
+  const canCompleteRepair = useCallback((caseLineId: string): boolean => {
+    // Find the case line in assigned tasks
+    const caseLine = assignedCaseLines.find(cl => cl.id === caseLineId);
+    
+    if (!caseLine) return false;
+    if (caseLine.status === 'COMPLETED' || caseLine.status === 'CANCELLED') return false;
+    
+    // If there are reservations in the case line data, check them
+    if (caseLine.reservations && caseLine.reservations.length > 0) {
+      const allInstalled = caseLine.reservations.every(r => r.status === 'INSTALLED');
+      return allInstalled;
+    }
+    
+    // If no reservations data available in case line, allow completion
+    // (validation will happen in handleCompleteRepair)
+    return true;
+  }, [assignedCaseLines]);
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-US', {
@@ -610,61 +1115,9 @@ const TechnicianDashboard = ({
     });
   };
 
-  // Create case lines for a guarantee case
-  const createCaseLines = useCallback(async (guaranteeCaseId: string, caseLines: CaseLineRequest[]) => {
-    try {
-      setIsLoading(true);
-      
-      console.log('Creating case lines for case:', guaranteeCaseId);
-      console.log('Case lines data:', caseLines);
-
-      // Map frontend CaseLineRequest (componentId) to backend expected shape (typeComponentId)
-      const payload = {
-        caselines: caseLines.map((cl: CaseLineRequest) => ({
-          diagnosisText: cl.diagnosisText,
-          correctionText: cl.correctionText,
-          typeComponentId: cl.componentId ?? null,
-          quantity: cl.quantity,
-          warrantyStatus: cl.warrantyStatus
-        }))
-      };
-
-      const data = await apiCall(`/guarantee-cases/${guaranteeCaseId}/case-lines`, {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-
-      console.log('Created case lines response:', data);
-      
-      const newCaseLines = data.data?.caseLines || [];
-      // Merge and dedupe by caseLineId to avoid duplicates
-      setCreatedCaseLines(prev => {
-        const map = new Map<string, CaseLineResponse>();
-        prev.forEach(p => map.set(p.caseLineId, p));
-        (newCaseLines as CaseLineResponse[]).forEach((c) => {
-          if (c && c.caseLineId) map.set(c.caseLineId, c);
-        });
-        return Array.from(map.values());
-      });
-      
-      toast({
-        title: "Success",
-        description: `Created ${newCaseLines.length} case line(s) successfully`,
-      });
-      
-      return newCaseLines;
-    } catch (error) {
-      console.error('Error creating case lines:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create case lines",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // NOTE: createCaseLines handled by `caseLineService.createCaseLines` (uses axios POST).
+  // Keep component-side logic (handleCreateIssueDiagnosis) using the service so created
+  // case-lines are persisted to backend and then merged into local state for display.
 
   // Fetch components để hiển thị trong dropdown
   const fetchComponents = useCallback(async () => {
@@ -675,21 +1128,29 @@ const TechnicianDashboard = ({
     } catch (error) {
       console.error('Error fetching components:', error);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [apiCall]);
 
   // Fetch case lines đã tạo cho guarantee case
-  const fetchCaseLinesForCase = useCallback(async (guaranteeCaseId: string) => {
+  const fetchCaseLinesForCase = useCallback(async (guaranteeCaseId: string): Promise<unknown[]> => {
     try {
       const data = await apiCall(`/guarantee-cases/${guaranteeCaseId}/case-lines`);
       console.log('Fetched case lines for case:', data);
-      return data.data?.caseLines || [];
+      // Defensive: apiCall may return null (204) or different shapes.
+      if (!data) return [];
+      const asObj = data as unknown as Record<string, unknown>;
+      const nested = asObj['data'];
+      if (nested && typeof nested === 'object') {
+        const list = (nested as Record<string, unknown>)['caseLines'];
+        if (Array.isArray(list)) return list as unknown[];
+      }
+      const direct = asObj['caseLines'];
+      if (Array.isArray(direct)) return direct as unknown[];
+      return [];
     } catch (error) {
       console.error('Error fetching case lines:', error);
       return [];
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [apiCall]);
 
   // Fetch compatible components for a processing record
   const fetchCompatibleComponents = useCallback(async (recordId: string, searchName?: string) => {
@@ -763,7 +1224,7 @@ const TechnicianDashboard = ({
       return;
     }
 
-    if (!selectedRecord || !selectedRecord.guaranteeCases || selectedRecord.guaranteeCases.length === 0) {
+  if (!selectedRecord || !selectedRecord.guaranteeCases || (selectedRecord.guaranteeCases?.length ?? 0) === 0) {
       toast({
         title: "Error",
         description: "No guarantee case found for this record",
@@ -778,21 +1239,59 @@ const TechnicianDashboard = ({
       
       console.log('🚀 Creating case line for guarantee case:', guaranteeCase.guaranteeCaseId);
 
-      const createdCaseLines = await caseLineService.createCaseLines(
+      // Upload images to Cloudinary first (if any)
+      let evidenceImageUrls: string[] = [];
+      if (uploadedFiles.length > 0) {
+        toast({
+          title: "Uploading Images",
+          description: `Uploading ${uploadedFiles.length} image(s) to Cloudinary...`,
+        });
+
+        try {
+          const { uploadImagesToCloudinary } = await import('@/services/cloudinaryService');
+          evidenceImageUrls = await uploadImagesToCloudinary(uploadedFiles, (fileIndex, progress) => {
+            console.log(`Uploading image ${fileIndex + 1}/${uploadedFiles.length}: ${progress.percentage}%`);
+          });
+          
+          console.log('✅ Images uploaded to Cloudinary:', evidenceImageUrls);
+          
+          toast({
+            title: "Images Uploaded",
+            description: `Successfully uploaded ${evidenceImageUrls.length} image(s)`,
+          });
+        } catch (uploadError) {
+          console.error('Failed to upload images:', uploadError);
+          toast({
+            title: "Image Upload Failed",
+            description: uploadError instanceof Error ? uploadError.message : "Failed to upload images to Cloudinary",
+            variant: "destructive"
+          });
+          // Continue without images if upload fails
+          evidenceImageUrls = [];
+        }
+      }
+
+      // Create case line with image URLs
+      const caseLineWithImages = {
+        ...caseLineForm,
+        evidenceImageUrls
+      };
+
+      const serverCreatedCaseLines = await caseLineService.createCaseLines(
         guaranteeCase.guaranteeCaseId,
-        [caseLineForm]
+        [caseLineWithImages]
       );
 
-      console.log('✅ Case lines created:', createdCaseLines);
+      console.log('✅ Case lines created:', serverCreatedCaseLines);
 
       // Persist created case lines into normalized state so they survive F5
-      if (createdCaseLines && createdCaseLines.length > 0) {
+      if (serverCreatedCaseLines && serverCreatedCaseLines.length > 0) {
         try {
           // Merge and dedupe by caseLineId to avoid duplicates and React key warnings
           setCreatedCaseLines(prev => {
             const map = new Map<string, CaseLineResponse>();
             prev.forEach(p => map.set(p.caseLineId, p));
-            createdCaseLines.forEach((c: CaseLineResponse) => {
+            serverCreatedCaseLines.forEach((c: CaseLineResponse) => {
               if (c && c.caseLineId) map.set(c.caseLineId, c);
             });
             return Array.from(map.values());
@@ -803,16 +1302,17 @@ const TechnicianDashboard = ({
       }
 
       const newCaseLine: CaseLine = {
-        id: createdCaseLines[0].caseLineId,
-        caseId: createdCaseLines[0].guaranteeCaseId,
+        id: serverCreatedCaseLines[0].caseLineId,
+        caseId: serverCreatedCaseLines[0].guaranteeCaseId,
         damageLevel: 'N/A',
         repairPossibility: 'N/A',
-        warrantyDecision: createdCaseLines[0].warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
-        technicianNotes: `${createdCaseLines[0].diagnosisText} | ${createdCaseLines[0].correctionText}`,
-        photos: [...uploadedFileUrls],
-        photoFiles: [...uploadedFiles],
-        createdDate: new Date(createdCaseLines[0].createdAt).toLocaleDateString('en-GB'),
-        status: createdCaseLines[0].status === 'pending' ? 'submitted' : 'approved'
+        warrantyDecision: serverCreatedCaseLines[0].warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
+        technicianNotes: `${serverCreatedCaseLines[0].diagnosisText} | ${serverCreatedCaseLines[0].correctionText}`,
+        photos: evidenceImageUrls, // Use Cloudinary URLs instead of local URLs
+        photoFiles: [], // No need to store files anymore
+        createdDate: new Date(serverCreatedCaseLines[0].createdAt).toLocaleDateString('en-GB'),
+        status: serverCreatedCaseLines[0].status === 'pending' ? 'submitted' : 'approved',
+        evidenceImageUrls: evidenceImageUrls // Store Cloudinary URLs
       };
 
       // Ensure no duplicate caseLine IDs in UI list
@@ -828,8 +1328,8 @@ const TechnicianDashboard = ({
           : 'N/A';
 
       toast({
-        title: "Issue Diagnosis Created",
-        description: `Case line ${createdIdSuffix} has been created successfully. View it in the Issue Diagnosis tab.`,
+        title: "Case Line Created",
+        description: `Case line ${createdIdSuffix} has been created successfully. View it in the Processing Record details.`,
       });
 
       setCaseLineForm({
@@ -892,6 +1392,37 @@ const TechnicianDashboard = ({
     initializeData();
   }, [user, fetchProcessingRecords, fetchComponents]);
 
+  // Fetch technician's own schedules
+  const fetchMySchedules = useCallback(async () => {
+    try {
+      setIsLoadingSchedules(true);
+      setSchedulesError(null);
+      const resp = await apiService.get<WorkSchedulesResponse>('/work-schedules/my-schedule');
+      const payload = resp?.data;
+
+      if (Array.isArray(payload)) {
+        setWorkSchedules(payload);
+      } else if (payload && typeof payload === 'object' && 'data' in payload && Array.isArray((payload as { data?: unknown }).data)) {
+        setWorkSchedules((payload as { data: WorkSchedule[] }).data);
+      } else {
+        setWorkSchedules([]);
+      }
+    } catch (err) {
+      console.error('Failed to load work schedules', err);
+      setSchedulesError(err instanceof Error ? err.message : String(err));
+      setWorkSchedules([]);
+    } finally {
+      setIsLoadingSchedules(false);
+    }
+  }, []);
+
+  // Auto-fetch schedules when user is present
+  useEffect(() => {
+    if (user && user.role === 'service_center_technician') {
+      fetchMySchedules();
+    }
+  }, [user, fetchMySchedules]);
+
   // Auto refresh data every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
@@ -904,6 +1435,13 @@ const TechnicianDashboard = ({
     return () => clearInterval(interval);
   }, [user, isLoading, fetchProcessingRecords, autoRefreshEnabled]);
 
+  // Fetch assigned tasks when switching to assigned-tasks tab
+  useEffect(() => {
+    if (activeTab === 'assigned-tasks') {
+      fetchAssignedTasks();
+    }
+  }, [activeTab, fetchAssignedTasks]);
+
   // Fetch case lines when guarantee case is selected
   useEffect(() => {
     const loadCaseLines = async () => {
@@ -911,21 +1449,28 @@ const TechnicianDashboard = ({
         console.log('Loading case lines for selected guarantee case...');
           const caseLines = await fetchCaseLinesForCase(selectedGuaranteeCase.guaranteeCaseId);
           if (caseLines.length > 0) {
-            // Merge into createdCaseLines and dedupe by caseLineId to avoid duplicates
-            setCreatedCaseLines(prev => {
-              const map = new Map<string, CaseLineResponse>();
-              prev.forEach(p => map.set(p.caseLineId, p));
-              (caseLines as CaseLineResponse[]).forEach((c) => {
-                if (c && c.caseLineId) map.set(c.caseLineId, c);
+            // Normalize server shapes into CaseLineResponse so we have tech owner info
+            const normalized = (caseLines as unknown[])
+              .map(cl => normalizeCaseLineResponse(cl))
+              .filter((x): x is CaseLineResponse => x !== null);
+
+            if (normalized.length > 0) {
+              // Merge into createdCaseLines and dedupe by caseLineId to avoid duplicates
+              setCreatedCaseLines(prev => {
+                const map = new Map<string, CaseLineResponse>();
+                prev.forEach(p => map.set(p.caseLineId, p));
+                normalized.forEach((c) => {
+                  if (c && c.caseLineId) map.set(c.caseLineId, c);
+                });
+                return Array.from(map.values());
               });
-              return Array.from(map.values());
-            });
+            }
           }
       }
     };
 
     loadCaseLines();
-  }, [selectedGuaranteeCase, fetchCaseLinesForCase]);
+  }, [selectedGuaranteeCase, fetchCaseLinesForCase, normalizeCaseLineResponse]);
 
   // Log state changes for debugging
   useEffect(() => {
@@ -935,6 +1480,12 @@ const TechnicianDashboard = ({
   useEffect(() => {
     console.log('Created case lines updated:', createdCaseLines.length, 'case lines');
   }, [createdCaseLines]);
+
+  // Helpers
+  const isCaseLineCompleted = (status?: string | null) => {
+    if (!status) return false;
+    try { return String(status).toUpperCase() === 'COMPLETED'; } catch { return false; }
+  };
 
   // Warranty cases state with mock data
   const [warrantyDiagnosisCases, setWarrantyDiagnosisCases] = useState<WarrantyCase[]>([
@@ -1047,227 +1598,55 @@ const TechnicianDashboard = ({
     setUpdateDetailsModalOpen(true);
   };
 
-  // Handle view case line
-  const handleViewCaseLine = (caseLine: CaseLine) => {
-    setSelectedCaseLine(caseLine);
-    setViewCaseLineModalOpen(true);
-  };
-
-  // Handle remove case line
-  const handleRemoveCaseLine = (caseLineId: string) => {
-    setCaseLineToRemove(caseLineId);
-    setConfirmRemoveModalOpen(true);
-  };
-
-  // Confirm remove case line (persist deletion to backend)
-  const confirmRemoveCaseLine = async () => {
-    if (!caseLineToRemove) {
-      setConfirmRemoveModalOpen(false);
-      return;
-    }
-
+  // Handle view case line: enrich the lightweight UI caseLine with any detailed
+  // response we've previously loaded into `createdCaseLines` so the modal can
+  // display the full set of fields returned by the backend.
+  const handleViewCaseLine = async (caseLine: CaseLine) => {
     try {
-      // Call backend delete endpoint
-      await caseLineService.deleteCaseLine(caseLineToRemove);
+      // Open modal immediately with loading state
+      setViewCaseLineModalOpen(true);
+      
+      console.log('🔍 Fetching case line detail from API for ID:', caseLine.id);
+      
+      // Call API to get full case line detail including images
+      const detailedCaseLine = await caseLineService.getCaseLineById(caseLine.id);
+      
+      console.log('✅ Received detailed case line from API:', detailedCaseLine);
+      console.log('📸 Evidence images:', detailedCaseLine.evidenceImageUrls);
+      
+      // Map backend CaseLine to frontend CaseLine format
+      const enriched: CaseLine = {
+        id: detailedCaseLine.caseLineId,
+        caseId: detailedCaseLine.guaranteeCaseId,
+        damageLevel: 'medium',
+        repairPossibility: 'repairable',
+        warrantyDecision: detailedCaseLine.warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
+        technicianNotes: `${detailedCaseLine.diagnosisText} | ${detailedCaseLine.correctionText}`,
+        photos: detailedCaseLine.evidenceImageUrls || [],
+        evidenceImageUrls: detailedCaseLine.evidenceImageUrls || [],
+        createdDate: new Date(detailedCaseLine.createdAt).toLocaleDateString('en-GB'),
+        status: detailedCaseLine.status === 'pending' ? 'submitted' : 'approved',
+        diagnosisText: detailedCaseLine.diagnosisText,
+        correctionText: detailedCaseLine.correctionText,
+        componentId: detailedCaseLine.componentId,
+        quantity: detailedCaseLine.quantity,
+        warrantyStatus: detailedCaseLine.warrantyStatus,
+        diagnosticTechId: detailedCaseLine.techId,
+        updatedAt: detailedCaseLine.updatedAt
+      };
 
-      // Remove from local UI state after successful deletion
-      setCaseLines(prev => prev.filter(caseLine => caseLine.id !== caseLineToRemove));
-
-      // Also remove from createdCaseLines normalized state if present
-      setCreatedCaseLines(prev => prev.filter(cl => {
-        type MaybeCL = { caseLineId?: string; id?: string };
-        const typed = (cl as unknown) as MaybeCL;
-        const id = typed.caseLineId ?? typed.id ?? '';
-        return id !== caseLineToRemove;
-      }));
-
+      console.log('🎨 Enriched case line for display:', enriched);
+      setSelectedCaseLine(enriched);
+    } catch (err) {
+      console.error('❌ Failed to fetch case line detail from API:', err);
       toast({
-        title: "Issue Diagnosis Removed",
-        description: `Case line ${caseLineToRemove.slice(-8)} deleted successfully`,
-      });
-    } catch (error) {
-      console.error('❌ Failed to delete case line:', error);
-      toast({
-        title: "Delete Failed",
-        description: error instanceof Error ? error.message : 'Failed to delete case line',
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed to load case line details",
         variant: "destructive"
       });
-    } finally {
-      setConfirmRemoveModalOpen(false);
-      setCaseLineToRemove(null);
-    }
-  };
-
-  // Mock data - replace with API calls in production
-  const availableComponents: Component[] = [
-    {
-      id: "comp-001",
-      name: "Battery Lithium-ion VF8",
-      partNumber: "BAT-VF8-2024",
-      category: "battery",
-      inStockServiceCenter: 5,
-      inStockManufacturer: 15,
-      warrantyMonths: 96,
-      requiresVehicleCheck: false,
-      description: "Main battery for VF8, separate 8-year warranty"
-    },
-    {
-      id: "comp-002",
-      name: "Front Electric Motor",
-      partNumber: "MOT-VF8-FRT",
-      category: "motor",
-      inStockServiceCenter: 2,
-      inStockManufacturer: 8,
-      warrantyKm: 100000,
-      warrantyMonths: 60,
-      requiresVehicleCheck: true,
-      description: "Front wheel electric motor, requires km and time verification"
-    },
-    {
-      id: "comp-003",
-      name: "Exterior Paint",
-      partNumber: "PAINT-001",
-      category: "paint",
-      inStockServiceCenter: 0,
-      inStockManufacturer: 20,
-      warrantyMonths: 24,
-      requiresVehicleCheck: false,
-      description: "Exterior paint, separate 2-year warranty"
-    },
-    {
-      id: "comp-004",
-      name: "Front Brake Assembly",
-      partNumber: "BRK-FRT-001",
-      category: "general",
-      inStockServiceCenter: 8,
-      inStockManufacturer: 25,
-      warrantyKm: 50000,
-      warrantyMonths: 36,
-      requiresVehicleCheck: true,
-      description: "Front brake assembly, requires km and vehicle time verification"
-    }
-  ];
-
-  const vehicles: Vehicle[] = [
-    {
-      id: "veh-001",
-      vin: "VF8ABC123456789",
-      model: "VF8 Plus",
-      year: 2024,
-      currentKm: 15000,
-      purchaseDate: "2024-01-15",
-      hasActiveCase: false
-    },
-    {
-      id: "veh-002",
-      vin: "VF9DEF987654321",
-      model: "VF9 Premium",
-      year: 2024,
-      currentKm: 8500,
-      purchaseDate: "2024-03-10",
-      hasActiveCase: true
-    }
-  ];
-
-  const staffMembers: Staff[] = [
-    {
-      id: "staff-001",
-      name: "John Anderson",
-      specialty: "Battery Systems",
-      currentWorkload: 2,
-      isAvailable: true
-    },
-    {
-      id: "staff-002",
-      name: "Michael Brown",
-      specialty: "Motor & Drivetrain",
-      currentWorkload: 3,
-      isAvailable: true
-    },
-    {
-      id: "staff-003",
-      name: "Linda Wilson",
-      specialty: "Body & Paint",
-      currentWorkload: 1,
-      isAvailable: true
-    },
-    {
-      id: "staff-004",
-      name: "David Miller",
-      specialty: "General Maintenance",
-      currentWorkload: 4,
-      isAvailable: false
-    }
-  ];
-
-  const myTasks: Task[] = [
-    {
-      id: "task-001",
-      vehicleVin: "VF8ABC123456789",
-      vehicleModel: "VF8 Plus",
-      customer: "Robert Johnson",
-      component: availableComponents[0],
-      assignedStaff: [staffMembers[0]],
-      status: "in-progress",
-      priority: "high",
-      createdDate: "2025-09-28",
-      dueDate: "2025-10-05",
-      progress: 60,
-      warrantyValid: true,
-      notes: "Battery capacity degradation"
-    },
-    {
-      id: "task-002",
-      vehicleVin: "VF9DEF987654321",
-      vehicleModel: "VF9 Premium",
-      customer: "William Davis",
-      component: availableComponents[1],
-      assignedStaff: [staffMembers[1]],
-      status: "pending",
-      priority: "medium",
-      createdDate: "2025-09-30",
-      dueDate: "2025-10-07",
-      progress: 0,
-      warrantyValid: true,
-      notes: "Motor making abnormal noise"
-    }
-  ];
-
-  const filteredComponents = availableComponents.filter(comp => {
-    const matchesSearch = comp.name.toLowerCase().includes(componentSearch.toLowerCase()) ||
-                         comp.partNumber.toLowerCase().includes(componentSearch.toLowerCase());
-    
-    const matchesCategory = componentCategoryFilter === "all" || comp.category === componentCategoryFilter;
-    
-    return matchesSearch && matchesCategory;
-  });
-
-  // Filter warranty cases based on applied search term
-  const filteredWarrantyCases = warrantyDiagnosisCases.filter(warrantyCase => {
-    const matchesSearch = appliedSearchTerm === "" || 
-                         warrantyCase.customerName.toLowerCase().includes(appliedSearchTerm.toLowerCase()) ||
-                         warrantyCase.vehicleModel.toLowerCase().includes(appliedSearchTerm.toLowerCase()) ||
-                         warrantyCase.vehicleVin.toLowerCase().includes(appliedSearchTerm.toLowerCase()) ||
-                         warrantyCase.id.toLowerCase().includes(appliedSearchTerm.toLowerCase()) ||
-                         warrantyCase.diagnosis.toLowerCase().includes(appliedSearchTerm.toLowerCase());
-    
-    return matchesSearch;
-  });
-
-  const filteredTasks = myTasks.filter(task => {
-    const matchesSearch = task.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         task.vehicleVin.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         task.vehicleModel.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    return matchesSearch;
-  });
-
-  const getComponentIcon = (category: string) => {
-    switch (category) {
-      case 'battery': return Zap;
-      case 'motor': return Settings;
-      case 'paint': return Palette;
-      default: return Wrench;
+      
+      // Fallback to local data if API fails
+      setSelectedCaseLine(caseLine);
     }
   };
 
@@ -1313,13 +1692,12 @@ const TechnicianDashboard = ({
 
       <div className="container mx-auto px-6 py-6">
       
-        <Tabs defaultValue="processing-records" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="processing-records">Processing Records</TabsTrigger>
-            <TabsTrigger value="case-lines">Issue Diagnosis</TabsTrigger>
-            <TabsTrigger value="components">Components</TabsTrigger>
-            <TabsTrigger value="staff">Staff Management</TabsTrigger>
-          </TabsList>
+  <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="grid w-full grid-cols-3">
+                      <TabsTrigger value="processing-records">Processing Records</TabsTrigger>
+                      <TabsTrigger value="assigned-tasks">Assigned Tasks</TabsTrigger>
+                      <TabsTrigger value="work-schedules">Work Schedules</TabsTrigger>
+                    </TabsList>
 
           {/* Processing Records Tab */}
           <TabsContent value="processing-records">
@@ -1390,29 +1768,29 @@ const TechnicianDashboard = ({
                               <div>
                                 <p>{record.vin}</p>
                                 {record.recordId && (
-                                  <p className="text-xs text-muted-foreground">ID: {record.recordId.substring(0, 8)}...</p>
+                                  <p className="text-xs text-muted-foreground">ID: {(record.recordId as string)?.substring?.(0, 8) ?? ''}...</p>
                                 )}
                               </div>
                             </TableCell>
                             <TableCell>
                               <div>
-                                <p className="font-medium">{record.vehicle.model.name}</p>
+                                <p className="font-medium">{record.vehicle?.model?.name ?? 'Unknown model'}</p>
                                 <p className="text-xs text-muted-foreground">
-                                  Model ID: {record.vehicle.model.vehicleModelId.substring(0, 8)}...
+                                  Model ID: {(record.vehicle?.model?.vehicleModelId as string | undefined)?.substring?.(0, 8) ?? 'N/A'}...
                                 </p>
                               </div>
                             </TableCell>
                             <TableCell>
-                              <p className="text-sm">{record.odometer.toLocaleString()} km</p>
+                              <p className="text-sm">{(record.odometer ?? 0).toLocaleString()} km</p>
                             </TableCell>
                             <TableCell className="text-sm">
-                              {formatDate(record.checkInDate)}
+                              {formatDate(record.checkInDate ?? new Date().toISOString())}
                             </TableCell>
                             <TableCell>
                               <div>
-                                <p className="font-medium">{record.mainTechnician.name}</p>
+                                <p className="font-medium">{record.mainTechnician?.name ?? '—'}</p>
                                 <p className="text-xs text-muted-foreground">
-                                  {record.mainTechnician.userId.substring(0, 8)}...
+                                  {(record.mainTechnician?.userId as string | undefined)?.substring?.(0, 8) ?? ''}...
                                 </p>
                               </div>
                             </TableCell>
@@ -1422,7 +1800,7 @@ const TechnicianDashboard = ({
                               </Badge>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline">×{record.guaranteeCases.length}</Badge>
+                              <Badge variant="outline">×{record.guaranteeCases?.length ?? 0}</Badge>
                             </TableCell>
                             <TableCell>
                               <div className="flex gap-1">
@@ -1436,17 +1814,6 @@ const TechnicianDashboard = ({
                                   title="View Case"
                                 >
                                   <Eye className="h-3 w-3" />
-                                </Button>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  onClick={() => {
-                                    setSelectedRecord(record);
-                                    setViewReportModalOpen(true);
-                                  }}
-                                  title="View Report"
-                                >
-                                  <FileText className="h-3 w-3" />
                                 </Button>
                                 <Button 
                                   variant="default" 
@@ -1516,113 +1883,151 @@ const TechnicianDashboard = ({
             </div>
           </TabsContent>
 
-          {/* Issue Diagnosis Tab */}
-          <TabsContent value="case-lines" className="space-y-6">
+          {/* Assigned Tasks Tab */}
+          <TabsContent value="assigned-tasks" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>My Issue Diagnoses</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Wrench className="h-5 w-5" />
+                  Assigned Tasks
+                </CardTitle>
                 <CardDescription>
-                  View and manage issue diagnoses you've created for warranty cases
+                  View warranty repair tasks assigned to you
                 </CardDescription>
-                {/* Bulk delete removed per request */}
               </CardHeader>
               <CardContent>
-                {caseLines.length === 0 ? (
-                  <div className="text-center py-12">
-                    <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-foreground mb-2">No Issue Diagnoses Yet</h3>
-                    <p className="text-muted-foreground mb-6">
-                      Create issue diagnoses by clicking the green "+" button on warranty cases
-                    </p>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="text-sm text-muted-foreground">
+                    {assignedCaseLines.length > 0 ? (
+                      <span>Found {assignedCaseLines.length} assigned task{assignedCaseLines.length !== 1 ? 's' : ''}</span>
+                    ) : (
+                      <span>No tasks assigned</span>
+                    )}
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={() => fetchAssignedTasks()}
+                    disabled={isLoadingAssignedTasks}
+                  >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${isLoadingAssignedTasks ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
+                {isLoadingAssignedTasks ? (
+                  <div className="text-center py-8 text-slate-500">
+                    <RefreshCw className="h-8 w-8 mx-auto mb-2 text-slate-300 animate-spin" />
+                    <p>Loading assigned tasks...</p>
+                  </div>
+                ) : assignedCaseLines.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500">
+                    <AlertCircle className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+                    <p>No tasks assigned</p>
                   </div>
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Diagnosis ID</TableHead>
-                        <TableHead>Case ID</TableHead>
-                        <TableHead>Damage Level</TableHead>
-                        <TableHead>Repair Possibility</TableHead>
-                        <TableHead>Decision</TableHead>
-                        <TableHead>Photos</TableHead>
+                        <TableHead>Case Line ID</TableHead>
+                        <TableHead>VIN</TableHead>
+                        <TableHead>Component</TableHead>
+                        <TableHead>Quantity</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Created</TableHead>
+                        <TableHead>Warranty Status</TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {caseLines.map((caseLine) => (
+                      {assignedCaseLines.map((caseLine) => (
                         <TableRow key={caseLine.id}>
-                          <TableCell className="font-mono text-sm">
-                            {caseLine.id}
+                          <TableCell className="font-mono text-xs">
+                            {caseLine.id?.substring(0, 8)}...
                           </TableCell>
-                          <TableCell className="font-mono text-sm">
-                            {caseLine.caseId}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="capitalize">
-                              {caseLine.damageLevel}
-                            </Badge>
+                          <TableCell className="font-medium">
+                            {caseLine.guaranteeCase?.vehicleProcessingRecord?.vin || 'N/A'}
                           </TableCell>
                           <TableCell>
-                            <Badge variant={caseLine.repairPossibility === 'repairable' ? 'default' : 'destructive'}>
-                              {caseLine.repairPossibility}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={
-                              caseLine.warrantyDecision === 'approved' ? 'default' :
-                              caseLine.warrantyDecision === 'rejected' ? 'destructive' :
-                              'secondary'
-                            }>
-                              {caseLine.warrantyDecision}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              <Camera className="h-4 w-4 text-gray-500" />
-                              <span className="text-sm">{caseLine.photos.length}</span>
+                            <div>
+                              <p className="font-medium text-sm">
+                                {caseLine.typeComponent?.name || 'N/A'}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                SKU: {caseLine.typeComponent?.sku || 'N/A'}
+                              </p>
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant={
-                              caseLine.status === 'submitted' ? 'default' :
-                              caseLine.status === 'approved' ? 'default' :
-                              caseLine.status === 'rejected' ? 'destructive' :
-                              'secondary'
-                            }>
-                              {caseLine.status}
+                            <Badge variant="outline" className="font-semibold">
+                              {caseLine.quantity || 0}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-sm">
-                            {caseLine.createdDate}
+                          <TableCell>
+                            <Badge
+                              className={`text-xs font-semibold ${
+                                caseLine.status === 'PENDING'
+                                  ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                                  : caseLine.status === 'READY_FOR_REPAIR'
+                                  ? 'bg-blue-100 text-blue-800 border-blue-300'
+                                  : caseLine.status === 'IN_REPAIR'
+                                  ? 'bg-purple-100 text-purple-800 border-purple-300'
+                                  : caseLine.status === 'COMPLETED'
+                                  ? 'bg-green-100 text-green-800 border-green-300'
+                                  : caseLine.status === 'CANCELLED'
+                                  ? 'bg-red-100 text-red-800 border-red-300'
+                                  : 'bg-gray-100 text-gray-800 border-gray-300'
+                              }`}
+                              variant="outline"
+                            >
+                              {caseLine.status?.replace(/_/g, ' ') || 'N/A'}
+                            </Badge>
                           </TableCell>
                           <TableCell>
-                            <div className="flex gap-1">
-                              <Button 
-                                onClick={() => handleViewCaseLine(caseLine)}
-                                variant="outline" 
+                            <Badge
+                              variant={
+                                caseLine.warrantyStatus === 'ELIGIBLE'
+                                  ? 'default'
+                                  : 'destructive'
+                              }
+                            >
+                              {caseLine.warrantyStatus || 'N/A'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
                                 size="sm"
-                                title="View Details"
+                                variant="outline"
+                                onClick={() => viewAssignedCaseLineDetails(caseLine.id)}
                               >
-                                <Eye className="h-3 w-3" />
+                                <Eye className="h-3 w-3 mr-1" />
+                                View
                               </Button>
-                              <Button 
-                                onClick={() => handleRemoveCaseLine(caseLine.id)}
-                                variant="outline" 
+                              <Button
                                 size="sm"
-                                title="Remove Issue Diagnosis"
-                                className="text-red-600 hover:text-red-700 hover:border-red-300"
+                                variant="outline"
+                                onClick={() => viewReservationsModal(caseLine.id)}
                               >
-                                <Trash2 className="h-3 w-3" />
+                                <Package className="h-3 w-3 mr-1" />
+                                Reservations
                               </Button>
-                              {caseLine.status === 'draft' && (
-                                <Button 
-                                  variant="outline" 
+                              {caseLine.status !== 'COMPLETED' && caseLine.status !== 'CANCELLED' && (
+                                <Button
                                   size="sm"
-                                  title="Edit"
+                                  onClick={() => handleCompleteRepair(caseLine.id)}
+                                  disabled={completingCaseLineId === caseLine.id}
+                                  className="bg-green-600 hover:bg-green-700 text-white"
                                 >
-                                  <Settings className="h-3 w-3" />
+                                  {completingCaseLineId === caseLine.id ? (
+                                    <>
+                                      <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                                      Completing...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CheckCircle className="h-3 w-3 mr-1" />
+                                      Complete
+                                    </>
+                                  )}
                                 </Button>
                               )}
                             </div>
@@ -1636,181 +2041,94 @@ const TechnicianDashboard = ({
             </Card>
           </TabsContent>
 
-          {/* Components Tab */}
-          <TabsContent value="components" className="space-y-6">
-            {/* Component Search */}
-            <div className="space-y-2">
-              <div className="flex gap-4 items-center">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search components by name or part number..."
-                    value={componentSearch}
-                    onChange={(e) => setComponentSearch(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-                <Select value={componentCategoryFilter} onValueChange={setComponentCategoryFilter}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="Filter by category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    <SelectItem value="battery">🔋 Battery</SelectItem>
-                    <SelectItem value="motor">⚙️ Motor</SelectItem>
-                    <SelectItem value="paint">🎨 Paint</SelectItem>
-                    <SelectItem value="general">🔧 General</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button variant="outline" onClick={() => {
-                  setComponentSearch("");
-                  setComponentCategoryFilter("all");
-                }}>
-                  <X className="h-4 w-4 mr-1" />
-                  Clear All
-                </Button>
-              </div>
-              
-              {/* Component search hints */}
-                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <span>🔍 Search examples:</span>
-                <Badge variant="outline" className="text-xs">Battery Lithium</Badge>
-                <Badge variant="outline" className="text-xs">BAT-VF8-2024</Badge>
-                <Badge variant="outline" className="text-xs">Motor</Badge>
-                <Badge variant="outline" className="text-xs">Exterior Paint</Badge>
-              </div>
-              
-              {(componentSearch || componentCategoryFilter !== "all") && (
-                <div className="text-sm text-muted-foreground">
-                  Found {filteredComponents.length} component(s)
-                  {componentSearch && ` matching "${componentSearch}"`}
-                  {componentCategoryFilter !== "all" && ` in category "${componentCategoryFilter}"`}
-                </div>
-              )}
-            </div>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle>Component Inventory & Warranty Info</CardTitle>
-                <CardDescription>
-                  View available components and their warranty policies
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Component</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Service Center Stock</TableHead>
-                      <TableHead>Manufacturer Stock</TableHead>
-                      <TableHead>Warranty Policy</TableHead>
-                      <TableHead>Requires Vehicle Check</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredComponents.map((component) => (
-                      <TableRow key={component.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {React.createElement(getComponentIcon(component.category), { className: "h-4 w-4" })}
-                            <div>
-                              <p className="font-medium">{component.name}</p>
-                              <p className="text-xs text-muted-foreground">{component.partNumber}</p>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="capitalize">
-                            {component.category}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={component.inStockServiceCenter > 0 ? "default" : "destructive"}>
-                            {component.inStockServiceCenter} units
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={component.inStockManufacturer > 0 ? "default" : "destructive"}>
-                            {component.inStockManufacturer} units
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm">
-                            {component.warrantyMonths && (
-                              <div>{component.warrantyMonths} months</div>
-                            )}
-                            {component.warrantyKm && (
-                              <div>{component.warrantyKm.toLocaleString()} km</div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {component.requiresVehicleCheck ? (
-                            <Badge variant="outline" className="text-red-600">Yes</Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-green-600">No</Badge>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </TabsContent>
+          
 
-          {/* Staff Management Tab */}
-          <TabsContent value="staff" className="space-y-6">
+          {/* Work Schedules Tab (replaced Components + Staff Management) */}
+          <TabsContent value="work-schedules" className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Staff Workload & Availability</CardTitle>
+                <CardTitle>Work Schedules</CardTitle>
                 <CardDescription>
-                  Monitor staff assignments and distribute workload efficiently
+                  View your assigned work schedules and availability. Use the Work Schedules API to fetch real data.
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {staffMembers.map((staff) => (
-                    <Card key={staff.id} className="border-2">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3 mb-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
-                            <User className="h-5 w-5" />
-                          </div>
-                          <div>
-                            <p className="font-medium">{staff.name}</p>
-                            <p className="text-sm text-muted-foreground">{staff.specialty}</p>
-                          </div>
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm">Current Workload:</span>
-                            <Badge variant={staff.currentWorkload > 3 ? "destructive" : "default"}>
-                              {staff.currentWorkload} tasks
-                            </Badge>
-                          </div>
-                          
-                          <div className="flex justify-between items-center">
-                            <span className="text-sm">Availability:</span>
-                            <Badge variant={staff.isAvailable ? "default" : "destructive"}>
-                              {staff.isAvailable ? "Available" : "Busy"}
-                            </Badge>
-                          </div>
-                          
-                          <div className="w-full bg-muted rounded-full h-2 mt-2">
-                            <div
-                              className={`h-2 rounded-full transition-all ${
-                                staff.currentWorkload > 3 ? 'bg-red-500' : 'bg-green-500'
-                              }`}
-                              style={{ width: `${Math.min(staff.currentWorkload * 25, 100)}%` }}
-                            />
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
+                    This tab shows your personal work schedules. Data is fetched from
+                    <code className="ml-2 font-mono">/work-schedules/my-schedule</code>.
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => fetchMySchedules()}>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Refresh
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  {isLoadingSchedules ? (
+                    <div className="text-center py-6 text-slate-500">Loading schedules...</div>
+                  ) : schedulesError ? (
+                    <div className="text-center py-6 text-destructive">Error: {schedulesError}</div>
+                  ) : workSchedules.length === 0 ? (
+                    <div className="text-center py-6 text-slate-500">No schedules found</div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Schedule ID</TableHead>
+                          <TableHead>Work Date</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Notes</TableHead>
+                          <TableHead>Technician Name</TableHead>
+                          <TableHead>Technician Email</TableHead>
+                          <TableHead>Technician ID</TableHead>
+                          <TableHead>Created At</TableHead>
+                          <TableHead>Updated At</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {workSchedules.map((s) => (
+                          <TableRow key={s.scheduleId}>
+                            <TableCell className="font-mono text-xs">{s.scheduleId}</TableCell>
+                            <TableCell className="whitespace-nowrap">{s.workDate}</TableCell>
+                            <TableCell>
+                              <Badge variant={s.status === 'AVAILABLE' ? 'default' : 'destructive'} className="uppercase">
+                                {s.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm">{s.notes ?? '—'}</TableCell>
+                            <TableCell>
+                              <div className="font-semibold">{s.technician?.name ?? '—'}</div>
+                            </TableCell>
+                            <TableCell className="text-sm">{s.technician?.email ?? '—'}</TableCell>
+                            <TableCell className="font-mono text-xs">{s.technicianId ?? s.technician_id ?? '—'}</TableCell>
+                            <TableCell className="text-xs">
+                              {s.createdAt ? (
+                                <div className="text-right">
+                                  <div>{new Date(s.createdAt).toLocaleTimeString()}</div>
+                                  <div className="text-muted-foreground">{new Date(s.createdAt).toLocaleDateString()}</div>
+                                </div>
+                              ) : (
+                                '—'
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              {s.updatedAt ? (
+                                <div className="text-right">
+                                  <div>{new Date(s.updatedAt).toLocaleTimeString()}</div>
+                                  <div className="text-muted-foreground">{new Date(s.updatedAt).toLocaleDateString()}</div>
+                                </div>
+                              ) : (
+                                '—'
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -1870,6 +2188,80 @@ const TechnicianDashboard = ({
                     <span className="text-lg bg-white px-3 py-2 rounded border">{selectedWarrantyCase?.customerPhone || 'Not provided'}</span>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Technical / Backend Fields (show if available) */}
+            <div className="bg-white p-6 rounded-lg border border-gray-200">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center">
+                  <FileText className="h-4 w-4 text-white" />
+                </div>
+                <h4 className="font-semibold text-lg text-gray-900">Technical Details</h4>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {selectedCaseLine?.diagnosisText !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Diagnosis Text</div>
+                    <div className="bg-muted p-3 rounded mt-1">{selectedCaseLine?.diagnosisText || '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.correctionText !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Correction Text</div>
+                    <div className="bg-muted p-3 rounded mt-1">{selectedCaseLine?.correctionText || '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.componentId !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Component ID</div>
+                    <div className="font-mono bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.componentId ?? selectedCaseLine?.typeComponentId ?? '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.quantity !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Quantity</div>
+                    <div className="bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.quantity ?? '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.warrantyStatus !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Warranty Status</div>
+                    <div className="bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.warrantyStatus ?? '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.diagnosticTechId !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Diagnostic Tech ID</div>
+                    <div className="font-mono bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.diagnosticTechId ?? '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.repairTechId !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Repair Tech ID</div>
+                    <div className="font-mono bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.repairTechId ?? '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.rejectionReason !== undefined && (
+                  <div className="md:col-span-2">
+                    <div className="text-sm text-gray-600">Rejection Reason</div>
+                    <div className="bg-muted p-3 rounded mt-1">{selectedCaseLine?.rejectionReason || '—'}</div>
+                  </div>
+                )}
+
+                {selectedCaseLine?.updatedAt !== undefined && (
+                  <div>
+                    <div className="text-sm text-gray-600">Last Updated</div>
+                    <div className="bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.updatedAt ?? '—'}</div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2663,76 +3055,156 @@ const TechnicianDashboard = ({
             </DialogDescription>
           </DialogHeader>
           
+          {(() => {
+            // Debug: Log selected case line data
+            console.log('🔍 Selected Case Line:', selectedCaseLine);
+            console.log('📸 Evidence Image URLs:', selectedCaseLine?.evidenceImageUrls);
+            console.log('📷 Photos:', selectedCaseLine?.photos);
+            return null;
+          })()}
+          
           <div className="space-y-6">
-            {/* Case Line Information */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Basic Information */}
-              <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                    <FileText className="h-4 w-4 text-white" />
+            {/* Case Line Information - single row split into two sides */}
+            <div className="flex gap-6 items-start">
+              {/* Left side: Basic Information + Diagnosis */}
+              <div className="flex-1 space-y-4">
+                <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                      <FileText className="h-4 w-4 text-white" />
+                    </div>
+                    <h4 className="font-semibold text-lg text-blue-900">Basic Information</h4>
                   </div>
-                  <h4 className="font-semibold text-lg text-blue-900">Basic Information</h4>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-blue-700">Diagnosis ID</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine?.id}</span>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-blue-700">Case ID</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine?.caseId}</span>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-blue-700">Created Date</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.createdDate}</span>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-blue-700">Status</span>
-                    <div className="bg-white px-3 py-2 rounded border">
-                      <Badge 
-                        variant={
-                          selectedCaseLine?.status === 'approved' ? 'default' :
-                          selectedCaseLine?.status === 'rejected' ? 'destructive' :
-                          selectedCaseLine?.status === 'submitted' ? 'secondary' :
-                          'outline'
-                        }
-                        className="text-sm px-3 py-1"
-                      >
-                        {selectedCaseLine?.status}
-                      </Badge>
+                  <div className="space-y-3">
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-sm font-medium text-blue-700">Diagnosis ID</span>
+                      <span className="text-lg bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine?.id}</span>
+                    </div>
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-sm font-medium text-blue-700">Case ID</span>
+                      <span className="text-lg bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine?.caseId}</span>
+                    </div>
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-sm font-medium text-blue-700">Created Date</span>
+                      <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.createdDate || 'N/A'}</span>
+                    </div>
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-sm font-medium text-blue-700">Status</span>
+                      <div className="bg-white px-3 py-2 rounded border">
+                        <Badge 
+                          variant={
+                            selectedCaseLine?.status === 'approved' ? 'default' :
+                            selectedCaseLine?.status === 'rejected' ? 'destructive' :
+                            selectedCaseLine?.status === 'submitted' ? 'secondary' :
+                            'outline'
+                          }
+                          className="text-sm px-3 py-1"
+                        >
+                          {selectedCaseLine?.status}
+                        </Badge>
+                      </div>
                     </div>
                   </div>
                 </div>
+
+                {/* Diagnosis moved into Technician Notes - removed separate block */}
               </div>
 
-              {/* Assessment Details */}
-              <div className="bg-yellow-50 p-6 rounded-lg border border-yellow-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
-                    <Wrench className="h-4 w-4 text-white" />
+              {/* Right side: Component & Warranty + Correction */}
+              <div className="w-1/2 space-y-4">
+                <div className="bg-yellow-50 p-6 rounded-lg border border-yellow-200">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
+                      <Wrench className="h-4 w-4 text-white" />
+                    </div>
+                    <h4 className="font-semibold text-lg text-yellow-900">Component & Warranty Details</h4>
                   </div>
-                  <h4 className="font-semibold text-lg text-yellow-900">Assessment Details</h4>
+                  <div className="space-y-3">
+                    {selectedCaseLine?.componentId && (
+                      <div className="flex flex-col space-y-1">
+                        <span className="text-sm font-medium text-yellow-700">Component ID</span>
+                        <span className="text-sm bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine.componentId}</span>
+                      </div>
+                    )}
+                    {selectedCaseLine?.quantity !== undefined && (
+                      <div className="flex flex-col space-y-1">
+                        <span className="text-sm font-medium text-yellow-700">Quantity</span>
+                        <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine.quantity}</span>
+                      </div>
+                    )}
+                    {selectedCaseLine?.warrantyStatus && (
+                      <div className="flex flex-col space-y-1">
+                        <span className="text-sm font-medium text-yellow-700">Warranty Status</span>
+                        <div className="bg-white px-3 py-2 rounded border">
+                          <Badge 
+                            variant={selectedCaseLine.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}
+                            className="text-sm px-3 py-1"
+                          >
+                            {selectedCaseLine.warrantyStatus}
+                          </Badge>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="space-y-3">
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-yellow-700">Damage Level</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.damageLevel}</span>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-yellow-700">Repair Possibility</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.repairPossibility}</span>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-yellow-700">Warranty Decision</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.warrantyDecision}</span>
-                  </div>
-                </div>
+
+                {/* Correction moved into Technician Notes - removed separate block */}
               </div>
             </div>
 
-            {/* Technician Notes */}
-            {selectedCaseLine?.technicianNotes && (
+            {/* Technician Information */}
+            {(selectedCaseLine?.diagnosticTechId || selectedCaseLine?.repairTechId) && (
+              <div className="bg-indigo-50 p-6 rounded-lg border border-indigo-200">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center">
+                    <User className="h-4 w-4 text-white" />
+                  </div>
+                  <h4 className="font-semibold text-lg text-indigo-900">Technician Information</h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {selectedCaseLine?.diagnosticTechId && (
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-sm font-medium text-indigo-700">Diagnostic Technician ID</span>
+                      <span className="text-sm bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine.diagnosticTechId}</span>
+                    </div>
+                  )}
+                  {selectedCaseLine?.repairTechId && (
+                    <div className="flex flex-col space-y-1">
+                      <span className="text-sm font-medium text-indigo-700">Repair Technician ID</span>
+                      <span className="text-sm bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine.repairTechId}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Rejection Reason (if any) */}
+            {selectedCaseLine?.rejectionReason && (
+              <div className="bg-red-50 p-6 rounded-lg border border-red-200">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                    <AlertCircle className="h-4 w-4 text-white" />
+                  </div>
+                  <h4 className="font-semibold text-lg text-red-900">Rejection Reason</h4>
+                </div>
+                <div className="bg-white p-4 rounded-lg border">
+                  <p className="text-base leading-relaxed text-red-800">{selectedCaseLine.rejectionReason}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Updated Date */}
+            {selectedCaseLine?.updatedAt && (
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-700">Last Updated:</span>
+                  <span className="text-sm text-slate-900">{new Date(selectedCaseLine.updatedAt).toLocaleString()}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Technician Notes split into two fields: Diagnosis and Correction */}
+            {selectedCaseLine && (
               <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center">
@@ -2740,76 +3212,92 @@ const TechnicianDashboard = ({
                   </div>
                   <h4 className="font-semibold text-lg text-gray-900">Technician Notes</h4>
                 </div>
-                <div className="bg-white p-4 rounded-lg border">
-                  <p className="text-base leading-relaxed text-gray-800">{selectedCaseLine.technicianNotes}</p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-sm font-medium text-gray-700">Diagnosis Text</span>
+                    <div className="bg-white p-3 rounded-lg border mt-2">
+                      <p className="text-sm text-gray-800">{selectedCaseLine.diagnosisText || 'N/A'}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-sm font-medium text-gray-700">Correction Text</span>
+                    <div className="bg-white p-3 rounded-lg border mt-2">
+                      <p className="text-sm text-gray-800">{selectedCaseLine.correctionText || 'N/A'}</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Photos */}
-            {selectedCaseLine?.photos && selectedCaseLine.photos.length > 0 && (
-              <div className="bg-green-50 p-6 rounded-lg border border-green-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                    <Camera className="h-4 w-4 text-white" />
+            {/* Evidence Photos from Cloudinary */}
+            {(() => {
+              const photoUrls = selectedCaseLine?.evidenceImageUrls || selectedCaseLine?.photos || [];
+              return photoUrls.length > 0 ? (
+                <div className="bg-green-50 p-6 rounded-lg border border-green-200">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                      <Camera className="h-4 w-4 text-white" />
+                    </div>
+                    <h4 className="font-semibold text-lg text-green-900">Evidence Photos ({photoUrls.length})</h4>
                   </div>
-                  <h4 className="font-semibold text-lg text-green-900">Attached Photos ({selectedCaseLine.photos.length})</h4>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {selectedCaseLine.photos.map((photo, index) => (
-                    <div key={index} className="bg-white p-3 rounded-lg border border-green-300 hover:shadow-lg transition-shadow">
-                      <div className="aspect-square mb-3 overflow-hidden rounded">
-                        <img 
-                          src={photo} 
-                          alt={`Damage Photo ${index + 1}`}
-                          className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                          onClick={() => {
-                            setPreviewImageUrl(photo);
-                            setImagePreviewModalOpen(true);
-                          }}
-                          title="Click to view full size"
-                          onError={(e) => {
-                            console.error('Image load error for photo:', photo);
-                            e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik04NyA3NEw5MCA3N0wxMTMgMTAwTDE0MyA3MEwxNTcgODRWMTI2SDQzVjc0SDg3WiIgZmlsbD0iI0Q1REREOCIvPgo8Y2lyY2xlIGN4PSI3NSIgY3k9IjkxIiByPSI5IiBmaWxsPSIjRDVEREQ4Ii8+Cjx0ZXh0IHg9IjEwMCIgeT0iMTUwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iLWFwcGxlLXN5c3RlbSwgQmxpbmtNYWNTeXN0ZW1Gb250LCBTZWdvZSBVSSwgUm9ib3RvLCBPeHlnZW4sIFVidW50dSwgQ2FudGFyZWxsLCBGaXJhIFNhbnMsIERyb2lkIFNhbnMsIEhlbHZldGljYSBOZXVlLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmaWxsPSIjOUI5QkE0Ij5JbWFnZSBub3QgYXZhaWxhYmxlPC90ZXh0Pgo8L3N2Zz4K';
-                            e.currentTarget.style.cursor = 'default';
-                          }}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-sm text-center text-green-700 font-medium">Damage Photo {index + 1}</p>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {photoUrls.map((photo, index) => (
+                      <div key={index} className="bg-white p-3 rounded-lg border border-green-300 hover:shadow-lg transition-shadow">
+                        <div className="aspect-square mb-3 overflow-hidden rounded">
+                          <img 
+                            src={photo} 
+                            alt={`Evidence Photo ${index + 1}`}
+                            className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
                             onClick={() => {
                               setPreviewImageUrl(photo);
                               setImagePreviewModalOpen(true);
                             }}
-                            className="text-xs flex-1"
-                          >
-                            View Full Size
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              navigator.clipboard.writeText(photo);
-                              toast({
-                                title: "URL Copied",
-                                description: `Photo ${index + 1} URL copied to clipboard`,
-                              });
+                            title="Click to view full size"
+                            onError={(e) => {
+                              console.error('Image load error for photo:', photo);
+                              e.currentTarget.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik04NyA3NEw5MCA3N0wxMTMgMTAwTDE0MyA3MEwxNTcgODRWMTI2SDQzVjc0SDg3WiIgZmlsbD0iI0Q1REREOCIvPgo8Y2lyY2xlIGN4PSI3NSIgY3k9IjkxIiByPSI5IiBmaWxsPSIjRDVEREQ4Ii8+Cjx0ZXh0IHg9IjEwMCIgeT0iMTUwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iLWFwcGxlLXN5c3RlbSwgQmxpbmtNYWNTeXN0ZW1Gb250LCBTZWdvZSBVSSwgUm9ib3RvLCBPeHlnZW4sIFVidW50dSwgQ2FudGFyZWxsLCBGaXJhIFNhbnMsIERyb2lkIFNhbnMsIEhlbHZldGljYSBOZXVlLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIiBmaWxsPSIjOUI5QkE0Ij5JbWFnZSBub3QgYXZhaWxhYmxlPC90ZXh0Pgo8L3N2Zz4K';
+                              e.currentTarget.style.cursor = 'default';
                             }}
-                            className="text-xs"
-                          >
-                            Copy URL
-                          </Button>
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-sm text-center text-green-700 font-medium">Evidence Photo {index + 1}</p>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setPreviewImageUrl(photo);
+                                setImagePreviewModalOpen(true);
+                              }}
+                              className="text-xs flex-1"
+                            >
+                              View Full Size
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                navigator.clipboard.writeText(photo);
+                                toast({
+                                  title: "URL Copied",
+                                  description: `Photo ${index + 1} URL copied to clipboard`,
+                                });
+                              }}
+                              className="text-xs"
+                            >
+                              Copy URL
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              ) : null;
+            })()}
           </div>
           
           <div className="flex justify-end gap-3 pt-6 border-t">
@@ -2874,158 +3362,313 @@ const TechnicianDashboard = ({
         </DialogContent>
       </Dialog>
 
-      {/* Confirm Remove Case Line Modal */}
-      <Dialog open={confirmRemoveModalOpen} onOpenChange={setConfirmRemoveModalOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader className="pb-4">
-            <DialogTitle className="text-xl font-semibold text-red-600">Remove Issue Diagnosis</DialogTitle>
-            <DialogDescription className="text-base">
-              Are you sure you want to remove this issue diagnosis? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="bg-red-50 p-4 rounded-lg border border-red-200 mb-4">
-            <div className="flex items-center gap-2">
-              <Trash2 className="h-5 w-5 text-red-500" />
-              <div>
-                <p className="font-medium text-red-800">Diagnosis ID:</p>
-                <p className="text-sm text-red-600 font-mono">{caseLineToRemove}</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex justify-end gap-3">
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                setConfirmRemoveModalOpen(false);
-                setCaseLineToRemove(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button 
-              variant="destructive"
-              onClick={confirmRemoveCaseLine}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Remove Issue Diagnosis
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Confirm remove dialog removed — deletion disabled in UI */}
 
       {/* View Case Modal from Processing Records */}
       <Dialog open={viewCaseModalOpen} onOpenChange={setViewCaseModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Processing Record Details</DialogTitle>
-            <DialogDescription>
-              <div>VIN: {selectedRecord?.vin}</div>
-              {selectedRecord?.recordId && (
-                <div className="text-xs text-slate-400 font-mono mt-1">
-                  Record ID: {selectedRecord.recordId}
-                </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="text-2xl font-bold">Processing Record Details</DialogTitle>
+                <DialogDescription className="text-sm text-slate-500 mt-1">
+                  VIN: {selectedRecord?.vin}
+                </DialogDescription>
+              </div>
+              {selectedRecord && (
+                <Badge 
+                  variant={getStatusBadgeVariant(selectedRecord.status)} 
+                  className="text-sm px-3 py-1"
+                >
+                  {getStatusLabel(selectedRecord.status)}
+                </Badge>
               )}
-            </DialogDescription>
+            </div>
           </DialogHeader>
+          
           {selectedRecord && (
-            <div className="space-y-4">
-              {selectedRecord.recordId && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="space-y-6 mt-4">
+              {/* Basic Information Section */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="p-2 bg-blue-600 rounded-lg">
+                    <Car className="h-5 w-5 text-white" />
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-800">Basic Information</h3>
+                </div>
+                
+                <div className="grid grid-cols-3 gap-6">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-600">VIN</p>
+                    <p className="text-sm font-bold text-slate-900">{selectedRecord.vin}</p>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-600">Vehicle Model</p>
+                    <p className="text-sm font-bold text-slate-900">{selectedRecord.vehicle.model.name}</p>
+                    <p className="text-xs text-slate-500">Model ID: {selectedRecord.vehicle.model.vehicleModelId}</p>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-600">Odometer</p>
+                    <p className="text-sm font-bold text-slate-900">{selectedRecord.odometer.toLocaleString()} km</p>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-600">Check-in Date</p>
+                    <p className="text-sm font-bold text-slate-900">{formatDate(selectedRecord.checkInDate)}</p>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-600">Created by Staff</p>
+                    <p className="text-sm font-bold text-slate-900">{selectedRecord.createdByStaff.name}</p>
+                    <p className="text-xs text-slate-500">Staff ID: {selectedRecord.createdByStaff.userId}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Guarantee Cases with nested Case Lines */}
+              {selectedRecord?.guaranteeCases && selectedRecord.guaranteeCases.length > 0 && (
+                <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-blue-600" />
-                    <div className="flex-1">
-                      <p className="text-xs text-blue-600 font-medium">Record ID</p>
-                      <p className="text-sm font-mono text-blue-800">{selectedRecord.recordId}</p>
-                    </div>
+                    <FileText className="h-5 w-5 text-blue-600" />
+                    <h3 className="text-lg font-bold text-slate-800">Guarantee Cases</h3>
+                    <span className="text-sm text-slate-500">({selectedRecord.guaranteeCases.length})</span>
                   </div>
-                </div>
-              )}
-              
-              <div className="grid grid-cols-2 gap-4 p-4 bg-white border rounded-lg">
-                <div className="flex items-center gap-2">
-                  <Car className="h-4 w-4 text-slate-500" />
-                  <div>
-                    <p className="text-xs text-slate-500">Vehicle Model</p>
-                    <p className="text-sm font-semibold">{selectedRecord.vehicle.model.name}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Gauge className="h-4 w-4 text-slate-500" />
-                  <div>
-                    <p className="text-xs text-slate-500">Odometer</p>
-                    <p className="text-sm font-semibold">{selectedRecord.odometer.toLocaleString()} km</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-slate-500" />
-                  <div>
-                    <p className="text-xs text-slate-500">Check-in Date</p>
-                    <p className="text-sm font-semibold">{formatDate(selectedRecord.checkInDate)}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={getStatusBadgeVariant(selectedRecord.status)}>
-                    {getStatusLabel(selectedRecord.status)}
-                  </Badge>
-                </div>
-              </div>
-
-              <div className="p-4 bg-white border rounded-lg">
-                <div className="flex items-start gap-2">
-                  <Wrench className="h-4 w-4 text-slate-600 mt-1" />
-                  <div className="flex-1">
-                    <p className="text-xs text-slate-600 font-medium">Main Technician</p>
-                    <p className="text-sm font-semibold">{selectedRecord.mainTechnician.name}</p>
-                    <p className="text-xs text-slate-500">ID: {selectedRecord.mainTechnician.userId}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-4 bg-white border rounded-lg">
-                <div className="flex items-start gap-2">
-                  <User className="h-4 w-4 text-slate-600 mt-1" />
-                  <div className="flex-1">
-                    <p className="text-xs text-slate-600 font-medium">Created By</p>
-                    <p className="text-sm font-semibold">{selectedRecord.createdByStaff.name}</p>
-                    <p className="text-xs text-slate-500">ID: {selectedRecord.createdByStaff.userId}</p>
-                  </div>
-                </div>
-              </div>
-
-              {selectedRecord.guaranteeCases && selectedRecord.guaranteeCases.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                    <FileText className="h-4 w-4" />
-                    Guarantee Cases ({selectedRecord.guaranteeCases.length})
-                  </div>
-                  {selectedRecord.guaranteeCases.map((guaranteeCase, index) => (
-                    <div key={guaranteeCase.guaranteeCaseId} className="p-4 bg-white rounded-lg border">
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="text-xs font-medium text-slate-700">Case #{index + 1}</span>
-                        <Badge variant="outline" className="text-xs">
-                          {guaranteeCase.status}
-                        </Badge>
+                  
+                  {selectedRecord.guaranteeCases.map((guaranteeCase, gcIndex) => {
+                    // Filter case lines for this guarantee case
+                    const caseLinesForCase = createdCaseLines.filter(
+                      cl => cl.guaranteeCaseId === guaranteeCase.guaranteeCaseId
+                    );
+                    
+                    return (
+                      <div key={guaranteeCase.guaranteeCaseId} className="border border-slate-300 rounded-xl overflow-hidden">
+                        {/* Guarantee Case Header */}
+                        <div className="bg-gradient-to-r from-slate-50 to-slate-100 p-4 border-b">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-sm font-bold text-slate-700">Guarantee Case #{gcIndex + 1}</span>
+                                <Badge variant="outline" className="text-xs">
+                                  {guaranteeCase.status}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-slate-600">
+                                <span className="font-medium">Content:</span> {guaranteeCase.contentGuarantee}
+                              </p>
+                              <p className="text-xs text-slate-400 mt-1 font-mono">
+                                ID: {guaranteeCase.guaranteeCaseId}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Case Lines nested under Guarantee Case */}
+                        {caseLinesForCase.length > 0 ? (
+                          <div className="p-4 space-y-3 bg-white">
+                            {caseLinesForCase.map((caseLine, clIndex) => (
+                              <div key={caseLine.caseLineId} className="border border-slate-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                                <div className="flex items-start justify-between mb-3">
+                                  <div className="flex items-center gap-2">
+                                    <span className="flex items-center justify-center w-6 h-6 bg-blue-600 text-white text-xs font-bold rounded-full">
+                                      {clIndex + 1}
+                                    </span>
+                                    <span className="text-xs font-mono text-slate-500">
+                                      {caseLine.caseLineId}
+                                    </span>
+                                  </div>
+                                  <Badge 
+                                    variant={
+                                      caseLine.warrantyStatus === 'ELIGIBLE' ? 'default' : 
+                                      caseLine.status === 'rejected' ? 'destructive' : 
+                                      'secondary'
+                                    }
+                                    className="text-xs"
+                                  >
+                                    {caseLine.warrantyStatus || caseLine.status}
+                                  </Badge>
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-3 mb-3">
+                                  {/* Diagnosis */}
+                                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                    <p className="text-xs font-semibold text-orange-700 mb-1">Diagnosis</p>
+                                    <p className="text-sm text-slate-800">{caseLine.diagnosisText || 'N/A'}</p>
+                                  </div>
+                                  
+                                  {/* Correction */}
+                                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                                    <p className="text-xs font-semibold text-green-700 mb-1">Correction</p>
+                                    <p className="text-sm text-slate-800">{caseLine.correctionText || 'N/A'}</p>
+                                  </div>
+                                </div>
+                                
+                                {/* Component Info */}
+                                {caseLine.componentId && (
+                                  <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg mb-3">
+                                    <div className="p-2 bg-blue-100 rounded">
+                                      <Package className="h-4 w-4 text-blue-600" />
+                                    </div>
+                                    <div className="flex-1">
+                                      <p className="text-xs text-slate-600">Component</p>
+                                      <p className="text-sm font-semibold text-slate-900">
+                                        Component ID: {caseLine.componentId}
+                                      </p>
+                                      <p className="text-xs text-slate-500">Quantity: {caseLine.quantity}</p>
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* Evidence Photos */}
+                                {caseLine.evidenceImageUrls && caseLine.evidenceImageUrls.length > 0 && (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <Camera className="h-4 w-4 text-slate-600" />
+                                      <p className="text-xs font-semibold text-slate-700">Evidence Photos ({caseLine.evidenceImageUrls.length})</p>
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-2">
+                                      {caseLine.evidenceImageUrls.map((url, imgIndex) => (
+                                        <div 
+                                          key={imgIndex}
+                                          className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-80 transition-opacity"
+                                          onClick={() => window.open(url, '_blank')}
+                                        >
+                                          <img 
+                                            src={url} 
+                                            alt={`Evidence ${imgIndex + 1}`}
+                                            className="w-full h-full object-cover"
+                                          />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* View Details Button */}
+                                <div className="mt-3 pt-3 border-t border-slate-200">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full"
+                                    onClick={() => {
+                                      // Convert to CaseLine format for view modal
+                                      const formattedCaseLine: CaseLine = {
+                                        id: caseLine.caseLineId,
+                                        caseId: caseLine.guaranteeCaseId,
+                                        damageLevel: 'medium',
+                                        repairPossibility: 'repairable',
+                                        warrantyDecision: caseLine.warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
+                                        technicianNotes: `${caseLine.diagnosisText} | ${caseLine.correctionText}`,
+                                        photos: caseLine.evidenceImageUrls || [],
+                                        evidenceImageUrls: caseLine.evidenceImageUrls || [],
+                                        createdDate: new Date(caseLine.createdAt).toLocaleDateString('en-GB'),
+                                        status: caseLine.status === 'pending' ? 'submitted' : 'approved',
+                                        diagnosisText: caseLine.diagnosisText,
+                                        correctionText: caseLine.correctionText,
+                                        componentId: caseLine.componentId,
+                                        quantity: caseLine.quantity,
+                                        warrantyStatus: caseLine.warrantyStatus,
+                                        diagnosticTechId: caseLine.techId,
+                                        updatedAt: caseLine.updatedAt
+                                      };
+                                      handleViewCaseLine(formattedCaseLine);
+                                    }}
+                                  >
+                                    <Eye className="h-3 w-3 mr-2" />
+                                    View Full Details
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-6 text-center text-slate-500 bg-slate-50">
+                            <FileText className="h-10 w-10 text-slate-400 mx-auto mb-2" />
+                            <p className="text-sm">No case lines created for this guarantee case yet.</p>
+                          </div>
+                        )}
                       </div>
-                      <p className="text-sm text-slate-700 mb-2">
-                        <span className="font-medium">Content:</span> {guaranteeCase.contentGuarantee}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        ID: {guaranteeCase.guaranteeCaseId}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
-              <div className="pt-2 border-t">
-                <p className="text-xs text-slate-500">VIN: {selectedRecord.vin}</p>
-                <p className="text-xs text-slate-500">Model ID: {selectedRecord.vehicle.model.vehicleModelId}</p>
+              {/* Assigned Technicians Section */}
+              <div className="bg-white border border-slate-300 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Users className="h-5 w-5 text-blue-600" />
+                  <h3 className="text-lg font-bold text-slate-800">Assigned Technicians</h3>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                    <div className="p-2 bg-blue-100 rounded-full">
+                      <User className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{selectedRecord.mainTechnician.name}</p>
+                      <p className="text-xs text-slate-500">Main Technician • ID: {selectedRecord.mainTechnician.userId}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Timeline Section */}
+              <div className="bg-white border border-slate-300 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Clock className="h-5 w-5 text-blue-600" />
+                  <h3 className="text-lg font-bold text-slate-800">Timeline</h3>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-green-100 rounded-full mt-0.5">
+                      <Calendar className="h-4 w-4 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Case Submitted</p>
+                      <p className="text-xs text-slate-500">{formatDate(selectedRecord.checkInDate)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-blue-100 rounded-full mt-0.5">
+                      <CheckCircle className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Vehicle Check-in</p>
+                      <p className="text-xs text-slate-500">{formatDate(selectedRecord.checkInDate)}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           )}
+
+          <div className="flex justify-end gap-3 pt-6 border-t">
+            <Button variant="outline" onClick={() => setViewCaseModalOpen(false)}>Close</Button>
+
+            {selectedRecord && (selectedRecord.status !== 'COMPLETED') && (
+              <Button
+                className="bg-blue-600 hover:bg-blue-700"
+                onClick={async () => {
+                  // derive candidate id (recordId or fallback to id field)
+                  const rec = selectedRecord as unknown as Record<string, unknown>;
+                  const candidateId = (rec['recordId'] as string) || (rec['vehicleProcessingRecordId'] as string) || (rec['processing_record_id'] as string) || (rec['id'] as string) || '';
+                  if (!candidateId) {
+                    toast({ title: 'Missing Record ID', description: 'Cannot complete record: ID not found', variant: 'destructive' });
+                    return;
+                  }
+                  try {
+                    await completeProcessingRecord(candidateId);
+                  } catch (err) {
+                    // error already handled in helper
+                  }
+                }}
+                disabled={isCompleting}
+              >
+                {isCompleting ? 'Completing...' : 'Complete Record'}
+              </Button>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -3059,7 +3702,7 @@ const TechnicianDashboard = ({
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Case ID:</span>
-                      <span className="font-semibold text-blue-600">{selectedRecord.guaranteeCases[0]?.guaranteeCaseId.substring(0, 8) || 'N/A'}</span>
+                      <span className="font-semibold text-blue-600">{(selectedRecord?.guaranteeCases?.[0]?.guaranteeCaseId as string | undefined)?.substring?.(0, 8) ?? 'N/A'}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Status:</span>
@@ -3115,7 +3758,7 @@ const TechnicianDashboard = ({
                 </div>
               </div>
 
-              {selectedRecord.guaranteeCases.length > 0 && (
+              { (selectedRecord?.guaranteeCases?.length ?? 0) > 0 && (
                 <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
                   <div className="flex items-center gap-2 mb-3">
                     <div className="bg-orange-500 text-white rounded-full p-1.5">
@@ -3147,7 +3790,7 @@ const TechnicianDashboard = ({
             <DialogTitle>Create Issue Diagnosis</DialogTitle>
             <DialogDescription>
               Create a new issue diagnosis for VIN: {selectedRecord?.vin || 'N/A'}
-              {selectedRecord?.recordId && ` (Record: ${selectedRecord.recordId.substring(0, 8)}...)`}
+              {selectedRecord?.recordId && ` (Record: ${(selectedRecord.recordId as string | undefined)?.substring?.(0, 8) ?? ''}...)`}
             </DialogDescription>
           </DialogHeader>
           
@@ -3223,10 +3866,35 @@ const TechnicianDashboard = ({
                         id="componentSearch"
                         value={componentSearchQuery}
                         onChange={(e) => {
-                          setComponentSearchQuery(e.target.value);
-                          // Search components when typing
-                          if (e.target.value.length >= 2) {
-                            searchComponents(e.target.value);
+                          const q = e.target.value;
+                          setComponentSearchQuery(q);
+                          // Search components when typing: prefer fetching compatible components for the selected record
+                          if (q.length >= 2) {
+                            try {
+                              // Try to derive a candidate record id from selectedRecord
+                              const recMap = (selectedRecord as unknown) as Record<string, unknown> | null;
+                              const candidateId = recMap && (
+                                (recMap['recordId'] as string) ||
+                                (recMap['vehicleProcessingRecordId'] as string) ||
+                                (recMap['processing_record_id'] as string) ||
+                                (recMap['id'] as string) || ''
+                              );
+
+                              if (candidateId) {
+                                // Use record-scoped compatible components endpoint (provides more relevant results)
+                                fetchCompatibleComponents(candidateId, q).catch((err) => {
+                                  console.error('Failed to fetch compatible components for search:', err);
+                                  // fallback to generic search if record-scoped endpoint fails
+                                  searchComponents(q).catch(() => setCompatibleComponents([]));
+                                });
+                              } else {
+                                // No selected record / id available — fall back to generic search
+                                searchComponents(q);
+                              }
+                            } catch (err) {
+                              console.error('Error while searching components:', err);
+                              searchComponents(q).catch(() => setCompatibleComponents([]));
+                            }
                           } else {
                             setCompatibleComponents([]);
                           }
@@ -3388,6 +4056,332 @@ const TechnicianDashboard = ({
               <AlertCircle className="h-8 w-8 mx-auto mb-2" />
               <p>No record selected</p>
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* View Assigned Case Line Details Modal */}
+      <Dialog open={viewAssignedCaseLineModalOpen} onOpenChange={setViewAssignedCaseLineModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Case Line Details</DialogTitle>
+            <DialogDescription>
+              Detailed information about the assigned case line
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedAssignedCaseLine ? (
+            <div className="space-y-6">
+              {/* Case Line Information */}
+              <Card className="border-l-4 border-l-blue-500">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Case Line Information</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground">Case Line ID</label>
+                      <p className="text-sm font-mono mt-1">{selectedAssignedCaseLine.id}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground">Status</label>
+                      <div className="mt-1">
+                        <Badge
+                          className={`text-xs font-semibold ${
+                            selectedAssignedCaseLine.status === 'PENDING'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : selectedAssignedCaseLine.status === 'READY_FOR_REPAIR'
+                              ? 'bg-blue-100 text-blue-800'
+                              : selectedAssignedCaseLine.status === 'IN_REPAIR'
+                              ? 'bg-purple-100 text-purple-800'
+                              : selectedAssignedCaseLine.status === 'COMPLETED'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          {selectedAssignedCaseLine.status}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground">Warranty Status</label>
+                      <div className="mt-1">
+                        <Badge variant={selectedAssignedCaseLine.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}>
+                          {selectedAssignedCaseLine.warrantyStatus || 'N/A'}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground">Quantity</label>
+                      <p className="text-sm font-semibold mt-1">{selectedAssignedCaseLine.quantity || 0}</p>
+                    </div>
+                  </div>
+
+                  {selectedAssignedCaseLine.diagnosisText && (
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground">Diagnosis</label>
+                      <p className="text-sm mt-1 p-3 bg-slate-50 rounded border">
+                        {selectedAssignedCaseLine.diagnosisText}
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedAssignedCaseLine.correctionText && (
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground">Correction</label>
+                      <p className="text-sm mt-1 p-3 bg-slate-50 rounded border">
+                        {selectedAssignedCaseLine.correctionText}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Component Information */}
+              {selectedAssignedCaseLine.typeComponent && (
+                <Card className="border-l-4 border-l-purple-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Component Information</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground">Name</label>
+                        <p className="text-sm font-medium mt-1">
+                          {selectedAssignedCaseLine.typeComponent.name}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground">SKU</label>
+                        <p className="text-sm font-mono mt-1">
+                          {selectedAssignedCaseLine.typeComponent.sku}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground">Price</label>
+                        <p className="text-sm font-semibold mt-1">
+                          {selectedAssignedCaseLine.typeComponent.price?.toLocaleString()} VND
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Vehicle Information */}
+              {selectedAssignedCaseLine.guaranteeCase?.vehicleProcessingRecord && (
+                <Card className="border-l-4 border-l-orange-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Vehicle Information</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground">VIN</label>
+                        <p className="text-sm font-mono font-bold mt-1">
+                          {selectedAssignedCaseLine.guaranteeCase.vehicleProcessingRecord.vin}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground">Created By</label>
+                        <p className="text-sm mt-1">
+                          {selectedAssignedCaseLine.guaranteeCase.vehicleProcessingRecord.createdByStaff?.name || 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Evidence Images */}
+              {selectedAssignedCaseLine.evidenceImageUrls && selectedAssignedCaseLine.evidenceImageUrls.length > 0 && (
+                <Card className="border-l-4 border-l-green-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Evidence Images</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-3 gap-4">
+                      {selectedAssignedCaseLine.evidenceImageUrls.map((url, index) => (
+                        <div key={index} className="relative group">
+                          <img
+                            src={url}
+                            alt={`Evidence ${index + 1}`}
+                            className="w-full h-32 object-cover rounded border cursor-pointer hover:opacity-75"
+                            onClick={() => {
+                              setPreviewImageUrl(url);
+                              setImagePreviewModalOpen(true);
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-slate-500">
+              <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+              <p>No case line selected</p>
+            </div>
+          )}
+
+          {/* Footer with Complete Button */}
+          {selectedAssignedCaseLine && 
+           selectedAssignedCaseLine.status !== 'COMPLETED' && 
+           selectedAssignedCaseLine.status !== 'CANCELLED' && (
+            <div className="flex justify-end gap-3 pt-4 border-t mt-6">
+              <Button
+                variant="outline"
+                onClick={() => setViewAssignedCaseLineModalOpen(false)}
+              >
+                Close
+              </Button>
+              <Button
+                onClick={() => handleCompleteRepair(selectedAssignedCaseLine.id)}
+                disabled={completingCaseLineId === selectedAssignedCaseLine.id}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                {completingCaseLineId === selectedAssignedCaseLine.id ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Completing...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Mark as Complete
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* View Reservations Modal */}
+      <Dialog open={viewReservationsModalOpen} onOpenChange={setViewReservationsModalOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Component Reservations</DialogTitle>
+            <DialogDescription>
+              View component reservations for this case line
+            </DialogDescription>
+          </DialogHeader>
+
+          {isLoadingReservations ? (
+            <div className="text-center py-8 text-slate-500">
+              <RefreshCw className="h-8 w-8 mx-auto mb-2 animate-spin" />
+              <p>Loading reservations...</p>
+            </div>
+          ) : reservations.length === 0 ? (
+            <div className="text-center py-8 text-slate-500">
+              <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+              <p>No reservations found</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Reservation ID</TableHead>
+                  <TableHead>Component Serial</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Picked Up By</TableHead>
+                  <TableHead>Picked Up At</TableHead>
+                  <TableHead>Installed At</TableHead>
+                  <TableHead>Created At</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {reservations.map((reservation) => (
+                  <TableRow key={reservation.reservationId}>
+                    <TableCell className="font-mono text-xs">
+                      {reservation.reservationId.substring(0, 8)}...
+                    </TableCell>
+                    <TableCell>
+                      <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                        {reservation.component?.serialNumber || 'N/A'}
+                      </code>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        className={`text-xs font-semibold ${
+                          reservation.status === 'RESERVED'
+                            ? 'bg-amber-100 text-amber-800 border-amber-400'
+                            : reservation.status === 'PICKED_UP'
+                            ? 'bg-blue-100 text-blue-800 border-blue-400'
+                            : reservation.status === 'INSTALLED'
+                            ? 'bg-green-100 text-green-800 border-green-400'
+                            : reservation.status === 'CANCELLED'
+                            ? 'bg-red-100 text-red-800 border-red-400'
+                            : reservation.status === 'RETURNED'
+                            ? 'bg-purple-100 text-purple-800 border-purple-400'
+                            : 'bg-gray-100 text-gray-800'
+                        }`}
+                        variant="outline"
+                      >
+                        {reservation.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        <p className="font-medium">
+                          {reservation.pickedUpByTech?.name || 'N/A'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {reservation.pickedUpByTech?.email || ''}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {reservation.pickedUpAt
+                        ? new Date(reservation.pickedUpAt).toLocaleString()
+                        : 'N/A'}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {reservation.installedAt
+                        ? new Date(reservation.installedAt).toLocaleString()
+                        : 'N/A'}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {new Date(reservation.createdAt).toLocaleString()}
+                    </TableCell>
+                    <TableCell>
+                      {reservation.status === 'PICKED_UP' && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleInstallComponent(reservation.reservationId)}
+                          disabled={installingReservationId === reservation.reservationId}
+                          className="bg-green-600 hover:bg-green-700"
+                        >
+                          {installingReservationId === reservation.reservationId ? (
+                            <>
+                              <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                              Installing...
+                            </>
+                          ) : (
+                            <>
+                              <Wrench className="h-3 w-3 mr-1" />
+                              Install
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {reservation.status === 'INSTALLED' && (
+                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Installed
+                        </Badge>
+                      )}
+                      {reservation.status === 'RESERVED' && (
+                        <span className="text-xs text-muted-foreground">Waiting for pickup</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </DialogContent>
       </Dialog>

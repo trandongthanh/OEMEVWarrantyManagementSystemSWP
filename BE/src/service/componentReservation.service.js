@@ -89,60 +89,79 @@ class ComponentReservationService {
     );
   };
 
-  pickupReservedComponent = async ({
-    reservationId,
+  pickupReservedComponents = async ({
+    reservationIds,
     serviceCenterId,
     pickedUpByTechId,
   }) => {
-    const rawResult = await db.sequelize.transaction(async (transaction) => {
-      await this.#validateReservationById(reservationId, transaction);
+    const uniqueReservationIds = Array.from(new Set(reservationIds));
 
-      const updatedReservation =
-        await this.#componentReservationRepository.updateReservationStatusPickUp(
-          {
-            reservationId,
-            serviceCenterId,
-            pickedUpByTechId,
-            pickedUpAt: formatUTCtzHCM(dayjs()),
-            status: "PICKED_UP",
-          },
+    const rawResult = await db.sequelize.transaction(async (transaction) => {
+      const updatedReservations = [];
+      const caseLineIdsForUpdate = new Set();
+
+      for (const reservationId of uniqueReservationIds) {
+        await this.#validateReservationById(reservationId, transaction);
+
+        const updatedReservation =
+          await this.#componentReservationRepository.updateReservationStatusPickUp(
+            {
+              reservationId,
+              serviceCenterId,
+              pickedUpByTechId,
+              pickedUpAt: formatUTCtzHCM(dayjs()),
+              status: "PICKED_UP",
+            },
+            transaction
+          );
+
+        if (!updatedReservation) {
+          throw new Error("Failed to update reservation status to PICKED_UP");
+        }
+
+        const componentId = await this.#validateComponentById(
+          updatedReservation,
           transaction
         );
 
-      const componentId = await this.#validateComponentById(
-        updatedReservation,
-        transaction
-      );
+        const componentBeforeUpdate = await this.#componentRepository.findById(
+          componentId,
+          transaction,
+          Transaction.LOCK.UPDATE
+        );
 
-      const componentBeforeUpdate = await this.#componentRepository.findById(
-        componentId,
-        transaction,
-        Transaction.LOCK.UPDATE
-      );
+        if (!componentBeforeUpdate || !componentBeforeUpdate.warehouseId) {
+          throw new Error("Component must have warehouseId before pickup");
+        }
 
-      if (!componentBeforeUpdate || !componentBeforeUpdate.warehouseId) {
-        throw new Error("Component must have warehouseId before pickup");
-      }
-
-      const updatedComponent =
         await this.#componentRepository.updateStatusWithTechnician(
           componentId,
           { status: "WITH_TECHNICIAN" },
           transaction
         );
 
-      await this.#processUpdateStockItem(componentBeforeUpdate, transaction);
+        await this.#processUpdateStockItem(componentBeforeUpdate, transaction);
 
-      await this.#caselineRepository.bulkUpdateStatusByIds(
-        {
-          caseLineIds: [updatedReservation.caseLineId],
-          status: "IN_REPAIR",
-        },
-        transaction
-      );
+        if (updatedReservation.caseLineId) {
+          caseLineIdsForUpdate.add(updatedReservation.caseLineId);
+        }
 
-      return updatedReservation;
+        updatedReservations.push(updatedReservation);
+      }
+
+      if (caseLineIdsForUpdate.size > 0) {
+        await this.#caselineRepository.bulkUpdateStatusByIds(
+          {
+            caseLineIds: Array.from(caseLineIdsForUpdate),
+            status: "IN_REPAIR",
+          },
+          transaction
+        );
+      }
+
+      return updatedReservations;
     });
+
     return rawResult;
   };
 
@@ -309,6 +328,43 @@ class ComponentReservationService {
     });
 
     return rawResult;
+  };
+
+  getComponentReservations = async ({
+    page = 1,
+    limit = 10,
+    status,
+    warehouseId,
+    typeComponentId,
+    caseLineId,
+    guaranteeCaseId,
+    vehicleProcessingRecordId,
+    repairTechId,
+    repairTechPhone,
+    serviceCenterId,
+    sortBy,
+    sortOrder,
+  }) => {
+    const result = await this.#componentReservationRepository.findAll(
+      {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        status,
+        warehouseId,
+        typeComponentId,
+        caseLineId,
+        guaranteeCaseId,
+        vehicleProcessingRecordId,
+        repairTechId,
+        repairTechPhone,
+        serviceCenterId,
+        sortBy,
+        sortOrder,
+      },
+      null
+    );
+
+    return result;
   };
 
   #validateReturnReservationById = async (reservationId, transaction) => {

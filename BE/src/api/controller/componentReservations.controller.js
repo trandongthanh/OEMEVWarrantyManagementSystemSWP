@@ -4,23 +4,63 @@ class ComponentReservationsController {
     this.#componentReservationsService = componentReservationsService;
   }
 
-  pickupReservedComponent = async (req, res, next) => {
-    const { reservationId } = req.params;
+  getComponentReservations = async (req, res, next) => {
+    const {
+      page,
+      limit,
+      status,
+      warehouseId,
+      typeComponentId,
+      caseLineId,
+      guaranteeCaseId,
+      vehicleProcessingRecordId,
+      repairTechId,
+      repairTechPhone,
+      sortBy,
+      sortOrder,
+    } = req.query;
+
     const { serviceCenterId } = req.user;
 
-    const { pickedUpByTechId } = req.body;
-
-    const updatedReservation =
-      await this.#componentReservationsService.pickupReservedComponent({
-        reservationId,
+    const result =
+      await this.#componentReservationsService.getComponentReservations({
+        page,
+        limit,
+        status,
+        warehouseId,
+        typeComponentId,
+        caseLineId,
+        guaranteeCaseId,
+        vehicleProcessingRecordId,
+        repairTechId,
+        repairTechPhone,
+        sortBy,
+        sortOrder,
         serviceCenterId,
-        pickedUpByTechId: pickedUpByTechId,
+      });
+
+    res.status(200).json({
+      status: "success",
+      data: result,
+    });
+  };
+
+  pickupReservedComponents = async (req, res, next) => {
+    const { serviceCenterId } = req.user;
+
+    const { reservationIds, pickedUpByTechId } = req.body;
+
+    const updatedReservations =
+      await this.#componentReservationsService.pickupReservedComponents({
+        reservationIds,
+        serviceCenterId,
+        pickedUpByTechId,
       });
 
     res.status(200).json({
       status: "success",
       data: {
-        reservation: updatedReservation,
+        reservations: updatedReservations,
       },
     });
   };
