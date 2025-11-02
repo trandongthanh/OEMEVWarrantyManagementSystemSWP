@@ -445,7 +445,7 @@ class VehicleProcessingRecordService {
               caseLine.id
             } is in status ${
               caseLine.status
-            }. All case lines must be in a final state (${finalStatuses.join(
+            }. All case lines must be in status (${finalStatuses.join(
               ", "
             )}) before completing the record.`
           );

@@ -967,8 +967,16 @@ class CaseLineService {
 
       const allGuaranteeCases = record?.guaranteeCases || [];
 
+      const finalStatuses = [
+        "COMPLETED",
+        "CANCELLED",
+        "REJECTED_BY_OUT_OF_WARRANTY",
+        "REJECTED_BY_TECH",
+        "REJECTED_BY_CUSTOMER",
+      ];
+
       const allCaseLinesCompleted = allGuaranteeCases.every((gc) =>
-        gc.caseLines?.every((cl) => cl.status === "COMPLETED")
+        gc.caseLines?.every((cl) => finalStatuses.includes(cl.status))
       );
 
       if (allCaseLinesCompleted) {
