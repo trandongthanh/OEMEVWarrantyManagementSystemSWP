@@ -1183,14 +1183,21 @@ class CaseLineService {
       const newCaseline = { ...caseline };
 
       const warrantyStatusByTech = newCaseline.warrantyStatus;
+      const hasTypeComponentId = Boolean(newCaseline.typeComponentId);
 
-      const systemWarrantyStatus = typeComponentsMap.get(
-        newCaseline.typeComponentId
-      );
+      const systemWarrantyStatus = hasTypeComponentId
+        ? typeComponentsMap.get(newCaseline.typeComponentId)
+        : undefined;
 
       let initialStatus;
 
-      if (systemWarrantyStatus && warrantyStatusByTech === "ELIGIBLE") {
+      if (!hasTypeComponentId) {
+        if (warrantyStatusByTech === "INELIGIBLE") {
+          initialStatus = "REJECTED_BY_TECH";
+        } else {
+          initialStatus = "DRAFT";
+        }
+      } else if (systemWarrantyStatus && warrantyStatusByTech === "ELIGIBLE") {
         initialStatus = "DRAFT";
       } else if (
         systemWarrantyStatus &&
