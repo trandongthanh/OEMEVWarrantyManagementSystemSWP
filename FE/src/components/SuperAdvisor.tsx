@@ -132,7 +132,7 @@ const SuperAdvisor = () => {
   
   // UI State
   const [searchVin, setSearchVin] = useState('');
-  const [searchMode, setSearchMode] = useState<'warranty' | 'customer' | 'phone'>('phone');
+  const [searchMode, setSearchMode] = useState<'warranty' | 'vehicle' | 'phone'>('phone');
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
   
@@ -519,7 +519,10 @@ const SuperAdvisor = () => {
       return;
     }
 
+
+    //de tranh truong hop nguoi dung bam lien tuc
     setIsSearchingCustomer(true);
+    //reset trang thai cua obj customer
     setFoundCustomer(null);
 
     try {
@@ -635,7 +638,7 @@ const SuperAdvisor = () => {
   const handleVinSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (searchMode === 'customer') {
+      if (searchMode === 'vehicle') {
         handleSearchVehicleByVin();
       }
     }
@@ -860,7 +863,7 @@ const SuperAdvisor = () => {
     }
 
     // Switch to customer mode (Find Vehicle by VIN) and auto search
-    setSearchMode('customer');
+    setSearchMode('vehicle');
     setSearchVin(vinToSearch);
     
     toast({
@@ -2420,10 +2423,10 @@ const SuperAdvisor = () => {
                 Find Customer by Phone
               </Button>
               <Button
-                variant={searchMode === 'customer' ? 'default' : 'outline'}
+                variant={searchMode === 'vehicle' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setSearchMode('customer')}
-                className={searchMode === 'customer' ? 'bg-green-600 hover:bg-green-700' : ''}
+                onClick={() => setSearchMode('vehicle')}
+                className={searchMode === 'vehicle' ? 'bg-green-600 hover:bg-green-700' : ''}
               >
                 <Car className="h-4 w-4 mr-2" />
                 Find Vehicle by VIN
@@ -2443,14 +2446,14 @@ const SuperAdvisor = () => {
             {searchMode !== 'warranty' && (
               <div className="flex gap-3">
                 <div className="flex-1 relative">
-                  {searchMode === 'customer' ? (
+                  {searchMode === 'vehicle' ? (
                     <Car className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
                   ) : (
                     <User className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
                   )}
                   <Input
                     placeholder={
-                      searchMode === 'customer'
+                      searchMode === 'vehicle'
                         ? "Enter VIN to find vehicle and customer records"
                         : "Enter 10-digit phone number"
                     }
@@ -2477,17 +2480,17 @@ const SuperAdvisor = () => {
                 <Button 
                   size="sm" 
                   className={
-                    searchMode === 'customer'
+                    searchMode === 'vehicle'
                       ? "bg-green-600 hover:bg-green-700"
                       : "bg-purple-600 hover:bg-purple-700"
                   }
                   onClick={
-                    searchMode === 'customer'
+                    searchMode === 'vehicle'
                       ? () => handleSearchVehicleByVin()
                       : () => handleSearchCustomerByPhone()
                   }
                 >
-                  {searchMode === 'customer' ? 'Find Vehicle' : 'Search Customer'}
+                  {searchMode === 'vehicle' ? 'Find Vehicle' : 'Search Customer'}
                 </Button>
               </div>
             )}
@@ -2567,7 +2570,7 @@ const SuperAdvisor = () => {
         )}
 
         {/* Customer Search Results Section - Only show in customer mode */}
-        {searchMode === 'customer' && (
+        {searchMode === 'vehicle' && (
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="text-xl">Vehicle Search Results</CardTitle>
