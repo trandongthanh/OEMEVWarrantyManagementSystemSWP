@@ -3831,11 +3831,64 @@ const TechnicianDashboard = ({
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                   <div className="space-y-2">
-                    <Label htmlFor="componentSearch">Component Search (Optional)</Label>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="componentSearch">Component Search (Optional)</Label>
+                      {caseLineForm.componentId && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => {
+                            setCaseLineForm(prev => ({ ...prev, componentId: null }));
+                            setComponentSearchQuery('');
+                            setCompatibleComponents([]);
+                          }}
+                        >
+                          <X className="h-3 w-3 mr-1" />
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                    
+                    {/* Selected Component Display */}
+                    {caseLineForm.componentId && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-2">
+                        <div className="flex items-start gap-2">
+                          <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-green-900">Component Selected</p>
+                            <p className="text-xs text-green-700 mt-1 break-all">{componentSearchQuery || 'Selected'}</p>
+                            <p className="text-xs text-green-600 mt-1 font-mono">ID: {caseLineForm.componentId.slice(0, 16)}...</p>
+                            <Badge 
+                              variant={caseLineForm.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}
+                              className="mt-2 text-xs"
+                            >
+                              {caseLineForm.warrantyStatus === 'ELIGIBLE' ? '✓ Under Warranty' : '✗ Not Covered'}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* No Component Selected State */}
+                    {!caseLineForm.componentId && (
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-2">
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <p className="text-sm font-medium text-gray-600">No Component Selected</p>
+                            <p className="text-xs text-gray-500 mt-1">Search below to select a component (optional)</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="relative">
                       <Input 
                         id="componentSearch"
                         value={componentSearchQuery}
+                        disabled={!!caseLineForm.componentId}
                         onChange={(e) => {
                           const q = e.target.value;
                           setComponentSearchQuery(q);
@@ -3869,7 +3922,8 @@ const TechnicianDashboard = ({
                             setCompatibleComponents([]);
                           }
                         }}
-                        placeholder="Search components..."
+                        placeholder={caseLineForm.componentId ? "Component selected" : "Type to search components..."}
+                        className={caseLineForm.componentId ? "bg-gray-100 cursor-not-allowed" : ""}
                       />
                       {isLoadingComponents && (
                         <div className="absolute right-2 top-2">
@@ -3877,12 +3931,12 @@ const TechnicianDashboard = ({
                         </div>
                       )}
                       {/* Dropdown results */}
-                      {componentSearchQuery.length >= 2 && Array.isArray(compatibleComponents) && compatibleComponents.length > 0 && (
+                      {!caseLineForm.componentId && componentSearchQuery.length >= 2 && Array.isArray(compatibleComponents) && compatibleComponents.length > 0 && (
                         <div className="absolute z-50 bg-white border rounded mt-1 w-full max-h-60 overflow-auto shadow-lg">
                           {compatibleComponents.map((component) => (
                             <div
                               key={component.typeComponentId}
-                              className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center justify-between"
+                              className="px-3 py-2 hover:bg-green-50 cursor-pointer flex items-center justify-between border-b last:border-b-0 transition-colors"
                               onClick={() => {
                                 // Auto-set warranty status based on isUnderWarranty
                                 const warrantyStatus = component.isUnderWarranty ? 'ELIGIBLE' : 'INELIGIBLE';
@@ -3892,6 +3946,7 @@ const TechnicianDashboard = ({
                                   warrantyStatus: warrantyStatus
                                 }));
                                 setComponentSearchQuery(component.name);
+                                setCompatibleComponents([]);
                                 console.log('🎯 Component selected:', component.name, '| Warranty:', warrantyStatus);
                               }}
                             >
@@ -3910,15 +3965,12 @@ const TechnicianDashboard = ({
                           ))}
                         </div>
                       )}
-                      {componentSearchQuery.length >= 2 && !isLoadingComponents && compatibleComponents.length === 0 && (
+                      {componentSearchQuery.length >= 2 && !isLoadingComponents && compatibleComponents.length === 0 && !caseLineForm.componentId && (
                         <div className="absolute z-50 bg-white border rounded mt-1 w-full p-3 shadow-lg">
                           <p className="text-sm text-gray-500">No compatible components found</p>
                         </div>
                       )}
                     </div>
-                    {caseLineForm.componentId && (
-                      <p className="text-xs text-green-600">✓ Selected: {caseLineForm.componentId.slice(0, 8)}...</p>
-                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="quantity">Quantity</Label>
