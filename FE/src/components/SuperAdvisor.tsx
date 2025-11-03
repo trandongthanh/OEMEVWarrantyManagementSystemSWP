@@ -172,6 +172,11 @@ const SuperAdvisor = () => {
   const [caselines, setCaselines] = useState<any[]>([]);
   const [isLoadingCaselines, setIsLoadingCaselines] = useState(false);
 
+  // Caseline detail dialog states
+  const [showCaselineDetailDialog, setShowCaselineDetailDialog] = useState(false);
+  const [caselineDetailData, setCaselineDetailData] = useState<any>(null);
+  const [isLoadingCaselineDetail, setIsLoadingCaselineDetail] = useState(false);
+
   // View Record dialog states
   const [showViewRecordDialog, setShowViewRecordDialog] = useState(false);
   const [viewRecordData, setViewRecordData] = useState<any>(null);
@@ -2014,6 +2019,46 @@ const SuperAdvisor = () => {
     }
 
     return true;
+  };
+
+  // Handle view caseline detail
+  const handleViewCaselineDetail = async (caselineId: string) => {
+    setIsLoadingCaselineDetail(true);
+    setShowCaselineDetailDialog(true);
+    setCaselineDetailData(null);
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+
+      const response = await fetch(`${API_BASE_URL}/case-lines/${caselineId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.status === 'success' && result.data?.caseLine) {
+        setCaselineDetailData(result.data.caseLine);
+      } else {
+        throw new Error(result.message || 'Failed to fetch caseline details');
+      }
+    } catch (error) {
+      console.error('Error fetching caseline detail:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to load caseline details',
+        variant: 'destructive'
+      });
+      setShowCaselineDetailDialog(false);
+    } finally {
+      setIsLoadingCaselineDetail(false);
+    }
   };
 
   // Handle complete record
@@ -4041,6 +4086,18 @@ const SuperAdvisor = () => {
                         )}
                       </div>
 
+                      {/* View Detail Button */}
+                      <div className="mt-3">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleViewCaselineDetail(caseline.id)}
+                        >
+                          <FileText className="h-4 w-4 mr-2" />
+                          View Detail
+                        </Button>
+                      </div>
+
                       {/* Approve/Reject Buttons for PENDING_APPROVAL status */}
                       {caseline.status === 'PENDING_APPROVAL' && (
                         <div className="mt-4 pt-4 border-t border-gray-200">
@@ -4441,6 +4498,269 @@ const SuperAdvisor = () => {
                 </Button>
               </>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Caseline Detail Dialog */}
+      <Dialog open={showCaselineDetailDialog} onOpenChange={setShowCaselineDetailDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <FileText className="h-5 w-5" />
+              <span>Caseline Details</span>
+            </DialogTitle>
+            <DialogDescription>
+              Complete information for this caseline
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            {isLoadingCaselineDetail ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <span className="ml-3 text-muted-foreground">Loading caseline details...</span>
+              </div>
+            ) : caselineDetailData ? (
+              <div className="space-y-6">
+                {/* Basic Information */}
+                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Caseline ID</p>
+                    <p className="text-base font-semibold break-all">{caselineDetailData.id}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Status</p>
+                    <Badge className={
+                      caselineDetailData.status === 'COMPLETED' ? 'bg-green-100 text-green-800 hover:bg-green-100' :
+                      caselineDetailData.status === 'PENDING_APPROVAL' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100' :
+                      caselineDetailData.status === 'REJECTED_BY_TECH' || caselineDetailData.status === 'REJECTED_BY_CUSTOMER' || caselineDetailData.status === 'REJECTED_BY_OUT_OF_WARRANTY' ? 'bg-red-100 text-red-800 hover:bg-red-100' :
+                      caselineDetailData.status === 'CANCELLED' ? 'bg-gray-100 text-gray-800 hover:bg-gray-100' :
+                      'bg-blue-100 text-blue-800 hover:bg-blue-100'
+                    }>
+                      {caselineDetailData.status}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Warranty Status</p>
+                    <Badge className={
+                      caselineDetailData.warrantyStatus === 'ELIGIBLE'
+                        ? 'bg-green-100 text-green-800 hover:bg-green-100'
+                        : 'bg-red-100 text-red-800 hover:bg-red-100'
+                    }>
+                      {caselineDetailData.warrantyStatus}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Quantity</p>
+                    <p className="text-base">{caselineDetailData.quantity}</p>
+                  </div>
+                  {caselineDetailData.typeComponent && (
+                    <div className="col-span-2">
+                      <p className="text-sm font-medium text-gray-500">Component Type</p>
+                      <p className="text-base">{caselineDetailData.typeComponent.name || caselineDetailData.typeComponent}</p>
+                    </div>
+                  )}
+                  <div className="col-span-2">
+                    <p className="text-sm font-medium text-gray-500">Last Updated</p>
+                    <p className="text-base">{new Date(caselineDetailData.updatedAt).toLocaleString('vi-VN')}</p>
+                  </div>
+                </div>
+
+                {/* Guarantee Case Information */}
+                {caselineDetailData.guaranteeCase && (
+                  <div className="p-4 bg-blue-50 rounded-lg space-y-3">
+                    <h3 className="font-semibold text-base text-blue-900">Guarantee Case Information</h3>
+                    
+                    {/* Warranty Content */}
+                    {caselineDetailData.guaranteeCase.contentGuarantee && (
+                      <div className="col-span-2">
+                        <Label className="text-sm font-semibold text-blue-700">Warranty Content</Label>
+                        <p className="mt-1 p-3 bg-white rounded-md text-sm">
+                          {caselineDetailData.guaranteeCase.contentGuarantee}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-xs font-medium text-blue-700">Case ID</p>
+                        <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.guaranteeCaseId}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-blue-700">Status</p>
+                        <Badge className="bg-blue-200 text-blue-900">
+                          {caselineDetailData.guaranteeCase.status}
+                        </Badge>
+                      </div>
+                      
+                      {/* Vehicle Processing Record Info */}
+                      {caselineDetailData.guaranteeCase.vehicleProcessingRecord && (
+                        <>
+                          <div>
+                            <p className="text-xs font-medium text-blue-700">VIN</p>
+                            <p className="font-mono text-sm font-semibold">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.vin}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-blue-700">Record ID</p>
+                            <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.vehicleProcessingRecordId}</p>
+                          </div>
+                          
+                          {/* Created By Staff Info */}
+                          {caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff && (
+                            <>
+                              <div>
+                                <p className="text-xs font-medium text-blue-700">Staff ID</p>
+                                <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff.userId}</p>
+                              </div>
+                              {caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff.serviceCenter && (
+                                <>
+                                  <div>
+                                    <p className="text-xs font-medium text-blue-700">Service Center ID</p>
+                                    <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff.serviceCenter.serviceCenterId}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-medium text-blue-700">Vehicle Company ID</p>
+                                    <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff.serviceCenter.vehicleCompanyId}</p>
+                                  </div>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Diagnosis & Correction */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-semibold">Diagnosis</Label>
+                    <p className="mt-1 p-3 bg-blue-50 rounded-md text-sm whitespace-pre-wrap">
+                      {caselineDetailData.diagnosisText || 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-semibold">Correction</Label>
+                    <p className="mt-1 p-3 bg-green-50 rounded-md text-sm whitespace-pre-wrap">
+                      {caselineDetailData.correctionText || 'N/A'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Rejection Reason */}
+                {caselineDetailData.rejectionReason && (
+                  <div>
+                    <Label className="text-sm font-semibold text-red-700">Rejection Reason</Label>
+                    <p className="mt-1 p-3 bg-red-50 rounded-md text-sm text-red-900 whitespace-pre-wrap">
+                      {caselineDetailData.rejectionReason}
+                    </p>
+                  </div>
+                )}
+
+                {/* Technician Information */}
+                {(caselineDetailData.diagnosticTechnician || caselineDetailData.repairTechnician) && (
+                  <div className="p-4 bg-gray-50 rounded-lg space-y-3">
+                    <h3 className="font-semibold text-sm">Technician Information</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      {caselineDetailData.diagnosticTechnician && (
+                        <div>
+                          <p className="text-xs font-medium text-gray-500">Diagnostic Technician</p>
+                          <p className="text-sm font-semibold">{caselineDetailData.diagnosticTechnician.name}</p>
+                          <p className="text-xs text-gray-600 font-mono break-all">ID: {caselineDetailData.diagnosticTechnician.userId}</p>
+                        </div>
+                      )}
+                      {caselineDetailData.repairTechnician && (
+                        <div>
+                          <p className="text-xs font-medium text-gray-500">Repair Technician</p>
+                          <p className="text-sm font-semibold">{caselineDetailData.repairTechnician.name}</p>
+                          <p className="text-xs text-gray-600 font-mono break-all">ID: {caselineDetailData.repairTechnician.userId}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Evidence Images */}
+                {caselineDetailData.evidenceImageUrls && caselineDetailData.evidenceImageUrls.length > 0 ? (
+                  <div>
+                    <Label className="text-sm font-semibold mb-3 block">Evidence Images ({caselineDetailData.evidenceImageUrls.length})</Label>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {caselineDetailData.evidenceImageUrls.map((url: string, index: number) => {
+                        // Optimize Cloudinary URL
+                        const optimizedUrl = url.includes('cloudinary.com')
+                          ? url.replace('/upload/', '/upload/w_300,h_200,c_fill,q_auto,f_auto/')
+                          : url;
+                        
+                        return (
+                          <div key={index} className="relative group">
+                            <img
+                              src={optimizedUrl}
+                              alt={`Evidence ${index + 1}`}
+                              className="w-full h-48 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => window.open(url, '_blank')}
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-40 rounded-lg">
+                              <span className="text-white text-sm font-medium">Click to view full size</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-gray-50 rounded-lg text-center text-sm text-gray-500">
+                    No evidence images available
+                  </div>
+                )}
+
+                {/* Reservations Information */}
+                {caselineDetailData.reservations && caselineDetailData.reservations.length > 0 && (
+                  <div className="p-4 bg-purple-50 rounded-lg space-y-3">
+                    <h3 className="font-semibold text-sm text-purple-900">Component Reservations ({caselineDetailData.reservations.length})</h3>
+                    <div className="space-y-3">
+                      {caselineDetailData.reservations.map((reservation: any, index: number) => (
+                        <div key={index} className="p-3 bg-white rounded-md border border-purple-200">
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div>
+                              <p className="text-xs font-medium text-purple-700">Reservation ID</p>
+                              <p className="font-mono text-xs break-all">{reservation.id}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-purple-700">Status</p>
+                              <Badge className="bg-purple-200 text-purple-900">{reservation.status}</Badge>
+                            </div>
+                            {reservation.quantity && (
+                              <div>
+                                <p className="text-xs font-medium text-purple-700">Quantity</p>
+                                <p className="text-sm">{reservation.quantity}</p>
+                              </div>
+                            )}
+                            {reservation.createdAt && (
+                              <div>
+                                <p className="text-xs font-medium text-purple-700">Created At</p>
+                                <p className="text-xs">{new Date(reservation.createdAt).toLocaleString('vi-VN')}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                No data available
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCaselineDetailDialog(false)}>
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
