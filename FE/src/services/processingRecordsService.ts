@@ -2,12 +2,36 @@ import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:3000/api/v1';
 
+export interface CaseLine {
+  id: string;
+  typeComponentId: string | null;
+  diagnosisText: string;
+  correctionText: string;
+  warrantyStatus: 'ELIGIBLE' | 'INELIGIBLE' | string;
+  status: 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED_BY_OUT_OF_WARRANTY' | 'REJECTED_BY_DAMAGE_ANALYSIS' | string;
+  rejectionReason: string | null;
+  repairTechId: string | null;
+  diagnosticTechId: string | null;
+  quantity: number;
+  typeComponent: {
+    typeComponentId: string;
+    name: string;
+    category: string;
+  } | null;
+}
+
 export interface ProcessingRecord {
-  recordId?: string; // UUID of the processing record (if available from API)
+  vehicleProcessingRecordId?: string; // Backend uses this field name
+  recordId?: string; // Alias for compatibility
   vin: string;
   checkInDate: string;
   odometer: number;
   status: 'CHECKED_IN' | 'IN_DIAGNOSIS' | 'WAITING_FOR_PARTS' | 'IN_REPAIR' | 'COMPLETED' | 'PAID' | 'CANCELLED';
+  visitorInfo?: {
+    email: string;
+    phone: string;
+    fullName: string;
+  };
   mainTechnician: {
     userId: string;
     name: string;
@@ -23,10 +47,13 @@ export interface ProcessingRecord {
     guaranteeCaseId: string;
     status: string;
     contentGuarantee: string;
+    leadTechId?: string;
+    caseLines?: CaseLine[];
   }>;
   createdByStaff: {
     userId: string;
     name: string;
+    serviceCenterId?: string;
   };
 }
 
@@ -83,37 +110,44 @@ export const processingRecordsService = {
       console.log('🔍 Fetching processing records:', url);
       
       const response = await apiClient.get(url);
+      console.log('📦 Raw API response:', response.data);
       
+      let rawRecords: any[] = [];
+      let total = 0;
+
       // Handle different possible response structures
       if (response.data?.data?.records?.records) {
-        return {
-          records: response.data.data.records.records,
-          total: response.data.data.records.recordsCount || 0
-        };
+        rawRecords = response.data.data.records.records;
+        total = response.data.data.records.total || response.data.data.records.recordsCount || 0;
       } else if (response.data?.data?.records) {
-        return {
-          records: response.data.data.records,
-          total: response.data.data.recordsCount || response.data.data.records.length
-        };
+        rawRecords = response.data.data.records;
+        total = response.data.data.recordsCount || response.data.data.total || rawRecords.length;
       } else if (response.data?.records) {
-        return {
-          records: response.data.records,
-          total: response.data.recordsCount || response.data.records.length
-        };
+        rawRecords = response.data.records;
+        total = response.data.recordsCount || response.data.total || rawRecords.length;
       } else if (Array.isArray(response.data?.data)) {
-        return {
-          records: response.data.data,
-          total: response.data.data.length
-        };
+        rawRecords = response.data.data;
+        total = rawRecords.length;
       } else if (Array.isArray(response.data)) {
-        return {
-          records: response.data,
-          total: response.data.length
-        };
+        rawRecords = response.data;
+        total = rawRecords.length;
       } else {
         console.warn('⚠️ Unexpected response structure, returning empty array');
         return { records: [], total: 0 };
       }
+
+      // Normalize records: map vehicleProcessingRecordId to recordId
+      const normalizedRecords = rawRecords.map((record: any) => ({
+        ...record,
+        recordId: record.vehicleProcessingRecordId || record.recordId || record.id,
+        vehicleProcessingRecordId: record.vehicleProcessingRecordId || record.recordId || record.id
+      }));
+
+      console.log('✅ Normalized records:', normalizedRecords.length, 'Total:', total);
+      return {
+        records: normalizedRecords,
+        total
+      };
     } catch (error) {
       // Expected network/backend errors are noisy in dev - downgrade to warn and return empty list
       console.warn('Warning: failed to fetch all processing records:', error?.message || error);
@@ -133,37 +167,44 @@ export const processingRecordsService = {
       console.log('🔍 Fetching processing records by status:', url);
       
       const response = await apiClient.get(url);
+      console.log('📦 Raw API response (by status):', response.data);
       
+      let rawRecords: any[] = [];
+      let total = 0;
+
       // Handle different possible response structures
       if (response.data?.data?.records?.records) {
-        return {
-          records: response.data.data.records.records,
-          total: response.data.data.records.recordsCount || 0
-        };
+        rawRecords = response.data.data.records.records;
+        total = response.data.data.records.total || response.data.data.records.recordsCount || 0;
       } else if (response.data?.data?.records) {
-        return {
-          records: response.data.data.records,
-          total: response.data.data.recordsCount || response.data.data.records.length
-        };
+        rawRecords = response.data.data.records;
+        total = response.data.data.recordsCount || response.data.data.total || rawRecords.length;
       } else if (response.data?.records) {
-        return {
-          records: response.data.records,
-          total: response.data.recordsCount || response.data.records.length
-        };
+        rawRecords = response.data.records;
+        total = response.data.recordsCount || response.data.total || rawRecords.length;
       } else if (Array.isArray(response.data?.data)) {
-        return {
-          records: response.data.data,
-          total: response.data.data.length
-        };
+        rawRecords = response.data.data;
+        total = rawRecords.length;
       } else if (Array.isArray(response.data)) {
-        return {
-          records: response.data,
-          total: response.data.length
-        };
+        rawRecords = response.data;
+        total = rawRecords.length;
       } else {
         console.warn('⚠️ Unexpected response structure, returning empty array');
         return { records: [], total: 0 };
       }
+
+      // Normalize records: map vehicleProcessingRecordId to recordId
+      const normalizedRecords = rawRecords.map((record: any) => ({
+        ...record,
+        recordId: record.vehicleProcessingRecordId || record.recordId || record.id,
+        vehicleProcessingRecordId: record.vehicleProcessingRecordId || record.recordId || record.id
+      }));
+
+      console.log('✅ Normalized records (by status):', normalizedRecords.length, 'Total:', total);
+      return {
+        records: normalizedRecords,
+        total
+      };
     } catch (error) {
       // Downgrade noisy errors to warn and return empty list so UI can handle gracefully
       console.warn(`Warning: Error fetching processing records${params?.status ? ` with status ${params.status}` : ''}:`, error?.message || error);
