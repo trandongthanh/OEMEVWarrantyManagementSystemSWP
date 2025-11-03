@@ -210,14 +210,6 @@ const SuperAdvisor = () => {
   const [otpVerified, setOtpVerified] = useState(false);
   const [otpCountdown, setOtpCountdown] = useState(0);
 
-  // Caseline OTP states
-  const [caselineApproverEmail, setCaselineApproverEmail] = useState('');
-  const [caselineOtpCode, setCaselineOtpCode] = useState('');
-  const [isSendingCaselineOtp, setIsSendingCaselineOtp] = useState(false);
-  const [caselineOtpSent, setCaselineOtpSent] = useState(false);
-  const [caselineOtpVerified, setCaselineOtpVerified] = useState(false);
-  const [caselineOtpCountdown, setCaselineOtpCountdown] = useState(0);
-
   // Warranty check states
   const [odometer, setOdometer] = useState('');
   const [isCheckingWarranty, setIsCheckingWarranty] = useState(false);
@@ -369,24 +361,6 @@ const SuperAdvisor = () => {
       });
     }
   }, [otpCountdown, otpSent, toast]);
-
-  // Caseline OTP countdown timer
-  useEffect(() => {
-    if (caselineOtpCountdown > 0) {
-      const timer = setTimeout(() => {
-        setCaselineOtpCountdown(prev => prev - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else if (caselineOtpCountdown === 0 && caselineOtpSent) {
-      setCaselineOtpSent(false);
-      setCaselineOtpCode('');
-      toast({
-        title: 'OTP Expired',
-        description: 'Please request a new OTP code',
-        variant: 'default'
-      });
-    }
-  }, [caselineOtpCountdown, caselineOtpSent, toast]);
 
   const handleSearchVehicleByVin = async (vinToSearch?: string) => {
     try {
@@ -1012,118 +986,6 @@ const SuperAdvisor = () => {
       }
     } catch (error) {
       console.error('Error verifying OTP:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to verify OTP. Please try again.',
-        variant: 'destructive'
-      });
-    }
-  };
-
-  // Handle send OTP for caseline approval
-  const handleSendCaselineOtp = async () => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!caselineApproverEmail || !emailRegex.test(caselineApproverEmail)) {
-      toast({
-        title: 'Error',
-        description: 'Please enter a valid approver email address',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    if (!selectedRecordForCaseline?.vinNumber) {
-      toast({
-        title: 'Error',
-        description: 'VIN not found for this record',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    setIsSendingCaselineOtp(true);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/mail/otp/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
-        },
-        body: JSON.stringify({
-          email: caselineApproverEmail,
-          vin: selectedRecordForCaseline.vinNumber
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Server error response:', errorText);
-        throw new Error(`Server error: ${response.status}`);
-      }
-
-      const result = await response.json();
-
-
-      if (result.status === 'success') {
-        setCaselineOtpSent(true);
-        setCaselineOtpCountdown(300); // 5 minutes
-        toast({
-          title: 'OTP Sent',
-          description: `OTP code has been sent to ${caselineApproverEmail}. Please check your email inbox.`,
-        });
-      } else {
-        throw new Error(result.message || 'Failed to send OTP');
-      }
-    } catch (error) {
-      console.error('Error sending caseline OTP:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to send OTP. Please try again.',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsSendingCaselineOtp(false);
-    }
-  };
-
-  // Handle verify OTP for caseline approval
-  const handleVerifyCaselineOtp = async () => {
-    if (!caselineOtpCode || caselineOtpCode.length !== 6) {
-      toast({
-        title: 'Error',
-        description: 'Please enter a valid 6-digit OTP code',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/mail/otp/verify`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
-        },
-        body: JSON.stringify({
-          email: caselineApproverEmail,
-          otp: caselineOtpCode
-        })
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.status === 'success' && result.isValid) {
-        setCaselineOtpVerified(true);
-        toast({
-          title: 'Success',
-          description: 'OTP verified successfully. You can now approve or reject caselines.',
-        });
-      } else {
-        throw new Error(result.message || 'Invalid or expired OTP code');
-      }
-    } catch (error) {
-      console.error('Error verifying caseline OTP:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to verify OTP. Please try again.',
@@ -1979,11 +1841,6 @@ const SuperAdvisor = () => {
     
     // Reset all states when opening dialog (fresh start)
     setSelectedCaselineIds({ approved: [], rejected: [] });
-    setCaselineApproverEmail('');
-    setCaselineOtpCode('');
-    setCaselineOtpSent(false);
-    setCaselineOtpVerified(false);
-    setCaselineOtpCountdown(0);
 
     try {
       const token = localStorage.getItem('ev_warranty_token');
@@ -2026,22 +1883,6 @@ const SuperAdvisor = () => {
               });
             }
           });
-        }
-
-        // Auto-fill approver email from visitorInfo
-        const ownerEmail = recordData.visitorInfo?.email || 
-                          recordData.vehicle?.owner?.email || 
-                          recordData.owner?.email || 
-                          recordData.customer?.email ||
-                          recordData.vehicle?.customer?.email ||
-                          record.customerEmail ||
-                          '';
-        
-        
-        if (ownerEmail) {
-          setCaselineApproverEmail(ownerEmail);
-        } else {
-          console.warn('⚠️ No email found in API response!');
         }
 
         setCaselines(allCaselines);
@@ -2307,16 +2148,6 @@ const SuperAdvisor = () => {
       return;
     }
 
-    // Check OTP verification
-    if (!caselineOtpVerified) {
-      toast({
-        title: 'OTP Required',
-        description: 'Please verify OTP before approving or rejecting caselines',
-        variant: 'destructive'
-      });
-      return;
-    }
-
     setIsProcessingCaselines(true);
 
     try {
@@ -2333,8 +2164,7 @@ const SuperAdvisor = () => {
         },
         body: JSON.stringify({
           approvedCaseLineIds: selectedCaselineIds.approved.map(id => ({ id })),
-          rejectedCaseLineIds: selectedCaselineIds.rejected.map(id => ({ id })),
-          approverEmail: caselineApproverEmail
+          rejectedCaseLineIds: selectedCaselineIds.rejected.map(id => ({ id }))
         })
       });
 
@@ -2349,13 +2179,8 @@ const SuperAdvisor = () => {
         description: `Processed ${selectedCaselineIds.approved.length} approved and ${selectedCaselineIds.rejected.length} rejected caselines`,
       });
 
-      // Reset selections and OTP states
+      // Reset selections
       setSelectedCaselineIds({ approved: [], rejected: [] });
-      setCaselineApproverEmail('');
-      setCaselineOtpCode('');
-      setCaselineOtpSent(false);
-      setCaselineOtpVerified(false);
-      setCaselineOtpCountdown(0);
 
       // Reload caselines
       if (selectedRecordForCaseline) {
@@ -4246,81 +4071,6 @@ const SuperAdvisor = () => {
               </div>
               </>
             )}
-
-            {/* OTP Verification Section - Show when caselines are selected */}
-            {(selectedCaselineIds.approved.length > 0 || selectedCaselineIds.rejected.length > 0) && (
-              <div className="mt-6 p-4 border-t border-gray-200 bg-blue-50 rounded-lg space-y-4">
-                <div className="flex items-center space-x-2 mb-2">
-                  <Shield className="h-5 w-5 text-blue-600" />
-                  <h3 className="font-semibold text-blue-900">OTP Verification Required</h3>
-                </div>
-                <p className="text-sm text-blue-700 mb-3">
-                  Please verify your identity with OTP before approving or rejecting caselines.
-                </p>
-
-                {/* Email Input */}
-                <div>
-                  <Label htmlFor="caselineApproverEmail">Approver Email *</Label>
-                  <Input
-                    id="caselineApproverEmail"
-                    type="email"
-                    placeholder="Enter approver email address"
-                    value={caselineApproverEmail}
-                    onChange={(e) => setCaselineApproverEmail(e.target.value)}
-                    disabled={caselineOtpVerified}
-                    className="mt-1"
-                  />
-                </div>
-
-                {/* Send OTP Button */}
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleSendCaselineOtp}
-                    disabled={!caselineApproverEmail || isSendingCaselineOtp || caselineOtpVerified || (caselineOtpSent && caselineOtpCountdown > 0)}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700"
-                  >
-                    {isSendingCaselineOtp ? 'Sending...' : caselineOtpSent && caselineOtpCountdown > 0 ? `Resend (${Math.floor(caselineOtpCountdown / 60)}:${(caselineOtpCountdown % 60).toString().padStart(2, '0')})` : caselineOtpVerified ? 'Verified ✓' : 'Send OTP'}
-                  </Button>
-                </div>
-
-                {/* OTP Input and Verify Button */}
-                {caselineOtpSent && !caselineOtpVerified && (
-                  <div className="space-y-2">
-                    <Label htmlFor="caselineOtpCode">OTP Code *</Label>
-                    <div className="text-xs text-blue-600 mb-1">
-                      Valid for {Math.floor(caselineOtpCountdown / 60)}:{(caselineOtpCountdown % 60).toString().padStart(2, '0')} minutes.
-                    </div>
-                    <div className="flex gap-2">
-                      <Input
-                        id="caselineOtpCode"
-                        type="text"
-                        placeholder="Enter 6-digit OTP code"
-                        value={caselineOtpCode}
-                        onChange={(e) => setCaselineOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        maxLength={6}
-                        className="flex-1"
-                      />
-                      <Button
-                        onClick={handleVerifyCaselineOtp}
-                        disabled={caselineOtpCode.length !== 6}
-                        className="bg-green-600 hover:bg-green-700"
-                      >
-                        <Shield className="h-4 w-4 mr-2" />
-                        Verify OTP
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Verification Success Message */}
-                {caselineOtpVerified && (
-                  <div className="flex items-center space-x-2 text-green-700 bg-green-50 p-3 rounded">
-                    <CheckCircle className="h-5 w-5" />
-                    <span className="text-sm font-medium">OTP verified successfully. You can now submit your decisions.</span>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
@@ -4332,19 +4082,13 @@ const SuperAdvisor = () => {
             <Button variant="outline" onClick={() => {
               setShowCaselineDialog(false);
               setSelectedCaselineIds({ approved: [], rejected: [] });
-              // Reset OTP states when closing
-              setCaselineApproverEmail('');
-              setCaselineOtpCode('');
-              setCaselineOtpSent(false);
-              setCaselineOtpVerified(false);
-              setCaselineOtpCountdown(0);
             }}>
               Close
             </Button>
             {(selectedCaselineIds.approved.length > 0 || selectedCaselineIds.rejected.length > 0) && (
               <Button 
                 onClick={handleSubmitCaselineDecisions}
-                disabled={isProcessingCaselines || !caselineOtpVerified}
+                disabled={isProcessingCaselines}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 {isProcessingCaselines ? (
