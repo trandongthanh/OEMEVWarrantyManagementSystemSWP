@@ -258,14 +258,16 @@ const SuperAdvisor = () => {
   const transformProcessingRecords = (apiRecords: any[]): WarrantyRecord[] => {
     return apiRecords.map((record, index) => ({
       id: record.vehicleProcessingRecordId || record.id || `record-${index}`,
-      vinNumber: record.vin || '',
-      customerName: record.customerName || 
+      vinNumber: record.vin || record.vehicle?.vin || '',
+      customerName: record.visitorInfo?.fullName || 
+                   record.customerName || 
                    record.vehicle?.owner?.fullName || 
                    record.owner?.fullName ||
                    record.customer?.fullName ||
                    record.vehicle?.customer?.fullName ||
                    'Unknown Customer',
-      customerEmail: record.customerEmail ||
+      customerEmail: record.visitorInfo?.email ||
+                    record.customerEmail ||
                     record.vehicle?.owner?.email ||
                     record.owner?.email ||
                     record.customer?.email ||
@@ -3979,10 +3981,10 @@ const SuperAdvisor = () => {
                         </Badge>
                         {caseline.warrantyStatus && (
                           <Badge className={
-                            caseline.warrantyStatus === 'UNDER_WARRANTY' ? 'bg-green-100 text-green-800' :
+                            caseline.warrantyStatus === 'ELIGIBLE' ? 'bg-green-100 text-green-800' :
                             'bg-red-100 text-red-800'
                           }>
-                            {caseline.warrantyStatus === 'UNDER_WARRANTY' ? 'Under Warranty' : 'Out of Warranty'}
+                            {caseline.warrantyStatus === 'ELIGIBLE' ? '✓ Eligible' : '✗ Ineligible'}
                           </Badge>
                         )}
                       </div>
@@ -4361,11 +4363,11 @@ const SuperAdvisor = () => {
                                           <div>
                                             <Label className="text-xs text-gray-600 font-semibold">Warranty Status:</Label>
                                             <Badge className={
-                                              caseline.warrantyStatus === 'UNDER_WARRANTY' 
+                                              caseline.warrantyStatus === 'ELIGIBLE' 
                                                 ? 'bg-green-100 text-green-800 ml-2' 
                                                 : 'bg-red-100 text-red-800 ml-2'
                                             }>
-                                              {caseline.warrantyStatus === 'UNDER_WARRANTY' ? 'Under Warranty' : 'Out of Warranty'}
+                                              {caseline.warrantyStatus === 'ELIGIBLE' ? '✓ Eligible' : '✗ Ineligible'}
                                             </Badge>
                                           </div>
                                         )}
