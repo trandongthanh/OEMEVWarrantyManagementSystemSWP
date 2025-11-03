@@ -449,7 +449,6 @@ async function seedDatabase() {
     }
 
     const serviceCenters = {};
-    const warehouses = {};
 
     const [serviceCenterHN] = await ServiceCenter.findOrCreate({
       where: { name: "VinFast Service Center Hà Nội" },
@@ -475,6 +474,7 @@ async function seedDatabase() {
     });
     serviceCenters.hcm = serviceCenterHCM;
 
+    const warehouses = {};
     for (const stockInfo of STOCK_PLAN) {
       const defaults = {
         name: stockInfo.name,
@@ -519,8 +519,16 @@ async function seedDatabase() {
 
     for (const [modelKey, items] of Object.entries(WARRANTY_COMPONENT_PLAN)) {
       const model = vehicleModels[modelKey];
+      if (!model) {
+        continue;
+      }
+
       for (const item of items) {
         const componentRecord = typeComponents[item.sku];
+        if (!componentRecord) {
+          continue;
+        }
+
         await WarrantyComponent.findOrCreate({
           where: {
             vehicleModelId: model.vehicleModelId,
@@ -550,7 +558,6 @@ async function seedDatabase() {
 
     const hashedPassword = await bcrypt.hash("123456", 10);
     const userPayload = [
-      // Hà Nội - staff + tech + manager + parts coordinator
       {
         username: "staff_hn1",
         name: "Nguyễn Văn An",
@@ -587,8 +594,6 @@ async function seedDatabase() {
         role: "parts_coordinator_service_center",
         serviceCenterId: serviceCenterHN.serviceCenterId,
       },
-
-      // TP.HCM - staff + tech + manager + parts coordinator
       {
         username: "staff_hcm1",
         name: "Võ Văn Khoa",
@@ -625,8 +630,6 @@ async function seedDatabase() {
         role: "parts_coordinator_service_center",
         serviceCenterId: serviceCenterHCM.serviceCenterId,
       },
-
-      // Company-level roles: parts coordinator, emv staff, admin
       {
         username: "parts_company1",
         name: "Đặng Văn Phúc",
@@ -660,9 +663,8 @@ async function seedDatabase() {
     ];
 
     const createdUsers = [];
-
     for (const [index, user] of userPayload.entries()) {
-      const [userRecord] = await User.findOrCreate({
+      const [record] = await User.findOrCreate({
         where: { username: user.username },
         defaults: {
           username: user.username,
@@ -677,41 +679,7 @@ async function seedDatabase() {
         },
         transaction,
       });
-      createdUsers.push(userRecord);
-    }
-
-    let createdWorkSchedules = 0;
-    const technicianRoleId = roles["service_center_technician"].roleId;
-    const technicians = createdUsers.filter(
-      (user) => user.roleId === technicianRoleId
-    );
-
-    const baseDate = new Date();
-    baseDate.setHours(0, 0, 0, 0);
-
-    for (const tech of technicians) {
-      for (let offset = 0; offset < 14; offset += 1) {
-        const workDate = new Date(baseDate);
-        workDate.setDate(baseDate.getDate() + offset);
-
-        const [schedule, created] = await WorkSchedule.findOrCreate({
-          where: {
-            technicianId: tech.userId,
-            workDate,
-          },
-          defaults: {
-            technicianId: tech.userId,
-            workDate,
-            status: offset % 7 === 6 ? "UNAVAILABLE" : "AVAILABLE",
-            notes: offset % 7 === 6 ? "Nghỉ cuối tuần" : null,
-          },
-          transaction,
-        });
-
-        if (created) {
-          createdWorkSchedules += 1;
-        }
-      }
+      createdUsers.push({ record, role: user.role });
     }
 
     const customers = {};
@@ -724,11 +692,10 @@ async function seedDatabase() {
       customers[data.phone] = record;
     }
 
-    const vehicles = [];
     for (const data of VEHICLE_DATA) {
       const model = vehicleModels[data.modelKey];
       const owner = customers[data.ownerPhone];
-      const [vehicle] = await Vehicle.findOrCreate({
+      await Vehicle.findOrCreate({
         where: { vin: data.vin },
         defaults: {
           vin: data.vin,
@@ -741,7 +708,6 @@ async function seedDatabase() {
         },
         transaction,
       });
-      vehicles.push(vehicle);
     }
 
     let createdComponentsInWarehouses = 0;
@@ -805,34 +771,36 @@ async function seedDatabase() {
       }
     }
 
-    let installedComponents = 0;
+    const technicianUsers = createdUsers
+      .filter((entry) => entry.role === "service_center_technician")
+      .map((entry) => entry.record);
 
-    for (const vehicle of vehicles) {
-      const modelKey = VEHICLE_DATA.find(
-        (item) => item.vin === vehicle.vin
-      ).modelKey;
-      const warrantyItems = WARRANTY_COMPONENT_PLAN[modelKey];
+    const today = new Date();
+    const scheduleRangeInDays = 21;
 
-      for (const item of warrantyItems) {
-        const componentRecord = typeComponents[item.sku];
-        for (let i = 1; i <= item.quantity; i += 1) {
-          const serialNumber = `${item.sku}-INST-${vehicle.vin}-${String(
-            i
-          ).padStart(2, "0")}`;
-          await Component.findOrCreate({
-            where: { serialNumber },
-            defaults: {
-              typeComponentId: componentRecord.typeComponentId,
-              serialNumber,
-              status: "INSTALLED",
-              vehicleVin: vehicle.vin,
-              installedAt: vehicle.purchaseDate,
-              warehouseId: null,
-            },
-            transaction,
-          });
-          installedComponents += 1;
-        }
+    for (const technician of technicianUsers) {
+      for (let offset = 0; offset < scheduleRangeInDays; offset += 1) {
+        const currentDate = new Date(today);
+        currentDate.setHours(0, 0, 0, 0);
+        currentDate.setDate(currentDate.getDate() + offset);
+
+        const workDate = currentDate.toISOString().slice(0, 10);
+        const day = currentDate.getDay();
+        const isWeekend = day === 0 || day === 6;
+
+        await WorkSchedule.findOrCreate({
+          where: {
+            technicianId: technician.userId,
+            workDate,
+          },
+          defaults: {
+            technicianId: technician.userId,
+            workDate,
+            status: isWeekend ? "UNAVAILABLE" : "AVAILABLE",
+            notes: isWeekend ? "Ngày nghỉ" : null,
+          },
+          transaction,
+        });
       }
     }
 
@@ -840,10 +808,11 @@ async function seedDatabase() {
 
     console.log("✅ Seed thành công.");
     console.log(`   • Components trong kho: ${createdComponentsInWarehouses}`);
-    console.log(`   • Components đã lắp trên xe: ${installedComponents}`);
-    console.log(`   • Lịch làm việc mới tạo: ${createdWorkSchedules}`);
     console.log(
-      "   • Mỗi Stock.quantityInStock đã khớp với số component IN_WAREHOUSE tương ứng."
+      "   • WarrantyComponent đã được khai báo cho từng dòng xe và không seed component INSTALLED."
+    );
+    console.log(
+      `   • WorkSchedule đã tạo ${technicianUsers.length * scheduleRangeInDays} bản ghi cho ${technicianUsers.length} kỹ thuật viên.`
     );
   } catch (error) {
     await transaction.rollback();
