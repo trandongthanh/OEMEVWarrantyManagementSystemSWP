@@ -388,7 +388,7 @@ const SuperAdvisor = () => {
     }
   }, [caselineOtpCountdown, caselineOtpSent, toast]);
 
-  const handleSearchCustomer = async (vinToSearch?: string) => {
+  const handleSearchVehicleByVin = async (vinToSearch?: string) => {
     try {
       // Reset customer search state and warranty info
       setHasSearchedCustomer(false);
@@ -636,7 +636,7 @@ const SuperAdvisor = () => {
     if (e.key === 'Enter') {
       e.preventDefault();
       if (searchMode === 'customer') {
-        handleSearchCustomer();
+        handleSearchVehicleByVin();
       }
     }
   };
@@ -871,7 +871,7 @@ const SuperAdvisor = () => {
     // Auto search after a brief delay to allow state to update
     setTimeout(async () => {
       try {
-        await handleSearchCustomer(vinToSearch);
+        await handleSearchVehicleByVin(vinToSearch);
         // User will manually enter odometer and click "Check Warranty Policy"
       } catch (error) {
         console.error('Auto search failed:', error);
@@ -2483,7 +2483,7 @@ const SuperAdvisor = () => {
                   }
                   onClick={
                     searchMode === 'customer'
-                      ? () => handleSearchCustomer()
+                      ? () => handleSearchVehicleByVin()
                       : () => handleSearchCustomerByPhone()
                   }
                 >
