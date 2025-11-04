@@ -1,23 +1,48 @@
-import { BadRequestError } from "../error/index.js";
+import { BadRequestError, NotFoundError } from "../error/index.js";
 
 class ServiceCenterService {
+  #serviceCenterRepository;
   constructor({ serviceCenterRepository }) {
-    this.serviceCenterRepository = serviceCenterRepository;
+    this.#serviceCenterRepository = serviceCenterRepository;
   }
 
-  findCompanyByServiceCenterId = async ({ serviceCenterId }) => {
+  findServiceCenterById = async ({ serviceCenterId }) => {
     if (!serviceCenterId) {
       throw new BadRequestError("ServiceCenterId is required");
     }
 
     const serviceCenter =
-      await this.serviceCenterRepository.findServiceCenterWithId({
+      await this.#serviceCenterRepository.findServiceCenterById({
         serviceCenterId: serviceCenterId,
       });
 
-    const company = serviceCenter.vehicleCompany;
+    return serviceCenter;
+  };
 
-    return company;
+  updateMaxActiveTasksPerTechnician = async ({
+    serviceCenterId,
+    maxActiveTasksPerTechnician,
+  }) => {
+    if (!serviceCenterId) {
+      throw new BadRequestError("ServiceCenterId is required");
+    }
+
+    const serviceCenter =
+      await this.#serviceCenterRepository.findServiceCenterById({
+        serviceCenterId,
+      });
+
+    if (!serviceCenter) {
+      throw new NotFoundError("Service center not found");
+    }
+
+    const updatedServiceCenter =
+      await this.#serviceCenterRepository.updateServiceCenter({
+        serviceCenterId,
+        updateData: { maxActiveTasksPerTechnician },
+      });
+
+    return updatedServiceCenter;
   };
 }
 

@@ -47,6 +47,13 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         field: "vehicle_company_id",
       },
+
+      maxActiveTasksPerTechnician: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 10,
+        field: "max_active_tasks_per_technician",
+      },
     },
     {
       tableName: "service_center",

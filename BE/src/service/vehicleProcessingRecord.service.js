@@ -19,6 +19,7 @@ class VehicleProcessingRecordService {
   #userRepository;
   #caselineRepository;
   #workScheduleRepository;
+  #serviceCenterRepository;
 
   constructor({
     vehicleProcessingRecordRepository,
@@ -29,6 +30,7 @@ class VehicleProcessingRecordService {
     taskAssignmentRepository,
     caselineRepository,
     workScheduleRepository,
+    serviceCenterRepository,
   }) {
     this.#vehicleProcessingRecordRepository = vehicleProcessingRecordRepository;
     this.#guaranteeCaseRepository = guaranteeCaseRepository;
@@ -38,6 +40,7 @@ class VehicleProcessingRecordService {
     this.#userRepository = userRepository;
     this.#caselineRepository = caselineRepository;
     this.#workScheduleRepository = workScheduleRepository;
+    this.#serviceCenterRepository = serviceCenterRepository;
   }
 
   createRecord = async ({
@@ -186,6 +189,22 @@ class VehicleProcessingRecordService {
 
       if (!existingRecord) {
         throw new NotFoundError("Record not found.");
+      }
+
+      const serviceCenter = await this.#serviceCenterRepository.findServiceCenterById({ serviceCenterId }, t);
+      if (!serviceCenter) {
+        throw new NotFoundError("Service center not found");
+      }
+      const maxTasks = serviceCenter.maxActiveTasksPerTechnician;
+
+      const activeTaskCount = await this.#userRepository.getActiveTaskCountForTechnician({ technicianId }, t);
+
+      const numberOfNewTasks = existingRecord.guaranteeCases.length;
+
+      if (activeTaskCount + numberOfNewTasks > maxTasks) {
+        throw new ConflictError(
+          `Technician has reached the maximum number of active tasks (${maxTasks}). Cannot assign ${numberOfNewTasks} new tasks.`
+        );
       }
 
       oldTechnicianId = existingRecord?.mainTechnician?.userId;
