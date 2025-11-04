@@ -304,6 +304,8 @@ const TechnicianDashboard = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Loading state for completing a processing record
   const [isCompleting, setIsCompleting] = useState(false);
+  // Selected guarantee case for creating case line
+  const [selectedGuaranteeCaseForCaseLine, setSelectedGuaranteeCaseForCaseLine] = useState<string | null>(null);
   
   
   // Processing Records form (uses CaseLineRequest for API)
@@ -1184,16 +1186,25 @@ const TechnicianDashboard = ({
 
   // Handle create issue diagnosis from Processing Records
   const handleCreateIssueDiagnosis = async () => {
-    if (!caseLineForm.diagnosisText || !caseLineForm.correctionText) {
+    if (!caseLineForm.correctionText) {
       toast({
         title: "Validation Error",
-        description: "Please fill in diagnosis and correction text",
+        description: "Please fill in solution",
         variant: "destructive"
       });
       return;
     }
 
-  if (!selectedRecord || !selectedRecord.guaranteeCases || (selectedRecord.guaranteeCases?.length ?? 0) === 0) {
+    if (!selectedGuaranteeCaseForCaseLine) {
+      toast({
+        title: "Validation Error",
+        description: "Please select a guarantee case first",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!selectedRecord || !selectedRecord.guaranteeCases || (selectedRecord.guaranteeCases?.length ?? 0) === 0) {
       toast({
         title: "Error",
         description: "No guarantee case found for this record",
@@ -1204,7 +1215,16 @@ const TechnicianDashboard = ({
 
     try {
       setIsSubmitting(true);
-      const guaranteeCase = selectedRecord.guaranteeCases[0];
+      const guaranteeCase = selectedRecord.guaranteeCases.find(gc => gc.guaranteeCaseId === selectedGuaranteeCaseForCaseLine);
+      
+      if (!guaranteeCase) {
+        toast({
+          title: "Error",
+          description: "Selected guarantee case not found",
+          variant: "destructive"
+        });
+        return;
+      }
       
       console.log('🚀 Creating case line for guarantee case:', guaranteeCase.guaranteeCaseId);
 
@@ -1241,8 +1261,10 @@ const TechnicianDashboard = ({
       }
 
       // Create case line with image URLs
+      // Set diagnosisText same as correctionText for backend compatibility
       const caseLineWithImages = {
         ...caseLineForm,
+        diagnosisText: caseLineForm.correctionText, // Use solution as diagnosis for backend
         evidenceImageUrls
       };
 
@@ -1298,11 +1320,19 @@ const TechnicianDashboard = ({
           ? createdCaseLines[0].caseLineId.slice(-8)
           : 'N/A';
 
+      // Check if there are more guarantee cases to process
+      const remainingCases = selectedRecord.guaranteeCases.filter(
+        gc => !createdCaseLines.some(cl => cl.guaranteeCaseId === gc.guaranteeCaseId)
+      );
+
       toast({
-        title: "Case Line Created",
-        description: `Case line ${createdIdSuffix} has been created successfully. View it in the Processing Record details.`,
+        title: "Case Line Created Successfully",
+        description: remainingCases.length > 0 
+          ? `Case line created! ${remainingCases.length} more guarantee case(s) remaining.`
+          : `All case lines created! You can now close this dialog.`,
       });
 
+      // Reset form for next guarantee case
       setCaseLineForm({
         diagnosisText: '',
         correctionText: '',
@@ -1314,7 +1344,12 @@ const TechnicianDashboard = ({
       setUploadedFileUrls([]);
       setComponentSearchQuery('');
       setCompatibleComponents([]);
-      setCreateIssueDiagnosisModalOpen(false);
+      setSelectedGuaranteeCaseForCaseLine(null); // Reset selected guarantee case
+      
+      // Only close modal if all guarantee cases have case lines
+      if (remainingCases.length === 0) {
+        setCreateIssueDiagnosisModalOpen(false);
+      }
       
     } catch (error) {
       console.error('❌ Failed to create case line:', error);
@@ -1803,6 +1838,7 @@ const TechnicianDashboard = ({
                                         || '';
 
                                       setSelectedRecord(record);
+                                      setSelectedGuaranteeCaseForCaseLine(null); // Reset guarantee case selection
                                       setCreateIssueDiagnosisModalOpen(true);
 
                                       if (candidateId) {
@@ -2078,7 +2114,7 @@ const TechnicianDashboard = ({
                             <TableCell className="text-xs">
                               {s.createdAt ? (
                                 <div className="text-right">
-                                  <div>{new Date(s.createdAt).toLocaleTimeString()}</div>
+                                  <div className="whitespace-nowrap">{new Date(s.createdAt).toLocaleTimeString()}</div>
                                   <div className="text-muted-foreground">{new Date(s.createdAt).toLocaleDateString()}</div>
                                 </div>
                               ) : (
@@ -2088,7 +2124,7 @@ const TechnicianDashboard = ({
                             <TableCell className="text-xs">
                               {s.updatedAt ? (
                                 <div className="text-right">
-                                  <div>{new Date(s.updatedAt).toLocaleTimeString()}</div>
+                                  <div className="whitespace-nowrap">{new Date(s.updatedAt).toLocaleTimeString()}</div>
                                   <div className="text-muted-foreground">{new Date(s.updatedAt).toLocaleDateString()}</div>
                                 </div>
                               ) : (
@@ -2171,16 +2207,9 @@ const TechnicianDashboard = ({
                 <h4 className="font-semibold text-lg text-gray-900">Technical Details</h4>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {selectedCaseLine?.diagnosisText !== undefined && (
-                  <div>
-                    <div className="text-sm text-gray-600">Diagnosis Text</div>
-                    <div className="bg-muted p-3 rounded mt-1">{selectedCaseLine?.diagnosisText || '—'}</div>
-                  </div>
-                )}
-
                 {selectedCaseLine?.correctionText !== undefined && (
-                  <div>
-                    <div className="text-sm text-gray-600">Correction Text</div>
+                  <div className="md:col-span-2">
+                    <div className="text-sm text-gray-600">Solution</div>
                     <div className="bg-muted p-3 rounded mt-1">{selectedCaseLine?.correctionText || '—'}</div>
                   </div>
                 )}
@@ -3184,16 +3213,9 @@ const TechnicianDashboard = ({
                   <h4 className="font-semibold text-lg text-gray-900">Technician Notes</h4>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <div>
-                    <span className="text-sm font-medium text-gray-700">Diagnosis Text</span>
-                    <div className="bg-white p-3 rounded-lg border mt-2">
-                      <p className="text-sm text-gray-800">{selectedCaseLine.diagnosisText || 'N/A'}</p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="text-sm font-medium text-gray-700">Correction Text</span>
+                    <span className="text-sm font-medium text-gray-700">Solution</span>
                     <div className="bg-white p-3 rounded-lg border mt-2">
                       <p className="text-sm text-gray-800">{selectedCaseLine.correctionText || 'N/A'}</p>
                     </div>
@@ -3617,28 +3639,43 @@ const TechnicianDashboard = ({
           <div className="flex justify-end gap-3 pt-6 border-t">
             <Button variant="outline" onClick={() => setViewCaseModalOpen(false)}>Close</Button>
 
-            {selectedRecord && (selectedRecord.status !== 'COMPLETED') && (
-              <Button
-                className="bg-blue-600 hover:bg-blue-700"
-                onClick={async () => {
-                  // derive candidate id (recordId or fallback to id field)
-                  const rec = selectedRecord as unknown as Record<string, unknown>;
-                  const candidateId = (rec['recordId'] as string) || (rec['vehicleProcessingRecordId'] as string) || (rec['processing_record_id'] as string) || (rec['id'] as string) || '';
-                  if (!candidateId) {
-                    toast({ title: 'Missing Record ID', description: 'Cannot complete record: ID not found', variant: 'destructive' });
-                    return;
-                  }
-                  try {
-                    await completeProcessingRecord(candidateId);
-                  } catch (err) {
-                    // error already handled in helper
-                  }
-                }}
-                disabled={isCompleting}
-              >
-                {isCompleting ? 'Completing...' : 'Complete Record'}
-              </Button>
-            )}
+            {selectedRecord && (selectedRecord.status !== 'COMPLETED') && (() => {
+              // Check if there are any case lines created for this record's guarantee cases
+              const guaranteeIds = selectedRecord.guaranteeCases?.map(gc => gc.guaranteeCaseId) || [];
+              const hasCaseLines = createdCaseLines.some(cl => guaranteeIds.includes(cl.guaranteeCaseId));
+              
+              return (
+                <Button
+                  className="bg-blue-600 hover:bg-blue-700"
+                  onClick={async () => {
+                    // derive candidate id (recordId or fallback to id field)
+                    const rec = selectedRecord as unknown as Record<string, unknown>;
+                    const candidateId = (rec['recordId'] as string) || (rec['vehicleProcessingRecordId'] as string) || (rec['processing_record_id'] as string) || (rec['id'] as string) || '';
+                    if (!candidateId) {
+                      toast({ title: 'Missing Record ID', description: 'Cannot complete record: ID not found', variant: 'destructive' });
+                      return;
+                    }
+                    if (!hasCaseLines) {
+                      toast({ 
+                        title: 'Cannot Complete Record', 
+                        description: 'Please create at least one case line before completing this record.', 
+                        variant: 'destructive' 
+                      });
+                      return;
+                    }
+                    try {
+                      await completeProcessingRecord(candidateId);
+                    } catch (err) {
+                      // error already handled in helper
+                    }
+                  }}
+                  disabled={isCompleting || !hasCaseLines}
+                  title={!hasCaseLines ? 'Create at least one case line before completing' : ''}
+                >
+                  {isCompleting ? 'Completing...' : 'Complete Record'}
+                </Button>
+              );
+            })()}
           </div>
         </DialogContent>
       </Dialog>
@@ -3767,67 +3804,99 @@ const TechnicianDashboard = ({
           
           {selectedRecord ? (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                <div>
-                  <div className="space-y-4">
-                    <h4 className="font-medium text-base">🚗 Vehicle & Customer Information</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Vehicle VIN</Label>
-                        <Input 
-                          placeholder="Enter vehicle VIN..." 
-                          defaultValue={selectedRecord.vin}
-                          disabled
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Vehicle Model</Label>
-                        <Input 
-                          placeholder="Vehicle model..." 
-                          defaultValue={selectedRecord.vehicle.model.name}
-                          disabled
-                        />
-                      </div>
+              {/* Step 1: Select Guarantee Case */}
+              <div className="border-b pb-6">
+                <h4 className="font-medium text-base mb-4">📋 Step 1: Select Guarantee Case</h4>
+                <div className="space-y-3">
+                  {selectedRecord.guaranteeCases && selectedRecord.guaranteeCases.length > 0 ? (
+                    selectedRecord.guaranteeCases.map((gc, index) => {
+                      const alreadyHasCaseLine = createdCaseLines.some(cl => cl.guaranteeCaseId === gc.guaranteeCaseId);
+                      const isSelected = selectedGuaranteeCaseForCaseLine === gc.guaranteeCaseId;
+                      
+                      return (
+                        <div
+                          key={gc.guaranteeCaseId}
+                          className={`border rounded-lg p-4 cursor-pointer transition-all ${
+                            alreadyHasCaseLine 
+                              ? 'bg-green-50 border-green-300 cursor-not-allowed opacity-60' 
+                              : isSelected
+                              ? 'bg-blue-50 border-blue-500 shadow-md'
+                              : 'bg-white hover:bg-gray-50 hover:border-gray-400'
+                          }`}
+                          onClick={() => {
+                            if (!alreadyHasCaseLine) {
+                              setSelectedGuaranteeCaseForCaseLine(gc.guaranteeCaseId);
+                            }
+                          }}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-start gap-3">
+                              <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
+                                alreadyHasCaseLine ? 'bg-green-500' : isSelected ? 'bg-blue-500' : 'bg-gray-300'
+                              } text-white font-bold`}>
+                                {alreadyHasCaseLine ? '✓' : index + 1}
+                              </div>
+                              <div className="flex-1">
+                                <div className="font-medium text-sm mb-1">
+                                  Guarantee Case #{index + 1}
+                                </div>
+                                <div className="text-xs font-mono text-gray-500 mb-2">
+                                  {gc.guaranteeCaseId}
+                                </div>
+                                {gc.contentGuarantee && (
+                                  <div className="text-sm text-gray-700 mb-2">
+                                    {gc.contentGuarantee}
+                                  </div>
+                                )}
+                                <Badge variant={gc.status === 'ACTIVE' ? 'default' : 'secondary'} className="text-xs">
+                                  {gc.status || 'N/A'}
+                                </Badge>
+                              </div>
+                            </div>
+                            {alreadyHasCaseLine && (
+                              <Badge variant="default" className="bg-green-600 text-xs">
+                                Case Line Created
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-4 text-gray-500">
+                      No guarantee cases found for this record
                     </div>
-                  </div>
-                  <div style={{ marginTop: '1.1rem' }}>
-                    <div className="space-y-2">
-                      <Label>Technician</Label>
-                      <Input 
-                        placeholder="Technician name..." 
-                        defaultValue={selectedRecord.mainTechnician.name}
-                        disabled
-                      />
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
-              <div className="border-t pt-6">
-                <h4 className="font-medium text-base mb-4">🔧 Case Line Details</h4>
+              {/* Only show Step 2 if a guarantee case is selected */}
+              {selectedGuaranteeCaseForCaseLine && (
+                <>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-blue-600" />
+                      <p className="text-sm text-blue-800">
+                        Creating case line for: <span className="font-mono font-semibold">{selectedGuaranteeCaseForCaseLine.substring(0, 16)}...</span>
+                      </p>
+                    </div>
+                  </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="diagnosisText">Diagnosis Text *</Label>
-                    <Textarea 
-                      id="diagnosisText"
-                      value={caseLineForm.diagnosisText}
-                      onChange={(e) => setCaseLineForm(prev => ({ ...prev, diagnosisText: e.target.value }))}
-                      placeholder="Describe the problem diagnosis..."
-                      className="min-h-24"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="correctionText">Correction Text *</Label>
-                    <Textarea 
-                      id="correctionText"
-                      value={caseLineForm.correctionText}
-                      onChange={(e) => setCaseLineForm(prev => ({ ...prev, correctionText: e.target.value }))}
-                      placeholder="Describe the correction action..."
-                      className="min-h-24"
-                    />
-                  </div>
-                </div>
+                  <div className="border-t pt-6">
+                    <h4 className="font-medium text-base mb-4">🔧 Case Line Details</h4>
+
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="correctionText">Solution *</Label>
+                        <Textarea 
+                          id="correctionText"
+                          value={caseLineForm.correctionText}
+                          onChange={(e) => setCaseLineForm(prev => ({ ...prev, correctionText: e.target.value }))}
+                          placeholder="Describe the solution..."
+                          className="min-h-24"
+                        />
+                      </div>
+                    </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                   <div className="space-y-2">
@@ -3878,7 +3947,11 @@ const TechnicianDashboard = ({
                           <AlertCircle className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
                           <div className="flex-1">
                             <p className="text-sm font-medium text-gray-600">No Component Selected</p>
-                            <p className="text-xs text-gray-500 mt-1">Search below to select a component (optional)</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {!selectedGuaranteeCaseForCaseLine 
+                                ? "Please select a guarantee case first (Step 1)" 
+                                : "Search below to select a component (optional)"}
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -3888,7 +3961,7 @@ const TechnicianDashboard = ({
                       <Input 
                         id="componentSearch"
                         value={componentSearchQuery}
-                        disabled={!!caseLineForm.componentId}
+                        disabled={!!caseLineForm.componentId || !selectedGuaranteeCaseForCaseLine}
                         onChange={(e) => {
                           const q = e.target.value;
                           setComponentSearchQuery(q);
@@ -3922,8 +3995,14 @@ const TechnicianDashboard = ({
                             setCompatibleComponents([]);
                           }
                         }}
-                        placeholder={caseLineForm.componentId ? "Component selected" : "Type to search components..."}
-                        className={caseLineForm.componentId ? "bg-gray-100 cursor-not-allowed" : ""}
+                        placeholder={
+                          caseLineForm.componentId 
+                            ? "Component selected" 
+                            : !selectedGuaranteeCaseForCaseLine
+                            ? "Select a guarantee case first..."
+                            : "Type to search components..."
+                        }
+                        className={caseLineForm.componentId || !selectedGuaranteeCaseForCaseLine ? "bg-gray-100 cursor-not-allowed" : ""}
                       />
                       {isLoadingComponents && (
                         <div className="absolute right-2 top-2">
@@ -3987,11 +4066,21 @@ const TechnicianDashboard = ({
                     <div className="relative">
                       <Input
                         id="warrantyStatus"
-                        value={caseLineForm.warrantyStatus === 'ELIGIBLE' ? '✅ ELIGIBLE - Covered by Warranty' : caseLineForm.warrantyStatus === 'INELIGIBLE' ? '❌ INELIGIBLE - Not Covered' : 'Select a component first'}
+                        value={
+                          !caseLineForm.componentId
+                            ? 'Select a component first'
+                            : caseLineForm.warrantyStatus === 'ELIGIBLE' 
+                            ? '✅ ELIGIBLE - Covered by Warranty' 
+                            : caseLineForm.warrantyStatus === 'INELIGIBLE' 
+                            ? '❌ INELIGIBLE - Not Covered' 
+                            : 'Unknown status'
+                        }
                         readOnly
                         disabled
                         className={`font-medium ${
-                          caseLineForm.warrantyStatus === 'ELIGIBLE' 
+                          !caseLineForm.componentId || !caseLineForm.warrantyStatus
+                            ? 'bg-gray-50 text-gray-500'
+                            : caseLineForm.warrantyStatus === 'ELIGIBLE' 
                             ? 'bg-green-50 text-green-700 border-green-300' 
                             : caseLineForm.warrantyStatus === 'INELIGIBLE'
                             ? 'bg-red-50 text-red-700 border-red-300'
@@ -4003,74 +4092,10 @@ const TechnicianDashboard = ({
                       </p>
                     </div>
                   </div>
-                </div>
-              </div>
-
-              <div className="border-t pt-6">
-                <h4 className="font-medium text-base mb-4">📷 Documentation</h4>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Upload Photos</Label>
-                    <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center">
-                      <Camera className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                      <p className="text-sm text-muted-foreground mb-2">
-                        Upload photos of the issue, components, and diagnostic results
-                      </p>
-                      <input
-                        type="file"
-                        id="photo-upload-processing"
-                        multiple
-                        accept="image/*"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                      />
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => document.getElementById('photo-upload-processing')?.click()}
-                      >
-                        <Camera className="h-4 w-4 mr-2" />
-                        Choose Photos
-                      </Button>
                     </div>
-                    
-                    {uploadedFiles.length > 0 && (
-                      <div className="mt-4 space-y-2">
-                        <Label className="text-sm font-medium">Uploaded Photos ({uploadedFiles.length})</Label>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                          {uploadedFiles.map((file, index) => (
-                            <div key={index} className="relative group">
-                              <div className="bg-gray-100 rounded-lg p-2 border">
-                                <div className="aspect-square mb-2 overflow-hidden rounded">
-                                  <img 
-                                    src={uploadedFileUrls[index]} 
-                                    alt={file.name}
-                                    className="w-full h-full object-cover"
-                                  />
-                                </div>
-                                <div className="text-xs">
-                                  <div className="font-medium truncate" title={file.name}>{file.name}</div>
-                                  <div className="text-gray-500 mt-1">
-                                    {(file.size / 1024 / 1024).toFixed(2)} MB
-                                  </div>
-                                </div>
-                              </div>
-                              <button
-                                onClick={() => removeFile(index)}
-                                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
-                </div>
-              </div>
 
-              <div className="flex justify-end gap-2 pt-4 border-t">
+                  <div className="flex justify-end gap-2 pt-4 border-t">
                 <Button 
                   variant="outline" 
                   onClick={() => {
@@ -4082,14 +4107,16 @@ const TechnicianDashboard = ({
                 >
                   Cancel
                 </Button>
-                <Button 
-                  className="bg-green-600 hover:bg-green-700"
-                  onClick={handleCreateIssueDiagnosis}
-                  disabled={isSubmitting}
-                >
-                  {isSubmitting ? "Creating..." : "Create Issue Diagnosis"}
-                </Button>
-              </div>
+                    <Button 
+                      className="bg-green-600 hover:bg-green-700"
+                      onClick={handleCreateIssueDiagnosis}
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? "Creating..." : "Create Case Line"}
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           ) : (
             <div className="text-center py-8 text-slate-500">
