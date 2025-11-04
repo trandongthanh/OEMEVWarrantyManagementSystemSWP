@@ -43,13 +43,14 @@ class TaskAssignmentRepository {
   };
 
   bulkCreateTaskAssignments = async (
-    { guaranteeCaseIds, technicianId },
+    { guaranteeCaseIds, technicianId, assignedBy },
     transaction
   ) => {
     const taskAssignmentToCreate = guaranteeCaseIds.map((guaranteeCaseId) => ({
       guaranteeCaseId,
       taskType: "DIAGNOSIS",
       technicianId,
+      assignedBy,
     }));
 
     const newTaskAssignments = await TaskAssignment.bulkCreate(

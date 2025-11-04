@@ -114,6 +114,13 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         field: "main_technician_id",
       },
+
+      evidenceImageUrls: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        defaultValue: [],
+        field: "evidence_image_urls",
+      },
     },
     {
       tableName: "vehicle_processing_record",
