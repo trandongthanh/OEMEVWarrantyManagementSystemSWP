@@ -397,6 +397,28 @@ const displayValue = (value: string | null | undefined) => {
   return value || "---";
 };
 
+// Helper function to get workload badge variant based on task count
+const getWorkloadBadgeVariant = (workload: number | undefined) => {
+  if (typeof workload !== 'number') return 'outline';
+  
+  if (workload >= 5) return 'destructive';  //  RED - Max capacity
+  if (workload >= 3) return 'secondary';    //  GRAY - Medium load
+  return 'default';                          //  BLUE - Low load
+};
+
+// Helper function to check if technician can be assigned (workload < 5)
+const canAssignTechnician = (technician: Technician): boolean => {
+  const workload = technician.workload || 0;
+  return workload < 5 && technician.isAvailable && technician.status === 'AVAILABLE';
+};
+
+// Helper function to get warning message based on workload
+const getWorkloadWarningMessage = (workload: number): string => {
+  if (workload >= 5) return "⚠️ Technician at maximum capacity (5 tasks)";
+  if (workload >= 4) return "⚠️ Technician almost at capacity";
+  return "";
+};
+
 const getStatusBadge = (status: string) => {
   const statusConfig = {
     pending: { variant: "pending" as const, icon: Clock, text: "Chờ duyệt" },
@@ -814,6 +836,13 @@ const ServiceCenterDashboard = () => {
     const technician = availableTechnicians.find(t => t.id === technicianId);
     if (!technician) return;
 
+    // ✅ Check if technician can be assigned (workload < 5)
+    if (!canAssignTechnician(technician)) {
+      const workload = technician.workload || 0;
+      alert(`Cannot assign ${technician.name}. Technician has reached maximum capacity (${workload}/5 tasks). Please assign a different technician.`);
+      return;
+    }
+
     // Find the record ID from the current claims
     let claim: WarrantyClaim | undefined;
     for (const status of Object.keys(claimsByStatus)) {
@@ -1092,6 +1121,14 @@ const ServiceCenterDashboard = () => {
       const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
       if (!token) {
         alert('Authentication required');
+        return;
+      }
+
+      // ✅ Check if technician can be assigned (workload < 5)
+      const technician = availableTechnicians.find(t => t.id === technicianId);
+      if (technician && !canAssignTechnician(technician)) {
+        const workload = technician.workload || 0;
+        alert(`Cannot assign ${technician.name}. Technician has reached maximum capacity (${workload}/5 tasks). Please assign a different technician.`);
         return;
       }
 
@@ -2272,14 +2309,26 @@ const ServiceCenterDashboard = () => {
                     warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.issueType || ''
                   ).map((tech) => {
                     const isAssigned = warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.assignedTechnicians.some(t => t.id === tech.id);
+                    const canAssign = canAssignTechnician(tech);
+                    const workloadWarning = !canAssign ? getWorkloadWarningMessage(tech.workload || 0) : "";
+                    
                     return (
-                      <Card key={tech.id} className={`p-4 cursor-pointer transition-colors ${isAssigned ? 'bg-gray-100 opacity-60' : 'hover:bg-blue-50'}`}>
+                      <Card 
+                        key={tech.id} 
+                        className={`p-4 transition-colors ${
+                          isAssigned 
+                            ? 'bg-gray-100 opacity-60' 
+                            : !canAssign 
+                              ? 'opacity-50 cursor-not-allowed border-red-300 bg-red-50' 
+                              : 'hover:bg-blue-50 cursor-pointer'
+                        }`}
+                      >
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
                               <h5 className="font-medium">{tech.name}</h5>
                               {typeof tech.workload === 'number' && (
-                                <Badge variant={tech.workload <= 2 ? "default" : tech.workload <= 4 ? "secondary" : "destructive"} className="text-xs">
+                                <Badge variant={getWorkloadBadgeVariant(tech.workload)} className="text-xs">
                                   Tasks: {tech.workload}
                                 </Badge>
                               )}
@@ -2292,14 +2341,19 @@ const ServiceCenterDashboard = () => {
                                 <span className="text-xs text-muted-foreground">{tech.status}</span>
                               )}
                             </div>
+                            {workloadWarning && (
+                              <div className="mt-2 text-xs text-red-600 font-medium">
+                                {workloadWarning}
+                              </div>
+                            )}
                           </div>
                           <Button
                             variant={isAssigned ? "outline" : "default"}
                             size="sm"
-                            disabled={isAssigned || !tech.isAvailable}
-                            onClick={() => assignTechnicianToCase(selectedCaseForAssignment, tech.id)}
+                            disabled={isAssigned || !tech.isAvailable || !canAssign}
+                            onClick={() => canAssign && assignTechnicianToCase(selectedCaseForAssignment, tech.id)}
                           >
-                            {isAssigned ? 'Assigned' : 'Assign'}
+                            {isAssigned ? 'Assigned' : !canAssign ? 'Full' : 'Assign'}
                           </Button>
                         </div>
                       </Card>
@@ -2696,56 +2750,20 @@ const ServiceCenterDashboard = () => {
                   <div className="grid gap-3 max-h-[400px] overflow-y-auto">
                     {availableTechnicians
                       .filter(tech => tech.status === 'AVAILABLE')
-                      .map((tech) => (
-                      <Card 
-                        key={tech.id} 
-                        className="p-4 cursor-pointer transition-colors hover:bg-purple-50 dark:hover:bg-purple-900/20 border-2 hover:border-purple-400"
-                        onClick={() => {
-                          if (selectedCaseLineForTechnician) {
-                            handleAssignTechnicianToCaseLine(
-                              selectedCaseLineForTechnician.guaranteeCaseId,
-                              selectedCaseLineForTechnician.caseLineId,
-                              tech.id
-                            );
-                            // Modal will be closed in handleAssignTechnicianToCaseLine after success
-                          }
-                        }}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/40 rounded-full flex items-center justify-center">
-                                <User className="h-5 w-5 text-purple-600" />
-                              </div>
-                              <div>
-                                <h5 className="font-semibold">{tech.name}</h5>
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                  {typeof tech.workload === 'number' && (
-                                    <Badge variant="outline" className="text-xs">
-                                      Active Tasks: {tech.workload}
-                                    </Badge>
-                                  )}
-                                  {tech.status && (
-                                    <Badge 
-                                      variant={tech.status === 'AVAILABLE' ? 'default' : 'secondary'}
-                                      className="text-xs"
-                                    >
-                                      {tech.status}
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <p className="text-xs text-muted-foreground font-mono">
-                              ID: {tech.id}
-                            </p>
-                          </div>
-                          <Button
-                            variant="default"
-                            size="sm"
-                            className="bg-purple-600 hover:bg-purple-700"
-                            onClick={(e) => {
-                              e.stopPropagation();
+                      .map((tech) => {
+                        const canAssign = canAssignTechnician(tech);
+                        const workloadWarning = !canAssign ? getWorkloadWarningMessage(tech.workload || 0) : "";
+                        
+                        return (
+                          <Card 
+                            key={tech.id} 
+                            className={`p-4 transition-colors border-2 ${
+                              !canAssign
+                                ? 'opacity-50 cursor-not-allowed border-red-300 bg-red-50 dark:bg-red-900/10'
+                                : 'cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:border-purple-400'
+                            }`}
+                            onClick={() => {
+                              if (!canAssign) return; // Prevent click if at max workload
                               if (selectedCaseLineForTechnician) {
                                 handleAssignTechnicianToCaseLine(
                                   selectedCaseLineForTechnician.guaranteeCaseId,
@@ -2756,11 +2774,63 @@ const ServiceCenterDashboard = () => {
                               }
                             }}
                           >
-                            Assign
-                          </Button>
-                        </div>
-                      </Card>
-                    ))}
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-2">
+                                  <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/40 rounded-full flex items-center justify-center">
+                                    <User className="h-5 w-5 text-purple-600" />
+                                  </div>
+                                  <div>
+                                    <h5 className="font-semibold">{tech.name}</h5>
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                      {typeof tech.workload === 'number' && (
+                                        <Badge variant={getWorkloadBadgeVariant(tech.workload)} className="text-xs">
+                                          Active Tasks: {tech.workload}
+                                        </Badge>
+                                      )}
+                                      {tech.status && (
+                                        <Badge 
+                                          variant={tech.status === 'AVAILABLE' ? 'default' : 'secondary'}
+                                          className="text-xs"
+                                        >
+                                          {tech.status}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground font-mono">
+                                  ID: {tech.id}
+                                </p>
+                                {workloadWarning && (
+                                  <div className="mt-2 text-xs text-red-600 font-medium">
+                                    {workloadWarning}
+                                  </div>
+                                )}
+                              </div>
+                              <Button
+                                variant="default"
+                                size="sm"
+                                disabled={!canAssign}
+                                className={canAssign ? "bg-purple-600 hover:bg-purple-700" : ""}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (selectedCaseLineForTechnician && canAssign) {
+                                    handleAssignTechnicianToCaseLine(
+                                      selectedCaseLineForTechnician.guaranteeCaseId,
+                                      selectedCaseLineForTechnician.caseLineId,
+                                      tech.id
+                                    );
+                                    // Modal will be closed in handleAssignTechnicianToCaseLine after success
+                                  }
+                                }}
+                              >
+                                {canAssign ? 'Assign' : 'Full'}
+                              </Button>
+                            </div>
+                          </Card>
+                        );
+                      })}
                   </div>
                 )}
               </div>
