@@ -50,6 +50,11 @@ module.exports = (sequelize, DataTypes) => {
         field: "license_plate",
       },
 
+      registerationDate: {
+        type: DataTypes.DATE,
+        field: "registeration_date",
+      },
+
       ownerId: {
         type: DataTypes.UUID,
         field: "owner_id",

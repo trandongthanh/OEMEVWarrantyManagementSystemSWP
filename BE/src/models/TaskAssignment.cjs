@@ -1,3 +1,5 @@
+const { assign } = require("nodemailer/lib/shared");
+
 module.exports = (sequelize, DataTypes) => {
   const TaskAssignment = sequelize.define(
     "TaskAssignment",
@@ -50,6 +52,12 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: true,
         field: "is_active",
       },
+
+      assignedBy: {
+        type: DataTypes.UUID,
+        allowNull: false,
+        field: "assigned_by",
+      },
     },
     {
       tableName: "task_assignment",
@@ -68,6 +76,10 @@ module.exports = (sequelize, DataTypes) => {
     TaskAssignment.belongsTo(models.GuaranteeCase, {
       foreignKey: "guarantee_case_id",
       as: "guaranteeCase",
+    });
+    TaskAssignment.belongsTo(models.User, {
+      foreignKey: "assigned_by",
+      as: "assigner",
     });
   };
 

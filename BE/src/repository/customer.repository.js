@@ -15,7 +15,12 @@ class CustomerRepository {
         {
           model: Vehicle,
           as: "vehicles",
-          attributes: ["vin", "licensePlate", "purchaseDate"],
+          attributes: [
+            "vin",
+            "licensePlate",
+            "purchaseDate",
+            "registerationDate",
+          ],
 
           include: [
             {
