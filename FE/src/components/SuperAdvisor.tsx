@@ -526,14 +526,15 @@ const SuperAdvisor = () => {
         }
       });
 
+      // Kiểm tra API có trả về thành công không
       if (response.data && response.data.status === 'success') {
-        // API returns customer object directly in data.customer
         const customer = response.data.data?.customer;
         
-        if (customer && customer.id) {
+        // nếu API get về có customer id tức có tồn tại cả obj customer
+        if (customer.id) {
           setFoundCustomer(customer);
           
-          // Fill all 4 fields with found customer data
+          // Điền đầy đủ thông tin customer vào form
           setOwnerForm({
             fullName: customer.fullName || '',
             phone: customer.phone || '',
@@ -545,16 +546,12 @@ const SuperAdvisor = () => {
             title: 'Customer Found',
             description: `Found existing customer: ${customer.fullName}`,
           });
-          
-          setHasSearchedCustomer(true);
-          
-          // Don't reset vehicle info here - user still needs to complete registration
-          // Only keep the registrationFlowPhone marker for later cleanup
-
-        } else {
+        } 
+        // Nếu không tồn tại cus ID tức không tồn tại cus
+        else {
           setFoundCustomer(null);
           
-          // Fill only phone number, clear other fields
+          // Chỉ giữ lại số điện thoại, các field khác để trống để user nhập mới
           setOwnerForm({
             fullName: '',
             phone: phoneNumber,
@@ -567,13 +564,15 @@ const SuperAdvisor = () => {
             description: 'No customer found with this phone number. You can enter new customer information.',
             variant: 'default'
           });
-          
-          setHasSearchedCustomer(true);
         }
-      } else {
+        
+        setHasSearchedCustomer(true);
+      } 
+      // Trường hợp 3: API trả về lỗi hoặc response không đúng format
+      else {
         setFoundCustomer(null);
         
-        // Fill only phone number, clear other fields
+        // Chỉ giữ lại số điện thoại, các field khác để trống
         setOwnerForm({
           fullName: '',
           phone: phoneNumber,
@@ -585,19 +584,15 @@ const SuperAdvisor = () => {
           title: 'Customer Not Found',
           description: 'No customer found with this phone number. You can enter new customer information.',
           variant: 'default'
-          });
-          
-          setHasSearchedCustomer(true);
-        }
-
-      setHasSearchedCustomer(true);
-      setIsSearchingCustomer(false);
+        });
+        
+        setHasSearchedCustomer(true);
+      }
 
     } catch (error) {
       console.error('❌ Failed to search customer:', error);
       setFoundCustomer(null);
       setHasSearchedCustomer(true);
-      setIsSearchingCustomer(false);
       
       // Fill only phone number, clear other fields  
       setOwnerForm({
@@ -612,6 +607,9 @@ const SuperAdvisor = () => {
         description: 'An error occurred while searching for customer. You can enter new customer information.',
         variant: 'default'
       });
+    } finally {
+      //reset trạng thái để người dùng có thể click button
+      setIsSearchingCustomer(false);
     }
   };
 
