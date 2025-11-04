@@ -38,6 +38,72 @@ class AuthService {
 
     return token;
   };
+
+  register = async ({
+    username,
+    password,
+    email,
+    phone,
+    address,
+    name,
+    roleId,
+    serviceCenterId,
+    vehicleCompanyId,
+  }) => {
+    const existingUser = await this.#userRepository.findByUsername({
+      username: username,
+    });
+
+    if (existingUser) {
+      throw new Error("Username already exists");
+    }
+
+    const hashedPassword = await this.#hashService.hash({ string: password });
+
+    let resolvedVehicleCompanyId = vehicleCompanyId ?? null;
+
+    if (serviceCenterId) {
+      const serviceCenter = await this.#userRepository.findServiceCenterById({
+        serviceCenterId,
+      });
+
+      if (!serviceCenter) {
+        throw new Error("Service center not found");
+      }
+
+      const serviceCenterCompanyId = serviceCenter.vehicleCompanyId ?? null;
+
+      if (vehicleCompanyId && vehicleCompanyId !== serviceCenterCompanyId) {
+        throw new Error(
+          "Vehicle company does not match the selected service center"
+        );
+      }
+
+      resolvedVehicleCompanyId = serviceCenterCompanyId;
+    } else if (vehicleCompanyId) {
+      const company = await this.#userRepository.findVehicleCompanyById({
+        vehicleCompanyId,
+      });
+
+      if (!company) {
+        throw new Error("Vehicle company not found");
+      }
+    }
+
+    const newUser = await this.#userRepository.createUser({
+      username,
+      password: hashedPassword,
+      email,
+      phone,
+      address,
+      name,
+      roleId,
+      serviceCenterId,
+      vehicleCompanyId,
+    });
+
+    return { ...newUser, password: undefined };
+  };
 }
 
 export default AuthService;

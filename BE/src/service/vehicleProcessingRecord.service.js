@@ -252,7 +252,11 @@ class VehicleProcessingRecordService {
           ),
 
           this.#taskAssignmentRepository.bulkCreateTaskAssignments(
-            { guaranteeCaseIds: guaranteeCaseIds, technicianId: technicianId },
+            {
+              guaranteeCaseIds: guaranteeCaseIds,
+              technicianId: technicianId,
+              assignedBy: userId,
+            },
             t
           ),
         ]);
@@ -293,6 +297,7 @@ class VehicleProcessingRecordService {
         technicianId: assignment?.technicianId,
         taskType: assignment?.taskType,
         assignedAt: formatUTCtzHCM(assignment?.assignedAt),
+        assignedBy: assignment?.assignedBy,
       })),
     };
 

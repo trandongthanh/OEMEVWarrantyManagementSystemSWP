@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
@@ -200,6 +201,7 @@ const SuperAdvisor = () => {
     odometer: '',
     purchaseDate: '',
     customerName: '',
+    customerPhone: '', // Customer phone for auto-fill
     cases: [],
     visitorFullName: '',
     visitorPhone: '',
@@ -214,6 +216,9 @@ const SuperAdvisor = () => {
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
   const [otpCountdown, setOtpCountdown] = useState(0);
+
+  // Visitor same as customer checkbox state
+  const [visitorSameAsCustomer, setVisitorSameAsCustomer] = useState(false);
 
   // Warranty check states
   const [odometer, setOdometer] = useState('');
@@ -887,9 +892,10 @@ const SuperAdvisor = () => {
       odometer: vehicleOdometer,
       purchaseDate: vehicle.purchaseDate,
       customerName: foundCustomer.fullName || foundCustomer.name,
+      customerPhone: foundCustomer.phone || '', // Store customer phone for auto-fill
       cases: [],
-      visitorFullName: foundCustomer.fullName || foundCustomer.name || '',
-      visitorPhone: foundCustomer.phone || '',
+      visitorFullName: '', // Visitor must be entered manually
+      visitorPhone: '', // Visitor must be entered manually
       customerEmail: foundCustomer.email || ''
     });
     
@@ -1034,6 +1040,27 @@ const SuperAdvisor = () => {
     }));
   };
 
+  // Handle checkbox change for visitor same as customer
+  const handleVisitorSameAsCustomerChange = (checked: boolean) => {
+    setVisitorSameAsCustomer(checked);
+    
+    if (checked) {
+      // Auto-fill visitor info with customer info
+      setWarrantyRecordForm(prev => ({
+        ...prev,
+        visitorFullName: prev.customerName,
+        visitorPhone: prev.customerPhone
+      }));
+    } else {
+      // Clear visitor info when unchecked
+      setWarrantyRecordForm(prev => ({
+        ...prev,
+        visitorFullName: '',
+        visitorPhone: ''
+      }));
+    }
+  };
+
   // Handle submit warranty record
   const handleSubmitWarrantyRecord = async () => {
     if (warrantyRecordForm.cases.length === 0) {
@@ -1089,9 +1116,10 @@ const SuperAdvisor = () => {
       await loadProcessingRecords();
       
       // Reset forms and close dialogs
-      setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
+      setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', customerPhone: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
       setWarrantyRecordCaseText('');
       setShowCreateWarrantyDialog(false);
+      setVisitorSameAsCustomer(false); // Reset checkbox
       setOtpSent(false);
       setOtpVerified(false);
       setOtpCode('');
@@ -1657,9 +1685,10 @@ const SuperAdvisor = () => {
       odometer: odometer,
       purchaseDate: vehicleSearchResult.purchaseDate || '',
       customerName: vehicleSearchResult.owner.fullName,
+      customerPhone: vehicleSearchResult.owner.phone || '', // Store customer phone for auto-fill
       cases: [],
-      visitorFullName: vehicleSearchResult.owner.fullName || '',
-      visitorPhone: vehicleSearchResult.owner.phone || '',
+      visitorFullName: '', // Visitor must be entered manually
+      visitorPhone: '', // Visitor must be entered manually
       customerEmail: vehicleSearchResult.owner.email || ''
     });
     
@@ -3757,6 +3786,21 @@ const SuperAdvisor = () => {
               />
             </div>
 
+            {/* Checkbox: Visitor same as Customer */}
+            <div className="flex items-center space-x-2 p-3 bg-blue-50 rounded-md border border-blue-200">
+              <Checkbox 
+                id="visitor-same-as-customer"
+                checked={visitorSameAsCustomer}
+                onCheckedChange={handleVisitorSameAsCustomerChange}
+              />
+              <label
+                htmlFor="visitor-same-as-customer"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+              >
+                Visitor is the same as Customer (auto-fill name and phone)
+              </label>
+            </div>
+
             {/* Visitor Full Name - Editable */}
             <div className="grid gap-2">
               <Label htmlFor="visitor-fullname">Visitor Full Name *</Label>
@@ -3766,6 +3810,7 @@ const SuperAdvisor = () => {
                 onChange={(e) => setWarrantyRecordForm(prev => ({ ...prev, visitorFullName: e.target.value }))}
                 placeholder="Enter visitor's full name"
                 className="border-green-300 focus:border-green-500"
+                disabled={visitorSameAsCustomer}
               />
             </div>
 
@@ -3779,10 +3824,11 @@ const SuperAdvisor = () => {
                 onChange={(e) => setWarrantyRecordForm(prev => ({ ...prev, visitorPhone: e.target.value }))}
                 placeholder="Enter visitor's phone number"
                 className="border-green-300 focus:border-green-500"
+                disabled={visitorSameAsCustomer}
               />
             </div>
 
-            {/* Customer Email - Editable */}
+            {/* Customer Email - Read-only */}
             <div className="grid gap-2">
               <Label htmlFor="customer-email">Customer Email *</Label>
               <div className="flex gap-2">
@@ -3790,17 +3836,9 @@ const SuperAdvisor = () => {
                   id="customer-email"
                   type="email"
                   value={warrantyRecordForm.customerEmail}
-                  onChange={(e) => {
-                    setWarrantyRecordForm(prev => ({ ...prev, customerEmail: e.target.value }));
-                    // Reset OTP states when email changes
-                    setOtpSent(false);
-                    setOtpVerified(false);
-                    setOtpCode('');
-                    setOtpCountdown(0);
-                  }}
-                  placeholder="Enter customer email address"
-                  className="flex-1 border-green-300 focus:border-green-500"
-                  disabled={otpVerified}
+                  placeholder="Customer email from vehicle owner"
+                  className="flex-1 bg-gray-100"
+                  readOnly
                 />
                 <Button
                   type="button"
@@ -3932,8 +3970,9 @@ const SuperAdvisor = () => {
               variant="outline" 
               onClick={() => {
                 setShowCreateWarrantyDialog(false);
-                setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
+                setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', customerPhone: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
                 setWarrantyRecordCaseText('');
+                setVisitorSameAsCustomer(false); // Reset checkbox
                 // Reset OTP states
                 setOtpCode('');
                 setOtpSent(false);
