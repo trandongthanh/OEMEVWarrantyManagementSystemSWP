@@ -172,6 +172,11 @@ const SuperAdvisor = () => {
   const [caselines, setCaselines] = useState<any[]>([]);
   const [isLoadingCaselines, setIsLoadingCaselines] = useState(false);
 
+  // Caseline detail dialog states
+  const [showCaselineDetailDialog, setShowCaselineDetailDialog] = useState(false);
+  const [caselineDetailData, setCaselineDetailData] = useState<any>(null);
+  const [isLoadingCaselineDetail, setIsLoadingCaselineDetail] = useState(false);
+
   // View Record dialog states
   const [showViewRecordDialog, setShowViewRecordDialog] = useState(false);
   const [viewRecordData, setViewRecordData] = useState<any>(null);
@@ -209,14 +214,6 @@ const SuperAdvisor = () => {
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
   const [otpCountdown, setOtpCountdown] = useState(0);
-
-  // Caseline OTP states
-  const [caselineApproverEmail, setCaselineApproverEmail] = useState('');
-  const [caselineOtpCode, setCaselineOtpCode] = useState('');
-  const [isSendingCaselineOtp, setIsSendingCaselineOtp] = useState(false);
-  const [caselineOtpSent, setCaselineOtpSent] = useState(false);
-  const [caselineOtpVerified, setCaselineOtpVerified] = useState(false);
-  const [caselineOtpCountdown, setCaselineOtpCountdown] = useState(0);
 
   // Warranty check states
   const [odometer, setOdometer] = useState('');
@@ -266,14 +263,16 @@ const SuperAdvisor = () => {
   const transformProcessingRecords = (apiRecords: any[]): WarrantyRecord[] => {
     return apiRecords.map((record, index) => ({
       id: record.vehicleProcessingRecordId || record.id || `record-${index}`,
-      vinNumber: record.vin || '',
-      customerName: record.customerName || 
+      vinNumber: record.vin || record.vehicle?.vin || '',
+      customerName: record.visitorInfo?.fullName || 
+                   record.customerName || 
                    record.vehicle?.owner?.fullName || 
                    record.owner?.fullName ||
                    record.customer?.fullName ||
                    record.vehicle?.customer?.fullName ||
                    'Unknown Customer',
-      customerEmail: record.customerEmail ||
+      customerEmail: record.visitorInfo?.email ||
+                    record.customerEmail ||
                     record.vehicle?.owner?.email ||
                     record.owner?.email ||
                     record.customer?.email ||
@@ -369,24 +368,6 @@ const SuperAdvisor = () => {
       });
     }
   }, [otpCountdown, otpSent, toast]);
-
-  // Caseline OTP countdown timer
-  useEffect(() => {
-    if (caselineOtpCountdown > 0) {
-      const timer = setTimeout(() => {
-        setCaselineOtpCountdown(prev => prev - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else if (caselineOtpCountdown === 0 && caselineOtpSent) {
-      setCaselineOtpSent(false);
-      setCaselineOtpCode('');
-      toast({
-        title: 'OTP Expired',
-        description: 'Please request a new OTP code',
-        variant: 'default'
-      });
-    }
-  }, [caselineOtpCountdown, caselineOtpSent, toast]);
 
   const handleSearchVehicleByVin = async (vinToSearch?: string) => {
     try {
@@ -1015,118 +996,6 @@ const SuperAdvisor = () => {
       }
     } catch (error) {
       console.error('Error verifying OTP:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to verify OTP. Please try again.',
-        variant: 'destructive'
-      });
-    }
-  };
-
-  // Handle send OTP for caseline approval
-  const handleSendCaselineOtp = async () => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!caselineApproverEmail || !emailRegex.test(caselineApproverEmail)) {
-      toast({
-        title: 'Error',
-        description: 'Please enter a valid approver email address',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    if (!selectedRecordForCaseline?.vinNumber) {
-      toast({
-        title: 'Error',
-        description: 'VIN not found for this record',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    setIsSendingCaselineOtp(true);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/mail/otp/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
-        },
-        body: JSON.stringify({
-          email: caselineApproverEmail,
-          vin: selectedRecordForCaseline.vinNumber
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Server error response:', errorText);
-        throw new Error(`Server error: ${response.status}`);
-      }
-
-      const result = await response.json();
-
-
-      if (result.status === 'success') {
-        setCaselineOtpSent(true);
-        setCaselineOtpCountdown(300); // 5 minutes
-        toast({
-          title: 'OTP Sent',
-          description: `OTP code has been sent to ${caselineApproverEmail}. Please check your email inbox.`,
-        });
-      } else {
-        throw new Error(result.message || 'Failed to send OTP');
-      }
-    } catch (error) {
-      console.error('Error sending caseline OTP:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to send OTP. Please try again.',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsSendingCaselineOtp(false);
-    }
-  };
-
-  // Handle verify OTP for caseline approval
-  const handleVerifyCaselineOtp = async () => {
-    if (!caselineOtpCode || caselineOtpCode.length !== 6) {
-      toast({
-        title: 'Error',
-        description: 'Please enter a valid 6-digit OTP code',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/mail/otp/verify`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
-        },
-        body: JSON.stringify({
-          email: caselineApproverEmail,
-          otp: caselineOtpCode
-        })
-      });
-
-      const result = await response.json();
-
-      if (response.ok && result.status === 'success' && result.isValid) {
-        setCaselineOtpVerified(true);
-        toast({
-          title: 'Success',
-          description: 'OTP verified successfully. You can now approve or reject caselines.',
-        });
-      } else {
-        throw new Error(result.message || 'Invalid or expired OTP code');
-      }
-    } catch (error) {
-      console.error('Error verifying caseline OTP:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to verify OTP. Please try again.',
@@ -1982,11 +1851,6 @@ const SuperAdvisor = () => {
     
     // Reset all states when opening dialog (fresh start)
     setSelectedCaselineIds({ approved: [], rejected: [] });
-    setCaselineApproverEmail('');
-    setCaselineOtpCode('');
-    setCaselineOtpSent(false);
-    setCaselineOtpVerified(false);
-    setCaselineOtpCountdown(0);
 
     try {
       const token = localStorage.getItem('ev_warranty_token');
@@ -2029,22 +1893,6 @@ const SuperAdvisor = () => {
               });
             }
           });
-        }
-
-        // Auto-fill approver email from visitorInfo
-        const ownerEmail = recordData.visitorInfo?.email || 
-                          recordData.vehicle?.owner?.email || 
-                          recordData.owner?.email || 
-                          recordData.customer?.email ||
-                          recordData.vehicle?.customer?.email ||
-                          record.customerEmail ||
-                          '';
-        
-        
-        if (ownerEmail) {
-          setCaselineApproverEmail(ownerEmail);
-        } else {
-          console.warn('⚠️ No email found in API response!');
         }
 
         setCaselines(allCaselines);
@@ -2174,6 +2022,46 @@ const SuperAdvisor = () => {
     }
 
     return true;
+  };
+
+  // Handle view caseline detail
+  const handleViewCaselineDetail = async (caselineId: string) => {
+    setIsLoadingCaselineDetail(true);
+    setShowCaselineDetailDialog(true);
+    setCaselineDetailData(null);
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        throw new Error('Authentication token not found');
+      }
+
+      const response = await fetch(`${API_BASE_URL}/case-lines/${caselineId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (result.status === 'success' && result.data?.caseLine) {
+        setCaselineDetailData(result.data.caseLine);
+      } else {
+        throw new Error(result.message || 'Failed to fetch caseline details');
+      }
+    } catch (error) {
+      console.error('Error fetching caseline detail:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to load caseline details',
+        variant: 'destructive'
+      });
+      setShowCaselineDetailDialog(false);
+    } finally {
+      setIsLoadingCaselineDetail(false);
+    }
   };
 
   // Handle complete record
@@ -2310,16 +2198,6 @@ const SuperAdvisor = () => {
       return;
     }
 
-    // Check OTP verification
-    if (!caselineOtpVerified) {
-      toast({
-        title: 'OTP Required',
-        description: 'Please verify OTP before approving or rejecting caselines',
-        variant: 'destructive'
-      });
-      return;
-    }
-
     setIsProcessingCaselines(true);
 
     try {
@@ -2336,8 +2214,7 @@ const SuperAdvisor = () => {
         },
         body: JSON.stringify({
           approvedCaseLineIds: selectedCaselineIds.approved.map(id => ({ id })),
-          rejectedCaseLineIds: selectedCaselineIds.rejected.map(id => ({ id })),
-          approverEmail: caselineApproverEmail
+          rejectedCaseLineIds: selectedCaselineIds.rejected.map(id => ({ id }))
         })
       });
 
@@ -2352,13 +2229,8 @@ const SuperAdvisor = () => {
         description: `Processed ${selectedCaselineIds.approved.length} approved and ${selectedCaselineIds.rejected.length} rejected caselines`,
       });
 
-      // Reset selections and OTP states
+      // Reset selections
       setSelectedCaselineIds({ approved: [], rejected: [] });
-      setCaselineApproverEmail('');
-      setCaselineOtpCode('');
-      setCaselineOtpSent(false);
-      setCaselineOtpVerified(false);
-      setCaselineOtpCountdown(0);
 
       // Reload caselines
       if (selectedRecordForCaseline) {
@@ -4157,10 +4029,10 @@ const SuperAdvisor = () => {
                         </Badge>
                         {caseline.warrantyStatus && (
                           <Badge className={
-                            caseline.warrantyStatus === 'UNDER_WARRANTY' ? 'bg-green-100 text-green-800' :
+                            caseline.warrantyStatus === 'ELIGIBLE' ? 'bg-green-100 text-green-800' :
                             'bg-red-100 text-red-800'
                           }>
-                            {caseline.warrantyStatus === 'UNDER_WARRANTY' ? 'Under Warranty' : 'Out of Warranty'}
+                            {caseline.warrantyStatus === 'ELIGIBLE' ? '✓ Eligible' : '✗ Ineligible'}
                           </Badge>
                         )}
                       </div>
@@ -4217,6 +4089,18 @@ const SuperAdvisor = () => {
                         )}
                       </div>
 
+                      {/* View Detail Button */}
+                      <div className="mt-3">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleViewCaselineDetail(caseline.id)}
+                        >
+                          <FileText className="h-4 w-4 mr-2" />
+                          View Detail
+                        </Button>
+                      </div>
+
                       {/* Approve/Reject Buttons for PENDING_APPROVAL status */}
                       {caseline.status === 'PENDING_APPROVAL' && (
                         <div className="mt-4 pt-4 border-t border-gray-200">
@@ -4249,81 +4133,6 @@ const SuperAdvisor = () => {
               </div>
               </>
             )}
-
-            {/* OTP Verification Section - Show when caselines are selected */}
-            {(selectedCaselineIds.approved.length > 0 || selectedCaselineIds.rejected.length > 0) && (
-              <div className="mt-6 p-4 border-t border-gray-200 bg-blue-50 rounded-lg space-y-4">
-                <div className="flex items-center space-x-2 mb-2">
-                  <Shield className="h-5 w-5 text-blue-600" />
-                  <h3 className="font-semibold text-blue-900">OTP Verification Required</h3>
-                </div>
-                <p className="text-sm text-blue-700 mb-3">
-                  Please verify your identity with OTP before approving or rejecting caselines.
-                </p>
-
-                {/* Email Input */}
-                <div>
-                  <Label htmlFor="caselineApproverEmail">Approver Email *</Label>
-                  <Input
-                    id="caselineApproverEmail"
-                    type="email"
-                    placeholder="Enter approver email address"
-                    value={caselineApproverEmail}
-                    onChange={(e) => setCaselineApproverEmail(e.target.value)}
-                    disabled={caselineOtpVerified}
-                    className="mt-1"
-                  />
-                </div>
-
-                {/* Send OTP Button */}
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleSendCaselineOtp}
-                    disabled={!caselineApproverEmail || isSendingCaselineOtp || caselineOtpVerified || (caselineOtpSent && caselineOtpCountdown > 0)}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700"
-                  >
-                    {isSendingCaselineOtp ? 'Sending...' : caselineOtpSent && caselineOtpCountdown > 0 ? `Resend (${Math.floor(caselineOtpCountdown / 60)}:${(caselineOtpCountdown % 60).toString().padStart(2, '0')})` : caselineOtpVerified ? 'Verified ✓' : 'Send OTP'}
-                  </Button>
-                </div>
-
-                {/* OTP Input and Verify Button */}
-                {caselineOtpSent && !caselineOtpVerified && (
-                  <div className="space-y-2">
-                    <Label htmlFor="caselineOtpCode">OTP Code *</Label>
-                    <div className="text-xs text-blue-600 mb-1">
-                      Valid for {Math.floor(caselineOtpCountdown / 60)}:{(caselineOtpCountdown % 60).toString().padStart(2, '0')} minutes.
-                    </div>
-                    <div className="flex gap-2">
-                      <Input
-                        id="caselineOtpCode"
-                        type="text"
-                        placeholder="Enter 6-digit OTP code"
-                        value={caselineOtpCode}
-                        onChange={(e) => setCaselineOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        maxLength={6}
-                        className="flex-1"
-                      />
-                      <Button
-                        onClick={handleVerifyCaselineOtp}
-                        disabled={caselineOtpCode.length !== 6}
-                        className="bg-green-600 hover:bg-green-700"
-                      >
-                        <Shield className="h-4 w-4 mr-2" />
-                        Verify OTP
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Verification Success Message */}
-                {caselineOtpVerified && (
-                  <div className="flex items-center space-x-2 text-green-700 bg-green-50 p-3 rounded">
-                    <CheckCircle className="h-5 w-5" />
-                    <span className="text-sm font-medium">OTP verified successfully. You can now submit your decisions.</span>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
@@ -4335,19 +4144,13 @@ const SuperAdvisor = () => {
             <Button variant="outline" onClick={() => {
               setShowCaselineDialog(false);
               setSelectedCaselineIds({ approved: [], rejected: [] });
-              // Reset OTP states when closing
-              setCaselineApproverEmail('');
-              setCaselineOtpCode('');
-              setCaselineOtpSent(false);
-              setCaselineOtpVerified(false);
-              setCaselineOtpCountdown(0);
             }}>
               Close
             </Button>
             {(selectedCaselineIds.approved.length > 0 || selectedCaselineIds.rejected.length > 0) && (
               <Button 
                 onClick={handleSubmitCaselineDecisions}
-                disabled={isProcessingCaselines || !caselineOtpVerified}
+                disabled={isProcessingCaselines}
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 {isProcessingCaselines ? (
@@ -4620,11 +4423,11 @@ const SuperAdvisor = () => {
                                           <div>
                                             <Label className="text-xs text-gray-600 font-semibold">Warranty Status:</Label>
                                             <Badge className={
-                                              caseline.warrantyStatus === 'UNDER_WARRANTY' 
+                                              caseline.warrantyStatus === 'ELIGIBLE' 
                                                 ? 'bg-green-100 text-green-800 ml-2' 
                                                 : 'bg-red-100 text-red-800 ml-2'
                                             }>
-                                              {caseline.warrantyStatus === 'UNDER_WARRANTY' ? 'Under Warranty' : 'Out of Warranty'}
+                                              {caseline.warrantyStatus === 'ELIGIBLE' ? '✓ Eligible' : '✗ Ineligible'}
                                             </Badge>
                                           </div>
                                         )}
@@ -4698,6 +4501,269 @@ const SuperAdvisor = () => {
                 </Button>
               </>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Caseline Detail Dialog */}
+      <Dialog open={showCaselineDetailDialog} onOpenChange={setShowCaselineDetailDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <FileText className="h-5 w-5" />
+              <span>Caseline Details</span>
+            </DialogTitle>
+            <DialogDescription>
+              Complete information for this caseline
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            {isLoadingCaselineDetail ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <span className="ml-3 text-muted-foreground">Loading caseline details...</span>
+              </div>
+            ) : caselineDetailData ? (
+              <div className="space-y-6">
+                {/* Basic Information */}
+                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Caseline ID</p>
+                    <p className="text-base font-semibold break-all">{caselineDetailData.id}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Status</p>
+                    <Badge className={
+                      caselineDetailData.status === 'COMPLETED' ? 'bg-green-100 text-green-800 hover:bg-green-100' :
+                      caselineDetailData.status === 'PENDING_APPROVAL' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100' :
+                      caselineDetailData.status === 'REJECTED_BY_TECH' || caselineDetailData.status === 'REJECTED_BY_CUSTOMER' || caselineDetailData.status === 'REJECTED_BY_OUT_OF_WARRANTY' ? 'bg-red-100 text-red-800 hover:bg-red-100' :
+                      caselineDetailData.status === 'CANCELLED' ? 'bg-gray-100 text-gray-800 hover:bg-gray-100' :
+                      'bg-blue-100 text-blue-800 hover:bg-blue-100'
+                    }>
+                      {caselineDetailData.status}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Warranty Status</p>
+                    <Badge className={
+                      caselineDetailData.warrantyStatus === 'ELIGIBLE'
+                        ? 'bg-green-100 text-green-800 hover:bg-green-100'
+                        : 'bg-red-100 text-red-800 hover:bg-red-100'
+                    }>
+                      {caselineDetailData.warrantyStatus}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-500">Quantity</p>
+                    <p className="text-base">{caselineDetailData.quantity}</p>
+                  </div>
+                  {caselineDetailData.typeComponent && (
+                    <div className="col-span-2">
+                      <p className="text-sm font-medium text-gray-500">Component Type</p>
+                      <p className="text-base">{caselineDetailData.typeComponent.name || caselineDetailData.typeComponent}</p>
+                    </div>
+                  )}
+                  <div className="col-span-2">
+                    <p className="text-sm font-medium text-gray-500">Last Updated</p>
+                    <p className="text-base">{new Date(caselineDetailData.updatedAt).toLocaleString('vi-VN')}</p>
+                  </div>
+                </div>
+
+                {/* Guarantee Case Information */}
+                {caselineDetailData.guaranteeCase && (
+                  <div className="p-4 bg-blue-50 rounded-lg space-y-3">
+                    <h3 className="font-semibold text-base text-blue-900">Guarantee Case Information</h3>
+                    
+                    {/* Warranty Content */}
+                    {caselineDetailData.guaranteeCase.contentGuarantee && (
+                      <div className="col-span-2">
+                        <Label className="text-sm font-semibold text-blue-700">Warranty Content</Label>
+                        <p className="mt-1 p-3 bg-white rounded-md text-sm">
+                          {caselineDetailData.guaranteeCase.contentGuarantee}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-xs font-medium text-blue-700">Case ID</p>
+                        <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.guaranteeCaseId}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-blue-700">Status</p>
+                        <Badge className="bg-blue-200 text-blue-900">
+                          {caselineDetailData.guaranteeCase.status}
+                        </Badge>
+                      </div>
+                      
+                      {/* Vehicle Processing Record Info */}
+                      {caselineDetailData.guaranteeCase.vehicleProcessingRecord && (
+                        <>
+                          <div>
+                            <p className="text-xs font-medium text-blue-700">VIN</p>
+                            <p className="font-mono text-sm font-semibold">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.vin}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-blue-700">Record ID</p>
+                            <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.vehicleProcessingRecordId}</p>
+                          </div>
+                          
+                          {/* Created By Staff Info */}
+                          {caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff && (
+                            <>
+                              <div>
+                                <p className="text-xs font-medium text-blue-700">Staff ID</p>
+                                <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff.userId}</p>
+                              </div>
+                              {caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff.serviceCenter && (
+                                <>
+                                  <div>
+                                    <p className="text-xs font-medium text-blue-700">Service Center ID</p>
+                                    <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff.serviceCenter.serviceCenterId}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-medium text-blue-700">Vehicle Company ID</p>
+                                    <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff.serviceCenter.vehicleCompanyId}</p>
+                                  </div>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Diagnosis & Correction */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-sm font-semibold">Diagnosis</Label>
+                    <p className="mt-1 p-3 bg-blue-50 rounded-md text-sm whitespace-pre-wrap">
+                      {caselineDetailData.diagnosisText || 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-semibold">Correction</Label>
+                    <p className="mt-1 p-3 bg-green-50 rounded-md text-sm whitespace-pre-wrap">
+                      {caselineDetailData.correctionText || 'N/A'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Rejection Reason */}
+                {caselineDetailData.rejectionReason && (
+                  <div>
+                    <Label className="text-sm font-semibold text-red-700">Rejection Reason</Label>
+                    <p className="mt-1 p-3 bg-red-50 rounded-md text-sm text-red-900 whitespace-pre-wrap">
+                      {caselineDetailData.rejectionReason}
+                    </p>
+                  </div>
+                )}
+
+                {/* Technician Information */}
+                {(caselineDetailData.diagnosticTechnician || caselineDetailData.repairTechnician) && (
+                  <div className="p-4 bg-gray-50 rounded-lg space-y-3">
+                    <h3 className="font-semibold text-sm">Technician Information</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      {caselineDetailData.diagnosticTechnician && (
+                        <div>
+                          <p className="text-xs font-medium text-gray-500">Diagnostic Technician</p>
+                          <p className="text-sm font-semibold">{caselineDetailData.diagnosticTechnician.name}</p>
+                          <p className="text-xs text-gray-600 font-mono break-all">ID: {caselineDetailData.diagnosticTechnician.userId}</p>
+                        </div>
+                      )}
+                      {caselineDetailData.repairTechnician && (
+                        <div>
+                          <p className="text-xs font-medium text-gray-500">Repair Technician</p>
+                          <p className="text-sm font-semibold">{caselineDetailData.repairTechnician.name}</p>
+                          <p className="text-xs text-gray-600 font-mono break-all">ID: {caselineDetailData.repairTechnician.userId}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Evidence Images */}
+                {caselineDetailData.evidenceImageUrls && caselineDetailData.evidenceImageUrls.length > 0 ? (
+                  <div>
+                    <Label className="text-sm font-semibold mb-3 block">Evidence Images ({caselineDetailData.evidenceImageUrls.length})</Label>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {caselineDetailData.evidenceImageUrls.map((url: string, index: number) => {
+                        // Optimize Cloudinary URL
+                        const optimizedUrl = url.includes('cloudinary.com')
+                          ? url.replace('/upload/', '/upload/w_300,h_200,c_fill,q_auto,f_auto/')
+                          : url;
+                        
+                        return (
+                          <div key={index} className="relative group">
+                            <img
+                              src={optimizedUrl}
+                              alt={`Evidence ${index + 1}`}
+                              className="w-full h-48 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => window.open(url, '_blank')}
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-40 rounded-lg">
+                              <span className="text-white text-sm font-medium">Click to view full size</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-gray-50 rounded-lg text-center text-sm text-gray-500">
+                    No evidence images available
+                  </div>
+                )}
+
+                {/* Reservations Information */}
+                {caselineDetailData.reservations && caselineDetailData.reservations.length > 0 && (
+                  <div className="p-4 bg-purple-50 rounded-lg space-y-3">
+                    <h3 className="font-semibold text-sm text-purple-900">Component Reservations ({caselineDetailData.reservations.length})</h3>
+                    <div className="space-y-3">
+                      {caselineDetailData.reservations.map((reservation: any, index: number) => (
+                        <div key={index} className="p-3 bg-white rounded-md border border-purple-200">
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div>
+                              <p className="text-xs font-medium text-purple-700">Reservation ID</p>
+                              <p className="font-mono text-xs break-all">{reservation.id}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-purple-700">Status</p>
+                              <Badge className="bg-purple-200 text-purple-900">{reservation.status}</Badge>
+                            </div>
+                            {reservation.quantity && (
+                              <div>
+                                <p className="text-xs font-medium text-purple-700">Quantity</p>
+                                <p className="text-sm">{reservation.quantity}</p>
+                              </div>
+                            )}
+                            {reservation.createdAt && (
+                              <div>
+                                <p className="text-xs font-medium text-purple-700">Created At</p>
+                                <p className="text-xs">{new Date(reservation.createdAt).toLocaleString('vi-VN')}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-muted-foreground">
+                No data available
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCaselineDetailDialog(false)}>
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
