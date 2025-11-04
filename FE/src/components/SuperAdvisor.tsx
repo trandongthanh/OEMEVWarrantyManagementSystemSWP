@@ -132,7 +132,7 @@ const SuperAdvisor = () => {
   
   // UI State
   const [searchVin, setSearchVin] = useState('');
-  const [searchMode, setSearchMode] = useState<'warranty' | 'customer' | 'phone'>('phone');
+  const [searchMode, setSearchMode] = useState<'warranty' | 'vehicle' | 'phone'>('phone');
   const [isEditMode, setIsEditMode] = useState(false);
   const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
   
@@ -500,7 +500,10 @@ const SuperAdvisor = () => {
       return;
     }
 
+
+    //de tranh truong hop nguoi dung bam lien tuc
     setIsSearchingCustomer(true);
+    //reset trang thai cua obj customer
     setFoundCustomer(null);
 
     try {
@@ -523,14 +526,15 @@ const SuperAdvisor = () => {
         }
       });
 
+      // Kiểm tra API có trả về thành công không
       if (response.data && response.data.status === 'success') {
-        // API returns customer object directly in data.customer
         const customer = response.data.data?.customer;
         
-        if (customer && customer.id) {
+        // nếu API get về có customer id tức có tồn tại cả obj customer
+        if (customer.id) {
           setFoundCustomer(customer);
           
-          // Fill all 4 fields with found customer data
+          // Điền đầy đủ thông tin customer vào form
           setOwnerForm({
             fullName: customer.fullName || '',
             phone: customer.phone || '',
@@ -542,16 +546,12 @@ const SuperAdvisor = () => {
             title: 'Customer Found',
             description: `Found existing customer: ${customer.fullName}`,
           });
-          
-          setHasSearchedCustomer(true);
-          
-          // Don't reset vehicle info here - user still needs to complete registration
-          // Only keep the registrationFlowPhone marker for later cleanup
-
-        } else {
+        } 
+        // Nếu không tồn tại cus ID tức không tồn tại cus
+        else {
           setFoundCustomer(null);
           
-          // Fill only phone number, clear other fields
+          // Chỉ giữ lại số điện thoại, các field khác để trống để user nhập mới
           setOwnerForm({
             fullName: '',
             phone: phoneNumber,
@@ -564,13 +564,15 @@ const SuperAdvisor = () => {
             description: 'No customer found with this phone number. You can enter new customer information.',
             variant: 'default'
           });
-          
-          setHasSearchedCustomer(true);
         }
-      } else {
+        
+        setHasSearchedCustomer(true);
+      } 
+      // Trường hợp 3: API trả về lỗi hoặc response không đúng format
+      else {
         setFoundCustomer(null);
         
-        // Fill only phone number, clear other fields
+        // Chỉ giữ lại số điện thoại, các field khác để trống
         setOwnerForm({
           fullName: '',
           phone: phoneNumber,
@@ -582,19 +584,15 @@ const SuperAdvisor = () => {
           title: 'Customer Not Found',
           description: 'No customer found with this phone number. You can enter new customer information.',
           variant: 'default'
-          });
-          
-          setHasSearchedCustomer(true);
-        }
-
-      setHasSearchedCustomer(true);
-      setIsSearchingCustomer(false);
+        });
+        
+        setHasSearchedCustomer(true);
+      }
 
     } catch (error) {
       console.error('❌ Failed to search customer:', error);
       setFoundCustomer(null);
       setHasSearchedCustomer(true);
-      setIsSearchingCustomer(false);
       
       // Fill only phone number, clear other fields  
       setOwnerForm({
@@ -609,6 +607,9 @@ const SuperAdvisor = () => {
         description: 'An error occurred while searching for customer. You can enter new customer information.',
         variant: 'default'
       });
+    } finally {
+      //reset trạng thái để người dùng có thể click button
+      setIsSearchingCustomer(false);
     }
   };
 
@@ -616,7 +617,7 @@ const SuperAdvisor = () => {
   const handleVinSearchKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      if (searchMode === 'customer') {
+      if (searchMode === 'vehicle') {
         handleSearchVehicleByVin();
       }
     }
@@ -841,7 +842,7 @@ const SuperAdvisor = () => {
     }
 
     // Switch to customer mode (Find Vehicle by VIN) and auto search
-    setSearchMode('customer');
+    setSearchMode('vehicle');
     setSearchVin(vinToSearch);
     
     toast({
@@ -2292,10 +2293,10 @@ const SuperAdvisor = () => {
                 Find Customer by Phone
               </Button>
               <Button
-                variant={searchMode === 'customer' ? 'default' : 'outline'}
+                variant={searchMode === 'vehicle' ? 'default' : 'outline'}
                 size="sm"
-                onClick={() => setSearchMode('customer')}
-                className={searchMode === 'customer' ? 'bg-green-600 hover:bg-green-700' : ''}
+                onClick={() => setSearchMode('vehicle')}
+                className={searchMode === 'vehicle' ? 'bg-green-600 hover:bg-green-700' : ''}
               >
                 <Car className="h-4 w-4 mr-2" />
                 Find Vehicle by VIN
@@ -2315,14 +2316,14 @@ const SuperAdvisor = () => {
             {searchMode !== 'warranty' && (
               <div className="flex gap-3">
                 <div className="flex-1 relative">
-                  {searchMode === 'customer' ? (
+                  {searchMode === 'vehicle' ? (
                     <Car className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
                   ) : (
                     <User className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
                   )}
                   <Input
                     placeholder={
-                      searchMode === 'customer'
+                      searchMode === 'vehicle'
                         ? "Enter VIN to find vehicle and customer records"
                         : "Enter 10-digit phone number"
                     }
@@ -2349,17 +2350,17 @@ const SuperAdvisor = () => {
                 <Button 
                   size="sm" 
                   className={
-                    searchMode === 'customer'
+                    searchMode === 'vehicle'
                       ? "bg-green-600 hover:bg-green-700"
                       : "bg-purple-600 hover:bg-purple-700"
                   }
                   onClick={
-                    searchMode === 'customer'
+                    searchMode === 'vehicle'
                       ? () => handleSearchVehicleByVin()
                       : () => handleSearchCustomerByPhone()
                   }
                 >
-                  {searchMode === 'customer' ? 'Find Vehicle' : 'Search Customer'}
+                  {searchMode === 'vehicle' ? 'Find Vehicle' : 'Search Customer'}
                 </Button>
               </div>
             )}
@@ -2439,7 +2440,7 @@ const SuperAdvisor = () => {
         )}
 
         {/* Customer Search Results Section - Only show in customer mode */}
-        {searchMode === 'customer' && (
+        {searchMode === 'vehicle' && (
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="text-xl">Vehicle Search Results</CardTitle>
