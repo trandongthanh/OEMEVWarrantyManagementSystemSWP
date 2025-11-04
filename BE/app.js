@@ -27,6 +27,7 @@ import stockTransferRequestRouter from "./src/api/routes/stockTransferRequest.ro
 import workScheduleRouter from "./src/api/routes/workSchedule.router.js";
 import mailRouter from "./src/api/routes/mail.router.js";
 import inventoryRouter from "./src/api/routes/inventory.router.js";
+import serviceCenterRouter from "./src/api/routes/serviceCenter.router.js";
 
 app.get("/", async (req, res) => {
   res.send("Hello world");
@@ -46,6 +47,7 @@ app.use(`${url}/warehouses`, warehouseRouter);
 app.use(`${url}/components`, componentRouter);
 app.use(`${url}/mail`, mailRouter);
 app.use(`${url}/inventory`, inventoryRouter);
+app.use(`${url}/service-centers`, serviceCenterRouter);
 
 app.use(`${url}/stock-transfer-requests`, stockTransferRequestRouter);
 app.use(`${url}/work-schedules`, workScheduleRouter);

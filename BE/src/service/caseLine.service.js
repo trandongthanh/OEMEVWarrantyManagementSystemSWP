@@ -20,6 +20,7 @@ class CaseLineService {
   #warehouseService;
   #vehicleProcessingRecordRepository;
   #notificationService;
+  #serviceCenterRepository;
 
   constructor({
     caselineRepository,
@@ -32,6 +33,7 @@ class CaseLineService {
     warehouseService,
     vehicleProcessingRecordRepository,
     notificationService,
+    serviceCenterRepository,
   }) {
     this.#caselineRepository = caselineRepository;
     this.#componentReservationRepository = componentReservationRepository;
@@ -43,6 +45,7 @@ class CaseLineService {
     this.#warehouseService = warehouseService;
     this.#vehicleProcessingRecordRepository = vehicleProcessingRecordRepository;
     this.#notificationService = notificationService;
+    this.#serviceCenterRepository = serviceCenterRepository;
   }
 
   createCaseLines = async ({
@@ -823,6 +826,20 @@ class CaseLineService {
       if (technician.role.roleName !== "service_center_technician") {
         throw new ConflictError(
           "User is not a technician. Role must be service_center_technician"
+        );
+      }
+
+      const serviceCenter = await this.#serviceCenterRepository.findServiceCenterById({ serviceCenterId }, transaction);
+      if (!serviceCenter) {
+        throw new NotFoundError("Service center not found");
+      }
+      const maxTasks = serviceCenter.maxActiveTasksPerTechnician;
+
+      const activeTaskCount = await this.#userRepository.getActiveTaskCountForTechnician({ technicianId }, transaction);
+
+      if (activeTaskCount + 1 > maxTasks) {
+        throw new ConflictError(
+          `Technician has reached the maximum number of active tasks (${maxTasks}).`
         );
       }
 
