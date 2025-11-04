@@ -3114,6 +3114,18 @@ const SuperAdvisor = () => {
                                     : 'N/A'}
                                 </span>
                               </div>
+                              <div>
+                                <span className="text-sm font-medium text-gray-600">Register Date: </span>
+                                <span className="text-sm">
+                                  {vehicle?.purchaseDate 
+                                    ? new Date(vehicle.purchaseDate).toLocaleDateString('en-GB', {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        year: 'numeric'
+                                      }).split('/').join('/')
+                                    : 'N/A'}
+                                </span>
+                              </div>
                             </div>
 
                             {/* Warranty Check Section for this vehicle */}
