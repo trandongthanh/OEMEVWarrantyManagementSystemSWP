@@ -170,6 +170,11 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: "adjusted_by_user_id",
       as: "inventoryAdjustments",
     });
+
+    User.hasMany(models.TaskAssignment, {
+      foreignKey: "assigned_by",
+      as: "assignedTasks",
+    });
   };
 
   return User;

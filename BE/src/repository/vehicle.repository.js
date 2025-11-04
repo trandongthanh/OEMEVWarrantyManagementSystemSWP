@@ -53,7 +53,14 @@ class VehicleRepository {
   };
 
   updateOwner = async (
-    { companyId, vin, customerId, licensePlate, purchaseDate },
+    {
+      companyId,
+      vin,
+      customerId,
+      licensePlate,
+      purchaseDate,
+      registerationDate,
+    },
     option = null
   ) => {
     const rowEffect = await Vehicle.update(
@@ -61,6 +68,7 @@ class VehicleRepository {
         ownerId: customerId,
         licensePlate: licensePlate,
         purchaseDate: purchaseDate,
+        registerationDate: registerationDate,
       },
       {
         where: {

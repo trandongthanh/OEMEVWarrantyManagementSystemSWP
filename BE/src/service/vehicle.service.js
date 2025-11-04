@@ -165,6 +165,7 @@ class VehicleService {
           customerId: customerId,
           licensePlate: licensePlate,
           purchaseDate: purchaseDate,
+          registerationDate: dayjs().toDate(),
         },
         t
       );

@@ -83,13 +83,6 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         field: "rejection_reason",
       },
-
-      evidenceImageUrls: {
-        type: DataTypes.JSON,
-        allowNull: true,
-        defaultValue: [],
-        field: "evidence_image_urls",
-      },
     },
     {
       tableName: "case_line",
