@@ -124,6 +124,56 @@ class UserRepository {
 
     return user.toJSON();
   }
+
+  findServiceCenterById = async ({ serviceCenterId }) => {
+    const serviceCenter = await ServiceCenter.findByPk(serviceCenterId, {
+      attributes: ["serviceCenterId", "vehicleCompanyId"],
+    });
+
+    if (!serviceCenter) {
+      return null;
+    }
+
+    return serviceCenter.toJSON();
+  };
+
+  findVehicleCompanyById = async ({ vehicleCompanyId }) => {
+    const vehicleCompany = await VehicleCompany.findByPk(vehicleCompanyId, {
+      attributes: ["vehicleCompanyId", "name"],
+    });
+
+    if (!vehicleCompany) {
+      return null;
+    }
+
+    return vehicleCompany.toJSON();
+  };
+
+  createUser = async ({
+    username,
+    password,
+    email,
+    phone,
+    address,
+    name,
+    roleId,
+    serviceCenterId,
+    vehicleCompanyId,
+  }) => {
+    const newUser = await User.create({
+      username,
+      password,
+      email,
+      phone,
+      address,
+      name,
+      roleId,
+      serviceCenterId,
+      vehicleCompanyId,
+    });
+
+    return newUser.toJSON();
+  };
 }
 
 export default UserRepository;
