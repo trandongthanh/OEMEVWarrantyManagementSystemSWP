@@ -77,6 +77,14 @@ export interface ProcessingRecordsByStatus {
   CANCELLED: ProcessingRecord[];
 }
 
+// Helper type for raw API records before normalization
+interface RawRecord {
+  vehicleProcessingRecordId?: string;
+  recordId?: string;
+  id?: string;
+  [key: string]: unknown;
+}
+
 // Create axios instance with default config
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -112,7 +120,7 @@ export const processingRecordsService = {
       const response = await apiClient.get(url);
       console.log('📦 Raw API response:', response.data);
       
-      let rawRecords: any[] = [];
+  let rawRecords: unknown[] = [];
       let total = 0;
 
       // Handle different possible response structures
@@ -137,11 +145,11 @@ export const processingRecordsService = {
       }
 
       // Normalize records: map vehicleProcessingRecordId to recordId
-      const normalizedRecords = rawRecords.map((record: any) => ({
+      const normalizedRecords = (rawRecords as RawRecord[]).map((record: RawRecord) => ({
         ...record,
         recordId: record.vehicleProcessingRecordId || record.recordId || record.id,
         vehicleProcessingRecordId: record.vehicleProcessingRecordId || record.recordId || record.id
-      }));
+      })) as ProcessingRecord[];
 
       console.log('✅ Normalized records:', normalizedRecords.length, 'Total:', total);
       return {
@@ -150,7 +158,7 @@ export const processingRecordsService = {
       };
     } catch (error) {
       // Expected network/backend errors are noisy in dev - downgrade to warn and return empty list
-      console.warn('Warning: failed to fetch all processing records:', error?.message || error);
+      console.warn('Warning: failed to fetch all processing records:', (error as Error)?.message || error);
       return { records: [], total: 0 };
     }
   },
@@ -169,7 +177,7 @@ export const processingRecordsService = {
       const response = await apiClient.get(url);
       console.log('📦 Raw API response (by status):', response.data);
       
-      let rawRecords: any[] = [];
+  let rawRecords: unknown[] = [];
       let total = 0;
 
       // Handle different possible response structures
@@ -194,11 +202,11 @@ export const processingRecordsService = {
       }
 
       // Normalize records: map vehicleProcessingRecordId to recordId
-      const normalizedRecords = rawRecords.map((record: any) => ({
+      const normalizedRecords = (rawRecords as RawRecord[]).map((record: RawRecord) => ({
         ...record,
         recordId: record.vehicleProcessingRecordId || record.recordId || record.id,
         vehicleProcessingRecordId: record.vehicleProcessingRecordId || record.recordId || record.id
-      }));
+      })) as ProcessingRecord[];
 
       console.log('✅ Normalized records (by status):', normalizedRecords.length, 'Total:', total);
       return {
@@ -207,7 +215,7 @@ export const processingRecordsService = {
       };
     } catch (error) {
       // Downgrade noisy errors to warn and return empty list so UI can handle gracefully
-      console.warn(`Warning: Error fetching processing records${params?.status ? ` with status ${params.status}` : ''}:`, error?.message || error);
+      console.warn(`Warning: Error fetching processing records${params?.status ? ` with status ${params.status}` : ''}:`, (error as Error)?.message || error);
       return { records: [], total: 0 };
     }
   },
