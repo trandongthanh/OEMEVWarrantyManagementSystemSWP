@@ -4722,39 +4722,6 @@ const SuperAdvisor = () => {
                   </div>
                 )}
 
-                {/* Evidence Images */}
-                {caselineDetailData.evidenceImageUrls && caselineDetailData.evidenceImageUrls.length > 0 ? (
-                  <div>
-                    <Label className="text-sm font-semibold mb-3 block">Evidence Images ({caselineDetailData.evidenceImageUrls.length})</Label>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                      {caselineDetailData.evidenceImageUrls.map((url: string, index: number) => {
-                        // Optimize Cloudinary URL
-                        const optimizedUrl = url.includes('cloudinary.com')
-                          ? url.replace('/upload/', '/upload/w_300,h_200,c_fill,q_auto,f_auto/')
-                          : url;
-                        
-                        return (
-                          <div key={index} className="relative group">
-                            <img
-                              src={optimizedUrl}
-                              alt={`Evidence ${index + 1}`}
-                              className="w-full h-48 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
-                              onClick={() => window.open(url, '_blank')}
-                            />
-                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-40 rounded-lg">
-                              <span className="text-white text-sm font-medium">Click to view full size</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-4 bg-gray-50 rounded-lg text-center text-sm text-gray-500">
-                    No evidence images available
-                  </div>
-                )}
-
                 {/* Reservations Information */}
                 {caselineDetailData.reservations && caselineDetailData.reservations.length > 0 && (
                   <div className="p-4 bg-purple-50 rounded-lg space-y-3">
