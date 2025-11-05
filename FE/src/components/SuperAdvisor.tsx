@@ -209,6 +209,14 @@ const SuperAdvisor = () => {
   });
   const [warrantyRecordCaseText, setWarrantyRecordCaseText] = useState('');
   const [isCreatingRecord, setIsCreatingRecord] = useState(false);
+  const [evidenceImages, setEvidenceImages] = useState<string[]>([]); // Evidence image URLs
+  const [uploadingImage, setUploadingImage] = useState(false);
+  
+  // Image viewer states
+  const [showImageViewer, setShowImageViewer] = useState(false);
+  const [currentImageUrl, setCurrentImageUrl] = useState<string>('');
+  const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
+  const [allViewerImages, setAllViewerImages] = useState<string[]>([]);
 
   // OTP states
   const [otpCode, setOtpCode] = useState('');
@@ -1061,6 +1069,120 @@ const SuperAdvisor = () => {
     }
   };
 
+  // Handle evidence image upload
+  const handleEvidenceImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingImage(true);
+    const uploadedUrls: string[] = [];
+
+    try {
+      // Get Cloudinary config from env
+      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+      const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+
+      if (!cloudName || !uploadPreset) {
+        throw new Error('Cloudinary configuration is missing. Please check your .env file.');
+      }
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+          toast({
+            title: 'Invalid File',
+            description: `${file.name} is not an image file`,
+            variant: 'destructive'
+          });
+          continue;
+        }
+
+        // Validate file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+          toast({
+            title: 'File Too Large',
+            description: `${file.name} exceeds 5MB limit`,
+            variant: 'destructive'
+          });
+          continue;
+        }
+
+        // Upload to Cloudinary
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', uploadPreset);
+        
+        const response = await fetch(
+          `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+          {
+            method: 'POST',
+            body: formData
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          uploadedUrls.push(data.secure_url);
+        } else {
+          throw new Error(`Failed to upload ${file.name}`);
+        }
+      }
+
+      if (uploadedUrls.length > 0) {
+        setEvidenceImages(prev => [...prev, ...uploadedUrls]);
+        toast({
+          title: 'Success',
+          description: `${uploadedUrls.length} image(s) uploaded successfully`
+        });
+      }
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      toast({
+        title: 'Upload Failed',
+        description: error instanceof Error ? error.message : 'Failed to upload images. Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setUploadingImage(false);
+      // Reset input
+      event.target.value = '';
+    }
+  };
+
+  // Remove evidence image
+  const handleRemoveEvidenceImage = (index: number) => {
+    setEvidenceImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Handle view image in full screen
+  const handleViewImage = (url: string, index: number, allImages: string[]) => {
+    console.log('handleViewImage called:', { url, index, allImages });
+    setCurrentImageUrl(url);
+    setCurrentImageIndex(index);
+    setAllViewerImages(allImages);
+    setShowImageViewer(true);
+  };
+
+  // Navigate to next image
+  const handleNextImage = () => {
+    if (currentImageIndex < allViewerImages.length - 1) {
+      const nextIndex = currentImageIndex + 1;
+      setCurrentImageIndex(nextIndex);
+      setCurrentImageUrl(allViewerImages[nextIndex]);
+    }
+  };
+
+  // Navigate to previous image
+  const handlePreviousImage = () => {
+    if (currentImageIndex > 0) {
+      const prevIndex = currentImageIndex - 1;
+      setCurrentImageIndex(prevIndex);
+      setCurrentImageUrl(allViewerImages[prevIndex]);
+    }
+  };
+
   // Handle submit warranty record
   const handleSubmitWarrantyRecord = async () => {
     if (warrantyRecordForm.cases.length === 0) {
@@ -1106,7 +1228,8 @@ const SuperAdvisor = () => {
           fullName: warrantyRecordForm.visitorFullName.trim(),
           phone: warrantyRecordForm.visitorPhone.trim(),
           email: warrantyRecordForm.customerEmail.trim()
-        }
+        },
+        evidenceImageUrls: evidenceImages // Add evidence images
       };
       
       // Call API to create processing record
@@ -1126,6 +1249,7 @@ const SuperAdvisor = () => {
       setOtpCountdown(0);
       setVehicleWarrantyStatus(null);
       setVehicleOdometer('');
+      setEvidenceImages([]); // Reset evidence images
       
       // Reset OTP states
       setOtpCode('');
@@ -3951,6 +4075,67 @@ const SuperAdvisor = () => {
                 </div>
               )}
             </div>
+
+            {/* Evidence Images Upload Section */}
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold">Evidence Images (Optional)</Label>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    id="evidence-upload"
+                    accept="image/*"
+                    multiple
+                    onChange={handleEvidenceImageUpload}
+                    className="hidden"
+                    disabled={uploadingImage}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => document.getElementById('evidence-upload')?.click()}
+                    disabled={uploadingImage}
+                  >
+                    {uploadingImage ? (
+                      <>
+                        <span className="mr-2">Uploading...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Upload Images
+                      </>
+                    )}
+                  </Button>
+                  <span className="text-xs text-gray-500">Max 5MB per image</span>
+                </div>
+
+                {/* Evidence Images Preview */}
+                {evidenceImages.length > 0 && (
+                  <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                    {evidenceImages.map((url, index) => (
+                      <div key={index} className="relative group">
+                        <img
+                          src={url}
+                          alt={`Evidence ${index + 1}`}
+                          className="w-full h-24 object-cover rounded-lg border border-gray-200"
+                        />
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleRemoveEvidenceImage(index)}
+                          className="absolute top-1 right-1 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           <DialogFooter>
@@ -3961,6 +4146,7 @@ const SuperAdvisor = () => {
                 setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', customerPhone: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
                 setWarrantyRecordCaseText('');
                 setVisitorSameAsCustomer(false); // Reset checkbox
+                setEvidenceImages([]); // Reset evidence images
                 // Reset OTP states
                 setOtpCode('');
                 setOtpSent(false);
@@ -4498,6 +4684,47 @@ const SuperAdvisor = () => {
                     </div>
                   </div>
                 )}
+
+                {/* Evidence Images Section */}
+                {viewRecordData.evidenceImageUrls && viewRecordData.evidenceImageUrls.length > 0 && (
+                  <div className="border rounded-lg p-4 bg-indigo-50">
+                    <h3 className="font-semibold text-lg mb-4 flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2 text-indigo-600">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                        <polyline points="21 15 16 10 5 21"></polyline>
+                      </svg>
+                      Evidence Images ({viewRecordData.evidenceImageUrls.length})
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {viewRecordData.evidenceImageUrls.map((url: string, index: number) => {
+                        const optimizedUrl = url.includes('cloudinary.com')
+                          ? url.replace('/upload/', '/upload/w_300,h_200,c_fill,q_auto,f_auto/')
+                          : url;
+                        
+                        return (
+                          <div 
+                            key={index} 
+                            className="relative group cursor-pointer"
+                            onClick={() => handleViewImage(url, index, viewRecordData.evidenceImageUrls)}
+                          >
+                            <img
+                              src={optimizedUrl}
+                              alt={`Evidence ${index + 1}`}
+                              className="w-full h-32 object-cover rounded-lg border-2 border-indigo-200 hover:opacity-80 transition-opacity shadow-sm"
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black bg-opacity-50 rounded-lg pointer-events-none">
+                              <span className="text-white text-xs font-medium px-2 py-1 bg-black bg-opacity-70 rounded">Click to view</span>
+                            </div>
+                            <div className="absolute top-2 right-2 bg-indigo-600 text-white text-xs px-2 py-1 rounded-full pointer-events-none">
+                              #{index + 1}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-lg">
@@ -4769,6 +4996,95 @@ const SuperAdvisor = () => {
               Close
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Viewer Dialog */}
+      <Dialog open={showImageViewer} onOpenChange={setShowImageViewer}>
+        <DialogContent className="max-w-5xl max-h-[95vh] p-0">
+          <div className="relative bg-black">
+            {/* Close button */}
+            <button
+              onClick={() => setShowImageViewer(false)}
+              className="absolute top-4 right-4 z-50 bg-black bg-opacity-50 hover:bg-opacity-70 text-white rounded-full p-2 transition-all"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+
+            {/* Image counter */}
+            <div className="absolute top-4 left-4 z-50 bg-black bg-opacity-50 text-white px-3 py-1 rounded-full text-sm">
+              {currentImageIndex + 1} / {allViewerImages.length}
+            </div>
+
+            {/* Main image */}
+            <div className="flex items-center justify-center min-h-[70vh] max-h-[85vh] p-4">
+              <img
+                src={currentImageUrl}
+                alt={`Evidence ${currentImageIndex + 1}`}
+                className="max-w-full max-h-full object-contain"
+              />
+            </div>
+
+            {/* Navigation buttons */}
+            {allViewerImages.length > 1 && (
+              <>
+                {/* Previous button */}
+                <button
+                  onClick={handlePreviousImage}
+                  disabled={currentImageIndex === 0}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 bg-black bg-opacity-50 hover:bg-opacity-70 text-white rounded-full p-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                  </svg>
+                </button>
+
+                {/* Next button */}
+                <button
+                  onClick={handleNextImage}
+                  disabled={currentImageIndex === allViewerImages.length - 1}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 bg-black bg-opacity-50 hover:bg-opacity-70 text-white rounded-full p-3 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </button>
+              </>
+            )}
+
+            {/* Thumbnails */}
+            {allViewerImages.length > 1 && (
+              <div className="bg-black bg-opacity-80 p-4">
+                <div className="flex gap-2 overflow-x-auto">
+                  {allViewerImages.map((url, index) => {
+                    const thumbnailUrl = url.includes('cloudinary.com')
+                      ? url.replace('/upload/', '/upload/w_100,h_100,c_fill/')
+                      : url;
+                    
+                    return (
+                      <img
+                        key={index}
+                        src={thumbnailUrl}
+                        alt={`Thumbnail ${index + 1}`}
+                        className={`w-16 h-16 object-cover rounded cursor-pointer transition-all ${
+                          index === currentImageIndex 
+                            ? 'ring-2 ring-white opacity-100' 
+                            : 'opacity-50 hover:opacity-75'
+                        }`}
+                        onClick={() => {
+                          setCurrentImageIndex(index);
+                          setCurrentImageUrl(url);
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
