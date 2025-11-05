@@ -30,14 +30,7 @@ class VehicleProcessingRecordRepository {
   };
 
   createRecord = async (
-    {
-      odometer,
-      createdByStaffId,
-      vin,
-      visitorInfo = null,
-      checkInDate,
-      evidenceImageUrls = [],
-    },
+    { odometer, createdByStaffId, vin, visitorInfo = null, checkInDate },
     option = null
   ) => {
     const newRecord = await VehicleProcessingRecord.create(
@@ -47,7 +40,6 @@ class VehicleProcessingRecordRepository {
         createdByStaffId: createdByStaffId,
         checkInDate: checkInDate,
         visitorInfo: visitorInfo,
-        evidenceImageUrls: evidenceImageUrls,
       },
       { transaction: option }
     );
@@ -453,7 +445,6 @@ class VehicleProcessingRecordRepository {
         "odometer",
         "status",
         "visitorInfo",
-        "evidenceImageUrls",
       ],
       include: [
         {

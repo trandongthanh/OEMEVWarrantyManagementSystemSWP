@@ -13,8 +13,7 @@ class VehicleProcessingRecordController {
   }
 
   createRecord = async (req, res) => {
-    const { odometer, guaranteeCases, vin, visitorInfo, evidenceImageUrls } =
-      req.body;
+    const { odometer, guaranteeCases, vin, visitorInfo } = req.body;
 
     const createdByStaffId = req.user.userId;
     const serviceCenterId = req.user.serviceCenterId;
@@ -29,7 +28,6 @@ class VehicleProcessingRecordController {
       createdByStaffId: createdByStaffId,
       serviceCenterId: serviceCenterId,
       companyId: companyId,
-      evidenceImageUrls: evidenceImageUrls,
     });
 
     res.status(201).json({
