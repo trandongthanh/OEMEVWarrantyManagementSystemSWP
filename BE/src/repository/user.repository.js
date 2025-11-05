@@ -173,6 +173,17 @@ class UserRepository {
 
     return newUser.toJSON();
   };
+
+  getActiveTaskCountForTechnician = async ({ technicianId }) => {
+    const activeTaskCount = await TaskAssignment.count({
+      where: {
+        technicianId: technicianId,
+        isActive: true,
+      },
+    });
+
+    return activeTaskCount;
+  };
 }
 
 export default UserRepository;
