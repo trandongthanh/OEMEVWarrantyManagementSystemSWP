@@ -51,10 +51,17 @@ class VehicleProcessingRecordService {
     createdByStaffId,
     serviceCenterId,
     companyId,
+    evidenceImageUrls,
   }) => {
     if (!createdByStaffId || !companyId) {
       throw new ForbiddenError("You don't have permission to create record");
     }
+
+    const normalizedEvidenceImageUrls = Array.isArray(evidenceImageUrls)
+      ? evidenceImageUrls
+          .map((url) => (typeof url === "string" ? url.trim() : null))
+          .filter((url) => Boolean(url))
+      : [];
 
     const rawResult = await db.sequelize.transaction(async (t) => {
       const existingVehicle = await this.#vehicleRepository.findByVinAndCompany(
@@ -97,6 +104,7 @@ class VehicleProcessingRecordService {
             vin,
             visitorInfo,
             checkInDate: formatUTCtzHCM(new Date()),
+            evidenceImageUrls: normalizedEvidenceImageUrls,
           },
           t
         );
@@ -191,13 +199,21 @@ class VehicleProcessingRecordService {
         throw new NotFoundError("Record not found.");
       }
 
-      const serviceCenter = await this.#serviceCenterRepository.findServiceCenterById({ serviceCenterId }, t);
+      const serviceCenter =
+        await this.#serviceCenterRepository.findServiceCenterById(
+          { serviceCenterId },
+          t
+        );
       if (!serviceCenter) {
         throw new NotFoundError("Service center not found");
       }
       const maxTasks = serviceCenter.maxActiveTasksPerTechnician;
 
-      const activeTaskCount = await this.#userRepository.getActiveTaskCountForTechnician({ technicianId }, t);
+      const activeTaskCount =
+        await this.#userRepository.getActiveTaskCountForTechnician(
+          { technicianId },
+          t
+        );
 
       const numberOfNewTasks = existingRecord.guaranteeCases.length;
 

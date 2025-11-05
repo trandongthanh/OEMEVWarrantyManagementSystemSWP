@@ -6,7 +6,7 @@ const guaranteeCaseSchema = Joi.object({
 
 export const createRecordSchema = Joi.object({
   odometer: Joi.number().required().min(0),
-  guaranteeCases: Joi.array().items(guaranteeCaseSchema).required(),
+  guaranteeCases: Joi.array().items(guaranteeCaseSchema).min(1).required(),
   visitorInfo: Joi.object({
     fullName: Joi.string().required(),
     email: Joi.string().email().required(),
@@ -18,6 +18,7 @@ export const createRecordSchema = Joi.object({
     note: Joi.string().optional(),
   }).required(),
   vin: Joi.string().required(),
+  evidenceImageUrls: Joi.array().items(Joi.string().trim()).optional(),
 });
 
 export const updateMainTechnicianBodySchema = Joi.object({
