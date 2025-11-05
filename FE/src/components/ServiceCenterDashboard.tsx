@@ -2047,7 +2047,7 @@ const ServiceCenterDashboard = () => {
                                                     {line.typeComponent.category}
                                                   </Badge>
                                                   <Badge variant="secondary" className="text-xs px-1.5 py-0">
-                                                    Qty: {line.quantity}
+                                                    Quantity: {line.quantity}
                                                   </Badge>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
