@@ -1158,7 +1158,6 @@ const SuperAdvisor = () => {
 
   // Handle view image in full screen
   const handleViewImage = (url: string, index: number, allImages: string[]) => {
-    console.log('handleViewImage called:', { url, index, allImages });
     setCurrentImageUrl(url);
     setCurrentImageIndex(index);
     setAllViewerImages(allImages);
