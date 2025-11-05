@@ -19,6 +19,19 @@ class ServiceCenterService {
     return serviceCenter;
   };
 
+  findCompanyByServiceCenterId = async ({ serviceCenterId }) => {
+    if (!serviceCenterId) {
+      throw new BadRequestError("ServiceCenterId is required");
+    }
+
+    const company =
+      await this.#serviceCenterRepository.findCompanyByServiceCenterId({
+        serviceCenterId: serviceCenterId,
+      });
+
+    return company;
+  };
+
   updateMaxActiveTasksPerTechnician = async ({
     serviceCenterId,
     maxActiveTasksPerTechnician,

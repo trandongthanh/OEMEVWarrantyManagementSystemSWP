@@ -3,11 +3,13 @@ import db from "../models/index.cjs";
 const { ServiceCenter, VehicleCompany } = db;
 
 class ServiceCenterRepository {
-  findServiceCenterWithId = async ({ serviceCenterId }) => {
+  findCompanyByServiceCenterId = async ({ serviceCenterId }) => {
     const serviceCenter = await ServiceCenter.findOne({
       where: {
         serviceCenterId: serviceCenterId,
       },
+
+      attributes: [],
 
       include: [
         {
