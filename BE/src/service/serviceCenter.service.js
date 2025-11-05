@@ -24,10 +24,12 @@ class ServiceCenterService {
       throw new BadRequestError("ServiceCenterId is required");
     }
 
-    const company =
+    const serviceCenter =
       await this.#serviceCenterRepository.findCompanyByServiceCenterId({
         serviceCenterId: serviceCenterId,
       });
+
+    const company = serviceCenter?.vehicleCompany;
 
     return company;
   };

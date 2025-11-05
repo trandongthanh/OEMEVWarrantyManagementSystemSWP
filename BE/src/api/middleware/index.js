@@ -57,7 +57,7 @@ export async function attachCompanyContext(req, res, next) {
       serviceCenterId: serviceCenterId,
     });
 
-    vehicleCompanyId = company.vehicle_company_id;
+    vehicleCompanyId = company?.vehicle_company_id;
   } else {
     throw new BadRequestError(
       "User is not associated with any company or service center"
