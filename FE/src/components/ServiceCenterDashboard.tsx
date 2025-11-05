@@ -40,8 +40,7 @@ interface Technician {
   id: string;
   name: string;
   workload?: number; // maps to activeTaskCount
-  isAvailable: boolean;
-  status?: string; // AVAILABLE | UNAVAILABLE
+  status: string; // AVAILABLE | UNAVAILABLE
   specialty?: string;
   experience?: number;
   rating?: number;
@@ -409,7 +408,7 @@ const getWorkloadBadgeVariant = (workload: number | undefined, maxWorkload = 5) 
 // Helper function to check if technician can be assigned (workload < maxWorkload)
 const canAssignTechnician = (technician: Technician, maxWorkload = 5): boolean => {
   const workload = technician.workload || 0;
-  return workload < maxWorkload && technician.isAvailable && technician.status === 'AVAILABLE';
+  return workload < maxWorkload && technician.status === 'AVAILABLE';
 };
 
 // Helper function to get warning message based on workload
@@ -628,9 +627,8 @@ const ServiceCenterDashboard = () => {
         const mainTech = r.mainTechnician ? [{ 
           id: r.mainTechnician.userId, 
           name: r.mainTechnician.name, 
-          isAvailable: false, 
           workload: typeof r.mainTechnician.activeTaskCount === 'number' ? r.mainTechnician.activeTaskCount : undefined, 
-          status: r.mainTechnician.workSchedule?.[0]?.status || r.mainTechnician.status 
+          status: r.mainTechnician.workSchedule?.[0]?.status || r.mainTechnician.status || 'UNAVAILABLE'
         }] : [];
         const cases: GuaranteeCase[] = Array.isArray(r.guaranteeCases) ? r.guaranteeCases.map((gc: any) => {
           console.log(`📦 Guarantee Case ${gc.guaranteeCaseId} has ${gc.caseLines?.length || 0} case lines`);
@@ -1032,7 +1030,7 @@ const ServiceCenterDashboard = () => {
     // Without specialty information, recommend by availability and workload (less loaded first)
     // Only show technicians with AVAILABLE status
     return availableTechnicians
-      .filter(tech => tech.status === 'AVAILABLE' && tech.isAvailable)
+      .filter(tech => tech.status === 'AVAILABLE')
       .sort((a, b) => {
         const aw = a.workload || 0;
         const bw = b.workload || 0;
@@ -1471,8 +1469,7 @@ const ServiceCenterDashboard = () => {
           experience: t.experience || t.yearsOfExperience || undefined,
           rating: t.rating || undefined,
           workload: t.activeTaskCount || t.workload || t.currentLoad || undefined,
-          isAvailable: (normalizedStatus || '') === 'AVAILABLE',
-          status: normalizedStatus
+          status: normalizedStatus || 'UNAVAILABLE'
         } as Technician;
       });
       setAvailableTechnicians(mapped);
@@ -1700,7 +1697,7 @@ const ServiceCenterDashboard = () => {
                   {/* Status tabs for technicians */}
                   <div className="mb-4 flex items-center gap-2 flex-wrap">
                     {['AVAILABLE', 'UNAVAILABLE', 'ALL'].map(s => {
-                      const count = s === 'ALL' ? availableTechnicians.length : availableTechnicians.filter(t => (t.status || (t.isAvailable ? 'AVAILABLE' : 'UNAVAILABLE')) === s).length;
+                      const count = s === 'ALL' ? availableTechnicians.length : availableTechnicians.filter(t => t.status === s).length;
                       return (
                         <Button
                           key={s}
@@ -1725,13 +1722,13 @@ const ServiceCenterDashboard = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {(techFilterStatus && techFilterStatus !== 'ALL' ? availableTechnicians.filter(t => (t.status || (t.isAvailable ? 'AVAILABLE' : 'UNAVAILABLE')) === techFilterStatus) : availableTechnicians).map(tech => (
+                        {(techFilterStatus && techFilterStatus !== 'ALL' ? availableTechnicians.filter(t => t.status === techFilterStatus) : availableTechnicians).map(tech => (
                           <TableRow key={tech.id}>
                             <TableCell>{tech.name}</TableCell>
                             <TableCell>{typeof tech.workload === 'number' ? tech.workload : '-'}</TableCell>
                             <TableCell>
-                              <Badge variant={tech.isAvailable ? 'success' : 'outline'} className="text-xs">
-                                {getDisplayStatus(tech.status || (tech.isAvailable ? 'AVAILABLE' : 'UNAVAILABLE'))}
+                              <Badge variant={tech.status === 'AVAILABLE' ? 'success' : 'outline'} className="text-xs">
+                                {getDisplayStatus(tech.status)}
                               </Badge>
                             </TableCell>
                             <TableCell>
@@ -2453,8 +2450,8 @@ const ServiceCenterDashboard = () => {
                               )}
                             </div>
                             <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                              <span className={`${tech.isAvailable ? 'text-green-600' : 'text-red-600'}`}>
-                                {tech.isAvailable ? '✅ Available' : '❌ Busy'}
+                              <span className={`${tech.status === 'AVAILABLE' ? 'text-green-600' : 'text-red-600'}`}>
+                                {tech.status === 'AVAILABLE' ? '✅ Available' : '❌ Busy'}
                               </span>
                             </div>
                             {workloadWarning && (
@@ -2466,7 +2463,7 @@ const ServiceCenterDashboard = () => {
                           <Button
                             variant={isAssigned ? "outline" : "default"}
                             size="sm"
-                            disabled={isAssigned || !tech.isAvailable || !canAssign}
+                            disabled={isAssigned || tech.status !== 'AVAILABLE' || !canAssign}
                             onClick={() => canAssign && assignTechnicianToCase(selectedCaseForAssignment, tech.id)}
                           >
                             {isAssigned ? 'Assigned' : !canAssign ? 'Full' : 'Assign'}
@@ -2904,8 +2901,8 @@ const ServiceCenterDashboard = () => {
                                           Active Tasks: {tech.workload}
                                         </Badge>
                                       )}
-                                      <span className={`text-xs ${tech.isAvailable ? 'text-green-600' : 'text-red-600'}`}>
-                                        {tech.isAvailable ? '✅ Available' : '❌ Busy'}
+                                      <span className={`text-xs ${tech.status === 'AVAILABLE' ? 'text-green-600' : 'text-red-600'}`}>
+                                        {tech.status === 'AVAILABLE' ? '✅ Available' : '❌ Busy'}
                                       </span>
                                     </div>
                                   </div>
