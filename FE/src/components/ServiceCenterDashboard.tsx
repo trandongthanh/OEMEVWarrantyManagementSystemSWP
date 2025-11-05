@@ -40,7 +40,7 @@ interface Technician {
   id: string;
   name: string;
   workload?: number; // maps to activeTaskCount
-  status: string; // AVAILABLE | UNAVAILABLE
+  status: string; 
   specialty?: string;
   experience?: number;
   rating?: number;
@@ -139,10 +139,10 @@ interface WarrantyClaim {
   createdByStaffId?: string; // Staff who created the record
   createdByStaffName?: string; // Staff name who created the record
   submissionDate: string;
-  estimatedCost: number;
+  
   status?: string;
   priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
-  issueType: string;
+ evidenceImageUrls?: string[]; // Evidence images from check-in
 }
 
 interface TypeComponent {
@@ -302,10 +302,7 @@ const STATUS_LABELS: Record<string, string> = {
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
 
-  // Technician statuses
-  AVAILABLE: 'Available',
-  UNAVAILABLE: 'Unavailable',
-
+  
   // CaseLine statuses
   DRAFT: 'Draft',
   PENDING_APPROVAL: 'Pending Approval',
@@ -325,7 +322,8 @@ const STATUS_LABELS: Record<string, string> = {
   RESERVED: 'Reserved',
   DISPATCHED: 'Dispatched',
   DELIVERED: 'Delivered',
-
+AVAILABLE: 'Available',
+  UNAVAILABLE: 'Unavailable', 
   // Generic
   UNKNOWN: 'Unknown'
 };
@@ -349,7 +347,6 @@ const getTechBadgeVariant = (status?: string) => {
     case 'AVAILABLE':
       return 'success';
     case 'UNAVAILABLE':
-      return 'destructive';
     default:
       return 'outline';
   }
@@ -418,31 +415,16 @@ const getWorkloadWarningMessage = (workload: number, maxWorkload = 5): string =>
   return "";
 };
 
-const getStatusBadge = (status: string) => {
-  const statusConfig = {
-    pending: { variant: "pending" as const, icon: Clock, text: "Chờ duyệt" },
-    approved: { variant: "approved" as const, icon: CheckCircle, text: "Đã duyệt" },
-    rejected: { variant: "rejected" as const, icon: XCircle, text: "Từ chối" },
-    "in-progress": { variant: "warning" as const, icon: Wrench, text: "Đang sửa" },
-    completed: { variant: "success" as const, icon: CheckCircle, text: "Hoàn thành" }
-  };
-
-  const config = statusConfig[status as keyof typeof statusConfig];
-  if (!config) return null;
-
-  const Icon = config.icon;
-  return (
-    <Badge variant={config.variant}>
-      <Icon className="mr-1 h-3 w-3" />
-      {config.text}
-    </Badge>
-  );
-};
 
 const ServiceCenterDashboard = () => {
   const [warrantyClaims, setWarrantyClaims] = useState<WarrantyClaim[]>([]);
   const [availableTechnicians, setAvailableTechnicians] = useState<Technician[]>([]);
   const [techFilterStatus, setTechFilterStatus] = useState<string>('AVAILABLE');
+
+  // Technician Status tabs
+  const TECH_STATUSES = ['AVAILABLE', 'UNAVAILABLE'];
+  
+
   // Status tabs
   const STATUSES = [
     'CHECKED_IN',
@@ -628,7 +610,7 @@ const ServiceCenterDashboard = () => {
           id: r.mainTechnician.userId, 
           name: r.mainTechnician.name, 
           workload: typeof r.mainTechnician.activeTaskCount === 'number' ? r.mainTechnician.activeTaskCount : undefined, 
-          status: r.mainTechnician.workSchedule?.[0]?.status || r.mainTechnician.status || 'UNAVAILABLE'
+          status: r.mainTechnician.workSchedule?.[0]?.status || r.mainTechnician.status || ''
         }] : [];
         const cases: GuaranteeCase[] = Array.isArray(r.guaranteeCases) ? r.guaranteeCases.map((gc: any) => {
           console.log(`📦 Guarantee Case ${gc.guaranteeCaseId} has ${gc.caseLines?.length || 0} case lines`);
@@ -655,7 +637,6 @@ const ServiceCenterDashboard = () => {
           };
         }) : [];
         console.log('✅ Mapped cases:', cases);
-        const primaryCase = cases.length > 0 ? cases[0] : null;
         return {
           recordId: r.vehicleProcessingRecordId || r.recordId || r.processing_record_id || r.id || '',
           vin: r.vin || r.vehicle?.vin || '',
@@ -669,10 +650,10 @@ const ServiceCenterDashboard = () => {
           createdByStaffId: r.createdByStaff?.userId || r.createdByStaff?.id || undefined,
           createdByStaffName: r.createdByStaff?.name || undefined,
           submissionDate: r.createdAt || new Date().toISOString(),
-          estimatedCost: 0,
+          
           priority: r.priority || undefined,
-          issueType: primaryCase ? primaryCase.contentGuarantee : '',
-          status: r.status || (primaryCase?.status) || status
+          status: r.status || cases[0]?.status || status,
+          evidenceImageUrls: r.evidenceImageUrls || []
         } as WarrantyClaim;
       });
       return mapped;
@@ -1018,14 +999,8 @@ const ServiceCenterDashboard = () => {
     ));
   };
 
-  const getRecommendedTechnicians = (issueType: string) => {
-    const specialtyMapping: { [key: string]: string[] } = {
-      'Pin EV': ['Battery Systems'],
-      'Động cơ': ['Motor & Drivetrain', 'Electronics & Software'],
-      'Hệ thống điện': ['Electronics & Software', 'Charging Systems'],
-      'Cảm biến': ['Electronics & Software', 'General Diagnostics'],
-      'Phanh': ['General Diagnostics']
-    };
+   const getRecommendedTechnicians = () => {
+    // Recommend by availability and workload (less loaded first)
 
     // Without specialty information, recommend by availability and workload (less loaded first)
     // Only show technicians with AVAILABLE status
@@ -1469,7 +1444,7 @@ const ServiceCenterDashboard = () => {
           experience: t.experience || t.yearsOfExperience || undefined,
           rating: t.rating || undefined,
           workload: t.activeTaskCount || t.workload || t.currentLoad || undefined,
-          status: normalizedStatus || 'UNAVAILABLE'
+          status: normalizedStatus || ''
         } as Technician;
       });
       setAvailableTechnicians(mapped);
@@ -1678,8 +1653,7 @@ const ServiceCenterDashboard = () => {
                   <div className="flex items-center justify-between w-full">
                     <div>
                       <CardTitle>Technician Management</CardTitle>
-                      <CardDescription>View and manage technicians' statuses and assignments</CardDescription>
-                    </div>
+ <CardDescription>View and manage technicians statuses, assignments and config workload</CardDescription>                    </div>
                     <div className="flex items-center gap-2">
                       <Button 
                         variant="outline" 
@@ -1694,22 +1668,35 @@ const ServiceCenterDashboard = () => {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {/* Status tabs for technicians */}
-                  <div className="mb-4 flex items-center gap-2 flex-wrap">
-                    {['AVAILABLE', 'UNAVAILABLE', 'ALL'].map(s => {
-                      const count = s === 'ALL' ? availableTechnicians.length : availableTechnicians.filter(t => t.status === s).length;
+ {/* Status tabs for technicians - show all defined statuses */}              
+     <div className="mb-4 flex items-center gap-2 flex-wrap">
+                   
+                       {/* ALL button */}
+                    <Button
+                      key="ALL"
+                      size="sm"
+                      variant={techFilterStatus === 'ALL' ? 'default' : 'outline'}
+                      onClick={() => setTechFilterStatus('ALL')}
+                      className="border-dashed"
+                    >
+                      All ({availableTechnicians.length})
+                    </Button>
+                    {/* Status buttons */}
+                    {TECH_STATUSES.map(s => {
+                      const count = availableTechnicians.filter(t => t.status === s).length;
                       return (
                         <Button
                           key={s}
                           size="sm"
-                          variant={s === (typeof techFilterStatus !== 'undefined' ? techFilterStatus : 'AVAILABLE') ? 'default' : 'outline'}
+                          variant={s === techFilterStatus ? 'default' : 'outline'}
                           onClick={() => setTechFilterStatus(s)}
+                          className="border-dashed"
                         >
                           {getDisplayStatus(s)} ({count})
                         </Button>
                       );
                     })}
-                  </div>
+                  </div>  
 
                   <div className="overflow-auto">
                     <Table>
@@ -1727,8 +1714,8 @@ const ServiceCenterDashboard = () => {
                             <TableCell>{tech.name}</TableCell>
                             <TableCell>{typeof tech.workload === 'number' ? tech.workload : '-'}</TableCell>
                             <TableCell>
-                              <Badge variant={tech.status === 'AVAILABLE' ? 'success' : 'outline'} className="text-xs">
-                                {getDisplayStatus(tech.status)}
+                          <Badge variant={getTechBadgeVariant(tech.status)} className="text-xs">
+                                  {getDisplayStatus(tech.status)}
                               </Badge>
                             </TableCell>
                             <TableCell>
@@ -1947,6 +1934,48 @@ const ServiceCenterDashboard = () => {
                     </div>
                   </CardContent>
                 </Card>
+                 {/* Evidence Images */}
+                {selectedClaimForDetail.evidenceImageUrls && selectedClaimForDetail.evidenceImageUrls.length > 0 && (
+                  <Card className="shadow-md border">
+                    <CardHeader className="bg-gradient-to-r from-purple-50 to-transparent dark:from-purple-900/20 pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <div className="p-2 bg-purple-100 dark:bg-purple-900/40 rounded-lg">
+                          <Eye className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        Evidence Images ({selectedClaimForDetail.evidenceImageUrls.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {selectedClaimForDetail.evidenceImageUrls.map((url, idx) => (
+                          <a
+                            key={idx}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group relative aspect-square rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-700 hover:border-purple-500 transition-all shadow-sm hover:shadow-lg"
+                          >
+                            <img
+                              src={url}
+                              alt={`Evidence ${idx + 1}`}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23999"%3ENo Image%3C/text%3E%3C/svg%3E';
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Eye className="h-6 w-6 text-white" />
+                            </div>
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+                              <p className="text-xs text-white font-medium">Image {idx + 1}</p>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Guarantee Cases */}
                 {selectedClaimForDetail.guaranteeCases && selectedClaimForDetail.guaranteeCases.length > 0 && (
@@ -2063,7 +2092,7 @@ const ServiceCenterDashboard = () => {
                                                     {line.typeComponent.category}
                                                   </Badge>
                                                   <Badge variant="secondary" className="text-xs px-1.5 py-0">
-                                                    Qty: {line.quantity}
+                                                    Quantity: {line.quantity}
                                                   </Badge>
                                                 </div>
                                                 <div className="flex items-center gap-1.5">
@@ -2372,7 +2401,9 @@ const ServiceCenterDashboard = () => {
                           <AlertCircle className="h-4 w-4 text-amber-600" />
                           <div className="flex-1">
                             <span className="text-xs text-muted-foreground mr-2">Issue:</span>
-                            <span className="font-medium text-sm">{claim?.issueType}</span>
+                            <span className="font-medium text-sm">
+                              {claim?.guaranteeCases?.[0]?.contentGuarantee || 'No issue description'}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -2421,9 +2452,7 @@ const ServiceCenterDashboard = () => {
               <div>
                 <h4 className="font-medium text-sm mb-3">Available Technicians:</h4>
                 <div className="grid gap-3">
-                  {selectedCaseForAssignment && getRecommendedTechnicians(
-                    warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.issueType || ''
-                  ).map((tech) => {
+                  {selectedCaseForAssignment && getRecommendedTechnicians().map((tech) => { 
                     const isAssigned = warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.assignedTechnicians.some(t => t.id === tech.id);
                     const canAssign = canAssignTechnician(tech, maxWorkload);
                     const workloadWarning = !canAssign ? getWorkloadWarningMessage(tech.workload || 0, maxWorkload) : "";
@@ -2450,8 +2479,8 @@ const ServiceCenterDashboard = () => {
                               )}
                             </div>
                             <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                              <span className={`${tech.status === 'AVAILABLE' ? 'text-green-600' : 'text-red-600'}`}>
-                                {tech.status === 'AVAILABLE' ? '✅ Available' : '❌ Busy'}
+                              <span className={tech.status === 'AVAILABLE' ? 'text-green-600' : 'text-gray-600'}>
+                                {getDisplayStatus(tech.status)}
                               </span>
                             </div>
                             {workloadWarning && (
@@ -2529,7 +2558,7 @@ const ServiceCenterDashboard = () => {
                                 ))}
                               </div>
                             ) : (
-                              displayValue(record.issueType)
+                              <span className="text-xs text-muted-foreground">No cases</span>
                             )}
                           </TableCell>
                           <TableCell>
@@ -2901,8 +2930,8 @@ const ServiceCenterDashboard = () => {
                                           Active Tasks: {tech.workload}
                                         </Badge>
                                       )}
-                                      <span className={`text-xs ${tech.status === 'AVAILABLE' ? 'text-green-600' : 'text-red-600'}`}>
-                                        {tech.status === 'AVAILABLE' ? '✅ Available' : '❌ Busy'}
+                                      <span className={tech.status === 'AVAILABLE' ? 'text-green-600' : 'text-gray-600'}>
+                                        {getDisplayStatus(tech.status)}
                                       </span>
                                     </div>
                                   </div>
