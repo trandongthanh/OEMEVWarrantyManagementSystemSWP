@@ -1633,8 +1633,10 @@ const ServiceCenterDashboard = () => {
                                   )}
                                 </div>
 
-                                {/* Assign Technician Button - Only show for CHECKED_IN status */}
-                                {hasPermission(user, 'assign_technicians') && claim.status === 'CHECKED_IN' && (
+                                {/* Assign Technician Button - Only show for CHECKED_IN status and when no technician assigned yet */}
+                                {hasPermission(user, 'assign_technicians') && 
+                                 claim.status === 'CHECKED_IN' && 
+                                 (!claim.assignedTechnicians || claim.assignedTechnicians.length === 0) && (
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -2255,7 +2257,9 @@ const ServiceCenterDashboard = () => {
                         <Users className="h-4 w-4" />
                         Assigned Technicians ({selectedClaimForDetail.assignedTechnicians.length})
                       </CardTitle>
-                      {hasPermission(user, 'assign_technicians') && (
+                      {/* Only show Assign button if no technician assigned yet */}
+                      {hasPermission(user, 'assign_technicians') && 
+                       (!selectedClaimForDetail.assignedTechnicians || selectedClaimForDetail.assignedTechnicians.length === 0) && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -2452,9 +2456,6 @@ const ServiceCenterDashboard = () => {
                               <span className={`${tech.isAvailable ? 'text-green-600' : 'text-red-600'}`}>
                                 {tech.isAvailable ? '✅ Available' : '❌ Busy'}
                               </span>
-                              {tech.status && (
-                                <span className="text-xs text-muted-foreground">{tech.status}</span>
-                              )}
                             </div>
                             {workloadWarning && (
                               <div className="mt-2 text-xs text-red-600 font-medium">
@@ -2903,14 +2904,9 @@ const ServiceCenterDashboard = () => {
                                           Active Tasks: {tech.workload}
                                         </Badge>
                                       )}
-                                      {tech.status && (
-                                        <Badge 
-                                          variant={tech.status === 'AVAILABLE' ? 'default' : 'secondary'}
-                                          className="text-xs"
-                                        >
-                                          {tech.status}
-                                        </Badge>
-                                      )}
+                                      <span className={`text-xs ${tech.isAvailable ? 'text-green-600' : 'text-red-600'}`}>
+                                        {tech.isAvailable ? '✅ Available' : '❌ Busy'}
+                                      </span>
                                     </div>
                                   </div>
                                 </div>
