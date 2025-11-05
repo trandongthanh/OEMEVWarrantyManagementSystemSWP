@@ -141,6 +141,7 @@ class VehicleProcessingRecordRepository {
         "odometer",
         "status",
         "visitorInfo",
+        "evidenceImageUrls",
       ],
 
       include: [
@@ -262,6 +263,7 @@ class VehicleProcessingRecordRepository {
         "odometer",
         "status",
         "visitorInfo",
+        "evidenceImageUrls",
       ],
       include: [
         {

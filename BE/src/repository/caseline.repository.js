@@ -109,7 +109,6 @@ class CaseLineRepository {
         "warrantyStatus",
         "status",
         "rejectionReason",
-        "evidenceImageUrls",
         "updatedAt",
       ],
       include: [
@@ -192,9 +191,7 @@ class CaseLineRepository {
         "warrantyStatus",
         "status",
         "rejectionReason",
-        "evidenceImageUrls",
         "updatedAt",
-        "evidenceImageUrls",
       ],
       where: {
         id: {
