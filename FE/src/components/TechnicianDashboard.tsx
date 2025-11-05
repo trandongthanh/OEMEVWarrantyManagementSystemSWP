@@ -223,6 +223,7 @@ interface CaseLine {
   rejectionReason?: string | null;
   updatedAt?: string;
   evidenceImageUrls?: string[];
+  guaranteeCaseId?: string; // Add guarantee case ID for proper display
 }
 
 interface WarrantyCase {
@@ -313,7 +314,7 @@ const TechnicianDashboard = ({
     diagnosisText: '',
     correctionText: '',
     componentId: null,
-    quantity: 1,
+    quantity: 0,
     warrantyStatus: 'ELIGIBLE'
   });
 
@@ -330,7 +331,7 @@ const TechnicianDashboard = ({
   const [componentQuery, setComponentQuery] = useState<string>("");
 
   // Compatible components for Processing Records modal
-  const [compatibleComponents, setCompatibleComponents] = useState<Array<{ typeComponentId: string; name: string; isUnderWarranty: boolean }>>([]);
+  const [compatibleComponents, setCompatibleComponents] = useState<Array<{ typeComponentId: string; name: string; isUnderWarranty: boolean; availableQuantity?: number }>>([]);
   const [componentSearchQuery, setComponentSearchQuery] = useState<string>("");
   const [isLoadingComponents, setIsLoadingComponents] = useState(false);
 
@@ -1204,6 +1205,16 @@ const TechnicianDashboard = ({
       return;
     }
 
+    // Validate quantity when component is selected
+    if (caseLineForm.componentId && caseLineForm.quantity <= 0) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a quantity greater than 0 for the selected component",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (!selectedRecord || !selectedRecord.guaranteeCases || (selectedRecord.guaranteeCases?.length ?? 0) === 0) {
       toast({
         title: "Error",
@@ -1228,49 +1239,16 @@ const TechnicianDashboard = ({
       
       console.log('🚀 Creating case line for guarantee case:', guaranteeCase.guaranteeCaseId);
 
-      // Upload images to Cloudinary first (if any)
-      let evidenceImageUrls: string[] = [];
-      if (uploadedFiles.length > 0) {
-        toast({
-          title: "Uploading Images",
-          description: `Uploading ${uploadedFiles.length} image(s) to Cloudinary...`,
-        });
-
-        try {
-          const { uploadImagesToCloudinary } = await import('@/services/cloudinaryService');
-          evidenceImageUrls = await uploadImagesToCloudinary(uploadedFiles, (fileIndex, progress) => {
-            console.log(`Uploading image ${fileIndex + 1}/${uploadedFiles.length}: ${progress.percentage}%`);
-          });
-          
-          console.log('✅ Images uploaded to Cloudinary:', evidenceImageUrls);
-          
-          toast({
-            title: "Images Uploaded",
-            description: `Successfully uploaded ${evidenceImageUrls.length} image(s)`,
-          });
-        } catch (uploadError) {
-          console.error('Failed to upload images:', uploadError);
-          toast({
-            title: "Image Upload Failed",
-            description: uploadError instanceof Error ? uploadError.message : "Failed to upload images to Cloudinary",
-            variant: "destructive"
-          });
-          // Continue without images if upload fails
-          evidenceImageUrls = [];
-        }
-      }
-
-      // Create case line with image URLs
+      // Create case line
       // Set diagnosisText same as correctionText for backend compatibility
-      const caseLineWithImages = {
+      const caseLineData = {
         ...caseLineForm,
         diagnosisText: caseLineForm.correctionText, // Use solution as diagnosis for backend
-        evidenceImageUrls
       };
 
       const serverCreatedCaseLines = await caseLineService.createCaseLines(
         guaranteeCase.guaranteeCaseId,
-        [caseLineWithImages]
+        [caseLineData]
       );
 
       console.log('✅ Case lines created:', serverCreatedCaseLines);
@@ -1299,13 +1277,12 @@ const TechnicianDashboard = ({
         repairPossibility: 'N/A',
         warrantyDecision: serverCreatedCaseLines[0].warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
         technicianNotes: `${serverCreatedCaseLines[0].diagnosisText} | ${serverCreatedCaseLines[0].correctionText}`,
-        photos: evidenceImageUrls, // Use Cloudinary URLs instead of local URLs
-        photoFiles: [], // No need to store files anymore
+        photos: [],
+        photoFiles: [],
         createdDate: new Date(serverCreatedCaseLines[0].createdAt).toLocaleDateString('en-GB'),
         status: serverCreatedCaseLines[0].status === 'DRAFT' ? 'submitted' : 
                 serverCreatedCaseLines[0].status === 'PENDING_APPROVAL' ? 'submitted' : 
                 serverCreatedCaseLines[0].status === 'CUSTOMER_APPROVED' ? 'approved' : 'submitted',
-        evidenceImageUrls: evidenceImageUrls // Store Cloudinary URLs
       };
 
       // Ensure no duplicate caseLine IDs in UI list
@@ -1320,35 +1297,28 @@ const TechnicianDashboard = ({
           ? createdCaseLines[0].caseLineId.slice(-8)
           : 'N/A';
 
-      // Check if there are more guarantee cases to process
-      const remainingCases = selectedRecord.guaranteeCases.filter(
-        gc => !createdCaseLines.some(cl => cl.guaranteeCaseId === gc.guaranteeCaseId)
-      );
-
       toast({
         title: "Case Line Created Successfully",
-        description: remainingCases.length > 0 
-          ? `Case line created! ${remainingCases.length} more guarantee case(s) remaining.`
-          : `All case lines created! You can now close this dialog.`,
+        description: `Case line created successfully! You can create another case line for this or another guarantee case.`,
       });
 
-      // Reset form for next guarantee case
+      // Reset form but keep modal open and keep selected guarantee case
       setCaseLineForm({
         diagnosisText: '',
         correctionText: '',
         componentId: null,
-        quantity: 1,
+        quantity: 0,
         warrantyStatus: 'ELIGIBLE'
       });
-      setUploadedFiles([]);
-      setUploadedFileUrls([]);
       setComponentSearchQuery('');
-      setCompatibleComponents([]);
-      setSelectedGuaranteeCaseForCaseLine(null); // Reset selected guarantee case
+      // Don't reset selectedGuaranteeCaseForCaseLine - keep it selected for creating another case line
       
-      // Only close modal if all guarantee cases have case lines
-      if (remainingCases.length === 0) {
-        setCreateIssueDiagnosisModalOpen(false);
+      // Reload compatible components for the selected guarantee case so user can create another case line
+      if (selectedRecord?.recordId) {
+        console.log('🔄 Reloading components after case line creation...');
+        fetchCompatibleComponents(selectedRecord.recordId.toString(), '').catch(error => {
+          console.error('❌ Failed to reload components:', error);
+        });
       }
       
     } catch (error) {
@@ -1624,6 +1594,7 @@ const TechnicianDashboard = ({
       const enriched: CaseLine = {
         id: detailedCaseLine.caseLineId,
         caseId: detailedCaseLine.guaranteeCaseId,
+        guaranteeCaseId: detailedCaseLine.guaranteeCaseId, // Store the guarantee case ID
         damageLevel: 'medium',
         repairPossibility: 'repairable',
         warrantyDecision: detailedCaseLine.warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
@@ -1842,28 +1813,13 @@ const TechnicianDashboard = ({
                                       setCreateIssueDiagnosisModalOpen(true);
 
                                       if (candidateId) {
-                                        console.log('✅ Using candidate recordId for component fetch:', candidateId);
-                                        // try fetching compatible components but don't block the UI if it fails
-                                        fetchCompatibleComponents(candidateId.toString()).catch(error => {
+                                        console.log('✅ Loading components for record:', candidateId);
+                                        // Load all compatible components (no search query needed)
+                                        fetchCompatibleComponents(candidateId.toString(), '').catch(error => {
                                           console.error('❌ Failed to fetch components:', error);
-                                          toast({
-                                            title: "Component Fetch Failed",
-                                            description: "Failed to fetch compatible components. You can still create the case line.",
-                                            variant: "destructive"
-                                          });
-                                        });
-
-                                        toast({
-                                          title: "Component Search Available",
-                                          description: "Compatible components will be searched automatically.",
                                         });
                                       } else {
-                                        console.warn('⚠️ No candidate recordId found on record, component search will be unavailable');
-                                        toast({
-                                          title: "Component Search Unavailable",
-                                          description: "Record ID not available. You can still create case line without component search.",
-                                          variant: "destructive"
-                                        });
+                                        console.warn('⚠️ No candidate recordId found on record, component list will be empty');
                                       }
                                     } catch (error) {
                                       console.error('❌ Error in create diagnosis handler:', error);
@@ -3047,12 +3003,16 @@ const TechnicianDashboard = ({
 
       {/* View Issue Diagnosis Modal */}
       <Dialog open={viewCaseLineModalOpen} onOpenChange={setViewCaseLineModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader className="pb-6">
-            <DialogTitle className="text-xl font-semibold">Issue Diagnosis Details</DialogTitle>
-            <DialogDescription className="text-base">
-              Detailed information for issue diagnosis <span className="font-mono font-medium">{selectedCaseLine?.id}</span>
-            </DialogDescription>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg">
+                <FileText className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <DialogTitle className="text-2xl font-bold text-gray-900">Issue Diagnosis Details</DialogTitle>
+              </div>
+            </div>
           </DialogHeader>
           
           {(() => {
@@ -3063,34 +3023,34 @@ const TechnicianDashboard = ({
             return null;
           })()}
           
-          <div className="space-y-6">
+          <div className="space-y-6 pt-2">
             {/* Case Line Information - single row split into two sides */}
-            <div className="flex gap-6 items-start">
-              {/* Left side: Basic Information + Diagnosis */}
-              <div className="flex-1 space-y-4">
-                <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                      <FileText className="h-4 w-4 text-white" />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left side: Basic Information */}
+              <div className="space-y-4">
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border-2 border-blue-200 shadow-sm">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-md">
+                      <FileText className="h-5 w-5 text-white" />
                     </div>
-                    <h4 className="font-semibold text-lg text-blue-900">Basic Information</h4>
+                    <h4 className="font-bold text-lg text-blue-900">Basic Information</h4>
                   </div>
-                  <div className="space-y-3">
-                    <div className="flex flex-col space-y-1">
-                      <span className="text-sm font-medium text-blue-700">Diagnosis ID</span>
-                      <span className="text-lg bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine?.id}</span>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Diagnosis ID</span>
+                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-blue-100 shadow-sm">
+                        <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine?.id}</span>
+                      </div>
                     </div>
-                    <div className="flex flex-col space-y-1">
-                      <span className="text-sm font-medium text-blue-700">Case ID</span>
-                      <span className="text-lg bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine?.caseId}</span>
+                    <div className="space-y-2">
+                      <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Created Date</span>
+                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-blue-100 shadow-sm">
+                        <span className="text-sm font-medium text-gray-800">{selectedCaseLine?.createdDate || 'Invalid Date'}</span>
+                      </div>
                     </div>
-                    <div className="flex flex-col space-y-1">
-                      <span className="text-sm font-medium text-blue-700">Created Date</span>
-                      <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine?.createdDate || 'N/A'}</span>
-                    </div>
-                    <div className="flex flex-col space-y-1">
-                      <span className="text-sm font-medium text-blue-700">Status</span>
-                      <div className="bg-white px-3 py-2 rounded border">
+                    <div className="space-y-2">
+                      <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Status</span>
+                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-blue-100 shadow-sm">
                         <Badge 
                           variant={
                             selectedCaseLine?.status === 'approved' ? 'default' :
@@ -3098,7 +3058,7 @@ const TechnicianDashboard = ({
                             selectedCaseLine?.status === 'submitted' ? 'secondary' :
                             'outline'
                           }
-                          className="text-sm px-3 py-1"
+                          className="text-sm px-4 py-1.5 font-semibold"
                         >
                           {selectedCaseLine?.status}
                         </Badge>
@@ -3106,72 +3066,79 @@ const TechnicianDashboard = ({
                     </div>
                   </div>
                 </div>
-
-                {/* Diagnosis moved into Technician Notes - removed separate block */}
               </div>
 
-              {/* Right side: Component & Warranty + Correction */}
-              <div className="w-1/2 space-y-4">
-                <div className="bg-yellow-50 p-6 rounded-lg border border-yellow-200">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
-                      <Wrench className="h-4 w-4 text-white" />
+              {/* Right side: Component & Warranty */}
+              <div className="space-y-4">
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-6 rounded-xl border-2 border-amber-200 shadow-sm">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 shadow-md">
+                      <Wrench className="h-5 w-5 text-white" />
                     </div>
-                    <h4 className="font-semibold text-lg text-yellow-900">Component & Warranty Details</h4>
+                    <h4 className="font-bold text-lg text-amber-900">Component & Warranty Details</h4>
                   </div>
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     {selectedCaseLine?.componentId && (
-                      <div className="flex flex-col space-y-1">
-                        <span className="text-sm font-medium text-yellow-700">Component ID</span>
-                        <span className="text-sm bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine.componentId}</span>
+                      <div className="space-y-2">
+                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component ID</span>
+                        <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
+                          <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine.componentId}</span>
+                        </div>
                       </div>
                     )}
                     {selectedCaseLine?.quantity !== undefined && (
-                      <div className="flex flex-col space-y-1">
-                        <span className="text-sm font-medium text-yellow-700">Quantity</span>
-                        <span className="text-lg bg-white px-3 py-2 rounded border">{selectedCaseLine.quantity}</span>
+                      <div className="space-y-2">
+                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Quantity</span>
+                        <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
+                          <span className="text-xl font-bold text-gray-800">{selectedCaseLine.quantity}</span>
+                        </div>
                       </div>
                     )}
                     {selectedCaseLine?.warrantyStatus && (
-                      <div className="flex flex-col space-y-1">
-                        <span className="text-sm font-medium text-yellow-700">Warranty Status</span>
-                        <div className="bg-white px-3 py-2 rounded border">
+                      <div className="space-y-2">
+                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Warranty Status</span>
+                        <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
                           <Badge 
-                            variant={selectedCaseLine.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}
-                            className="text-sm px-3 py-1"
+                            className={`text-sm px-4 py-1.5 font-semibold ${
+                              selectedCaseLine.warrantyStatus === 'ELIGIBLE' 
+                                ? 'bg-green-500 hover:bg-green-600 text-white' 
+                                : 'bg-red-500 hover:bg-red-600 text-white'
+                            }`}
                           >
-                            {selectedCaseLine.warrantyStatus}
+                            {selectedCaseLine.warrantyStatus === 'ELIGIBLE' ? '✓ ELIGIBLE' : '✗ INELIGIBLE'}
                           </Badge>
                         </div>
                       </div>
                     )}
                   </div>
                 </div>
-
-                {/* Correction moved into Technician Notes - removed separate block */}
               </div>
             </div>
 
             {/* Technician Information */}
             {(selectedCaseLine?.diagnosticTechId || selectedCaseLine?.repairTechId) && (
-              <div className="bg-indigo-50 p-6 rounded-lg border border-indigo-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center">
-                    <User className="h-4 w-4 text-white" />
+              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-xl border-2 border-indigo-200 shadow-sm">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 shadow-md">
+                    <Users className="h-5 w-5 text-white" />
                   </div>
-                  <h4 className="font-semibold text-lg text-indigo-900">Technician Information</h4>
+                  <h4 className="font-bold text-lg text-indigo-900">Technician Information</h4>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {selectedCaseLine?.diagnosticTechId && (
-                    <div className="flex flex-col space-y-1">
-                      <span className="text-sm font-medium text-indigo-700">Diagnostic Technician ID</span>
-                      <span className="text-sm bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine.diagnosticTechId}</span>
+                    <div className="space-y-2">
+                      <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Diagnostic Technician</span>
+                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-indigo-100 shadow-sm">
+                        <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine.diagnosticTechId}</span>
+                      </div>
                     </div>
                   )}
                   {selectedCaseLine?.repairTechId && (
-                    <div className="flex flex-col space-y-1">
-                      <span className="text-sm font-medium text-indigo-700">Repair Technician ID</span>
-                      <span className="text-sm bg-white px-3 py-2 rounded border font-mono">{selectedCaseLine.repairTechId}</span>
+                    <div className="space-y-2">
+                      <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Repair Technician</span>
+                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-indigo-100 shadow-sm">
+                        <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine.repairTechId}</span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -3180,44 +3147,50 @@ const TechnicianDashboard = ({
 
             {/* Rejection Reason (if any) */}
             {selectedCaseLine?.rejectionReason && (
-              <div className="bg-red-50 p-6 rounded-lg border border-red-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
-                    <AlertCircle className="h-4 w-4 text-white" />
+              <div className="bg-gradient-to-br from-red-50 to-pink-50 p-6 rounded-xl border-2 border-red-300 shadow-sm">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 to-pink-500 shadow-md">
+                    <AlertCircle className="h-5 w-5 text-white" />
                   </div>
-                  <h4 className="font-semibold text-lg text-red-900">Rejection Reason</h4>
+                  <h4 className="font-bold text-lg text-red-900">Rejection Reason</h4>
                 </div>
-                <div className="bg-white p-4 rounded-lg border">
-                  <p className="text-base leading-relaxed text-red-800">{selectedCaseLine.rejectionReason}</p>
+                <div className="bg-white/80 backdrop-blur p-5 rounded-lg border-2 border-red-200 shadow-sm">
+                  <p className="text-sm leading-relaxed text-red-900 font-medium">{selectedCaseLine.rejectionReason}</p>
                 </div>
               </div>
             )}
 
             {/* Updated Date */}
             {selectedCaseLine?.updatedAt && (
-              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+              <div className="bg-gradient-to-r from-slate-100 to-gray-100 p-4 rounded-xl border-2 border-slate-200 shadow-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-700">Last Updated:</span>
-                  <span className="text-sm text-slate-900">{new Date(selectedCaseLine.updatedAt).toLocaleString()}</span>
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-slate-600" />
+                    <span className="text-sm font-semibold text-slate-700">Last Updated:</span>
+                  </div>
+                  <span className="text-sm font-medium text-slate-900">{new Date(selectedCaseLine.updatedAt).toLocaleString()}</span>
                 </div>
               </div>
             )}
 
-            {/* Technician Notes split into two fields: Diagnosis and Correction */}
+            {/* Technician Notes */}
             {selectedCaseLine && (
-              <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center">
-                    <User className="h-4 w-4 text-white" />
+              <div className="bg-gradient-to-br from-slate-50 to-gray-100 p-6 rounded-xl border-2 border-slate-300 shadow-sm">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-gray-600 to-gray-700 shadow-md">
+                    <FileText className="h-5 w-5 text-white" />
                   </div>
-                  <h4 className="font-semibold text-lg text-gray-900">Technician Notes</h4>
+                  <h4 className="font-bold text-lg text-gray-900">Technician Notes</h4>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-3">
                   <div>
-                    <span className="text-sm font-medium text-gray-700">Solution</span>
-                    <div className="bg-white p-3 rounded-lg border mt-2">
-                      <p className="text-sm text-gray-800">{selectedCaseLine.correctionText || 'N/A'}</p>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Wrench className="h-4 w-4 text-gray-600" />
+                      <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Solution</span>
+                    </div>
+                    <div className="bg-white/90 backdrop-blur p-4 rounded-lg border-2 border-gray-200 shadow-sm">
+                      <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{selectedCaseLine.correctionText || 'N/A'}</p>
                     </div>
                   </div>
                 </div>
@@ -3228,21 +3201,24 @@ const TechnicianDashboard = ({
             {(() => {
               const photoUrls = selectedCaseLine?.evidenceImageUrls || selectedCaseLine?.photos || [];
               return photoUrls.length > 0 ? (
-                <div className="bg-green-50 p-6 rounded-lg border border-green-200">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                      <Camera className="h-4 w-4 text-white" />
+                <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-6 rounded-xl border-2 border-green-300 shadow-sm">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-emerald-500 shadow-md">
+                      <Camera className="h-5 w-5 text-white" />
                     </div>
-                    <h4 className="font-semibold text-lg text-green-900">Evidence Photos ({photoUrls.length})</h4>
+                    <div>
+                      <h4 className="font-bold text-lg text-green-900">Evidence Photos</h4>
+                      <p className="text-xs text-green-700 font-semibold">{photoUrls.length} image(s) attached</p>
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {photoUrls.map((photo, index) => (
-                      <div key={index} className="bg-white p-3 rounded-lg border border-green-300 hover:shadow-lg transition-shadow">
-                        <div className="aspect-square mb-3 overflow-hidden rounded">
+                      <div key={index} className="group bg-white p-3 rounded-xl border-2 border-green-200 hover:border-green-400 hover:shadow-xl transition-all duration-200">
+                        <div className="relative aspect-square mb-3 overflow-hidden rounded-lg border-2 border-gray-200">
                           <img 
                             src={photo} 
                             alt={`Evidence Photo ${index + 1}`}
-                            className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                            className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
                             onClick={() => {
                               setPreviewImageUrl(photo);
                               setImagePreviewModalOpen(true);
@@ -3254,9 +3230,12 @@ const TechnicianDashboard = ({
                               e.currentTarget.style.cursor = 'default';
                             }}
                           />
+                          <div className="absolute top-2 right-2 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
+                            #{index + 1}
+                          </div>
                         </div>
                         <div className="space-y-2">
-                          <p className="text-sm text-center text-green-700 font-medium">Evidence Photo {index + 1}</p>
+                          <p className="text-xs text-center text-green-800 font-semibold uppercase tracking-wide">Evidence Photo {index + 1}</p>
                           <div className="flex gap-2">
                             <Button
                               variant="outline"
@@ -3265,9 +3244,10 @@ const TechnicianDashboard = ({
                                 setPreviewImageUrl(photo);
                                 setImagePreviewModalOpen(true);
                               }}
-                              className="text-xs flex-1"
+                              className="text-xs flex-1 border-2 hover:bg-green-50 hover:border-green-400 font-semibold"
                             >
-                              View Full Size
+                              <Eye className="h-3 w-3 mr-1" />
+                              View
                             </Button>
                             <Button
                               variant="outline"
@@ -3279,9 +3259,10 @@ const TechnicianDashboard = ({
                                   description: `Photo ${index + 1} URL copied to clipboard`,
                                 });
                               }}
-                              className="text-xs"
+                              className="text-xs border-2 hover:bg-green-50 hover:border-green-400"
+                              title="Copy URL"
                             >
-                              Copy URL
+                              <Camera className="h-3 w-3" />
                             </Button>
                           </div>
                         </div>
@@ -3293,8 +3274,13 @@ const TechnicianDashboard = ({
             })()}
           </div>
           
-          <div className="flex justify-end gap-3 pt-6 border-t">
-            <Button variant="outline" onClick={() => setViewCaseLineModalOpen(false)} className="px-6">
+          <div className="flex justify-end gap-3 pt-6 border-t-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setViewCaseLineModalOpen(false)} 
+              className="px-8 border-2 hover:bg-gray-100 font-semibold"
+            >
+              <X className="h-4 w-4 mr-2" />
               Close
             </Button>
           </div>
@@ -3793,48 +3779,66 @@ const TechnicianDashboard = ({
         console.log('📝 Dialog onOpenChange:', open);
         setCreateIssueDiagnosisModalOpen(open);
       }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Create Issue Diagnosis</DialogTitle>
-            <DialogDescription>
-              Create a new issue diagnosis for VIN: {selectedRecord?.vin || 'N/A'}
-              {selectedRecord?.recordId && ` (Record: ${(selectedRecord.recordId as string | undefined)?.substring?.(0, 8) ?? ''}...)`}
-            </DialogDescription>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="space-y-3 pb-4 border-b">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg">
+                <FileText className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <DialogTitle className="text-2xl font-bold text-gray-900">Create Issue Diagnosis</DialogTitle>
+                <DialogDescription className="text-sm mt-1">
+                  <span className="font-semibold text-gray-700">VIN:</span> {selectedRecord?.vin || 'N/A'}
+                  {selectedRecord?.recordId && (
+                    <span className="ml-2 text-xs font-mono text-gray-500">
+                      (ID: {(selectedRecord.recordId as string | undefined)?.substring?.(0, 8) ?? ''}...)
+                    </span>
+                  )}
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
           
           {selectedRecord ? (
-            <div className="space-y-6">
-              {/* Step 1: Select Guarantee Case */}
-              <div className="border-b pb-6">
-                <h4 className="font-medium text-base mb-4">📋 Step 1: Select Guarantee Case</h4>
+            <div className="space-y-6 pt-2">
+              {/* Select Guarantee Case */}
+              <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-6 border border-slate-200">
+                <div className="flex items-center gap-2 mb-5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500 shadow-sm">
+                    <span className="text-white font-bold text-sm">1</span>
+                  </div>
+                  <h4 className="font-semibold text-lg text-gray-800">Select Guarantee Case</h4>
+                </div>
                 <div className="space-y-3">
                   {selectedRecord.guaranteeCases && selectedRecord.guaranteeCases.length > 0 ? (
                     selectedRecord.guaranteeCases.map((gc, index) => {
-                      const alreadyHasCaseLine = createdCaseLines.some(cl => cl.guaranteeCaseId === gc.guaranteeCaseId);
+                      const caseLineCount = createdCaseLines.filter(cl => cl.guaranteeCaseId === gc.guaranteeCaseId).length;
                       const isSelected = selectedGuaranteeCaseForCaseLine === gc.guaranteeCaseId;
                       
                       return (
                         <div
                           key={gc.guaranteeCaseId}
-                          className={`border rounded-lg p-4 cursor-pointer transition-all ${
-                            alreadyHasCaseLine 
-                              ? 'bg-green-50 border-green-300 cursor-not-allowed opacity-60' 
-                              : isSelected
-                              ? 'bg-blue-50 border-blue-500 shadow-md'
-                              : 'bg-white hover:bg-gray-50 hover:border-gray-400'
+                          className={`border-2 rounded-xl p-4 cursor-pointer transition-all duration-200 ${
+                            isSelected
+                              ? 'bg-blue-50 border-blue-500 shadow-lg ring-2 ring-blue-200'
+                              : caseLineCount > 0
+                              ? 'bg-green-50 border-green-400 hover:bg-green-100 hover:shadow-md'
+                              : 'bg-white hover:bg-gray-50 hover:border-gray-400 hover:shadow-md'
                           }`}
                           onClick={() => {
-                            if (!alreadyHasCaseLine) {
-                              setSelectedGuaranteeCaseForCaseLine(gc.guaranteeCaseId);
-                            }
+                            // When user selects a guarantee case, clear any previously chosen component
+                            // so the Create Issue Diagnosis flow always requires an explicit component pick.
+                            setSelectedGuaranteeCaseForCaseLine(gc.guaranteeCaseId);
+                            setCaseLineForm(prev => ({ ...prev, componentId: null, warrantyStatus: 'ELIGIBLE' }));
+                            setComponentSearchQuery('');
                           }}
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex items-start gap-3">
                               <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
-                                alreadyHasCaseLine ? 'bg-green-500' : isSelected ? 'bg-blue-500' : 'bg-gray-300'
-                              } text-white font-bold`}>
-                                {alreadyHasCaseLine ? '✓' : index + 1}
+                                isSelected ? 'bg-blue-500' : caseLineCount > 0 ? 'bg-green-500' : 'bg-gray-300'
+                              } text-white font-bold text-sm`}>
+                                {index + 1}
                               </div>
                               <div className="flex-1">
                                 <div className="font-medium text-sm mb-1">
@@ -3853,9 +3857,9 @@ const TechnicianDashboard = ({
                                 </Badge>
                               </div>
                             </div>
-                            {alreadyHasCaseLine && (
+                            {caseLineCount > 0 && (
                               <Badge variant="default" className="bg-green-600 text-xs">
-                                Case Line Created
+                                {caseLineCount} Case Line{caseLineCount > 1 ? 's' : ''}
                               </Badge>
                             )}
                           </div>
@@ -3873,45 +3877,61 @@ const TechnicianDashboard = ({
               {/* Only show Step 2 if a guarantee case is selected */}
               {selectedGuaranteeCaseForCaseLine && (
                 <>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle className="h-4 w-4 text-blue-600" />
-                      <p className="text-sm text-blue-800">
-                        Creating case line for: <span className="font-mono font-semibold">{selectedGuaranteeCaseForCaseLine.substring(0, 16)}...</span>
-                      </p>
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-xl p-4 shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500 shadow-md">
+                        <CheckCircle className="h-5 w-5 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Selected Case</p>
+                        <p className="text-sm font-bold text-blue-900">
+                          Guarantee Case #{selectedRecord.guaranteeCases?.findIndex(gc => gc.guaranteeCaseId === selectedGuaranteeCaseForCaseLine) + 1 || 'N/A'}
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="border-t pt-6">
-                    <h4 className="font-medium text-base mb-4">🔧 Case Line Details</h4>
+                  <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-6 border border-slate-200">
+                    <div className="flex items-center gap-2 mb-5">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-500 shadow-sm">
+                        <span className="text-white font-bold text-sm">2</span>
+                      </div>
+                      <h4 className="font-semibold text-lg text-gray-800">Case Line Details</h4>
+                    </div>
 
-                    <div className="space-y-4">
+                    <div className="space-y-5">
                       <div className="space-y-2">
-                        <Label htmlFor="correctionText">Solution *</Label>
+                        <Label htmlFor="correctionText" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                          <Wrench className="h-4 w-4 text-gray-600" />
+                          Solution
+                        </Label>
                         <Textarea 
                           id="correctionText"
                           value={caseLineForm.correctionText}
                           onChange={(e) => setCaseLineForm(prev => ({ ...prev, correctionText: e.target.value }))}
-                          placeholder="Describe the solution..."
-                          className="min-h-24"
+                          placeholder="Describe the solution and corrective actions taken to resolve the issue..."
+                          className="min-h-28 border-2 focus:border-green-400 focus:ring-green-200 transition-colors"
                         />
+                        
                       </div>
                     </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="componentSearch">Component Search (Optional)</Label>
+                      <Label htmlFor="componentSelect" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                        <Package className="h-4 w-4 text-gray-600" />
+                        Replacement Component
+                      </Label>
                       {caseLineForm.componentId && (
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-6 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                          className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 font-semibold"
                           onClick={() => {
-                            setCaseLineForm(prev => ({ ...prev, componentId: null }));
+                            setCaseLineForm(prev => ({ ...prev, componentId: null, warrantyStatus: 'ELIGIBLE' }));
                             setComponentSearchQuery('');
-                            setCompatibleComponents([]);
                           }}
                         >
                           <X className="h-3 w-3 mr-1" />
@@ -3922,198 +3942,214 @@ const TechnicianDashboard = ({
                     
                     {/* Selected Component Display */}
                     {caseLineForm.componentId && (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-2">
-                        <div className="flex items-start gap-2">
-                          <CheckCircle className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-300 rounded-xl p-4 mb-2 shadow-sm">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500 shadow-md flex-shrink-0">
+                            <CheckCircle className="h-5 w-5 text-white" />
+                          </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-green-900">Component Selected</p>
-                            <p className="text-xs text-green-700 mt-1 break-all">{componentSearchQuery || 'Selected'}</p>
-                            <p className="text-xs text-green-600 mt-1 font-mono">ID: {caseLineForm.componentId.slice(0, 16)}...</p>
-                            <Badge 
-                              variant={caseLineForm.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}
-                              className="mt-2 text-xs"
-                            >
-                              {caseLineForm.warrantyStatus === 'ELIGIBLE' ? '✓ Under Warranty' : '✗ Not Covered'}
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* No Component Selected State */}
-                    {!caseLineForm.componentId && (
-                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-2">
-                        <div className="flex items-start gap-2">
-                          <AlertCircle className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-gray-600">No Component Selected</p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              {!selectedGuaranteeCaseForCaseLine 
-                                ? "Please select a guarantee case first (Step 1)" 
-                                : "Search below to select a component (optional)"}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="relative">
-                      <Input 
-                        id="componentSearch"
-                        value={componentSearchQuery}
-                        disabled={!!caseLineForm.componentId || !selectedGuaranteeCaseForCaseLine}
-                        onChange={(e) => {
-                          const q = e.target.value;
-                          setComponentSearchQuery(q);
-                          // Search components when typing: prefer fetching compatible components for the selected record
-                          if (q.length >= 2) {
-                            try {
-                              // Try to derive a candidate record id from selectedRecord
-                              const recMap = (selectedRecord as unknown) as Record<string, unknown> | null;
-                              const candidateId = recMap && (
-                                (recMap['recordId'] as string) ||
-                                (recMap['vehicleProcessingRecordId'] as string) ||
-                                (recMap['processing_record_id'] as string) ||
-                                (recMap['id'] as string) || ''
-                              );
-
-                              if (candidateId) {
-                                // Use record-scoped compatible components endpoint (provides warranty info)
-                                fetchCompatibleComponents(candidateId, q).catch((err) => {
-                                  console.error('Failed to fetch compatible components for search:', err);
-                                  setCompatibleComponents([]);
-                                });
-                              } else {
-                                console.warn('No recordId available for component search');
-                                setCompatibleComponents([]);
-                              }
-                            } catch (err) {
-                              console.error('Error while searching components:', err);
-                              setCompatibleComponents([]);
-                            }
-                          } else {
-                            setCompatibleComponents([]);
-                          }
-                        }}
-                        placeholder={
-                          caseLineForm.componentId 
-                            ? "Component selected" 
-                            : !selectedGuaranteeCaseForCaseLine
-                            ? "Select a guarantee case first..."
-                            : "Type to search components..."
-                        }
-                        className={caseLineForm.componentId || !selectedGuaranteeCaseForCaseLine ? "bg-gray-100 cursor-not-allowed" : ""}
-                      />
-                      {isLoadingComponents && (
-                        <div className="absolute right-2 top-2">
-                          <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
-                        </div>
-                      )}
-                      {/* Dropdown results */}
-                      {!caseLineForm.componentId && componentSearchQuery.length >= 2 && Array.isArray(compatibleComponents) && compatibleComponents.length > 0 && (
-                        <div className="absolute z-50 bg-white border rounded mt-1 w-full max-h-60 overflow-auto shadow-lg">
-                          {compatibleComponents.map((component) => (
-                            <div
-                              key={component.typeComponentId}
-                              className="px-3 py-2 hover:bg-green-50 cursor-pointer flex items-center justify-between border-b last:border-b-0 transition-colors"
-                              onClick={() => {
-                                // Auto-set warranty status based on isUnderWarranty
-                                const warrantyStatus = component.isUnderWarranty ? 'ELIGIBLE' : 'INELIGIBLE';
-                                setCaseLineForm(prev => ({ 
-                                  ...prev, 
-                                  componentId: component.typeComponentId,
-                                  warrantyStatus: warrantyStatus
-                                }));
-                                setComponentSearchQuery(component.name);
-                                setCompatibleComponents([]);
-                                console.log('🎯 Component selected:', component.name, '| Warranty:', warrantyStatus);
-                              }}
-                            >
-                              <div className="flex-1">
-                                <span className="text-sm font-medium">{component.name}</span>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className="text-xs text-gray-400">{component.typeComponentId.slice(0, 8)}...</span>
-                                  {component.isUnderWarranty ? (
-                                    <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">Under Warranty</span>
-                                  ) : (
-                                    <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded">Not Covered</span>
-                                  )}
-                                </div>
-                              </div>
+                            <p className="text-xs font-semibold text-green-600 uppercase tracking-wide">Component Selected</p>
+                            <p className="text-sm font-bold text-green-900 mt-1 break-words">{componentSearchQuery || 'Selected'}</p>
+                            {/* Show warranty status line below the name */}
+                            <div className="mt-3 flex items-center gap-2">
+                              {caseLineForm.warrantyStatus === 'ELIGIBLE' ? (
+                                <Badge className="bg-green-500 text-white border-0 text-xs font-semibold px-3 py-1">
+                                  ✓ Under Warranty
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-red-500 text-white border-0 text-xs font-semibold px-3 py-1">
+                                  ✗ Not Covered
+                                </Badge>
+                              )}
                             </div>
-                          ))}
+                            {/* Show full component ID */}
+                            <div className="mt-3 bg-white/60 rounded-lg px-3 py-2 border border-green-200">
+                              <p className="text-xs text-gray-600 font-semibold mb-0.5">Component ID</p>
+                              <p className="text-xs text-gray-800 font-mono break-all">{caseLineForm.componentId}</p>
+                            </div>
+                          </div>
                         </div>
-                      )}
-                      {componentSearchQuery.length >= 2 && !isLoadingComponents && compatibleComponents.length === 0 && !caseLineForm.componentId && (
-                        <div className="absolute z-50 bg-white border rounded mt-1 w-full p-3 shadow-lg">
-                          <p className="text-sm text-gray-500">No compatible components found</p>
-                        </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
+
+                    <Select
+                      disabled={!selectedGuaranteeCaseForCaseLine || isLoadingComponents || !!caseLineForm.componentId}
+                      value={caseLineForm.componentId || "none"}
+                      onValueChange={(value) => {
+                        if (value === "none" || value === "") {
+                          // Clear selection
+                          setCaseLineForm(prev => ({ ...prev, componentId: null, warrantyStatus: 'ELIGIBLE' }));
+                          setComponentSearchQuery('');
+                        } else {
+                          // Find selected component
+                          const selectedComponent = compatibleComponents.find(c => c.typeComponentId === value);
+                          if (selectedComponent) {
+                            const warrantyStatus = selectedComponent.isUnderWarranty ? 'ELIGIBLE' : 'INELIGIBLE';
+                            setCaseLineForm(prev => ({ 
+                              ...prev, 
+                              componentId: selectedComponent.typeComponentId,
+                              warrantyStatus: warrantyStatus
+                            }));
+                            setComponentSearchQuery(selectedComponent.name);
+                            console.log('🎯 Component selected:', selectedComponent.name, '| Warranty:', warrantyStatus);
+                          }
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full border-2 focus:border-green-400 focus:ring-green-200 transition-colors h-11">
+                        {/* Render only the selected component name here so the badge inside SelectItem
+                            (the 'Under Warranty' / 'Not Covered' chips) doesn't appear inside
+                            the closed Select trigger. Use componentSearchQuery (set when an item
+                            is selected) as the display; fall back to the same placeholder text. */}
+                        <SelectValue placeholder={
+                          isLoadingComponents 
+                            ? "Loading components..." 
+                            : !selectedGuaranteeCaseForCaseLine
+                            ? "Select a guarantee case first"
+                            : compatibleComponents.length === 0
+                            ? "No components available"
+                            : "Choose a replacement component..."
+                        }>
+                          {
+                            // Prefer showing the transient componentSearchQuery (we set this when
+                            // an item is selected). Fall back to resolving the name from the
+                            // componentId in compatibleComponents if needed.
+                            componentSearchQuery ||
+                            (caseLineForm.componentId
+                              ? (compatibleComponents.find(c => c.typeComponentId === caseLineForm.componentId)?.name)
+                              : undefined)
+                          }
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[300px]">
+                        {isLoadingComponents ? (
+                          <div className="px-3 py-4 text-center text-sm text-gray-500">
+                            <RefreshCw className="h-4 w-4 animate-spin mx-auto mb-2" />
+                            Loading components...
+                          </div>
+                        ) : compatibleComponents.length === 0 ? (
+                          <div className="px-3 py-4 text-center text-sm text-gray-500">
+                            No compatible components found
+                          </div>
+                        ) : (
+                          <>
+                            <SelectItem value="none" className="text-gray-500 italic">
+                              -- None (Optional) --
+                            </SelectItem>
+                            {compatibleComponents.map((component) => (
+                              <SelectItem 
+                                key={component.typeComponentId} 
+                                value={component.typeComponentId}
+                                className="cursor-pointer hover:bg-blue-50 transition-colors py-3 my-1"
+                              >
+                                {/* Hidden plain text label to ensure the Select trigger shows the name
+                                    even when the visible item contains complex JSX (badges, layout). */}
+                                <span className="sr-only">{component.name}</span>
+                                <div className="flex items-center justify-between gap-3 py-1">
+                                  <div className="flex-1">
+                                    <span className="font-semibold text-gray-800 block">{component.name}</span>
+                                    {component.availableQuantity !== undefined && (
+                                      <span className="text-xs text-gray-500 mt-0.5 block">
+                                        Available: {component.availableQuantity} units
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    {component.isUnderWarranty ? (
+                                      <Badge className="bg-green-500 text-white border-0 text-xs font-semibold">
+                                        ✓ Warranty
+                                      </Badge>
+                                    ) : (
+                                      <Badge className="bg-red-500 text-white border-0 text-xs font-semibold">
+                                        ✗ No Warranty
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="quantity">Quantity</Label>
+                    <Label htmlFor="quantity" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <Gauge className="h-4 w-4 text-gray-600" />
+                      Quantity
+                    </Label>
                     <Input 
                       id="quantity"
-                      type="number"
-                      min="1"
-                      value={caseLineForm.quantity}
-                      onChange={(e) => setCaseLineForm(prev => ({ ...prev, quantity: parseInt(e.target.value) || 1 }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="warrantyStatus">Warranty Status *</Label>
-                    <div className="relative">
-                      <Input
-                        id="warrantyStatus"
-                        value={
-                          !caseLineForm.componentId
-                            ? 'Select a component first'
-                            : caseLineForm.warrantyStatus === 'ELIGIBLE' 
-                            ? '✅ ELIGIBLE - Covered by Warranty' 
-                            : caseLineForm.warrantyStatus === 'INELIGIBLE' 
-                            ? '❌ INELIGIBLE - Not Covered' 
-                            : 'Unknown status'
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={caseLineForm.quantity.toString()}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        // Allow empty input or valid numbers only
+                        if (val === '' || /^\d+$/.test(val)) {
+                          const parsed = val === '' ? '' : parseInt(val, 10);
+                          setCaseLineForm(prev => ({ 
+                            ...prev, 
+                            quantity: parsed === '' ? 0 : parsed 
+                          }));
                         }
-                        readOnly
-                        disabled
-                        className={`font-medium ${
-                          !caseLineForm.componentId || !caseLineForm.warrantyStatus
-                            ? 'bg-gray-50 text-gray-500'
-                            : caseLineForm.warrantyStatus === 'ELIGIBLE' 
-                            ? 'bg-green-50 text-green-700 border-green-300' 
-                            : caseLineForm.warrantyStatus === 'INELIGIBLE'
-                            ? 'bg-red-50 text-red-700 border-red-300'
-                            : 'bg-gray-50 text-gray-500'
-                        }`}
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        ℹ️ Warranty status is automatically determined based on the selected component
-                      </p>
-                    </div>
+                      }}
+                      onBlur={(e) => {
+                        // Keep 0 if user leaves empty or enters 0
+                        const val = e.target.value;
+                        if (val === '') {
+                          setCaseLineForm(prev => ({ ...prev, quantity: 0 }));
+                        }
+                      }}
+                      placeholder="0"
+                      className="border-2 focus:border-green-400 focus:ring-green-200 transition-colors h-11 text-lg font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
                   </div>
                     </div>
                   </div>
 
-                  <div className="flex justify-end gap-2 pt-4 border-t">
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setCreateIssueDiagnosisModalOpen(false);
-                    setComponentSearchQuery('');
-                    setCompatibleComponents([]);
-                  }}
-                  disabled={isSubmitting}
-                >
-                  Cancel
-                </Button>
-                    <Button 
-                      className="bg-green-600 hover:bg-green-700"
-                      onClick={handleCreateIssueDiagnosis}
-                      disabled={isSubmitting}
-                    >
-                      {isSubmitting ? "Creating..." : "Create Case Line"}
-                    </Button>
+                  <div className="flex justify-end items-center gap-3 pt-6 mt-6 border-t-2">
+                    <div className="flex gap-3">
+                      <Button 
+                        variant="outline" 
+                        onClick={() => {
+                          // Close modal and reset form state so Quantity returns to 0 next time
+                          setCreateIssueDiagnosisModalOpen(false);
+                          setCaseLineForm({
+                            diagnosisText: '',
+                            correctionText: '',
+                            componentId: null,
+                            quantity: 0,
+                            warrantyStatus: 'ELIGIBLE'
+                          });
+                          setComponentSearchQuery('');
+                          setCompatibleComponents([]);
+                        }}
+                        disabled={isSubmitting}
+                        className="border-2 hover:bg-gray-100 font-semibold px-6"
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Cancel
+                      </Button>
+                      <Button 
+                        className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white shadow-lg hover:shadow-xl transition-all font-semibold px-8"
+                        onClick={handleCreateIssueDiagnosis}
+                        disabled={isSubmitting || !caseLineForm.correctionText}
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                            Creating...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            Create Case Line
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </>
               )}

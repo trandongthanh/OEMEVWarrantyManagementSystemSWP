@@ -40,7 +40,7 @@ interface Technician {
   id: string;
   name: string;
   workload?: number; // maps to activeTaskCount
-  status: string;
+  status: string; 
   specialty?: string;
   experience?: number;
   rating?: number;
@@ -139,9 +139,10 @@ interface WarrantyClaim {
   createdByStaffId?: string; // Staff who created the record
   createdByStaffName?: string; // Staff name who created the record
   submissionDate: string;
+  
   status?: string;
   priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
-  evidenceImageUrls?: string[]; // Evidence images from check-in
+ evidenceImageUrls?: string[]; // Evidence images from check-in
 }
 
 interface TypeComponent {
@@ -301,6 +302,7 @@ const STATUS_LABELS: Record<string, string> = {
   COMPLETED: 'Completed',
   CANCELLED: 'Cancelled',
 
+  
   // CaseLine statuses
   DRAFT: 'Draft',
   PENDING_APPROVAL: 'Pending Approval',
@@ -320,11 +322,8 @@ const STATUS_LABELS: Record<string, string> = {
   RESERVED: 'Reserved',
   DISPATCHED: 'Dispatched',
   DELIVERED: 'Delivered',
-
-  // Technician statuses
-  AVAILABLE: 'Available',
-  UNAVAILABLE: 'Unavailable',
-
+AVAILABLE: 'Available',
+  UNAVAILABLE: 'Unavailable', 
   // Generic
   UNKNOWN: 'Unknown'
 };
@@ -419,14 +418,16 @@ const getWorkloadWarningMessage = (workload: number, maxWorkload = 5): string =>
   return "";
 };
 
+
 const ServiceCenterDashboard = () => {
   const [warrantyClaims, setWarrantyClaims] = useState<WarrantyClaim[]>([]);
   const [availableTechnicians, setAvailableTechnicians] = useState<Technician[]>([]);
   const [techFilterStatus, setTechFilterStatus] = useState<string>('AVAILABLE');
-  
+
   // Technician Status tabs
   const TECH_STATUSES = ['AVAILABLE', 'UNAVAILABLE'];
   
+
   // Status tabs
   const STATUSES = [
     'CHECKED_IN',
@@ -652,6 +653,7 @@ const ServiceCenterDashboard = () => {
           createdByStaffId: r.createdByStaff?.userId || r.createdByStaff?.id || undefined,
           createdByStaffName: r.createdByStaff?.name || undefined,
           submissionDate: r.createdAt || new Date().toISOString(),
+          
           priority: r.priority || undefined,
           status: r.status || cases[0]?.status || status,
           evidenceImageUrls: r.evidenceImageUrls || []
@@ -1000,8 +1002,10 @@ const ServiceCenterDashboard = () => {
     ));
   };
 
-  const getRecommendedTechnicians = () => {
+   const getRecommendedTechnicians = () => {
     // Recommend by availability and workload (less loaded first)
+
+    // Without specialty information, recommend by availability and workload (less loaded first)
     // Only show technicians with AVAILABLE status
     return availableTechnicians
       .filter(tech => tech.status === 'AVAILABLE')
@@ -1652,8 +1656,7 @@ const ServiceCenterDashboard = () => {
                   <div className="flex items-center justify-between w-full">
                     <div>
                       <CardTitle>Technician Management</CardTitle>
-                      <CardDescription>View and manage technicians statuses, assignments and config workload</CardDescription>
-                    </div>
+ <CardDescription>View and manage technicians statuses, assignments and config workload</CardDescription>                    </div>
                     <div className="flex items-center gap-2">
                       <Button 
                         variant="outline" 
@@ -1668,9 +1671,10 @@ const ServiceCenterDashboard = () => {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {/* Status tabs for technicians - show all defined statuses */}
-                  <div className="mb-4 flex items-center gap-2 flex-wrap">
-                    {/* ALL button */}
+ {/* Status tabs for technicians - show all defined statuses */}              
+     <div className="mb-4 flex items-center gap-2 flex-wrap">
+                   
+                       {/* ALL button */}
                     <Button
                       key="ALL"
                       size="sm"
@@ -1695,7 +1699,7 @@ const ServiceCenterDashboard = () => {
                         </Button>
                       );
                     })}
-                  </div>
+                  </div>  
 
                   <div className="overflow-auto">
                     <Table>
@@ -1713,8 +1717,8 @@ const ServiceCenterDashboard = () => {
                             <TableCell>{tech.name}</TableCell>
                             <TableCell>{typeof tech.workload === 'number' ? tech.workload : '-'}</TableCell>
                             <TableCell>
-                              <Badge variant={getTechBadgeVariant(tech.status)} className="text-xs">
-                                {getDisplayStatus(tech.status)}
+                          <Badge variant={getTechBadgeVariant(tech.status)} className="text-xs">
+                                  {getDisplayStatus(tech.status)}
                               </Badge>
                             </TableCell>
                             <TableCell>
@@ -1933,6 +1937,48 @@ const ServiceCenterDashboard = () => {
                     </div>
                   </CardContent>
                 </Card>
+                 {/* Evidence Images */}
+                {selectedClaimForDetail.evidenceImageUrls && selectedClaimForDetail.evidenceImageUrls.length > 0 && (
+                  <Card className="shadow-md border">
+                    <CardHeader className="bg-gradient-to-r from-purple-50 to-transparent dark:from-purple-900/20 pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <div className="p-2 bg-purple-100 dark:bg-purple-900/40 rounded-lg">
+                          <Eye className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        Evidence Images ({selectedClaimForDetail.evidenceImageUrls.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {selectedClaimForDetail.evidenceImageUrls.map((url, idx) => (
+                          <a
+                            key={idx}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="group relative aspect-square rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-700 hover:border-purple-500 transition-all shadow-sm hover:shadow-lg"
+                          >
+                            <img
+                              src={url}
+                              alt={`Evidence ${idx + 1}`}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23999"%3ENo Image%3C/text%3E%3C/svg%3E';
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Eye className="h-6 w-6 text-white" />
+                            </div>
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+                              <p className="text-xs text-white font-medium">Image {idx + 1}</p>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Evidence Images */}
                 {selectedClaimForDetail.evidenceImageUrls && selectedClaimForDetail.evidenceImageUrls.length > 0 && (
@@ -2452,7 +2498,7 @@ const ServiceCenterDashboard = () => {
               <div>
                 <h4 className="font-medium text-sm mb-3">Available Technicians:</h4>
                 <div className="grid gap-3">
-                  {selectedCaseForAssignment && getRecommendedTechnicians().map((tech) => {
+                  {selectedCaseForAssignment && getRecommendedTechnicians().map((tech) => { 
                     const isAssigned = warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.assignedTechnicians.some(t => t.id === tech.id);
                     const canAssign = canAssignTechnician(tech, maxWorkload);
                     const workloadWarning = !canAssign ? getWorkloadWarningMessage(tech.workload || 0, maxWorkload) : "";
