@@ -641,6 +641,10 @@ const options = {
     },
     tags: [
       {
+        name: "Service Centers",
+        description: "API endpoints for managing service centers, including workload configuration",
+      },
+      {
         name: "Authentication",
         description:
           "API endpoints cho xác thực người dùng - Login, Register, Token management",

@@ -55,9 +55,8 @@ class UserRepository {
         "userId",
         "name",
         [
-          db.sequelize.fn(
-            "COUNT",
-            db.sequelize.col("tasks.task_assignment_id")
+          db.sequelize.literal(
+            `(SELECT COUNT(*) FROM \`task_assignment\` AS \`tasks_sub\` WHERE \`tasks_sub\`.\`technician_id\` = \`User\`.\`user_id\` AND \`tasks_sub\`.\`is_active\` = TRUE)`
           ),
           "activeTaskCount",
         ],

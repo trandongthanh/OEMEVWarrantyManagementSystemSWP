@@ -52,6 +52,7 @@ import ComponentReservationService from "./src/service/componentReservation.serv
 import WarehouseController from "./src/api/controller/warehouse.controller.js";
 import TypeComponentRepository from "./src/repository/typeComponent.repository.js";
 import InventoryAdjustmentRepository from "./src/repository/inventoryAdjustment.repository.js";
+import ServiceCenterController from "./src/api/controller/serviceCenter.controller.js";
 
 const container = createContainer();
 
@@ -98,6 +99,9 @@ export function setupContainer({ io, notificationNamespace }) {
     inventoryController: asClass(InventoryController, {
       lifetime: Lifetime.SCOPED,
     }),
+    serviceCenterController: asClass(ServiceCenterController, {
+      lifetime: Lifetime.SCOPED,
+    }),
 
     // Services
     authService: asClass(AuthService, { lifetime: Lifetime.SCOPED }),
@@ -128,6 +132,9 @@ export function setupContainer({ io, notificationNamespace }) {
       lifetime: Lifetime.SCOPED,
     }),
     inventoryService: asClass(InventoryService, { lifetime: Lifetime.SCOPED }),
+    serviceCenterService: asClass(ServiceCenterService, {
+      lifetime: Lifetime.SCOPED,
+    }),
 
     // Repositories
     userRepository: asClass(UserRepository, { lifetime: Lifetime.SCOPED }),
@@ -184,6 +191,9 @@ export function setupContainer({ io, notificationNamespace }) {
       lifetime: Lifetime.SCOPED,
     }),
     inventoryAdjustmentRepository: asClass(InventoryAdjustmentRepository, {
+      lifetime: Lifetime.SCOPED,
+    }),
+    serviceCenterRepository: asClass(ServiceCenterRepository, {
       lifetime: Lifetime.SCOPED,
     }),
   });
