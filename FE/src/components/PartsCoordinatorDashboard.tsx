@@ -196,7 +196,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
   const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
   const [isLoadingRequests, setIsLoadingRequests] = useState<boolean>(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
-  const [isReceiving, setIsReceiving] = useState<boolean>(false);
+  const [receivingRequestId, setReceivingRequestId] = useState<string | null>(null);
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
 
   // Warehouse States
@@ -219,6 +219,8 @@ const PartsCoordinatorDashboard: React.FC = () => {
 
   // Component Reservation States
   const [reservations, setReservations] = useState<ComponentReservation[]>([]);
+  const [filteredReservations, setFilteredReservations] = useState<ComponentReservation[]>([]);
+  const [selectedReservationStatus, setSelectedReservationStatus] = useState<string>('ALL');
   const [isLoadingReservations, setIsLoadingReservations] = useState(false);
   const [showReservationDetailModal, setShowReservationDetailModal] = useState(false);
   const [selectedReservation, setSelectedReservation] = useState<ComponentReservation | null>(null);
@@ -307,6 +309,15 @@ const PartsCoordinatorDashboard: React.FC = () => {
       setFilteredRequests(stockTransferRequests.filter(req => req.status === selectedStatus));
     }
   }, [selectedStatus, stockTransferRequests]);
+
+  // Filter reservations by status
+  useEffect(() => {
+    if (selectedReservationStatus === 'ALL') {
+      setFilteredReservations(reservations);
+    } else {
+      setFilteredReservations(reservations.filter(r => r.status === selectedReservationStatus));
+    }
+  }, [selectedReservationStatus, reservations]);
 
   // Fetch warehouses
   const fetchWarehouses = async () => {
@@ -646,10 +657,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
 
   // Receive stock transfer request
   const handleReceiveRequest = async (requestId: string) => {
-    setIsReceiving(true);
+    setReceivingRequestId(requestId);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
-      setIsReceiving(false);
+      setReceivingRequestId(null);
       return;
     }
     try {
@@ -676,7 +687,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
       const errorMessage = error.response?.data?.message || 'Failed to receive request';
       alert(`Error: ${errorMessage}`);
     } finally {
-      setIsReceiving(false);
+      setReceivingRequestId(null);
     }
   };
 
@@ -862,10 +873,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
                                   size="sm"
                                   variant="default"
                                   onClick={() => handleReceiveRequest(request.id)}
-                                  disabled={isReceiving}
+                                  disabled={receivingRequestId === request.id}
                                 >
                                   <CheckCircle className="mr-1 h-3 w-3" />
-                                  {isReceiving ? 'Receiving...' : 'Receive'}
+                                  {receivingRequestId === request.id ? 'Receiving...' : 'Receive'}
                                 </Button>
                               )}
                             </div>
@@ -1040,6 +1051,26 @@ const PartsCoordinatorDashboard: React.FC = () => {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {/* Status Filter Tabs */}
+                  <div className="mb-4 flex items-center gap-2 flex-wrap">
+                    {['ALL', 'RESERVED', 'PICKED_UP', 'INSTALLED', 'CANCELLED'].map((status) => {
+                      const count = status === 'ALL' 
+                        ? reservations.length 
+                        : reservations.filter(r => r.status === status).length;
+                      return (
+                        <Button
+                          key={status}
+                          variant={selectedReservationStatus === status ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setSelectedReservationStatus(status)}
+                          className="border-dashed"
+                        >
+                          {status.replace(/_/g, ' ')} ({count})
+                        </Button>
+                      );
+                    })}
+                  </div>
+
                   {/* Pickup Button */}
                   {reservations.some(r => r.status === 'RESERVED') && (
                     <div className="mb-4 flex items-center justify-between bg-blue-50 p-3 rounded-lg border border-blue-200">
@@ -1064,12 +1095,15 @@ const PartsCoordinatorDashboard: React.FC = () => {
                     <div className="flex items-center justify-center py-12">
                       <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     </div>
-                  ) : reservations.length === 0 ? (
+                  ) : filteredReservations.length === 0 ? (
                     <div className="text-center py-12">
                       <ClipboardList className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
                       <p className="text-lg font-medium text-muted-foreground">No reservations found</p>
                       <p className="text-sm text-muted-foreground mt-2">
-                        There are no component reservations at the moment
+                        {selectedReservationStatus === 'ALL' 
+                          ? 'There are no component reservations at the moment'
+                          : `No reservations with status "${selectedReservationStatus.replace(/_/g, ' ')}"`
+                        }
                       </p>
                     </div>
                   ) : (
@@ -1089,7 +1123,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {reservations.map((reservation, index) => (
+                          {filteredReservations.map((reservation, index) => (
                             <TableRow key={reservation.reservationId}>
                               <TableCell>
                                 <Checkbox
@@ -1290,10 +1324,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
                     size="sm"
                     variant="default"
                     onClick={() => handleReceiveRequest(selectedStockRequest.id)}
-                    disabled={isReceiving}
+                    disabled={receivingRequestId === selectedStockRequest.id}
                   >
                     <CheckCircle className="mr-1 h-4 w-4" />
-                    {isReceiving ? 'Receiving...' : 'Receive Request'}
+                    {receivingRequestId === selectedStockRequest.id ? 'Receiving...' : 'Receive Request'}
                   </Button>
                 )}
               </DialogTitle>
