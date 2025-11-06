@@ -30,7 +30,6 @@ class CaseLineController {
   createCaseLine = async (req, res, next) => {
     const { caseId } = req.params;
     const {
-      diagnosisText,
       correctionText,
       typeComponentId,
       quantity,
@@ -46,7 +45,6 @@ class CaseLineController {
       guaranteeCaseId: caseId,
       typeComponentId,
       quantity,
-      diagnosisText,
       correctionText,
       warrantyStatus,
       serviceCenterId: serviceCenterId,
@@ -129,7 +127,6 @@ class CaseLineController {
     const { caseId, caselineId } = req.params;
 
     const {
-      diagnosisText,
       correctionText,
       typeComponentId,
       quantity,
@@ -144,7 +141,6 @@ class CaseLineController {
     const updatedCaseLine = await this.#caseLineService.updateCaseLine({
       guaranteeCaseId: caseId,
       caselineId,
-      diagnosisText,
       correctionText,
       typeComponentId,
       quantity,
