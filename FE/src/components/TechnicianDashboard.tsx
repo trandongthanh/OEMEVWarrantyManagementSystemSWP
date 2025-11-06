@@ -40,6 +40,45 @@ import {
   CheckCircle
 } from "lucide-react";
 
+// Friendly labels and badge variants for case-line statuses (defined outside component for stability)
+const CASELINE_STATUS_LABELS: Record<string, string> = {
+  DRAFT: 'Mới',
+  PENDING_APPROVAL: 'Chờ duyệt',
+  CUSTOMER_APPROVED: 'Khách duyệt',
+  READY_FOR_REPAIR: 'Sẵn sàng sửa',
+  IN_REPAIR: 'Đang sửa',
+  COMPLETED: 'Hoàn thành',
+  CANCELLED: 'Hủy',
+  PENDING: 'Chờ xử lý',
+  SUBMITTED: 'Đã gửi',
+};
+
+const getCaseLineStatusLabel = (status?: string | null): string => {
+  if (!status) return 'N/A';
+  return CASELINE_STATUS_LABELS[status] ?? status.replace(/_/g, ' ');
+};
+
+const getCaseLineBadgeVariant = (status?: string | null): 'default' | 'secondary' | 'outline' | 'destructive' => {
+  if (!status) return 'secondary';
+  switch (status) {
+    case 'DRAFT':
+      return 'secondary';
+    case 'PENDING_APPROVAL':
+    case 'PENDING':
+      return 'outline';
+    case 'READY_FOR_REPAIR':
+      return 'default';
+    case 'IN_REPAIR':
+      return 'default';
+    case 'COMPLETED':
+      return 'default';
+    case 'CANCELLED':
+      return 'destructive';
+    default:
+      return 'secondary';
+  }
+};
+
 // Work Schedule Interface
 interface WorkSchedule {
   scheduleId: string;
@@ -215,11 +254,17 @@ interface CaseLine {
   diagnosisText?: string;
   correctionText?: string;
   componentId?: string | null;
+  // Friendly component info populated when viewing details
+  componentName?: string | null;
+  componentSku?: string | null;
+  componentPrice?: number | null;
   typeComponentId?: string | null;
   quantity?: number;
   warrantyStatus?: string;
   diagnosticTechId?: string;
   repairTechId?: string;
+  diagnosticTechnicianName?: string | null;
+  repairTechnicianName?: string | null;
   rejectionReason?: string | null;
   updatedAt?: string;
   evidenceImageUrls?: string[];
@@ -417,8 +462,9 @@ const TechnicianDashboard = ({
     const caseLineId = extractCaseLineId(r);
     if (!caseLineId) return null;
     const guaranteeCaseId = (r['guaranteeCaseId'] ?? r['guarantee_case_id'] ?? (r['guaranteeCase'] && (r['guaranteeCase'] as Record<string, unknown>)['guaranteeCaseId'])) as string | undefined ?? '';
-    const diagnosisText = (r['diagnosisText'] ?? r['diagnosis_text']) as string | undefined ?? '';
-    const correctionText = (r['correctionText'] ?? r['correction_text']) as string | undefined ?? '';
+  // Diagnosis is no longer used/displayed in the UI; ignore any incoming diagnosisText
+  const diagnosisText = '';
+  const correctionText = (r['correctionText'] ?? r['correction_text']) as string | undefined ?? '';
     const componentId = (r['componentId'] ?? r['typeComponentId'] ?? r['type_component_id']) as string | null ?? null;
     const quantity = (typeof r['quantity'] === 'number' ? r['quantity'] as number : Number(r['quantity'] ?? 0)) as number;
     const warrantyStatus = (r['warrantyStatus'] ?? r['warranty_status']) as string | undefined ?? null;
@@ -462,12 +508,13 @@ const TechnicianDashboard = ({
               const mm = cl as Record<string, unknown>;
               const id = (mm['caseLineId'] ?? mm['id'] ?? mm['case_line_id']) as string | undefined || '';
               const caseId = (mm['guaranteeCaseId'] ?? mm['guarantee_case_id'] ?? mm['guaranteeCaseId']) as string | undefined || '';
-              const damageLevel = (mm['damageLevel'] as string) ?? 'N/A';
+              const damageLevel = 'N/A'; // Backend does not store damageLevel
               const warrantyStatus = (mm['warrantyStatus'] as string) ?? (mm['warranty_status'] as string) ?? null;
-              const diag = (mm['diagnosisText'] ?? mm['diagnosis_text']) as string | undefined || '';
+              // Backend only returns correctionText (no diagnosisText)
               const corr = (mm['correctionText'] ?? mm['correction_text']) as string | undefined || '';
               const photos = Array.isArray(mm['photos']) ? (mm['photos'] as string[]) : [];
-              const createdAt = (mm['createdAt'] ?? mm['created_at']) as string | undefined || new Date().toLocaleDateString('en-GB');
+              const createdAtRaw = mm['createdAt'] ?? mm['created_at'];
+              const createdAt = createdAtRaw ? formatSafeDate(String(createdAtRaw)) : formatSafeDate(new Date());
 
               return {
                 id,
@@ -475,7 +522,7 @@ const TechnicianDashboard = ({
                 damageLevel,
                 repairPossibility: 'N/A',
                 warrantyDecision: warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
-                technicianNotes: `${diag} | ${corr}`,
+                technicianNotes: corr, // Use correctionText as technician notes
                 photos,
                 createdDate: createdAt,
                 status: (mm['status'] as string) ?? 'submitted'
@@ -510,7 +557,7 @@ const TechnicianDashboard = ({
     const token = localStorage.getItem('ev_warranty_token');
     // avoid logging tokens to console; signal auth presence only
     if (!token) {
-      console.debug('No auth token found in localStorage');
+    
       toast({
         title: "Authentication Error",
         description: "No authentication token found. Please login again.",
@@ -538,10 +585,10 @@ const TechnicianDashboard = ({
       }
     };
 
-    console.debug(`API Call: ${options.method || 'GET'} ${API_BASE_URL}${endpoint}`);
+    
 
     const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-    console.debug(`Response: ${response.status} ${response.statusText}`);
+    
 
     // If no content, return null to caller
     if (response.status === 204) return null;
@@ -573,7 +620,6 @@ const TechnicianDashboard = ({
       setIsLoadingRecords(true);
       setRecordsError(null);
       
-      console.log('Fetching all processing records...');
       
       // Get all records
       const { records: allRecords, total } = await processingRecordsService.getAllProcessingRecords();
@@ -583,8 +629,6 @@ const TechnicianDashboard = ({
       const groupedRecords = await processingRecordsService.getProcessingRecordsGroupedByStatus();
       setRecordsByStatus(groupedRecords);
       
-      console.log('Fetched processing records:', allRecords, 'Total:', total);
-      console.log('Grouped by status:', groupedRecords);
       
       toast({
         title: "Success",
@@ -608,13 +652,9 @@ const TechnicianDashboard = ({
   const fetchProcessingRecords = useCallback(async () => {
     try {
       setIsLoadingRecords(true);
-      console.log('📡 Fetching records with status: IN_DIAGNOSIS');
-      
       const { records: inDiagnosisRecords, total } = await processingRecordsService.getProcessingRecordsByStatus({ status: 'IN_DIAGNOSIS' });
 
-      console.log('📦 Received records:', inDiagnosisRecords, 'Total:', total);
-      console.log(`✅ Loaded ${inDiagnosisRecords.length} records in diagnosis`);
-
+      
       // Normalize record id field: backend may return id under different keys (recordId, id, vehicleProcessingRecordId, processing_record_id)
       const normalized: ProcessingRecord[] = (inDiagnosisRecords || []).map((r: unknown) => {
         const rr = r as Record<string, unknown>;
@@ -643,7 +683,7 @@ const TechnicianDashboard = ({
         // ignore
       }
       
-      console.log('💾 State updated with records');
+      
 
       // After we've loaded records, attempt to fetch persisted case-lines for all guarantee cases
         try {
@@ -661,7 +701,7 @@ const TechnicianDashboard = ({
         });
 
         if (guaranteeIds.length > 0) {
-          console.log('🔁 Loading case-lines for guarantee cases:', guaranteeIds);
+          
           const fetches = guaranteeIds.map(id => caseLineService.getCaseLines(id).catch(err => {
             console.error('❌ Failed loading case lines for', id, err);
             return [] as unknown[];
@@ -699,12 +739,12 @@ const TechnicianDashboard = ({
                 const toAdd = normalized.map((mm) => {
                   const id = mm.caseLineId || '';
                   const caseId = mm.guaranteeCaseId || '';
-                  const damageLevel = mm.diagnosisText || 'N/A';
+                  // Backend does not return diagnosisText, use correctionText only
+                  const damageLevel = 'N/A';
                   const warrantyStatus = mm.warrantyStatus || null;
-                  const diag = mm.diagnosisText || '';
                   const corr = mm.correctionText || '';
                   const photos: string[] = [];
-                  const createdAt = mm.createdAt ?? new Date().toLocaleDateString('en-GB');
+                  const createdAt = mm.createdAt ? formatSafeDate(String(mm.createdAt)) : formatSafeDate(new Date());
                   const status = (mm.status as string) ?? 'submitted';
 
                   return {
@@ -713,7 +753,7 @@ const TechnicianDashboard = ({
                     damageLevel,
                     repairPossibility: 'N/A',
                     warrantyDecision: warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
-                    technicianNotes: `${diag} | ${corr}`,
+                    technicianNotes: corr, // Use correctionText as technician notes
                     photos,
                     createdDate: createdAt,
                     status
@@ -834,8 +874,7 @@ const TechnicianDashboard = ({
     try {
       setIsLoadingAssignedTasks(true);
       
-      console.log('🔍 Fetching assigned tasks for user:', user.id);
-      console.log('📋 User details:', { id: user.id, name: user.name, role: user.role });
+      
       
       // Call API to get case lines where repairTechId matches current user
       // Try without status filter first to see all case lines
@@ -848,17 +887,9 @@ const TechnicianDashboard = ({
         }
       }) as AxiosResponse<{ status: string; data: { caseLines: AssignedCaseLine[]; pagination?: { page: number; limit: number; total: number } } }>;
       
-      console.log('📦 Full API Response:', JSON.stringify(response.data, null, 2));
-      console.log('📊 Case Lines:', response.data?.data?.caseLines);
-      console.log('📊 Case Lines Count:', response.data?.data?.caseLines?.length || 0);
-      
       if (response.data?.status === 'success') {
         const caseLines = response.data?.data?.caseLines || [];
         setAssignedCaseLines(Array.isArray(caseLines) ? caseLines : []);
-        console.log('✅ Loaded case lines:', caseLines.length);
-        if (caseLines.length > 0) {
-          console.log('📋 First case line sample:', JSON.stringify(caseLines[0], null, 2));
-        }
       } else {
         console.warn('⚠️ No case lines found or invalid response structure');
         setAssignedCaseLines([]);
@@ -884,9 +915,7 @@ const TechnicianDashboard = ({
     }
 
     try {
-      setIsLoadingReservations(true);
-      console.log('🔍 Fetching reservations for case line:', caseLineId);
-      console.log('👤 User ID (repairTechId):', user.id);
+  setIsLoadingReservations(true);
       
       // URL format: /reservations?caseLineId={id}&repairTechId={userId}&sortBy=createdAt&sortOrder=DESC
       const response = await apiService.get<{ status: string; data: { reservations: ComponentReservation[] } }>('/reservations', {
@@ -898,10 +927,7 @@ const TechnicianDashboard = ({
         }
       });
 
-      console.log('📦 Reservations Response:', JSON.stringify(response.data, null, 2));
-
       if (response.data?.status === 'success' && Array.isArray(response.data?.data?.reservations)) {
-        console.log('✅ Found', response.data.data.reservations.length, 'reservations');
         setReservations(response.data.data.reservations);
       } else {
         console.warn('⚠️ No reservations found or invalid response structure');
@@ -923,17 +949,12 @@ const TechnicianDashboard = ({
   // View assigned case line details
   const viewAssignedCaseLineDetails = useCallback(async (caseLineId: string) => {
     try {
-      console.log('🔍 Fetching case line details for:', caseLineId);
       const response = await apiService.get<{ status: string; data: { caseLine: AssignedCaseLine } }>(`/case-lines/${caseLineId}`);
-      
-      console.log('📦 Case Line Detail Response:', JSON.stringify(response.data, null, 2));
-      
+
       if (response.data?.status === 'success' && response.data?.data?.caseLine) {
         setSelectedAssignedCaseLine(response.data.data.caseLine);
         setViewAssignedCaseLineModalOpen(true);
-        console.log('✅ Loaded case line details');
       } else {
-        console.warn('⚠️ Invalid response structure');
         toast({
           title: 'Error',
           description: 'Failed to load case line details - invalid response',
@@ -959,17 +980,14 @@ const TechnicianDashboard = ({
   // Install component
   const handleInstallComponent = useCallback(async (reservationId: string) => {
     try {
-      setInstallingReservationId(reservationId);
-      console.log('🔧 Installing component for reservation:', reservationId);
+  setInstallingReservationId(reservationId);
 
-      const response = await apiService.patch<{ 
+  const response = await apiService.patch<{ 
         status: string; 
         data: { component: ComponentReservation } 
       }>(`/reservations/${reservationId}/installComponent`);
 
-      console.log('✅ Component installed successfully:', response.data);
-
-      if (response.data?.status === 'success') {
+  if (response.data?.status === 'success') {
         toast({
           title: 'Success',
           description: 'Component installed successfully',
@@ -999,8 +1017,7 @@ const TechnicianDashboard = ({
   // Complete repair for case line
   const handleCompleteRepair = useCallback(async (caseLineId: string) => {
     try {
-      setCompletingCaseLineId(caseLineId);
-      console.log('✅ Checking reservations before completing case line:', caseLineId);
+  setCompletingCaseLineId(caseLineId);
 
       // First, fetch reservations to check if all are installed
       const reservationsResponse = await apiService.get<{ 
@@ -1015,8 +1032,7 @@ const TechnicianDashboard = ({
         }
       });
 
-      const caseReservations = reservationsResponse.data?.data?.reservations || [];
-      console.log('📦 Case line reservations:', caseReservations);
+  const caseReservations = reservationsResponse.data?.data?.reservations || [];
 
       // Check if there are any reservations
       if (caseReservations.length === 0) {
@@ -1033,7 +1049,7 @@ const TechnicianDashboard = ({
       const allInstalled = caseReservations.every(r => r.status === 'INSTALLED');
       const notInstalledCount = caseReservations.filter(r => r.status !== 'INSTALLED').length;
 
-      if (!allInstalled) {
+  if (!allInstalled) {
         toast({
           title: 'Cannot Complete',
           description: `All components must be installed first. ${notInstalledCount} component(s) not yet installed.`,
@@ -1043,16 +1059,11 @@ const TechnicianDashboard = ({
         return;
       }
 
-      console.log('✅ All reservations are installed. Proceeding to mark as complete...');
-
       // All reservations are installed, proceed with completion
       const response = await apiService.patch<{ 
         status: string; 
         data: { caseLine: AssignedCaseLine } 
       }>(`/case-lines/${caseLineId}/mark-repair-complete`);
-
-      console.log('✅ Repair completed successfully:', response.data);
-
       if (response.data?.status === 'success') {
         toast({
           title: 'Success',
@@ -1118,6 +1129,19 @@ const TechnicianDashboard = ({
     });
   };
 
+  // Safe date formatter: accepts string|Date|number and returns a locale date string.
+  // If input is missing, returns 'N/A'. If parsing fails, returns the original raw value.
+  const formatSafeDate = (raw?: string | Date | number, locale = 'en-GB') => {
+    if (raw === undefined || raw === null) return 'N/A';
+    try {
+      const d = raw instanceof Date ? raw : new Date(String(raw));
+      if (isNaN(d.getTime())) return String(raw);
+      return d.toLocaleDateString(locale);
+    } catch (e) {
+      return String(raw);
+    }
+  };
+
   // NOTE: createCaseLines handled by `caseLineService.createCaseLines` (uses axios POST).
   // Keep component-side logic (handleCreateIssueDiagnosis) using the service so created
   // case-lines are persisted to backend and then merged into local state for display.
@@ -1125,8 +1149,7 @@ const TechnicianDashboard = ({
   // Fetch components để hiển thị trong dropdown
   const fetchComponents = useCallback(async () => {
     try {
-      const data = await apiCall('/components');
-      console.log('Fetched components:', data);
+  const data = await apiCall('/components');
       // Có thể lưu vào state nếu cần hiển thị dropdown components
     } catch (error) {
       console.error('Error fetching components:', error);
@@ -1136,8 +1159,7 @@ const TechnicianDashboard = ({
   // Fetch case lines đã tạo cho guarantee case
   const fetchCaseLinesForCase = useCallback(async (guaranteeCaseId: string): Promise<unknown[]> => {
     try {
-      const data = await apiCall(`/guarantee-cases/${guaranteeCaseId}/case-lines`);
-      console.log('Fetched case lines for case:', data);
+  const data = await apiCall(`/guarantee-cases/${guaranteeCaseId}/case-lines`);
       // Defensive: apiCall may return null (204) or different shapes.
       if (!data) return [];
       const asObj = data as unknown as Record<string, unknown>;
@@ -1163,15 +1185,13 @@ const TechnicianDashboard = ({
     }
 
     try {
-      setIsLoadingComponents(true);
-      console.log('🔍 Fetching components for recordId:', recordId, 'searchName:', searchName);
+  setIsLoadingComponents(true);
       
       const components = await processingRecordsService.getCompatibleComponents(
         recordId,
         { searchName }
       );
-      console.log('✅ Fetched components with warranty info:', components);
-      setCompatibleComponents(Array.isArray(components) ? components : []);
+  setCompatibleComponents(Array.isArray(components) ? components : []);
     } catch (error) {
       console.error('❌ Failed to search components:', error);
       toast({
@@ -1237,21 +1257,15 @@ const TechnicianDashboard = ({
         return;
       }
       
-      console.log('🚀 Creating case line for guarantee case:', guaranteeCase.guaranteeCaseId);
+  // creating case line for guaranteeCase
 
-      // Create case line
-      // Set diagnosisText same as correctionText for backend compatibility
-      const caseLineData = {
-        ...caseLineForm,
-        diagnosisText: caseLineForm.correctionText, // Use solution as diagnosis for backend
-      };
-
+      // Create case line (backend no longer accepts diagnosisText)
       const serverCreatedCaseLines = await caseLineService.createCaseLines(
         guaranteeCase.guaranteeCaseId,
-        [caseLineData]
+        [caseLineForm] // Send form as-is (only correctionText, no diagnosisText)
       );
 
-      console.log('✅ Case lines created:', serverCreatedCaseLines);
+  // case lines created on server and merged into state
 
       // Persist created case lines into normalized state so they survive F5
       if (serverCreatedCaseLines && serverCreatedCaseLines.length > 0) {
@@ -1276,13 +1290,12 @@ const TechnicianDashboard = ({
         damageLevel: 'N/A',
         repairPossibility: 'N/A',
         warrantyDecision: serverCreatedCaseLines[0].warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
-        technicianNotes: `${serverCreatedCaseLines[0].diagnosisText} | ${serverCreatedCaseLines[0].correctionText}`,
+        technicianNotes: serverCreatedCaseLines[0].correctionText, // Backend only returns correctionText
         photos: [],
         photoFiles: [],
-        createdDate: new Date(serverCreatedCaseLines[0].createdAt).toLocaleDateString('en-GB'),
-        status: serverCreatedCaseLines[0].status === 'DRAFT' ? 'submitted' : 
-                serverCreatedCaseLines[0].status === 'PENDING_APPROVAL' ? 'submitted' : 
-                serverCreatedCaseLines[0].status === 'CUSTOMER_APPROVED' ? 'approved' : 'submitted',
+  createdDate: formatSafeDate(serverCreatedCaseLines[0].createdAt),
+  // Preserve the backend status verbatim so statuses like 'DRAFT' are shown correctly
+  status: serverCreatedCaseLines[0].status ?? 'submitted',
       };
 
       // Ensure no duplicate caseLine IDs in UI list
@@ -1314,12 +1327,11 @@ const TechnicianDashboard = ({
       // Don't reset selectedGuaranteeCaseForCaseLine - keep it selected for creating another case line
       
       // Reload compatible components for the selected guarantee case so user can create another case line
-      if (selectedRecord?.recordId) {
-        console.log('🔄 Reloading components after case line creation...');
-        fetchCompatibleComponents(selectedRecord.recordId.toString(), '').catch(error => {
-          console.error('❌ Failed to reload components:', error);
-        });
-      }
+        if (selectedRecord?.recordId) {
+          fetchCompatibleComponents(selectedRecord.recordId.toString(), '').catch(error => {
+            console.error('Failed to reload components after case line creation', error);
+          });
+        }
       
     } catch (error) {
       console.error('❌ Failed to create case line:', error);
@@ -1338,25 +1350,13 @@ const TechnicianDashboard = ({
   // Load data on component mount
   useEffect(() => {
     const initializeData = async () => {
-      console.log('🚀 TechnicianDashboard useEffect triggered');
-      console.log('👤 User state:', user);
-      console.log('🔍 LocalStorage token:', localStorage.getItem('ev_warranty_token') ? 'Present' : 'Missing');
-      
       if (user) {
-        console.log('✅ User authenticated, fetching data...');
-        console.log('🔄 User details:', {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        });
-        
         await fetchProcessingRecords();
         // Do not fetch global /components on init to avoid 404 noisy logs when backend
         // doesn't expose that endpoint. Components are fetched when needed (e.g. when
         // opening Create Issue Diagnosis modal via fetchCompatibleComponents).
       } else {
-        console.log('❌ No user found, cannot fetch data');
+        // user not present; prompt will be shown elsewhere if needed
         toast({
           title: "Authentication Required",
           description: "Please login to view processing records",
@@ -1403,7 +1403,6 @@ const TechnicianDashboard = ({
   useEffect(() => {
     const interval = setInterval(() => {
       if (user && !isLoading && autoRefreshEnabled) {
-        console.log('Auto refreshing processing records...');
         fetchProcessingRecords();
       }
     }, 30000); // 30 seconds
@@ -1421,8 +1420,7 @@ const TechnicianDashboard = ({
   // Fetch case lines when guarantee case is selected
   useEffect(() => {
     const loadCaseLines = async () => {
-      if (selectedGuaranteeCase) {
-        console.log('Loading case lines for selected guarantee case...');
+        if (selectedGuaranteeCase) {
           const caseLines = await fetchCaseLinesForCase(selectedGuaranteeCase.guaranteeCaseId);
           if (caseLines.length > 0) {
             // Normalize server shapes into CaseLineResponse so we have tech owner info
@@ -1449,13 +1447,7 @@ const TechnicianDashboard = ({
   }, [selectedGuaranteeCase, fetchCaseLinesForCase, normalizeCaseLineResponse]);
 
   // Log state changes for debugging
-  useEffect(() => {
-    console.log('Processing records updated:', processingRecords.length, 'records');
-  }, [processingRecords]);
-
-  useEffect(() => {
-    console.log('Created case lines updated:', createdCaseLines.length, 'case lines');
-  }, [createdCaseLines]);
+  // Removed verbose change-logging to keep console output clean in production.
 
   // Helpers
   const isCaseLineCompleted = (status?: string | null) => {
@@ -1579,17 +1571,27 @@ const TechnicianDashboard = ({
   // display the full set of fields returned by the backend.
   const handleViewCaseLine = async (caseLine: CaseLine) => {
     try {
+      console.log('🔍 Attempting to fetch case line detail for ID:', caseLine.id);
+      
       // Open modal immediately with loading state
       setViewCaseLineModalOpen(true);
-      
-      console.log('🔍 Fetching case line detail from API for ID:', caseLine.id);
-      
+
       // Call API to get full case line detail including images
       const detailedCaseLine = await caseLineService.getCaseLineById(caseLine.id);
-      
-      console.log('✅ Received detailed case line from API:', detailedCaseLine);
-      console.log('📸 Evidence images:', detailedCaseLine.evidenceImageUrls);
-      
+
+      if (!detailedCaseLine) {
+        console.warn('Case line not found on server, cleaning up local state for ID:', caseLine.id);
+        // Remove from createdCaseLines and caseLines (cleanup)
+        setCreatedCaseLines(prev => prev.filter(cl => cl.caseLineId !== caseLine.id));
+        setCaseLines(prev => prev.filter(cl => cl.id !== caseLine.id));
+        // Close modal if opened
+        setViewCaseLineModalOpen(false);
+        toast({ title: 'Cannot Load Case Line Details', description: 'Case line not found', variant: 'destructive' });
+        return;
+      }
+
+      console.log('✅ Successfully fetched case line detail:', detailedCaseLine);
+
       // Map backend CaseLine to frontend CaseLine format
       const enriched: CaseLine = {
         id: detailedCaseLine.caseLineId,
@@ -1598,32 +1600,49 @@ const TechnicianDashboard = ({
         damageLevel: 'medium',
         repairPossibility: 'repairable',
         warrantyDecision: detailedCaseLine.warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
-        technicianNotes: `${detailedCaseLine.diagnosisText} | ${detailedCaseLine.correctionText}`,
+        technicianNotes: detailedCaseLine.correctionText, // Backend only returns correctionText now
         photos: detailedCaseLine.evidenceImageUrls || [],
         evidenceImageUrls: detailedCaseLine.evidenceImageUrls || [],
-        createdDate: new Date(detailedCaseLine.createdAt).toLocaleDateString('en-GB'),
-        status: detailedCaseLine.status === 'pending' ? 'submitted' : 'approved',
-        diagnosisText: detailedCaseLine.diagnosisText,
+        createdDate: formatSafeDate(detailedCaseLine.createdAt),
+  // Preserve backend status directly (do not coerce non-pending statuses to 'approved')
+  status: detailedCaseLine.status ?? 'submitted',
+        diagnosisText: '', // Backend does not return diagnosisText
         correctionText: detailedCaseLine.correctionText,
         componentId: detailedCaseLine.componentId,
+  componentName: detailedCaseLine.componentName ?? undefined,
+        componentSku: detailedCaseLine.componentSku,
+        componentPrice: detailedCaseLine.componentPrice,
         quantity: detailedCaseLine.quantity,
         warrantyStatus: detailedCaseLine.warrantyStatus,
         diagnosticTechId: detailedCaseLine.techId,
+        diagnosticTechnicianName: detailedCaseLine.diagnosticTechnicianName,
+        repairTechnicianName: detailedCaseLine.repairTechnicianName,
         updatedAt: detailedCaseLine.updatedAt
       };
-
-      console.log('🎨 Enriched case line for display:', enriched);
       setSelectedCaseLine(enriched);
     } catch (err) {
       console.error('❌ Failed to fetch case line detail from API:', err);
+      console.error('Case line ID that failed:', caseLine.id);
+      
+      // If 404, remove this case line from localStorage and state (it doesn't exist in DB)
+      if (err instanceof Error && err.message.includes('not found')) {
+        console.warn('🗑️ Removing non-existent case line from local state:', caseLine.id);
+        
+        // Remove from createdCaseLines state
+        setCreatedCaseLines(prev => prev.filter(cl => cl.caseLineId !== caseLine.id));
+        
+        // Remove from caseLines UI list
+        setCaseLines(prev => prev.filter(cl => cl.id !== caseLine.id));
+      }
+      
+      // Close the modal if it was opened
+      setViewCaseLineModalOpen(false);
+      
       toast({
-        title: "Error",
-        description: err instanceof Error ? err.message : "Failed to load case line details",
+        title: "Cannot Load Case Line Details",
+        description: err instanceof Error ? err.message : "The case line may have been deleted or does not exist in the database.",
         variant: "destructive"
       });
-      
-      // Fallback to local data if API fails
-      setSelectedCaseLine(caseLine);
     }
   };
 
@@ -1797,7 +1816,7 @@ const TechnicianDashboard = ({
                                   size="sm"
                                   className="bg-green-600 hover:bg-green-700 flex items-center justify-center"
                                   onClick={async () => {
-                                    console.log('🔘 Create Issue Diagnosis button clicked for record:', record);
+                                    // Open Create Issue Diagnosis modal for selected record
 
                                     try {
                                       // Try to pick a usable id from common fields so component search can run when possible.
@@ -1813,7 +1832,6 @@ const TechnicianDashboard = ({
                                       setCreateIssueDiagnosisModalOpen(true);
 
                                       if (candidateId) {
-                                        console.log('✅ Loading components for record:', candidateId);
                                         // Load all compatible components (no search query needed)
                                         fetchCompatibleComponents(candidateId.toString(), '').catch(error => {
                                           console.error('❌ Failed to fetch components:', error);
@@ -1925,23 +1943,8 @@ const TechnicianDashboard = ({
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            <Badge
-                              className={`text-xs font-semibold ${
-                                caseLine.status === 'PENDING'
-                                  ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
-                                  : caseLine.status === 'READY_FOR_REPAIR'
-                                  ? 'bg-blue-100 text-blue-800 border-blue-300'
-                                  : caseLine.status === 'IN_REPAIR'
-                                  ? 'bg-purple-100 text-purple-800 border-purple-300'
-                                  : caseLine.status === 'COMPLETED'
-                                  ? 'bg-green-100 text-green-800 border-green-300'
-                                  : caseLine.status === 'CANCELLED'
-                                  ? 'bg-red-100 text-red-800 border-red-300'
-                                  : 'bg-gray-100 text-gray-800 border-gray-300'
-                              }`}
-                              variant="outline"
-                            >
-                              {caseLine.status?.replace(/_/g, ' ') || 'N/A'}
+                            <Badge variant={getCaseLineBadgeVariant(caseLine.status)} className="text-xs font-semibold">
+                              {getCaseLineStatusLabel(caseLine.status)}
                             </Badge>
                           </TableCell>
                           <TableCell>
@@ -2071,7 +2074,7 @@ const TechnicianDashboard = ({
                               {s.createdAt ? (
                                 <div className="text-right">
                                   <div className="whitespace-nowrap">{new Date(s.createdAt).toLocaleTimeString()}</div>
-                                  <div className="text-muted-foreground">{new Date(s.createdAt).toLocaleDateString()}</div>
+                                  <div className="text-muted-foreground">{formatSafeDate(s.createdAt)}</div>
                                 </div>
                               ) : (
                                 '—'
@@ -2081,7 +2084,7 @@ const TechnicianDashboard = ({
                               {s.updatedAt ? (
                                 <div className="text-right">
                                   <div className="whitespace-nowrap">{new Date(s.updatedAt).toLocaleTimeString()}</div>
-                                  <div className="text-muted-foreground">{new Date(s.updatedAt).toLocaleDateString()}</div>
+                                  <div className="text-muted-foreground">{formatSafeDate(s.updatedAt)}</div>
                                 </div>
                               ) : (
                                 '—'
@@ -3015,17 +3018,11 @@ const TechnicianDashboard = ({
             </div>
           </DialogHeader>
           
-          {(() => {
-            // Debug: Log selected case line data
-            console.log('🔍 Selected Case Line:', selectedCaseLine);
-            console.log('📸 Evidence Image URLs:', selectedCaseLine?.evidenceImageUrls);
-            console.log('📷 Photos:', selectedCaseLine?.photos);
-            return null;
-          })()}
+          {/* Debug logs removed */}
           
           <div className="space-y-6 pt-2">
             {/* Case Line Information - single row split into two sides */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6">
               {/* Left side: Basic Information */}
               <div className="space-y-4">
                 <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border-2 border-blue-200 shadow-sm">
@@ -3040,12 +3037,6 @@ const TechnicianDashboard = ({
                       <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Diagnosis ID</span>
                       <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-blue-100 shadow-sm">
                         <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine?.id}</span>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Created Date</span>
-                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-blue-100 shadow-sm">
-                        <span className="text-sm font-medium text-gray-800">{selectedCaseLine?.createdDate || 'Invalid Date'}</span>
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -3064,6 +3055,23 @@ const TechnicianDashboard = ({
                         </Badge>
                       </div>
                     </div>
+                    {selectedCaseLine?.updatedAt && (
+                      <div className="space-y-2">
+                        <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Last Updated</span>
+                        <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-blue-100 shadow-sm">
+                          <span className="text-sm text-gray-800">
+                            {new Date(selectedCaseLine.updatedAt).toLocaleString('vi-VN', { 
+                              year: 'numeric', 
+                              month: '2-digit', 
+                              day: '2-digit', 
+                              hour: '2-digit', 
+                              minute: '2-digit',
+                              second: '2-digit'
+                            })}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -3075,22 +3083,44 @@ const TechnicianDashboard = ({
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-amber-500 to-orange-500 shadow-md">
                       <Wrench className="h-5 w-5 text-white" />
                     </div>
-                    <h4 className="font-bold text-lg text-amber-900">Component & Warranty Details</h4>
+                    <h4 className="font-bold text-lg text-amber-900">Component Details</h4>
                   </div>
                   <div className="space-y-4">
-                    {selectedCaseLine?.componentId && (
+                    {selectedCaseLine?.componentName && (
                       <div className="space-y-2">
-                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component ID</span>
+                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component Name</span>
                         <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
-                          <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine.componentId}</span>
+                          <span className="text-sm font-semibold text-gray-900">{selectedCaseLine.componentName}</span>
                         </div>
                       </div>
                     )}
+                    {selectedCaseLine?.componentSku && (
+                      <div className="space-y-2">
+                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component SKU</span>
+                        <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
+                          <span className="text-sm font-mono text-gray-800">{selectedCaseLine.componentSku}</span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component ID</span>
+                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
+                        <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine?.componentId || 'N/A'}</span>
+                      </div>
+                    </div>
                     {selectedCaseLine?.quantity !== undefined && (
                       <div className="space-y-2">
                         <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Quantity</span>
                         <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
                           <span className="text-xl font-bold text-gray-800">{selectedCaseLine.quantity}</span>
+                        </div>
+                      </div>
+                    )}
+                    {selectedCaseLine?.componentPrice !== undefined && (
+                      <div className="space-y-2">
+                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component Price</span>
+                        <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
+                          <span className="text-lg font-bold text-gray-900">{selectedCaseLine.componentPrice.toLocaleString('vi-VN')} VND</span>
                         </div>
                       </div>
                     )}
@@ -3115,35 +3145,7 @@ const TechnicianDashboard = ({
               </div>
             </div>
 
-            {/* Technician Information */}
-            {(selectedCaseLine?.diagnosticTechId || selectedCaseLine?.repairTechId) && (
-              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-xl border-2 border-indigo-200 shadow-sm">
-                <div className="flex items-center gap-3 mb-5">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 shadow-md">
-                    <Users className="h-5 w-5 text-white" />
-                  </div>
-                  <h4 className="font-bold text-lg text-indigo-900">Technician Information</h4>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {selectedCaseLine?.diagnosticTechId && (
-                    <div className="space-y-2">
-                      <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Diagnostic Technician</span>
-                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-indigo-100 shadow-sm">
-                        <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine.diagnosticTechId}</span>
-                      </div>
-                    </div>
-                  )}
-                  {selectedCaseLine?.repairTechId && (
-                    <div className="space-y-2">
-                      <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Repair Technician</span>
-                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-indigo-100 shadow-sm">
-                        <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine.repairTechId}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* Technician Information removed per request */}
 
             {/* Rejection Reason (if any) */}
             {selectedCaseLine?.rejectionReason && (
@@ -3156,19 +3158,6 @@ const TechnicianDashboard = ({
                 </div>
                 <div className="bg-white/80 backdrop-blur p-5 rounded-lg border-2 border-red-200 shadow-sm">
                   <p className="text-sm leading-relaxed text-red-900 font-medium">{selectedCaseLine.rejectionReason}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Updated Date */}
-            {selectedCaseLine?.updatedAt && (
-              <div className="bg-gradient-to-r from-slate-100 to-gray-100 p-4 rounded-xl border-2 border-slate-200 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-slate-600" />
-                    <span className="text-sm font-semibold text-slate-700">Last Updated:</span>
-                  </div>
-                  <span className="text-sm font-medium text-slate-900">{new Date(selectedCaseLine.updatedAt).toLocaleString()}</span>
                 </div>
               </div>
             )}
@@ -3406,6 +3395,25 @@ const TechnicianDashboard = ({
                 </div>
               </div>
 
+              {/* Assigned Technicians Section */}
+              <div className="bg-white border border-slate-300 rounded-xl p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Users className="h-5 w-5 text-blue-600" />
+                  <h3 className="text-lg font-bold text-slate-800">Assigned Technicians</h3>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                    <div className="p-2 bg-blue-100 rounded-full">
+                      <User className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{selectedRecord.mainTechnician?.name}</p>
+                      <p className="text-xs text-slate-500">Main Technician • ID: {selectedRecord.mainTechnician?.userId}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Guarantee Cases with nested Case Lines */}
               {selectedRecord?.guaranteeCases && selectedRecord.guaranteeCases.length > 0 && (
                 <div className="space-y-3">
@@ -3469,14 +3477,8 @@ const TechnicianDashboard = ({
                                   </Badge>
                                 </div>
                                 
-                                <div className="grid grid-cols-2 gap-3 mb-3">
-                                  {/* Diagnosis */}
-                                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                                    <p className="text-xs font-semibold text-orange-700 mb-1">Diagnosis</p>
-                                    <p className="text-sm text-slate-800">{caseLine.diagnosisText || 'N/A'}</p>
-                                  </div>
-                                  
-                                  {/* Correction */}
+                                {/* Correction only - diagnosis removed from UI */}
+                                <div className="mb-3">
                                   <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                                     <p className="text-xs font-semibold text-green-700 mb-1">Correction</p>
                                     <p className="text-sm text-slate-800">{caseLine.correctionText || 'N/A'}</p>
@@ -3531,19 +3533,33 @@ const TechnicianDashboard = ({
                                     size="sm"
                                     className="w-full"
                                     onClick={() => {
+                                      // Validate case line ID before fetching
+                                      const caseLineId = caseLine.caseLineId;
+                                      if (!caseLineId || caseLineId.trim() === '') {
+                                        console.error('❌ Invalid case line ID:', caseLine);
+                                        toast({
+                                          title: "Invalid Case Line",
+                                          description: "This case line has no valid ID and cannot be viewed.",
+                                          variant: "destructive"
+                                        });
+                                        return;
+                                      }
+                                      
+                                      console.log('📋 Viewing case line with ID:', caseLineId);
+                                      
                                       // Convert to CaseLine format for view modal
                                       const formattedCaseLine: CaseLine = {
-                                        id: caseLine.caseLineId,
+                                        id: caseLineId,
                                         caseId: caseLine.guaranteeCaseId,
                                         damageLevel: 'medium',
                                         repairPossibility: 'repairable',
                                         warrantyDecision: caseLine.warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
-                                        technicianNotes: `${caseLine.diagnosisText} | ${caseLine.correctionText}`,
+                                        // Use correctionText as primary note now that diagnosis is removed
+                                        technicianNotes: caseLine.correctionText || '',
                                         photos: caseLine.evidenceImageUrls || [],
                                         evidenceImageUrls: caseLine.evidenceImageUrls || [],
-                                        createdDate: new Date(caseLine.createdAt).toLocaleDateString('en-GB'),
-                                        status: caseLine.status === 'pending' ? 'submitted' : 'approved',
-                                        diagnosisText: caseLine.diagnosisText,
+                                        createdDate: formatSafeDate(caseLine.createdAt),
+                                        status: caseLine.status ?? 'submitted',
                                         correctionText: caseLine.correctionText,
                                         componentId: caseLine.componentId,
                                         quantity: caseLine.quantity,
@@ -3573,52 +3589,6 @@ const TechnicianDashboard = ({
                 </div>
               )}
 
-              {/* Assigned Technicians Section */}
-              <div className="bg-white border border-slate-300 rounded-xl p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <Users className="h-5 w-5 text-blue-600" />
-                  <h3 className="text-lg font-bold text-slate-800">Assigned Technicians</h3>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
-                    <div className="p-2 bg-blue-100 rounded-full">
-                      <User className="h-4 w-4 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{selectedRecord.mainTechnician.name}</p>
-                      <p className="text-xs text-slate-500">Main Technician • ID: {selectedRecord.mainTechnician.userId}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Timeline Section */}
-              <div className="bg-white border border-slate-300 rounded-xl p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <Clock className="h-5 w-5 text-blue-600" />
-                  <h3 className="text-lg font-bold text-slate-800">Timeline</h3>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-green-100 rounded-full mt-0.5">
-                      <Calendar className="h-4 w-4 text-green-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">Case Submitted</p>
-                      <p className="text-xs text-slate-500">{formatDate(selectedRecord.checkInDate)}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-blue-100 rounded-full mt-0.5">
-                      <CheckCircle className="h-4 w-4 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">Vehicle Check-in</p>
-                      <p className="text-xs text-slate-500">{formatDate(selectedRecord.checkInDate)}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 
@@ -3658,7 +3628,7 @@ const TechnicianDashboard = ({
                   disabled={isCompleting || !hasCaseLines}
                   title={!hasCaseLines ? 'Create at least one case line before completing' : ''}
                 >
-                  {isCompleting ? 'Completing...' : 'Complete Record'}
+                  {isCompleting ? 'Completing...' : 'Complete Diagnosis'}
                 </Button>
               );
             })()}
@@ -3776,7 +3746,7 @@ const TechnicianDashboard = ({
 
       {/* Create Issue Diagnosis Modal from Processing Records */}
       <Dialog open={createIssueDiagnosisModalOpen} onOpenChange={(open) => {
-        console.log('📝 Dialog onOpenChange:', open);
+  // dialog open state changed
         setCreateIssueDiagnosisModalOpen(open);
       }}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
@@ -3930,7 +3900,7 @@ const TechnicianDashboard = ({
                           size="sm"
                           className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 font-semibold"
                           onClick={() => {
-                            setCaseLineForm(prev => ({ ...prev, componentId: null, warrantyStatus: 'ELIGIBLE' }));
+                            setCaseLineForm(prev => ({ ...prev, componentId: null, quantity: 0, warrantyStatus: 'ELIGIBLE' }));
                             setComponentSearchQuery('');
                           }}
                         >
@@ -3977,21 +3947,23 @@ const TechnicianDashboard = ({
                       value={caseLineForm.componentId || "none"}
                       onValueChange={(value) => {
                         if (value === "none" || value === "") {
-                          // Clear selection
-                          setCaseLineForm(prev => ({ ...prev, componentId: null, warrantyStatus: 'ELIGIBLE' }));
+                          // Clear selection and reset quantity when none selected
+                          setCaseLineForm(prev => ({ ...prev, componentId: null, quantity: 0, warrantyStatus: 'ELIGIBLE' }));
                           setComponentSearchQuery('');
                         } else {
                           // Find selected component
                           const selectedComponent = compatibleComponents.find(c => c.typeComponentId === value);
                           if (selectedComponent) {
                             const warrantyStatus = selectedComponent.isUnderWarranty ? 'ELIGIBLE' : 'INELIGIBLE';
+                            // default quantity to 1 when a component is selected
                             setCaseLineForm(prev => ({ 
                               ...prev, 
                               componentId: selectedComponent.typeComponentId,
+                              quantity: prev.quantity && prev.quantity > 0 ? prev.quantity : 1,
                               warrantyStatus: warrantyStatus
                             }));
                             setComponentSearchQuery(selectedComponent.name);
-                            console.log('🎯 Component selected:', selectedComponent.name, '| Warranty:', warrantyStatus);
+                            // component selection changed
                           }
                         }
                       }}
@@ -4084,7 +4056,10 @@ const TechnicianDashboard = ({
                       inputMode="numeric"
                       pattern="[0-9]*"
                       value={caseLineForm.quantity.toString()}
+                      disabled={!caseLineForm.componentId}
                       onChange={(e) => {
+                        // prevent editing when no component selected (safety)
+                        if (!caseLineForm.componentId) return;
                         const val = e.target.value;
                         // Allow empty input or valid numbers only
                         if (val === '' || /^\d+$/.test(val)) {
@@ -4220,14 +4195,7 @@ const TechnicianDashboard = ({
                     </div>
                   </div>
 
-                  {selectedAssignedCaseLine.diagnosisText && (
-                    <div>
-                      <label className="text-xs font-semibold text-muted-foreground">Diagnosis</label>
-                      <p className="text-sm mt-1 p-3 bg-slate-50 rounded border">
-                        {selectedAssignedCaseLine.diagnosisText}
-                      </p>
-                    </div>
-                  )}
+                  {/* Diagnosis was removed from the UI per backend validation — show correction only */}
 
                   {selectedAssignedCaseLine.correctionText && (
                     <div>
