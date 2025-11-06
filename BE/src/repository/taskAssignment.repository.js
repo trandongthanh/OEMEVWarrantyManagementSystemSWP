@@ -68,7 +68,7 @@ class TaskAssignmentRepository {
   };
 
   createTaskAssignmentForCaseline = async (
-    { caseLineId, technicianId, taskType = "REPAIR" },
+    { caseLineId, technicianId, taskType = "REPAIR", assignedBy },
     transaction
   ) => {
     const newTaskAssignment = await TaskAssignment.create(
@@ -76,6 +76,7 @@ class TaskAssignmentRepository {
         caseLineId,
         technicianId,
         taskType,
+        assignedBy,
       },
       { transaction }
     );

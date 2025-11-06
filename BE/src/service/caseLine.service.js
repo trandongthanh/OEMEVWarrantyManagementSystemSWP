@@ -778,6 +778,7 @@ class CaseLineService {
     caselineId,
     technicianId,
     serviceCenterId,
+    userId,
   }) => {
     return await db.sequelize.transaction(async (transaction) => {
       const caseline = await this.#caselineRepository.findById(
@@ -829,13 +830,21 @@ class CaseLineService {
         );
       }
 
-      const serviceCenter = await this.#serviceCenterRepository.findServiceCenterById({ serviceCenterId }, transaction);
+      const serviceCenter =
+        await this.#serviceCenterRepository.findServiceCenterById(
+          { serviceCenterId },
+          transaction
+        );
       if (!serviceCenter) {
         throw new NotFoundError("Service center not found");
       }
       const maxTasks = serviceCenter.maxActiveTasksPerTechnician;
 
-      const activeTaskCount = await this.#userRepository.getActiveTaskCountForTechnician({ technicianId }, transaction);
+      const activeTaskCount =
+        await this.#userRepository.getActiveTaskCountForTechnician(
+          { technicianId },
+          transaction
+        );
 
       if (activeTaskCount + 1 > maxTasks) {
         throw new ConflictError(
@@ -849,6 +858,7 @@ class CaseLineService {
             caseLineId: caselineId,
             technicianId,
             taskType: "REPAIR",
+            assignedBy: userId,
           },
           transaction
         ),
