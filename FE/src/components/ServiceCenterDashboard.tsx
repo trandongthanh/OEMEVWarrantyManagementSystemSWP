@@ -496,6 +496,20 @@ const ServiceCenterDashboard = () => {
   const [editingMaxWorkload, setEditingMaxWorkload] = useState<number>(5); // for editing in modal
   const [isSavingWorkloadConfig, setIsSavingWorkloadConfig] = useState(false);
 
+  // Registration states
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [registerForm, setRegisterForm] = useState({
+    username: '',
+    password: '',
+    email: '',
+    phone: '',
+    name: '',
+    address: '',
+    roleId: ''
+  });
+  const [registerErrors, setRegisterErrors] = useState<Record<string, string>>({});
+
   const { user, logout, getToken } = useAuth();
 
   // Decode JWT to get serviceCenterId on mount
@@ -617,6 +631,133 @@ const ServiceCenterDashboard = () => {
       alert(`Error: ${errorMessage}`);
     } finally {
       setIsSavingWorkloadConfig(false);
+    }
+  };
+
+  // Validate registration form
+  const validateRegisterForm = () => {
+    const errors: Record<string, string> = {};
+
+    // Username validation (3-50 characters, alphanumeric and underscore only)
+    if (!registerForm.username.trim()) {
+      errors.username = 'Username is required';
+    } else if (registerForm.username.length < 3 || registerForm.username.length > 50) {
+      errors.username = 'Username must be between 3 and 50 characters';
+    } else if (!/^[a-zA-Z0-9_]+$/.test(registerForm.username)) {
+      errors.username = 'Username can only contain letters, numbers, and underscores';
+    }
+
+    // Password validation (min 6 characters)
+    if (!registerForm.password) {
+      errors.password = 'Password is required';
+    } else if (registerForm.password.length < 6) {
+      errors.password = 'Password must be at least 6 characters';
+    }
+
+    // Email validation
+    if (!registerForm.email.trim()) {
+      errors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(registerForm.email)) {
+      errors.email = 'Invalid email format';
+    }
+
+    // Phone validation (Vietnamese phone format: 10-11 digits, starts with 0)
+    if (!registerForm.phone.trim()) {
+      errors.phone = 'Phone number is required';
+    } else {
+      const phoneDigits = registerForm.phone.replace(/[\s\-\+]/g, '');
+      if (!/^(\+84|84|0)[0-9]{9,10}$/.test(phoneDigits)) {
+        errors.phone = 'Phone must be valid Vietnamese format (10-11 digits, e.g., 0912345678 or +84912345678)';
+      }
+    }
+
+    // Name validation (2-100 characters)
+    if (!registerForm.name.trim()) {
+      errors.name = 'Name is required';
+    } else if (registerForm.name.length < 2 || registerForm.name.length > 100) {
+      errors.name = 'Name must be between 2 and 100 characters';
+    }
+
+    // Address validation (5-200 characters)
+    if (!registerForm.address.trim()) {
+      errors.address = 'Address is required';
+    } else if (registerForm.address.length < 5 || registerForm.address.length > 200) {
+      errors.address = 'Address must be between 5 and 200 characters';
+    }
+
+    setRegisterErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Handle user registration
+  const handleRegisterUser = async () => {
+    // Validate form
+    if (!validateRegisterForm()) {
+      return;
+    }
+
+    setIsRegistering(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      alert('Authentication required. Please login again.');
+      setIsRegistering(false);
+      return;
+    }
+
+    try {
+      console.log('🔧 Registering new user:', {
+        username: registerForm.username,
+        email: registerForm.email,
+        name: registerForm.name,
+        url: `${API_BASE_URL}/auth/register-in-service-center`
+      });
+
+      const response = await axios.post(
+        `${API_BASE_URL}/auth/register-in-service-center`,
+        {
+          username: registerForm.username,
+          password: registerForm.password,
+          email: registerForm.email,
+          phone: registerForm.phone,
+          name: registerForm.name,
+          address: registerForm.address,
+          roleId: registerForm.roleId
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      console.log('✅ Registration response:', response.data);
+
+      if (response.status === 200 || response.status === 201) {
+        alert(`User ${registerForm.name} registered successfully!`);
+        
+        // Reset form and close modal
+        setRegisterForm({
+          username: '',
+          password: '',
+          email: '',
+          phone: '',
+          name: '',
+          address: '',
+            roleId: ''
+        });
+        setRegisterErrors({});
+        setShowRegisterModal(false);
+
+        // Refresh technicians list if we're on that tab
+        await refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
+      }
+    } catch (error: any) {
+      console.error('❌ Registration failed:', error);
+      const errorMessage = error.response?.data?.message || 'Failed to register user. Please try again.';
+      alert(`Registration Error: ${errorMessage}`);
+    } finally {
+      setIsRegistering(false);
     }
   };
 
@@ -1510,6 +1651,13 @@ const ServiceCenterDashboard = () => {
                 </div>
               </div>
               <div className="flex items-center space-x-3 ml-auto">
+                <Button 
+                  variant="default" 
+                  onClick={() => setShowRegisterModal(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Register
+                </Button>
                 <Button variant="outline" onClick={logout}>
                   <LogOut className="mr-2 h-4 w-4" />
                   Logout
@@ -3927,6 +4075,245 @@ const ServiceCenterDashboard = () => {
               >
                 <Save className="h-4 w-4 mr-2" />
                 {isSavingWorkloadConfig ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* User Registration Modal */}
+        <Dialog open={showRegisterModal} onOpenChange={(open) => {
+          setShowRegisterModal(open);
+          // Reset form when opening modal to clear any autofilled values
+          if (open) {
+            setRegisterForm({
+              username: '',
+              password: '',
+              email: '',
+              phone: '',
+              name: '',
+              address: '',
+              roleId: ''
+            });
+            setRegisterErrors({});
+          }
+        }}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="pb-6 border-b border-gradient">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg">
+                  <Plus className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                    Register New User
+                  </DialogTitle>
+                  <DialogDescription className="text-sm mt-1 text-muted-foreground">
+                    Create a new user account for this service center
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+
+            <div className="mt-8">
+              {/* Use a form with autoComplete="off" and prevent submit to discourage browser autofill */}
+              <form autoComplete="off" onSubmit={(e) => e.preventDefault()}>
+                {/* Honeypot fields to trick browser autofill - hidden from user */}
+                <div style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px' }}>
+                  <input type="text" name="username" tabIndex={-1} autoComplete="off" />
+                  <input type="password" name="password" tabIndex={-1} autoComplete="new-password" />
+                  <input type="email" name="email" tabIndex={-1} autoComplete="off" />
+                </div>
+                
+                {/* Account Credentials Section */}
+                <div className="mb-8">
+                  <h3 className="text-base font-semibold mb-4 flex items-center gap-2 text-foreground">
+                    <div className="h-1.5 w-1.5 rounded-full bg-blue-600"></div>
+                    Account Credentials
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-5 rounded-xl bg-gradient-to-br from-slate-50 to-blue-50/30 dark:from-slate-900 dark:to-blue-950/20 border shadow-sm">
+                    {/* Username */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-foreground flex items-center gap-1">
+                        Username <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        name="register-username"
+                        autoComplete="off"
+                        value={registerForm.username}
+                        onChange={(e) => setRegisterForm({ ...registerForm, username: e.target.value })}
+                        placeholder="e.g., tech_user123"
+                        className={`transition-all ${registerErrors.username ? 'border-red-500 focus:ring-red-500' : 'focus:ring-blue-500'}`}
+                      />
+                      {registerErrors.username && (
+                        <p className="text-xs text-red-500 flex items-center gap-1">
+                          <span>⚠</span> {registerErrors.username}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground">3-50 characters, alphanumeric and underscore only</p>
+                    </div>
+
+                    {/* Password */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-foreground flex items-center gap-1">
+                        Password <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="password"
+                        name="register-password"
+                        autoComplete="new-password"
+                        value={registerForm.password}
+                        onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })}
+                        placeholder="Min 6 characters"
+                        className={`transition-all ${registerErrors.password ? 'border-red-500 focus:ring-red-500' : 'focus:ring-blue-500'}`}
+                      />
+                      {registerErrors.password && (
+                        <p className="text-xs text-red-500 flex items-center gap-1">
+                          <span>⚠</span> {registerErrors.password}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground">Minimum 6 characters</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Personal Information Section */}
+                <div className="mb-8">
+                  <h3 className="text-base font-semibold mb-4 flex items-center gap-2 text-foreground">
+                    <div className="h-1.5 w-1.5 rounded-full bg-indigo-600"></div>
+                    Personal Information
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-5 rounded-xl bg-gradient-to-br from-slate-50 to-indigo-50/30 dark:from-slate-900 dark:to-indigo-950/20 border shadow-sm">
+                    {/* Full Name */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-foreground flex items-center gap-1">
+                        Full Name <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        name="register-fullname"
+                        autoComplete="off"
+                        value={registerForm.name}
+                        onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })}
+                        placeholder="Nguyen Van A"
+                        className={`transition-all ${registerErrors.name ? 'border-red-500 focus:ring-red-500' : 'focus:ring-indigo-500'}`}
+                      />
+                      {registerErrors.name && (
+                        <p className="text-xs text-red-500 flex items-center gap-1">
+                          <span>⚠</span> {registerErrors.name}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground">2-100 characters</p>
+                    </div>
+
+                    {/* Email */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-foreground flex items-center gap-1">
+                        Email <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="email"
+                        name="register-email"
+                        autoComplete="off"
+                        value={registerForm.email}
+                        onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })}
+                        placeholder="user@servicecenter.com"
+                        className={`transition-all ${registerErrors.email ? 'border-red-500 focus:ring-red-500' : 'focus:ring-indigo-500'}`}
+                      />
+                      {registerErrors.email && (
+                        <p className="text-xs text-red-500 flex items-center gap-1">
+                          <span>⚠</span> {registerErrors.email}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground">Valid email format</p>
+                    </div>
+
+                    {/* Phone */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-foreground flex items-center gap-1">
+                        Phone <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="tel"
+                        name="register-phone"
+                        autoComplete="off"
+                        value={registerForm.phone}
+                        onChange={(e) => setRegisterForm({ ...registerForm, phone: e.target.value })}
+                        placeholder="0912345678"
+                        className={`transition-all ${registerErrors.phone ? 'border-red-500 focus:ring-red-500' : 'focus:ring-indigo-500'}`}
+                      />
+                      {registerErrors.phone && (
+                        <p className="text-xs text-red-500 flex items-center gap-1">
+                          <span>⚠</span> {registerErrors.phone}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground">Format: 10-11 digits</p>
+                    </div>
+
+                    {/* Address (span full width) */}
+                    <div className="md:col-span-2 space-y-2">
+                      <label className="text-sm font-semibold text-foreground flex items-center gap-1">
+                        Address <span className="text-red-500">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        name="register-address"
+                        autoComplete="off"
+                        value={registerForm.address}
+                        onChange={(e) => setRegisterForm({ ...registerForm, address: e.target.value })}
+                        placeholder="123 Nguyen Hue Street, District 1, HCMC"
+                        className={`transition-all ${registerErrors.address ? 'border-red-500 focus:ring-red-500' : 'focus:ring-indigo-500'}`}
+                      />
+                      {registerErrors.address && (
+                        <p className="text-xs text-red-500 flex items-center gap-1">
+                          <span>⚠</span> {registerErrors.address}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground">5-200 characters</p>
+                    </div>
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-6 border-t">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowRegisterModal(false);
+                  setRegisterForm({
+                    username: '',
+                    password: '',
+                    email: '',
+                    phone: '',
+                    name: '',
+                    address: '',
+                    roleId: ''
+                  });
+                  setRegisterErrors({});
+                }}
+                disabled={isRegistering}
+                className="px-6"
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="default"
+                onClick={handleRegisterUser}
+                disabled={isRegistering}
+                className="px-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg"
+              >
+                {isRegistering ? (
+                  <>
+                    <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                    Registering...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Register User
+                  </>
+                )}
               </Button>
             </div>
           </DialogContent>
