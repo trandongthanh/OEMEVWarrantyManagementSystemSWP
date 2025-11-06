@@ -21,12 +21,6 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/no-unused-vars": "off",
-      // Lower severity for these rules to reduce blocking errors across the codebase.
-      // They should be addressed properly in the long term (replace `any` with concrete types
-      // and avoid empty-object-type), but setting to 'warn' makes this a non-blocking change
-      // for editor/CI while the team fixes the usage incrementally.
-      "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/no-empty-object-type": "warn",
     },
   },
 );
