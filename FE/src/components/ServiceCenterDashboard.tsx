@@ -780,7 +780,7 @@ const ServiceCenterDashboard = () => {
       const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests/${requestId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      let detailData = response.data?.data?.stockTransferRequest || null;
+      const detailData = response.data?.data?.stockTransferRequest || null;
       console.log('📦 Stock Transfer Request Detail:', detailData);
       console.log('📦 Detail Items:', detailData?.items);
       

@@ -100,7 +100,7 @@ export const caseLineService = {
       const rawCaseLines = response.data?.data?.caseLines || [];
 
       // Normalize: backend returns `id` (not caseLineId) and `diagnosticTechId` (not techId)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const normalized = rawCaseLines.map((cl: any) => ({
         caseLineId: cl.id, // Backend returns `id`
         guaranteeCaseId: cl.guaranteeCaseId,

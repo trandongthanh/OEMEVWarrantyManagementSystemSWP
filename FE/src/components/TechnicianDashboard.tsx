@@ -467,7 +467,8 @@ const TechnicianDashboard = ({
               const diag = (mm['diagnosisText'] ?? mm['diagnosis_text']) as string | undefined || '';
               const corr = (mm['correctionText'] ?? mm['correction_text']) as string | undefined || '';
               const photos = Array.isArray(mm['photos']) ? (mm['photos'] as string[]) : [];
-              const createdAt = (mm['createdAt'] ?? mm['created_at']) as string | undefined || new Date().toLocaleDateString('en-GB');
+              const createdAtRaw = mm['createdAt'] ?? mm['created_at'];
+              const createdAt = createdAtRaw ? formatSafeDate(String(createdAtRaw)) : formatSafeDate(new Date());
 
               return {
                 id,
@@ -510,7 +511,7 @@ const TechnicianDashboard = ({
     const token = localStorage.getItem('ev_warranty_token');
     // avoid logging tokens to console; signal auth presence only
     if (!token) {
-      console.debug('No auth token found in localStorage');
+    
       toast({
         title: "Authentication Error",
         description: "No authentication token found. Please login again.",
@@ -538,10 +539,10 @@ const TechnicianDashboard = ({
       }
     };
 
-    console.debug(`API Call: ${options.method || 'GET'} ${API_BASE_URL}${endpoint}`);
+    
 
     const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-    console.debug(`Response: ${response.status} ${response.statusText}`);
+    
 
     // If no content, return null to caller
     if (response.status === 204) return null;
@@ -573,7 +574,6 @@ const TechnicianDashboard = ({
       setIsLoadingRecords(true);
       setRecordsError(null);
       
-      console.log('Fetching all processing records...');
       
       // Get all records
       const { records: allRecords, total } = await processingRecordsService.getAllProcessingRecords();
@@ -583,8 +583,6 @@ const TechnicianDashboard = ({
       const groupedRecords = await processingRecordsService.getProcessingRecordsGroupedByStatus();
       setRecordsByStatus(groupedRecords);
       
-      console.log('Fetched processing records:', allRecords, 'Total:', total);
-      console.log('Grouped by status:', groupedRecords);
       
       toast({
         title: "Success",
@@ -608,13 +606,9 @@ const TechnicianDashboard = ({
   const fetchProcessingRecords = useCallback(async () => {
     try {
       setIsLoadingRecords(true);
-      console.log('📡 Fetching records with status: IN_DIAGNOSIS');
-      
       const { records: inDiagnosisRecords, total } = await processingRecordsService.getProcessingRecordsByStatus({ status: 'IN_DIAGNOSIS' });
 
-      console.log('📦 Received records:', inDiagnosisRecords, 'Total:', total);
-      console.log(`✅ Loaded ${inDiagnosisRecords.length} records in diagnosis`);
-
+      
       // Normalize record id field: backend may return id under different keys (recordId, id, vehicleProcessingRecordId, processing_record_id)
       const normalized: ProcessingRecord[] = (inDiagnosisRecords || []).map((r: unknown) => {
         const rr = r as Record<string, unknown>;
@@ -643,7 +637,7 @@ const TechnicianDashboard = ({
         // ignore
       }
       
-      console.log('💾 State updated with records');
+      
 
       // After we've loaded records, attempt to fetch persisted case-lines for all guarantee cases
         try {
@@ -661,7 +655,7 @@ const TechnicianDashboard = ({
         });
 
         if (guaranteeIds.length > 0) {
-          console.log('🔁 Loading case-lines for guarantee cases:', guaranteeIds);
+          
           const fetches = guaranteeIds.map(id => caseLineService.getCaseLines(id).catch(err => {
             console.error('❌ Failed loading case lines for', id, err);
             return [] as unknown[];
@@ -704,7 +698,7 @@ const TechnicianDashboard = ({
                   const diag = mm.diagnosisText || '';
                   const corr = mm.correctionText || '';
                   const photos: string[] = [];
-                  const createdAt = mm.createdAt ?? new Date().toLocaleDateString('en-GB');
+                  const createdAt = mm.createdAt ? formatSafeDate(String(mm.createdAt)) : formatSafeDate(new Date());
                   const status = (mm.status as string) ?? 'submitted';
 
                   return {
@@ -834,8 +828,7 @@ const TechnicianDashboard = ({
     try {
       setIsLoadingAssignedTasks(true);
       
-      console.log('🔍 Fetching assigned tasks for user:', user.id);
-      console.log('📋 User details:', { id: user.id, name: user.name, role: user.role });
+      
       
       // Call API to get case lines where repairTechId matches current user
       // Try without status filter first to see all case lines
@@ -848,17 +841,9 @@ const TechnicianDashboard = ({
         }
       }) as AxiosResponse<{ status: string; data: { caseLines: AssignedCaseLine[]; pagination?: { page: number; limit: number; total: number } } }>;
       
-      console.log('📦 Full API Response:', JSON.stringify(response.data, null, 2));
-      console.log('📊 Case Lines:', response.data?.data?.caseLines);
-      console.log('📊 Case Lines Count:', response.data?.data?.caseLines?.length || 0);
-      
       if (response.data?.status === 'success') {
         const caseLines = response.data?.data?.caseLines || [];
         setAssignedCaseLines(Array.isArray(caseLines) ? caseLines : []);
-        console.log('✅ Loaded case lines:', caseLines.length);
-        if (caseLines.length > 0) {
-          console.log('📋 First case line sample:', JSON.stringify(caseLines[0], null, 2));
-        }
       } else {
         console.warn('⚠️ No case lines found or invalid response structure');
         setAssignedCaseLines([]);
@@ -884,9 +869,7 @@ const TechnicianDashboard = ({
     }
 
     try {
-      setIsLoadingReservations(true);
-      console.log('🔍 Fetching reservations for case line:', caseLineId);
-      console.log('👤 User ID (repairTechId):', user.id);
+  setIsLoadingReservations(true);
       
       // URL format: /reservations?caseLineId={id}&repairTechId={userId}&sortBy=createdAt&sortOrder=DESC
       const response = await apiService.get<{ status: string; data: { reservations: ComponentReservation[] } }>('/reservations', {
@@ -898,10 +881,7 @@ const TechnicianDashboard = ({
         }
       });
 
-      console.log('📦 Reservations Response:', JSON.stringify(response.data, null, 2));
-
       if (response.data?.status === 'success' && Array.isArray(response.data?.data?.reservations)) {
-        console.log('✅ Found', response.data.data.reservations.length, 'reservations');
         setReservations(response.data.data.reservations);
       } else {
         console.warn('⚠️ No reservations found or invalid response structure');
@@ -923,17 +903,12 @@ const TechnicianDashboard = ({
   // View assigned case line details
   const viewAssignedCaseLineDetails = useCallback(async (caseLineId: string) => {
     try {
-      console.log('🔍 Fetching case line details for:', caseLineId);
       const response = await apiService.get<{ status: string; data: { caseLine: AssignedCaseLine } }>(`/case-lines/${caseLineId}`);
-      
-      console.log('📦 Case Line Detail Response:', JSON.stringify(response.data, null, 2));
-      
+
       if (response.data?.status === 'success' && response.data?.data?.caseLine) {
         setSelectedAssignedCaseLine(response.data.data.caseLine);
         setViewAssignedCaseLineModalOpen(true);
-        console.log('✅ Loaded case line details');
       } else {
-        console.warn('⚠️ Invalid response structure');
         toast({
           title: 'Error',
           description: 'Failed to load case line details - invalid response',
@@ -959,17 +934,14 @@ const TechnicianDashboard = ({
   // Install component
   const handleInstallComponent = useCallback(async (reservationId: string) => {
     try {
-      setInstallingReservationId(reservationId);
-      console.log('🔧 Installing component for reservation:', reservationId);
+  setInstallingReservationId(reservationId);
 
-      const response = await apiService.patch<{ 
+  const response = await apiService.patch<{ 
         status: string; 
         data: { component: ComponentReservation } 
       }>(`/reservations/${reservationId}/installComponent`);
 
-      console.log('✅ Component installed successfully:', response.data);
-
-      if (response.data?.status === 'success') {
+  if (response.data?.status === 'success') {
         toast({
           title: 'Success',
           description: 'Component installed successfully',
@@ -999,8 +971,7 @@ const TechnicianDashboard = ({
   // Complete repair for case line
   const handleCompleteRepair = useCallback(async (caseLineId: string) => {
     try {
-      setCompletingCaseLineId(caseLineId);
-      console.log('✅ Checking reservations before completing case line:', caseLineId);
+  setCompletingCaseLineId(caseLineId);
 
       // First, fetch reservations to check if all are installed
       const reservationsResponse = await apiService.get<{ 
@@ -1015,8 +986,7 @@ const TechnicianDashboard = ({
         }
       });
 
-      const caseReservations = reservationsResponse.data?.data?.reservations || [];
-      console.log('📦 Case line reservations:', caseReservations);
+  const caseReservations = reservationsResponse.data?.data?.reservations || [];
 
       // Check if there are any reservations
       if (caseReservations.length === 0) {
@@ -1033,7 +1003,7 @@ const TechnicianDashboard = ({
       const allInstalled = caseReservations.every(r => r.status === 'INSTALLED');
       const notInstalledCount = caseReservations.filter(r => r.status !== 'INSTALLED').length;
 
-      if (!allInstalled) {
+  if (!allInstalled) {
         toast({
           title: 'Cannot Complete',
           description: `All components must be installed first. ${notInstalledCount} component(s) not yet installed.`,
@@ -1043,16 +1013,11 @@ const TechnicianDashboard = ({
         return;
       }
 
-      console.log('✅ All reservations are installed. Proceeding to mark as complete...');
-
       // All reservations are installed, proceed with completion
       const response = await apiService.patch<{ 
         status: string; 
         data: { caseLine: AssignedCaseLine } 
       }>(`/case-lines/${caseLineId}/mark-repair-complete`);
-
-      console.log('✅ Repair completed successfully:', response.data);
-
       if (response.data?.status === 'success') {
         toast({
           title: 'Success',
@@ -1118,6 +1083,19 @@ const TechnicianDashboard = ({
     });
   };
 
+  // Safe date formatter: accepts string|Date|number and returns a locale date string.
+  // If input is missing, returns 'N/A'. If parsing fails, returns the original raw value.
+  const formatSafeDate = (raw?: string | Date | number, locale = 'en-GB') => {
+    if (raw === undefined || raw === null) return 'N/A';
+    try {
+      const d = raw instanceof Date ? raw : new Date(String(raw));
+      if (isNaN(d.getTime())) return String(raw);
+      return d.toLocaleDateString(locale);
+    } catch (e) {
+      return String(raw);
+    }
+  };
+
   // NOTE: createCaseLines handled by `caseLineService.createCaseLines` (uses axios POST).
   // Keep component-side logic (handleCreateIssueDiagnosis) using the service so created
   // case-lines are persisted to backend and then merged into local state for display.
@@ -1125,8 +1103,7 @@ const TechnicianDashboard = ({
   // Fetch components để hiển thị trong dropdown
   const fetchComponents = useCallback(async () => {
     try {
-      const data = await apiCall('/components');
-      console.log('Fetched components:', data);
+  const data = await apiCall('/components');
       // Có thể lưu vào state nếu cần hiển thị dropdown components
     } catch (error) {
       console.error('Error fetching components:', error);
@@ -1136,8 +1113,7 @@ const TechnicianDashboard = ({
   // Fetch case lines đã tạo cho guarantee case
   const fetchCaseLinesForCase = useCallback(async (guaranteeCaseId: string): Promise<unknown[]> => {
     try {
-      const data = await apiCall(`/guarantee-cases/${guaranteeCaseId}/case-lines`);
-      console.log('Fetched case lines for case:', data);
+  const data = await apiCall(`/guarantee-cases/${guaranteeCaseId}/case-lines`);
       // Defensive: apiCall may return null (204) or different shapes.
       if (!data) return [];
       const asObj = data as unknown as Record<string, unknown>;
@@ -1163,15 +1139,13 @@ const TechnicianDashboard = ({
     }
 
     try {
-      setIsLoadingComponents(true);
-      console.log('🔍 Fetching components for recordId:', recordId, 'searchName:', searchName);
+  setIsLoadingComponents(true);
       
       const components = await processingRecordsService.getCompatibleComponents(
         recordId,
         { searchName }
       );
-      console.log('✅ Fetched components with warranty info:', components);
-      setCompatibleComponents(Array.isArray(components) ? components : []);
+  setCompatibleComponents(Array.isArray(components) ? components : []);
     } catch (error) {
       console.error('❌ Failed to search components:', error);
       toast({
@@ -1237,7 +1211,7 @@ const TechnicianDashboard = ({
         return;
       }
       
-      console.log('🚀 Creating case line for guarantee case:', guaranteeCase.guaranteeCaseId);
+  // creating case line for guaranteeCase
 
       // Create case line
       // Set diagnosisText same as correctionText for backend compatibility
@@ -1251,7 +1225,7 @@ const TechnicianDashboard = ({
         [caseLineData]
       );
 
-      console.log('✅ Case lines created:', serverCreatedCaseLines);
+  // case lines created on server and merged into state
 
       // Persist created case lines into normalized state so they survive F5
       if (serverCreatedCaseLines && serverCreatedCaseLines.length > 0) {
@@ -1279,7 +1253,7 @@ const TechnicianDashboard = ({
         technicianNotes: `${serverCreatedCaseLines[0].diagnosisText} | ${serverCreatedCaseLines[0].correctionText}`,
         photos: [],
         photoFiles: [],
-        createdDate: new Date(serverCreatedCaseLines[0].createdAt).toLocaleDateString('en-GB'),
+  createdDate: formatSafeDate(serverCreatedCaseLines[0].createdAt),
         status: serverCreatedCaseLines[0].status === 'DRAFT' ? 'submitted' : 
                 serverCreatedCaseLines[0].status === 'PENDING_APPROVAL' ? 'submitted' : 
                 serverCreatedCaseLines[0].status === 'CUSTOMER_APPROVED' ? 'approved' : 'submitted',
@@ -1314,12 +1288,11 @@ const TechnicianDashboard = ({
       // Don't reset selectedGuaranteeCaseForCaseLine - keep it selected for creating another case line
       
       // Reload compatible components for the selected guarantee case so user can create another case line
-      if (selectedRecord?.recordId) {
-        console.log('🔄 Reloading components after case line creation...');
-        fetchCompatibleComponents(selectedRecord.recordId.toString(), '').catch(error => {
-          console.error('❌ Failed to reload components:', error);
-        });
-      }
+        if (selectedRecord?.recordId) {
+          fetchCompatibleComponents(selectedRecord.recordId.toString(), '').catch(error => {
+            console.error('Failed to reload components after case line creation', error);
+          });
+        }
       
     } catch (error) {
       console.error('❌ Failed to create case line:', error);
@@ -1338,25 +1311,13 @@ const TechnicianDashboard = ({
   // Load data on component mount
   useEffect(() => {
     const initializeData = async () => {
-      console.log('🚀 TechnicianDashboard useEffect triggered');
-      console.log('👤 User state:', user);
-      console.log('🔍 LocalStorage token:', localStorage.getItem('ev_warranty_token') ? 'Present' : 'Missing');
-      
       if (user) {
-        console.log('✅ User authenticated, fetching data...');
-        console.log('🔄 User details:', {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        });
-        
         await fetchProcessingRecords();
         // Do not fetch global /components on init to avoid 404 noisy logs when backend
         // doesn't expose that endpoint. Components are fetched when needed (e.g. when
         // opening Create Issue Diagnosis modal via fetchCompatibleComponents).
       } else {
-        console.log('❌ No user found, cannot fetch data');
+        // user not present; prompt will be shown elsewhere if needed
         toast({
           title: "Authentication Required",
           description: "Please login to view processing records",
@@ -1403,7 +1364,6 @@ const TechnicianDashboard = ({
   useEffect(() => {
     const interval = setInterval(() => {
       if (user && !isLoading && autoRefreshEnabled) {
-        console.log('Auto refreshing processing records...');
         fetchProcessingRecords();
       }
     }, 30000); // 30 seconds
@@ -1421,8 +1381,7 @@ const TechnicianDashboard = ({
   // Fetch case lines when guarantee case is selected
   useEffect(() => {
     const loadCaseLines = async () => {
-      if (selectedGuaranteeCase) {
-        console.log('Loading case lines for selected guarantee case...');
+        if (selectedGuaranteeCase) {
           const caseLines = await fetchCaseLinesForCase(selectedGuaranteeCase.guaranteeCaseId);
           if (caseLines.length > 0) {
             // Normalize server shapes into CaseLineResponse so we have tech owner info
@@ -1449,13 +1408,7 @@ const TechnicianDashboard = ({
   }, [selectedGuaranteeCase, fetchCaseLinesForCase, normalizeCaseLineResponse]);
 
   // Log state changes for debugging
-  useEffect(() => {
-    console.log('Processing records updated:', processingRecords.length, 'records');
-  }, [processingRecords]);
-
-  useEffect(() => {
-    console.log('Created case lines updated:', createdCaseLines.length, 'case lines');
-  }, [createdCaseLines]);
+  // Removed verbose change-logging to keep console output clean in production.
 
   // Helpers
   const isCaseLineCompleted = (status?: string | null) => {
@@ -1581,15 +1534,10 @@ const TechnicianDashboard = ({
     try {
       // Open modal immediately with loading state
       setViewCaseLineModalOpen(true);
-      
-      console.log('🔍 Fetching case line detail from API for ID:', caseLine.id);
-      
+
       // Call API to get full case line detail including images
       const detailedCaseLine = await caseLineService.getCaseLineById(caseLine.id);
-      
-      console.log('✅ Received detailed case line from API:', detailedCaseLine);
-      console.log('📸 Evidence images:', detailedCaseLine.evidenceImageUrls);
-      
+
       // Map backend CaseLine to frontend CaseLine format
       const enriched: CaseLine = {
         id: detailedCaseLine.caseLineId,
@@ -1601,7 +1549,7 @@ const TechnicianDashboard = ({
         technicianNotes: `${detailedCaseLine.diagnosisText} | ${detailedCaseLine.correctionText}`,
         photos: detailedCaseLine.evidenceImageUrls || [],
         evidenceImageUrls: detailedCaseLine.evidenceImageUrls || [],
-        createdDate: new Date(detailedCaseLine.createdAt).toLocaleDateString('en-GB'),
+        createdDate: formatSafeDate(detailedCaseLine.createdAt),
         status: detailedCaseLine.status === 'pending' ? 'submitted' : 'approved',
         diagnosisText: detailedCaseLine.diagnosisText,
         correctionText: detailedCaseLine.correctionText,
@@ -1611,8 +1559,6 @@ const TechnicianDashboard = ({
         diagnosticTechId: detailedCaseLine.techId,
         updatedAt: detailedCaseLine.updatedAt
       };
-
-      console.log('🎨 Enriched case line for display:', enriched);
       setSelectedCaseLine(enriched);
     } catch (err) {
       console.error('❌ Failed to fetch case line detail from API:', err);
@@ -1797,7 +1743,7 @@ const TechnicianDashboard = ({
                                   size="sm"
                                   className="bg-green-600 hover:bg-green-700 flex items-center justify-center"
                                   onClick={async () => {
-                                    console.log('🔘 Create Issue Diagnosis button clicked for record:', record);
+                                    // Open Create Issue Diagnosis modal for selected record
 
                                     try {
                                       // Try to pick a usable id from common fields so component search can run when possible.
@@ -1813,7 +1759,6 @@ const TechnicianDashboard = ({
                                       setCreateIssueDiagnosisModalOpen(true);
 
                                       if (candidateId) {
-                                        console.log('✅ Loading components for record:', candidateId);
                                         // Load all compatible components (no search query needed)
                                         fetchCompatibleComponents(candidateId.toString(), '').catch(error => {
                                           console.error('❌ Failed to fetch components:', error);
@@ -2071,7 +2016,7 @@ const TechnicianDashboard = ({
                               {s.createdAt ? (
                                 <div className="text-right">
                                   <div className="whitespace-nowrap">{new Date(s.createdAt).toLocaleTimeString()}</div>
-                                  <div className="text-muted-foreground">{new Date(s.createdAt).toLocaleDateString()}</div>
+                                  <div className="text-muted-foreground">{formatSafeDate(s.createdAt)}</div>
                                 </div>
                               ) : (
                                 '—'
@@ -2081,7 +2026,7 @@ const TechnicianDashboard = ({
                               {s.updatedAt ? (
                                 <div className="text-right">
                                   <div className="whitespace-nowrap">{new Date(s.updatedAt).toLocaleTimeString()}</div>
-                                  <div className="text-muted-foreground">{new Date(s.updatedAt).toLocaleDateString()}</div>
+                                  <div className="text-muted-foreground">{formatSafeDate(s.updatedAt)}</div>
                                 </div>
                               ) : (
                                 '—'
@@ -3015,13 +2960,7 @@ const TechnicianDashboard = ({
             </div>
           </DialogHeader>
           
-          {(() => {
-            // Debug: Log selected case line data
-            console.log('🔍 Selected Case Line:', selectedCaseLine);
-            console.log('📸 Evidence Image URLs:', selectedCaseLine?.evidenceImageUrls);
-            console.log('📷 Photos:', selectedCaseLine?.photos);
-            return null;
-          })()}
+          {/* Debug logs removed */}
           
           <div className="space-y-6 pt-2">
             {/* Case Line Information - single row split into two sides */}
@@ -3040,12 +2979,6 @@ const TechnicianDashboard = ({
                       <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Diagnosis ID</span>
                       <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-blue-100 shadow-sm">
                         <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine?.id}</span>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Created Date</span>
-                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-blue-100 shadow-sm">
-                        <span className="text-sm font-medium text-gray-800">{selectedCaseLine?.createdDate || 'Invalid Date'}</span>
                       </div>
                     </div>
                     <div className="space-y-2">
@@ -3078,14 +3011,12 @@ const TechnicianDashboard = ({
                     <h4 className="font-bold text-lg text-amber-900">Component & Warranty Details</h4>
                   </div>
                   <div className="space-y-4">
-                    {selectedCaseLine?.componentId && (
-                      <div className="space-y-2">
-                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component ID</span>
-                        <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
-                          <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine.componentId}</span>
-                        </div>
+                    <div className="space-y-2">
+                      <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component ID</span>
+                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
+                        <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine?.componentId || 'N/A'}</span>
                       </div>
-                    )}
+                    </div>
                     {selectedCaseLine?.quantity !== undefined && (
                       <div className="space-y-2">
                         <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Quantity</span>
@@ -3156,19 +3087,6 @@ const TechnicianDashboard = ({
                 </div>
                 <div className="bg-white/80 backdrop-blur p-5 rounded-lg border-2 border-red-200 shadow-sm">
                   <p className="text-sm leading-relaxed text-red-900 font-medium">{selectedCaseLine.rejectionReason}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Updated Date */}
-            {selectedCaseLine?.updatedAt && (
-              <div className="bg-gradient-to-r from-slate-100 to-gray-100 p-4 rounded-xl border-2 border-slate-200 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-slate-600" />
-                    <span className="text-sm font-semibold text-slate-700">Last Updated:</span>
-                  </div>
-                  <span className="text-sm font-medium text-slate-900">{new Date(selectedCaseLine.updatedAt).toLocaleString()}</span>
                 </div>
               </div>
             )}
@@ -3541,7 +3459,7 @@ const TechnicianDashboard = ({
                                         technicianNotes: `${caseLine.diagnosisText} | ${caseLine.correctionText}`,
                                         photos: caseLine.evidenceImageUrls || [],
                                         evidenceImageUrls: caseLine.evidenceImageUrls || [],
-                                        createdDate: new Date(caseLine.createdAt).toLocaleDateString('en-GB'),
+                                        createdDate: formatSafeDate(caseLine.createdAt),
                                         status: caseLine.status === 'pending' ? 'submitted' : 'approved',
                                         diagnosisText: caseLine.diagnosisText,
                                         correctionText: caseLine.correctionText,
@@ -3591,34 +3509,6 @@ const TechnicianDashboard = ({
                   </div>
                 </div>
               </div>
-
-              {/* Timeline Section */}
-              <div className="bg-white border border-slate-300 rounded-xl p-5">
-                <div className="flex items-center gap-2 mb-4">
-                  <Clock className="h-5 w-5 text-blue-600" />
-                  <h3 className="text-lg font-bold text-slate-800">Timeline</h3>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-green-100 rounded-full mt-0.5">
-                      <Calendar className="h-4 w-4 text-green-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">Case Submitted</p>
-                      <p className="text-xs text-slate-500">{formatDate(selectedRecord.checkInDate)}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-blue-100 rounded-full mt-0.5">
-                      <CheckCircle className="h-4 w-4 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">Vehicle Check-in</p>
-                      <p className="text-xs text-slate-500">{formatDate(selectedRecord.checkInDate)}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 
@@ -3658,7 +3548,7 @@ const TechnicianDashboard = ({
                   disabled={isCompleting || !hasCaseLines}
                   title={!hasCaseLines ? 'Create at least one case line before completing' : ''}
                 >
-                  {isCompleting ? 'Completing...' : 'Complete Record'}
+                  {isCompleting ? 'Completing...' : 'Complete Diagnosis'}
                 </Button>
               );
             })()}
@@ -3776,7 +3666,7 @@ const TechnicianDashboard = ({
 
       {/* Create Issue Diagnosis Modal from Processing Records */}
       <Dialog open={createIssueDiagnosisModalOpen} onOpenChange={(open) => {
-        console.log('📝 Dialog onOpenChange:', open);
+  // dialog open state changed
         setCreateIssueDiagnosisModalOpen(open);
       }}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
@@ -3930,7 +3820,7 @@ const TechnicianDashboard = ({
                           size="sm"
                           className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 font-semibold"
                           onClick={() => {
-                            setCaseLineForm(prev => ({ ...prev, componentId: null, warrantyStatus: 'ELIGIBLE' }));
+                            setCaseLineForm(prev => ({ ...prev, componentId: null, quantity: 0, warrantyStatus: 'ELIGIBLE' }));
                             setComponentSearchQuery('');
                           }}
                         >
@@ -3977,21 +3867,23 @@ const TechnicianDashboard = ({
                       value={caseLineForm.componentId || "none"}
                       onValueChange={(value) => {
                         if (value === "none" || value === "") {
-                          // Clear selection
-                          setCaseLineForm(prev => ({ ...prev, componentId: null, warrantyStatus: 'ELIGIBLE' }));
+                          // Clear selection and reset quantity when none selected
+                          setCaseLineForm(prev => ({ ...prev, componentId: null, quantity: 0, warrantyStatus: 'ELIGIBLE' }));
                           setComponentSearchQuery('');
                         } else {
                           // Find selected component
                           const selectedComponent = compatibleComponents.find(c => c.typeComponentId === value);
                           if (selectedComponent) {
                             const warrantyStatus = selectedComponent.isUnderWarranty ? 'ELIGIBLE' : 'INELIGIBLE';
+                            // default quantity to 1 when a component is selected
                             setCaseLineForm(prev => ({ 
                               ...prev, 
                               componentId: selectedComponent.typeComponentId,
+                              quantity: prev.quantity && prev.quantity > 0 ? prev.quantity : 1,
                               warrantyStatus: warrantyStatus
                             }));
                             setComponentSearchQuery(selectedComponent.name);
-                            console.log('🎯 Component selected:', selectedComponent.name, '| Warranty:', warrantyStatus);
+                            // component selection changed
                           }
                         }
                       }}
@@ -4084,7 +3976,10 @@ const TechnicianDashboard = ({
                       inputMode="numeric"
                       pattern="[0-9]*"
                       value={caseLineForm.quantity.toString()}
+                      disabled={!caseLineForm.componentId}
                       onChange={(e) => {
+                        // prevent editing when no component selected (safety)
+                        if (!caseLineForm.componentId) return;
                         const val = e.target.value;
                         // Allow empty input or valid numbers only
                         if (val === '' || /^\d+$/.test(val)) {
