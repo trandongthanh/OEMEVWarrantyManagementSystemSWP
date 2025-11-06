@@ -67,13 +67,14 @@ class CaseLineController {
   assignTechnicianToRepairCaseline = async (req, res, next) => {
     const { caselineId } = req.params;
     const { technicianId } = req.body;
-    const { serviceCenterId } = req.user;
+    const { serviceCenterId, userId } = req.user;
 
     const result = await this.#caseLineService.assignTechnicianToRepairCaseline(
       {
         caselineId,
         technicianId,
         serviceCenterId,
+        userId,
       }
     );
 
