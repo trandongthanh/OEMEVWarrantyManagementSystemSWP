@@ -511,11 +511,36 @@ const ServiceCenterDashboard = () => {
         const scId = payload.serviceCenterId || payload.service_center_id || null;
         setServiceCenterId(scId);
         console.log('🔑 Decoded serviceCenterId from JWT:', scId);
+        
+        // Fetch workload config after getting serviceCenterId
+        if (scId) {
+          fetchWorkloadConfigSilent(scId);
+        }
       } catch (error) {
         console.error('Failed to decode JWT token:', error);
       }
     }
   }, [getToken]);
+
+  // Fetch workload config silently on mount
+  const fetchWorkloadConfigSilent = async (scId: string) => {
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token || !scId) return;
+    
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/service-centers/${scId}/workload-config`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const maxTasks = response.data?.data?.maxActiveTasksPerTechnician || 5;
+      setMaxWorkload(maxTasks);
+      setEditingMaxWorkload(maxTasks);
+      console.log('✅ Fetched workload config on mount:', maxTasks);
+    } catch (error) {
+      console.error('Failed to fetch workload config on mount:', error);
+      // Silent fail, keep default value
+    }
+  };
 
   // Fetch workload config from backend
   const fetchWorkloadConfig = async () => {
@@ -1435,10 +1460,14 @@ const ServiceCenterDashboard = () => {
       const url = status ? `${API_BASE_URL}/users/technicians?status=${status}` : `${API_BASE_URL}/users/technicians`;
       const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
       const records = res.data?.data || [];
+      console.log('🔍 API Response technicians:', records);
       const mapped: Technician[] = records.map((t: any) => {
         // Status is in workSchedule array, not at root level
         const rawStatus = t.workSchedule?.[0]?.status || t.status || '';
         const normalizedStatus = String(rawStatus).trim().toUpperCase().replace(/\s+/g, '_') || undefined;
+
+        const workloadValue = typeof t.activeTaskCount === 'number' ? t.activeTaskCount : (typeof t.workload === 'number' ? t.workload : (typeof t.currentLoad === 'number' ? t.currentLoad : undefined));
+        console.log(`👨‍🔧 Technician ${t.name}: activeTaskCount=${t.activeTaskCount}, workload=${t.workload}, currentLoad=${t.currentLoad}, final=${workloadValue}`);
 
         return {
           id: t.userId || t.id || String(t.techId || ''),
@@ -1446,7 +1475,7 @@ const ServiceCenterDashboard = () => {
           specialty: t.specialty || t.department || undefined,
           experience: t.experience || t.yearsOfExperience || undefined,
           rating: t.rating || undefined,
-          workload: t.activeTaskCount || t.workload || t.currentLoad || undefined,
+          workload: workloadValue,
           status: normalizedStatus || ''
         } as Technician;
       });
@@ -1980,49 +2009,6 @@ const ServiceCenterDashboard = () => {
                   </Card>
                 )}
 
-                {/* Evidence Images */}
-                {selectedClaimForDetail.evidenceImageUrls && selectedClaimForDetail.evidenceImageUrls.length > 0 && (
-                  <Card className="shadow-md border">
-                    <CardHeader className="bg-gradient-to-r from-purple-50 to-transparent dark:from-purple-900/20 pb-3">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <div className="p-2 bg-purple-100 dark:bg-purple-900/40 rounded-lg">
-                          <Eye className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                        </div>
-                        Evidence Images ({selectedClaimForDetail.evidenceImageUrls.length})
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-4">
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {selectedClaimForDetail.evidenceImageUrls.map((url, idx) => (
-                          <a
-                            key={idx}
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="group relative aspect-square rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-700 hover:border-purple-500 transition-all shadow-sm hover:shadow-lg"
-                          >
-                            <img
-                              src={url}
-                              alt={`Evidence ${idx + 1}`}
-                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23999"%3ENo Image%3C/text%3E%3C/svg%3E';
-                              }}
-                            />
-                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <Eye className="h-6 w-6 text-white" />
-                            </div>
-                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
-                              <p className="text-xs text-white font-medium">Image {idx + 1}</p>
-                            </div>
-                          </a>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
                 {/* Guarantee Cases */}
                 {selectedClaimForDetail.guaranteeCases && selectedClaimForDetail.guaranteeCases.length > 0 && (
                   <Card className="shadow-md border">
@@ -2223,16 +2209,6 @@ const ServiceCenterDashboard = () => {
                                                     </Badge>
                                                   )}
                                                   
-                                                  {/* Show status badge for other statuses (not CUSTOMER_APPROVED, PARTS_AVAILABLE, DRAFT, PENDING_APPROVAL) */}
-                                                  {line.status !== 'CUSTOMER_APPROVED' && 
-                                                   line.status !== 'PARTS_AVAILABLE' && 
-                                                   line.status !== 'DRAFT' && 
-                                                   line.status !== 'PENDING_APPROVAL' && (
-                                                    <Badge variant="success" className="text-xs">
-                                                      ✓ {getDisplayStatus(line.status)}
-                                                    </Badge>
-                                                  )}
-                                                  
                                                   {/* Show "Assign Technician" button if status is READY_FOR_REPAIR */}
                                                   {line.status === 'READY_FOR_REPAIR' && hasPermission(user, 'assign_technicians') && (
                                                     <Button
@@ -2248,7 +2224,7 @@ const ServiceCenterDashboard = () => {
                                                       className="bg-purple-600 hover:bg-purple-700 text-white border-purple-600 text-xs h-6 px-2"
                                                     >
                                                       <User className="h-3 w-3 mr-1" />
-                                                      Assign Technician
+                                                      Assign Repair Technician
                                                     </Button>
                                                   )}
                                                   
