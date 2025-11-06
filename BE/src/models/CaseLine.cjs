@@ -27,12 +27,6 @@ module.exports = (sequelize, DataTypes) => {
         field: "repair_tech_id",
       },
 
-      diagnosisText: {
-        type: DataTypes.TEXT,
-        allowNull: false,
-        field: "diagnosis_text",
-      },
-
       correctionText: {
         type: DataTypes.TEXT,
         allowNull: false,

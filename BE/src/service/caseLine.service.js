@@ -127,7 +127,6 @@ class CaseLineService {
     guaranteeCaseId,
     typeComponentId,
     quantity,
-    diagnosisText,
     correctionText,
     warrantyStatus,
     serviceCenterId,
@@ -175,7 +174,6 @@ class CaseLineService {
       const inputCaseline = {
         typeComponentId,
         quantity,
-        diagnosisText,
         correctionText,
         warrantyStatus,
         rejectionReason:
@@ -204,7 +202,6 @@ class CaseLineService {
           guaranteeCaseId: guaranteeCaseId,
           typeComponentId: processedCaseline.typeComponentId,
           quantity: processedCaseline.quantity,
-          diagnosisText: processedCaseline.diagnosisText,
           correctionText: processedCaseline.correctionText,
           status: processedCaseline.status,
           warrantyStatus: processedCaseline.warrantyStatus,
@@ -658,7 +655,6 @@ class CaseLineService {
   updateCaseLine = async ({
     guaranteeCaseId,
     caselineId,
-    diagnosisText,
     correctionText,
     typeComponentId,
     quantity,
@@ -737,7 +733,6 @@ class CaseLineService {
 
         const updatePayload = {
           caselineId,
-          diagnosisText,
           correctionText,
           typeComponentId,
           quantity,

@@ -102,7 +102,6 @@ class CaseLineRepository {
     const caseLine = await CaseLine.findOne({
       attributes: [
         "id",
-        "diagnosisText",
         "correctionText",
         "typeComponentId",
         "quantity",
@@ -184,7 +183,6 @@ class CaseLineRepository {
     const caseLines = await CaseLine.findAll({
       attributes: [
         "id",
-        "diagnosisText",
         "correctionText",
         "typeComponentId",
         "quantity",
@@ -240,7 +238,6 @@ class CaseLineRepository {
   updateCaseline = async (
     {
       caselineId,
-      diagnosisText,
       correctionText,
       typeComponentId,
       quantity,
@@ -252,7 +249,6 @@ class CaseLineRepository {
     transaction = null
   ) => {
     const updatePayload = {
-      diagnosisText,
       correctionText,
       typeComponentId,
       quantity,

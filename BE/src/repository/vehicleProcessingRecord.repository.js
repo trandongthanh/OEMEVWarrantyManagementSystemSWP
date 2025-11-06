@@ -30,7 +30,7 @@ class VehicleProcessingRecordRepository {
   };
 
   createRecord = async (
-     {
+    {
       odometer,
       createdByStaffId,
       vin,
@@ -194,7 +194,6 @@ class VehicleProcessingRecordRepository {
               as: "caseLines",
               attributes: [
                 "id",
-                "diagnosisText",
                 "correctionText",
                 "warrantyStatus",
                 "status",
@@ -311,7 +310,6 @@ class VehicleProcessingRecordRepository {
               attributes: [
                 "id",
                 "typeComponentId",
-                "diagnosisText",
                 "correctionText",
                 "warrantyStatus",
                 "status",
@@ -467,7 +465,6 @@ class VehicleProcessingRecordRepository {
               as: "caseLines",
               attributes: [
                 "id",
-                "diagnosisText",
                 "correctionText",
                 "warrantyStatus",
                 "status",
