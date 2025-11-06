@@ -1,7 +1,6 @@
 import Joi from "joi";
 
 export const caseLineSchema = Joi.object({
-  diagnosisText: Joi.string().required(),
   correctionText: Joi.string().required(),
   typeComponentId: Joi.string().uuid().allow(null),
   quantity: Joi.number().integer().min(0).required(),
@@ -44,7 +43,6 @@ export const updateCaselineParamsSchema = Joi.object({
 });
 
 export const updateCaselineBodySchema = Joi.object({
-  diagnosisText: Joi.string().required(),
   correctionText: Joi.string().required(),
   typeComponentId: Joi.string().uuid({ version: "uuidv4" }).allow(null),
   quantity: Joi.number().integer().min(0).required(),

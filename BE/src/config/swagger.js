@@ -347,10 +347,7 @@ const options = {
               type: "integer",
               example: 1,
             },
-            diagnosisText: {
-              type: "string",
-              example: "Màn hình LCD bị lỗi hiển thị",
-            },
+
             correctionText: {
               type: "string",
               example: "Thay thế màn hình LCD mới",
@@ -642,7 +639,8 @@ const options = {
     tags: [
       {
         name: "Service Centers",
-        description: "API endpoints for managing service centers, including workload configuration",
+        description:
+          "API endpoints for managing service centers, including workload configuration",
       },
       {
         name: "Authentication",

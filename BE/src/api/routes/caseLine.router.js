@@ -133,9 +133,6 @@ const router = express.Router({ mergeParams: true });
  *                             type: string
  *                             format: uuid
  *                             example: "110f907d-009d-441f-88ad-f9522ae44d0d"
- *                           diagnosisText:
- *                             type: string
- *                             example: "Pin cao áp bị suy giảm dung lượng"
  *                           correctionText:
  *                             type: string
  *                             example: "Thay thế pin cao áp mới"
@@ -245,7 +242,6 @@ const router = express.Router({ mergeParams: true });
  *                     caseLines:
  *                       - caseLineId: "770e8400-e29b-41d4-a716-446655440003"
  *                         guaranteeCaseId: "110f907d-009d-441f-88ad-f9522ae44d0d"
- *                         diagnosisText: "Pin cao áp bị suy giảm dung lượng"
  *                         correctionText: "Thay thế pin cao áp mới"
  *                         typeComponentId: "1096033d-f11f-4a49-a751-8be0cfb9d705"
  *                         quantity: 1
