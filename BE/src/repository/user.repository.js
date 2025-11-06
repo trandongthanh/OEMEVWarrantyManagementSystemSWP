@@ -148,7 +148,7 @@ class UserRepository {
     return vehicleCompany.toJSON();
   };
 
-  createUser = async ({
+  createUserInServiceCenter = async ({
     username,
     password,
     email,
@@ -157,7 +157,6 @@ class UserRepository {
     name,
     roleId,
     serviceCenterId,
-    vehicleCompanyId,
   }) => {
     const newUser = await User.create({
       username,
@@ -168,7 +167,6 @@ class UserRepository {
       name,
       roleId,
       serviceCenterId,
-      vehicleCompanyId,
     });
 
     return newUser.toJSON();
