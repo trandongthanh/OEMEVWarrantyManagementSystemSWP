@@ -1,6 +1,11 @@
 import express from "express";
-import { validate } from "../middleware/index.js";
+import {
+  authentication,
+  authorizationByRole,
+  validate,
+} from "../middleware/index.js";
 import loginSchema from "../../validators/login.validator.js";
+import registerInServiceCenterSchema from "../../validators/registerInServiceCenter.validator.js";
 const router = express.Router();
 
 /**
@@ -132,11 +137,15 @@ router.post("/login", validate(loginSchema), async (req, res, next) => {
 
 /**
  * @swagger
- * /auth/register:
+ * /auth/register-in-service-center:
  *   post:
- *     summary: User registration - Public endpoint (no token required)
- *     description: Register a new user account. This endpoint does not require authentication.
+ *     summary: Tạo tài khoản nhân sự trong trung tâm dịch vụ của quản lý
+ *     description: |
+ *       Chỉ quản lý trung tâm dịch vụ (`service_center_manager`) mới được phép gọi.
+ *       Tài khoản mới luôn gắn với trung tâm của quản lý đang đăng nhập, không thể chỉ định trung tâm khác.
  *     tags: [Authentication]
+ *     security:
+ *       - BearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -156,64 +165,39 @@ router.post("/login", validate(loginSchema), async (req, res, next) => {
  *                 type: string
  *                 minLength: 3
  *                 maxLength: 30
- *                 description: Unique username (alphanumeric only)
- *                 example: "johndoe"
+ *                 example: "staff_user"
  *               password:
  *                 type: string
  *                 format: password
  *                 minLength: 8
- *                 description: Password (min 8 chars, must contain uppercase, lowercase, number, special char)
- *                 example: "Password123!"
+ *                 description: Phải chứa chữ hoa, chữ thường, số và ký tự đặc biệt
+ *                 example: "StaffPass123!"
  *               email:
  *                 type: string
  *                 format: email
- *                 description: User email address
- *                 example: "john.doe@example.com"
+ *                 example: "staff@servicecenter.com"
  *               phone:
  *                 type: string
- *                 description: User phone number
- *                 example: "+84987654321"
+ *                 description: Số điện thoại tại Việt Nam (+84 hoặc 0 và 9-10 chữ số)
+ *                 example: "+84901234567"
  *               name:
  *                 type: string
  *                 minLength: 2
  *                 maxLength: 100
- *                 description: Full name of the user
- *                 example: "John Doe"
+ *                 example: "Nguyen Van A"
  *               address:
  *                 type: string
  *                 minLength: 10
  *                 maxLength: 500
- *                 description: User address
- *                 example: "123 Main Street, Ho Chi Minh City"
+ *                 example: "456 Service Road, District 1, HCMC"
  *               roleId:
  *                 type: string
  *                 format: uuid
- *                 description: UUID of the user role
+ *                 description: Quyền của tài khoản mới (ví dụ kỹ thuật viên, nhân viên tiếp nhận)
  *                 example: "550e8400-e29b-41d4-a716-446655440000"
- *               serviceCenterId:
- *                 type: string
- *                 format: uuid
- *                 description: UUID of the service center (optional, for service center staff/technicians)
- *                 example: "550e8400-e29b-41d4-a716-446655440001"
- *               vehicleCompanyId:
- *                 type: string
- *                 format: uuid
- *                 description: UUID of the vehicle company (optional, for OEM staff)
- *                 example: "550e8400-e29b-41d4-a716-446655440002"
  *           examples:
- *             serviceCenterStaff:
- *               summary: Register service center staff
- *               value:
- *                 username: "staff_user"
- *                 password: "StaffPass123!"
- *                 email: "staff@servicecentter.com"
- *                 phone: "+84901234567"
- *                 name: "Nguyen Van A"
- *                 address: "456 Service Road, District 1, HCMC"
- *                 roleId: "role-uuid-for-staff"
- *                 serviceCenterId: "service-center-uuid"
  *             technician:
- *               summary: Register technician
+ *               summary: Tạo tài khoản kỹ thuật viên
  *               value:
  *                 username: "tech_user"
  *                 password: "TechPass123!"
@@ -221,11 +205,10 @@ router.post("/login", validate(loginSchema), async (req, res, next) => {
  *                 phone: "+84902345678"
  *                 name: "Tran Thi B"
  *                 address: "789 Tech Street, District 3, HCMC"
- *                 roleId: "role-uuid-for-technician"
- *                 serviceCenterId: "service-center-uuid"
+ *                 roleId: "b7b6b9e3-5e25-4bc5-92cb-6f58f29b1fb3"
  *     responses:
  *       201:
- *         description: User registered successfully
+ *         description: Tạo tài khoản thành công
  *         content:
  *           application/json:
  *             schema:
@@ -234,88 +217,30 @@ router.post("/login", validate(loginSchema), async (req, res, next) => {
  *                 status:
  *                   type: string
  *                   example: "success"
- *                 message:
- *                   type: string
- *                   example: "User registered successfully"
  *                 data:
  *                   type: object
- *                   properties:
- *                     newUser:
- *                       type: object
- *                       properties:
- *                         userId:
- *                           type: string
- *                           format: uuid
- *                         username:
- *                           type: string
- *                         email:
- *                           type: string
- *                         phone:
- *                           type: string
- *                         name:
- *                           type: string
- *                         address:
- *                           type: string
- *                         roleId:
- *                           type: string
- *                         serviceCenterId:
- *                           type: string
- *                           nullable: true
- *                         vehicleCompanyId:
- *                           type: string
- *                           nullable: true
- *                         createdAt:
- *                           type: string
- *                           format: date-time
- *                         updatedAt:
- *                           type: string
- *                           format: date-time
+ *                   description: Thông tin người dùng vừa được tạo (không bao gồm mật khẩu)
  *       400:
- *         description: Bad request - Invalid input data or validation error
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: "error"
- *                 message:
- *                   type: string
- *                   example: "Validation failed"
- *                 errors:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       field:
- *                         type: string
- *                         example: "password"
- *                       message:
- *                         type: string
- *                         example: "Password must contain at least one uppercase letter, one lowercase letter, one number and one special character"
+ *         description: Dữ liệu không hợp lệ hoặc thiếu service center gốc
+ *       401:
+ *         description: Chưa đăng nhập hoặc token không hợp lệ
+ *       403:
+ *         description: Không đủ quyền (không phải service_center_manager)
  *       409:
- *         description: Conflict - User already exists (duplicate username/email/phone)
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: "error"
- *                 message:
- *                   type: string
- *                   example: "Username already exists"
- *       422:
- *         description: Unprocessable entity - Validation error
+ *         description: Tên đăng nhập đã tồn tại
  *       500:
- *         description: Internal server error
+ *         description: Lỗi hệ thống
  */
-router.post("/register", async (req, res, next) => {
-  const authController = req.container.resolve("authController");
+router.post(
+  "/register-in-service-center",
+  authentication,
+  authorizationByRole(["service_center_manager"]),
+  validate(registerInServiceCenterSchema, "body"),
+  async (req, res, next) => {
+    const authController = req.container.resolve("authController");
 
-  await authController.register(req, res, next);
-});
+    await authController.registerInServiceCenter(req, res, next);
+  }
+);
 
 export default router;

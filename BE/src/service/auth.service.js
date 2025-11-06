@@ -1,14 +1,21 @@
-import { AuthenticationError } from "../error/index.js";
+import { AuthenticationError, BadRequestError } from "../error/index.js";
 
 class AuthService {
   #userRepository;
   #hashService;
   #tokenService;
+  #serviceCenterRepository;
 
-  constructor({ userRepository, hashService, tokenService }) {
+  constructor({
+    userRepository,
+    hashService,
+    tokenService,
+    serviceCenterRepository,
+  }) {
     this.#userRepository = userRepository;
     this.#hashService = hashService;
     this.#tokenService = tokenService;
+    this.#serviceCenterRepository = serviceCenterRepository;
   }
 
   login = async ({ username, password }) => {
@@ -39,7 +46,7 @@ class AuthService {
     return token;
   };
 
-  register = async ({
+  registerInServiceCenter = async ({
     username,
     password,
     email,
@@ -48,7 +55,6 @@ class AuthService {
     name,
     roleId,
     serviceCenterId,
-    vehicleCompanyId,
   }) => {
     const existingUser = await this.#userRepository.findByUsername({
       username: username,
@@ -60,37 +66,28 @@ class AuthService {
 
     const hashedPassword = await this.#hashService.hash({ string: password });
 
-    let resolvedVehicleCompanyId = vehicleCompanyId ?? null;
-
     if (serviceCenterId) {
-      const serviceCenter = await this.#userRepository.findServiceCenterById({
-        serviceCenterId,
-      });
+      const serviceCenter =
+        await this.#serviceCenterRepository.findServiceCenterById({
+          serviceCenterId,
+        });
 
       if (!serviceCenter) {
-        throw new Error("Service center not found");
+        throw new BadRequestError("Service center not found");
       }
 
       const serviceCenterCompanyId = serviceCenter.vehicleCompanyId ?? null;
 
-      if (vehicleCompanyId && vehicleCompanyId !== serviceCenterCompanyId) {
-        throw new Error(
-          "Vehicle company does not match the selected service center"
+      if (!serviceCenterCompanyId) {
+        throw new BadRequestError(
+          "Service center does not have an associated vehicle company"
         );
       }
-
-      resolvedVehicleCompanyId = serviceCenterCompanyId;
-    } else if (vehicleCompanyId) {
-      const company = await this.#userRepository.findVehicleCompanyById({
-        vehicleCompanyId,
-      });
-
-      if (!company) {
-        throw new Error("Vehicle company not found");
-      }
+    } else {
+      throw new BadRequestError("Service center ID is required");
     }
 
-    const newUser = await this.#userRepository.createUser({
+    const newUser = await this.#userRepository.createUserInServiceCenter({
       username,
       password: hashedPassword,
       email,
@@ -99,7 +96,6 @@ class AuthService {
       name,
       roleId,
       serviceCenterId,
-      vehicleCompanyId,
     });
 
     return { ...newUser, password: undefined };

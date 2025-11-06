@@ -1,12 +1,15 @@
+import { BadRequestError } from "../../error/index.js";
+
 class AuthController {
+  #authService;
   constructor({ authService }) {
-    this.authService = authService;
+    this.#authService = authService;
   }
 
   login = async (req, res, next) => {
     const { username, password } = req.body;
 
-    const result = await this.authService.login({ username, password });
+    const result = await this.#authService.login({ username, password });
 
     res.status(200).json({
       status: "success",
@@ -16,20 +19,19 @@ class AuthController {
     });
   };
 
-  register = async (req, res, next) => {
-    const {
-      username,
-      password,
-      email,
-      phone,
-      address,
-      name,
-      roleId,
-      serviceCenterId,
-      vehicleCompanyId,
-    } = req.body;
+  registerInServiceCenter = async (req, res, next) => {
+    const { username, password, email, phone, address, name, roleId } =
+      req.body;
 
-    const newUser = await this.authService.register({
+    const { serviceCenterId } = req.user || {};
+
+    if (!serviceCenterId) {
+      throw new BadRequestError(
+        "Service center information is missing in request"
+      );
+    }
+
+    const newUser = await this.#authService.registerInServiceCenter({
       username,
       password,
       email,
@@ -38,10 +40,9 @@ class AuthController {
       name,
       roleId,
       serviceCenterId,
-      vehicleCompanyId,
     });
 
-    res.status(200).json({
+    res.status(201).json({
       status: "success",
       data: newUser,
     });
