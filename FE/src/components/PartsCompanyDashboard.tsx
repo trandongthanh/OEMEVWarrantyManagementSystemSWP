@@ -69,7 +69,7 @@ const PartsCompanyDashboard: React.FC = () => {
   const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
   const [isLoadingRequests, setIsLoadingRequests] = useState<boolean>(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
-  const [isShipping, setIsShipping] = useState<boolean>(false);
+  const [shippingRequestId, setShippingRequestId] = useState<string | null>(null);
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
 
   // Fetch all stock transfer requests
@@ -148,10 +148,10 @@ const PartsCompanyDashboard: React.FC = () => {
 
   // Ship stock transfer request
   const handleShipRequest = async (requestId: string) => {
-    setIsShipping(true);
+    setShippingRequestId(requestId);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
-      setIsShipping(false);
+      setShippingRequestId(null);
       return;
     }
     try {
@@ -178,7 +178,7 @@ const PartsCompanyDashboard: React.FC = () => {
       const errorMessage = error.response?.data?.message || 'Failed to ship request';
       alert(`Error: ${errorMessage}`);
     } finally {
-      setIsShipping(false);
+      setShippingRequestId(null);
     }
   };
 
@@ -356,10 +356,19 @@ const PartsCompanyDashboard: React.FC = () => {
                                   size="sm"
                                   variant="default"
                                   onClick={() => handleShipRequest(request.id)}
-                                  disabled={isShipping}
+                                  disabled={shippingRequestId !== null}
                                 >
-                                  <Truck className="mr-1 h-3 w-3" />
-                                  {isShipping ? 'Shipping...' : 'Ship'}
+                                  {shippingRequestId !== null ? (
+                                    <>
+                                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                      Shipping...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Truck className="mr-1 h-3 w-3" />
+                                      Ship
+                                    </>
+                                  )}
                                 </Button>
                               )}
                             </div>
@@ -385,10 +394,19 @@ const PartsCompanyDashboard: React.FC = () => {
                     size="sm"
                     variant="default"
                     onClick={() => handleShipRequest(selectedStockRequest.id)}
-                    disabled={isShipping}
+                    disabled={shippingRequestId !== null}
                   >
-                    <Truck className="mr-1 h-4 w-4" />
-                    {isShipping ? 'Shipping...' : 'Ship Request'}
+                    {shippingRequestId !== null ? (
+                      <>
+                        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                        Shipping...
+                      </>
+                    ) : (
+                      <>
+                        <Truck className="mr-1 h-4 w-4" />
+                        Ship Request
+                      </>
+                    )}
                   </Button>
                 )}
               </DialogTitle>
