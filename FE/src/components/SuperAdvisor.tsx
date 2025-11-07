@@ -25,8 +25,19 @@ const createProcessingRecord = async (recordData: {
   vin: string;
   odometer: number;
   guaranteeCases: { contentGuarantee: string }[];
+  visitorInfo?: {
+    fullName: string;
+    phone: string;
+    email: string;
+  };
+  evidenceImageUrls?: string[];
 }) => {
   const token = localStorage.getItem("ev_warranty_token");
+  
+
+  
+  const bodyToSend = JSON.stringify(recordData);
+ 
   
   const response = await fetch(`${API_BASE_URL}/processing-records`, {
     method: 'POST',
@@ -34,10 +45,12 @@ const createProcessingRecord = async (recordData: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: JSON.stringify(recordData)
+    body: bodyToSend
   });
   
   const result = await response.json();
+  
+  console.log('📥 createProcessingRecord API result:', result);
   
   // Check for API errors
   if (!response.ok || result.status === 'error') {
