@@ -111,6 +111,7 @@ interface VehicleSearchResult {
   company?: string;
   licensePlate?: string;
   purchaseDate?: string;
+  registrationDate?: string | null;
   owner?: {
     id: string;
     fullName: string;
@@ -426,6 +427,8 @@ const SuperAdvisor = () => {
           company: vehicle.company || 'N/A',
           licensePlate: vehicle.licensePlate,
           purchaseDate: vehicle.purchaseDate,
+          // Backend trả về registerationDate (lỗi chính tả trong DB/model)
+          registrationDate: vehicle.registerationDate || null,
           owner: vehicle.owner
         });
 
@@ -533,7 +536,18 @@ const SuperAdvisor = () => {
 
       // Kiểm tra API có trả về thành công không
       if (response.data && response.data.status === 'success') {
-        const customer = response.data.data?.customer;
+        let customer = response.data.data?.customer;
+        
+        // Map registerationDate (backend typo) to registrationDate (UI standard) cho vehicles
+        if (customer && Array.isArray(customer.vehicles)) {
+          customer = {
+            ...customer,
+            vehicles: customer.vehicles.map((v: any) => ({
+              ...v,
+              registrationDate: v.registerationDate || v.registrationDate
+            }))
+          };
+        }
         
         // nếu API get về có customer id tức có tồn tại cả obj customer
         if (customer.id) {
@@ -3146,8 +3160,8 @@ const SuperAdvisor = () => {
                               <div>
                                 <span className="text-sm font-medium text-gray-600">Register Date: </span>
                                 <span className="text-sm">
-                                  {vehicle?.purchaseDate 
-                                    ? new Date(vehicle.purchaseDate).toLocaleDateString('en-GB', {
+                                  {vehicle?.registrationDate 
+                                    ? new Date(vehicle.registrationDate).toLocaleDateString('en-GB', {
                                         day: '2-digit',
                                         month: '2-digit',
                                         year: 'numeric'
