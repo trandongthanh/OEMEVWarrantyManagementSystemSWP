@@ -3769,12 +3769,10 @@ const TechnicianDashboard = ({
               </div>
               <div>
                 <DialogTitle className="text-2xl font-bold text-gray-900">Create Issue Diagnosis</DialogTitle>
-                <DialogDescription className="text-sm mt-1">
-                  {selectedRecord?.recordId && (
-                    <div className="text-sm font-mono text-gray-700 mb-1">ID: {selectedRecord.recordId}</div>
-                  )}
-                  <div className="text-sm font-mono text-gray-700">VIN: {selectedRecord?.vin || 'N/A'}</div>
-                </DialogDescription>
+                {selectedRecord?.recordId && (
+                  <div className="text-sm font-mono text-gray-700 mt-1">ID: {selectedRecord.recordId}</div>
+                )}
+                <div className="text-sm font-mono text-gray-700">VIN: {selectedRecord?.vin || 'N/A'}</div>
               </div>
             </div>
           </DialogHeader>
