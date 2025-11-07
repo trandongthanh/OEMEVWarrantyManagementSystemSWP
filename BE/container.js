@@ -53,6 +53,9 @@ import WarehouseController from "./src/api/controller/warehouse.controller.js";
 import TypeComponentRepository from "./src/repository/typeComponent.repository.js";
 import InventoryAdjustmentRepository from "./src/repository/inventoryAdjustment.repository.js";
 import ServiceCenterController from "./src/api/controller/serviceCenter.controller.js";
+import RoleController from "./src/api/controller/role.controller.js";
+import RoleService from "./src/service/role.service.js";
+import RoleRepository from "./src/repository/role.repository.js";
 
 const container = createContainer();
 
@@ -102,6 +105,7 @@ export function setupContainer({ io, notificationNamespace }) {
     serviceCenterController: asClass(ServiceCenterController, {
       lifetime: Lifetime.SCOPED,
     }),
+    roleController: asClass(RoleController, { lifetime: Lifetime.SCOPED }),
 
     // Services
     authService: asClass(AuthService, { lifetime: Lifetime.SCOPED }),
@@ -135,6 +139,7 @@ export function setupContainer({ io, notificationNamespace }) {
     serviceCenterService: asClass(ServiceCenterService, {
       lifetime: Lifetime.SCOPED,
     }),
+    roleService: asClass(RoleService, { lifetime: Lifetime.SCOPED }),
 
     // Repositories
     userRepository: asClass(UserRepository, { lifetime: Lifetime.SCOPED }),
@@ -196,6 +201,7 @@ export function setupContainer({ io, notificationNamespace }) {
     serviceCenterRepository: asClass(ServiceCenterRepository, {
       lifetime: Lifetime.SCOPED,
     }),
+    roleRepository: asClass(RoleRepository, { lifetime: Lifetime.SCOPED }),
   });
 
   return container;
