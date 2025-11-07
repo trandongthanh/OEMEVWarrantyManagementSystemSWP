@@ -3118,7 +3118,7 @@ const TechnicianDashboard = ({
                     )}
                     {selectedCaseLine?.componentPrice !== undefined && (
                       <div className="space-y-2">
-                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component Price</span>
+                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Unit Price</span>
                         <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
                           <span className="text-sm text-gray-800">{selectedCaseLine.componentPrice.toLocaleString('vi-VN')} VND</span>
                         </div>
