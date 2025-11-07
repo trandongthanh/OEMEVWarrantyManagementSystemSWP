@@ -10,6 +10,7 @@ const {
   CaseLine,
   VehicleCompany,
   TypeComponent,
+  TaskAssignment,
 } = db;
 
 class VehicleProcessingRecordRepository {
@@ -213,6 +214,33 @@ class VehicleProcessingRecordRepository {
               ],
               required: false,
             },
+            {
+              model: TaskAssignment,
+              as: "taskAssignments",
+              attributes: [
+                "taskAssignmentId",
+                "taskType",
+                "assignedBy",
+                "isActive",
+              ],
+              include: [
+                {
+                  model: User,
+                  as: "assigner",
+                  attributes: ["userId", "name"],
+
+                  include: [
+                    {
+                      model: db.Role,
+                      as: "role",
+                      attributes: ["roleName"],
+                    },
+                  ],
+                  required: false,
+                },
+              ],
+              required: false,
+            },
           ],
         },
 
@@ -327,6 +355,33 @@ class VehicleProcessingRecordRepository {
                   required: false,
                 },
               ],
+            },
+            {
+              model: TaskAssignment,
+              as: "taskAssignments",
+              attributes: [
+                "taskAssignmentId",
+                "taskType",
+                "assignedBy",
+                "isActive",
+              ],
+              include: [
+                {
+                  model: User,
+                  as: "assigner",
+                  attributes: ["userId", "name"],
+
+                  include: [
+                    {
+                      model: db.Role,
+                      as: "role",
+                      attributes: ["roleName"],
+                    },
+                  ],
+                  required: false,
+                },
+              ],
+              required: false,
             },
           ],
         },

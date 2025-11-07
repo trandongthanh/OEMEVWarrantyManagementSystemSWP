@@ -54,25 +54,10 @@ module.exports = (sequelize, DataTypes) => {
       as: "caseLines",
     });
 
-    // GuaranteeCase.hasMany(models.InstalledPart, {
-    //   foreignKey: "guarantee_case_id",
-    //   as: "installedParts",
-    // });
-
-    // GuaranteeCase.hasMany(models.Report, {
-    //   foreignKey: "guarantee_case_id",
-    //   as: "reports",
-    // });
-
-    // GuaranteeCase.hasMany(models.TaskAssignment, {
-    //   foreignKey: "guarantee_case_id",
-    //   as: "taskAssgnments",
-    // });
-
-    // GuaranteeCase.hasMany(models.StatusForGuaranteeCase, {
-    //   foreignKey: "guarantee_case_id",
-    //   as: "status",
-    // });
+    GuaranteeCase.hasMany(models.TaskAssignment, {
+      foreignKey: "guarantee_case_id",
+      as: "taskAssignments",
+    });
   };
 
   return GuaranteeCase;
