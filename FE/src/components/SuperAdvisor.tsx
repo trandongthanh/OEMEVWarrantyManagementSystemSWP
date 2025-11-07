@@ -2617,8 +2617,7 @@ const SuperAdvisor = () => {
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="text-xl">Vehicle Search Results</CardTitle>
-              <CardDescription>Search for vehicles and register owners if needed</CardDescription>
-            </CardHeader>
+             </CardHeader>
             <CardContent>
               {vehicleSearchResult ? (
                 <div className="space-y-6">
@@ -2731,24 +2730,27 @@ const SuperAdvisor = () => {
                         <div className="md:col-span-2">
                           <div className="space-y-2">
                             <div className="flex gap-2">
-                              <Button
-                                onClick={handleCheckWarranty}
-                                disabled={isCheckingWarranty || !odometer}
-                                className="flex-1 bg-purple-600 hover:bg-purple-700"
-                                data-action="check-warranty"
-                              >
-                                {isCheckingWarranty ? (
-                                  <>
-                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                    Checking Warranty...
-                                  </>
-                                ) : (
-                                  <>
-                                    <CheckCircle className="h-4 w-4 mr-2" />
-                                    Check Warranty Policy
-                                  </>
-                                )}
-                              </Button>
+                              {/* Only show Check Warranty button if warranty status is not yet determined */}
+                              {!warrantyStatus && (
+                                <Button
+                                  onClick={handleCheckWarranty}
+                                  disabled={isCheckingWarranty || !odometer}
+                                  className="flex-1 bg-purple-600 hover:bg-purple-700"
+                                  data-action="check-warranty"
+                                >
+                                  {isCheckingWarranty ? (
+                                    <>
+                                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                      Checking Warranty...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CheckCircle className="h-4 w-4 mr-2" />
+                                      Check Warranty Policy
+                                    </>
+                                  )}
+                                </Button>
+                              )}
                               
                               {/* Create Record Button - Show ONLY when warranty is valid AND vehicle has owner */}
                               {warrantyStatus === 'valid' && vehicleSearchResult.owner && (
