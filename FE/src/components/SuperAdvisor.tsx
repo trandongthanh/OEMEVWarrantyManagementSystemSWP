@@ -34,18 +34,13 @@ const createProcessingRecord = async (recordData: {
 }) => {
   const token = localStorage.getItem("ev_warranty_token");
   
-
-  
-  const bodyToSend = JSON.stringify(recordData);
- 
-  
   const response = await fetch(`${API_BASE_URL}/processing-records`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: bodyToSend
+    body: JSON.stringify(recordData)
   });
   
   const result = await response.json();
