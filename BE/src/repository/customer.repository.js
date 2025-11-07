@@ -9,7 +9,7 @@ class CustomerRepository {
         [Op.or]: whereCondition,
       },
 
-      attributes: ["id", "fullName", "email", "phone", "address"],
+      attributes: ["id", "fullName", "email", "phone", "address", "createdAt", "updatedAt"],
 
       include: [
         {
