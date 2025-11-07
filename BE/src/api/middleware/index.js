@@ -3,11 +3,13 @@ import {
   ForbiddenError,
   NotFoundError,
 } from "../../error/index.js";
+
 import TokenService from "../../service/token.service.js";
+import multer from "multer";
 
 import db from "../../models/index.cjs";
 
-const { VehicleProcessingRecord, User, Record, Role } = db;
+const { VehicleProcessingRecord, User, Role } = db;
 
 export function authentication(req, res, next) {
   const requestHeader = req.headers.authorization;

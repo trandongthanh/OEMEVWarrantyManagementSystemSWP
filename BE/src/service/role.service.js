@@ -1,7 +1,7 @@
 class RoleService {
   #roleRepository;
 
-  constructor(roleRepository) {
+  constructor({ roleRepository }) {
     this.#roleRepository = roleRepository;
   }
 
@@ -15,15 +15,14 @@ class RoleService {
     const offset = (pageValue - 1) * limitValue;
 
     if (serviceCenterRoles.includes(roleName)) {
+      const roleNames = [
+        "service_center_staff",
+        "service_center_technician",
+        "parts_coordinator_service_center",
+        "service_center_manager",
+      ];
       return this.#roleRepository.findAll({
-        where: {
-          roleName: [
-            "service_center_staff",
-            "service_center_technician",
-            "parts_coordinator_service_center",
-            "service_center_manager",
-          ],
-        },
+        roleNames: roleNames,
         limit: limitValue,
         offset: offset,
       });
@@ -41,6 +40,20 @@ class RoleService {
   };
 
   createRole = async ({ roleName }) => {
+    const roleNames = [
+      "service_center_staff",
+      "service_center_technician",
+      "emv_staff",
+      "parts_coordinator_service_center",
+      "parts_coordinator_company",
+      "emv_admin",
+      "service_center_manager",
+    ];
+
+    if (!roleNames.includes(roleName)) {
+      throw new BadRequestError("Invalid role name");
+    }
+
     const existingRole = await this.#roleRepository.findByRoleName({
       where: { roleName },
     });

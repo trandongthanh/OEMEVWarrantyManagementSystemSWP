@@ -58,25 +58,33 @@ class InventoryController {
     });
   };
 
-  createInventoryAdjustment = async (req, res, next) => {
-    const { userId: adjustedByUserId, roleName } = req.user;
-    const { companyId } = req;
-    const { stockId, adjustmentType, quantity, reason, note } = req.body;
+  uploadInventoryFromExcel = async (req, res, next) => {
+    if (!req.file) {
+      return res.status(400).json({
+        status: "error",
+        message: "No file uploaded",
+      });
+    }
 
-    const result = await this.#inventoryService.createInventoryAdjustment({
-      stockId,
+    const { userId } = req.user;
+
+    const { adjustmentType, reason, note, warehouseId } = req.body;
+
+    const fileBuffer = req.file.buffer;
+
+    const result = await this.#inventoryService.uploadInventoryFromExcel({
+      fileBuffer,
+      adjustedByUserId: userId,
+      warehouseId,
       adjustmentType,
-      quantity,
       reason,
       note,
-      adjustedByUserId,
-      roleName,
-      companyId,
     });
 
-    res.status(201).json({
-      status: "success",
-      data: result,
+    res.status(result.success ? 200 : 400).json({
+      status: result.success ? "success" : "error",
+      message: result.message,
+      data: result.data,
     });
   };
 }
