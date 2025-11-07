@@ -149,7 +149,7 @@ The warranty period of a car is the length of time during which the manufacturer
         <footer className="border-t bg-card py-8">
           <div className="container mx-auto px-6 text-center">
             <p className="text-muted-foreground">
-              © 2024 EV Warranty Management System. Professional automotive service platform.
+              © 2025 EV Warranty Management System. Professional automotive service platform.
             </p>
           </div>
         </footer>
