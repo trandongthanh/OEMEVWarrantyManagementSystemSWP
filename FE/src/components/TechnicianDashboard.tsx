@@ -2217,8 +2217,8 @@ const TechnicianDashboard = ({
 
                 {selectedCaseLine?.updatedAt !== undefined && (
                   <div>
-                    <div className="text-sm text-gray-600">Last Updated</div>
-                    <div className="bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.updatedAt ?? '—'}</div>
+                    <div className="text-sm text-gray-600">Updat At</div>
+                    <div className="bg-white px-3 py-2 rounded border mt-1 text-sm text-gray-800">{selectedCaseLine?.updatedAt ?? '—'}</div>
                   </div>
                 )}
               </div>
@@ -2256,8 +2256,8 @@ const TechnicianDashboard = ({
                   <div className="text-lg font-semibold text-gray-900">{selectedWarrantyCase?.createdDate}</div>
                 </div>
                 <div className="bg-white p-4 rounded-lg border text-center">
-                  <div className="text-sm font-medium text-gray-600 mb-1">Last Updated</div>
-                  <div className="text-lg font-semibold text-gray-900">{selectedWarrantyCase?.updatedDate || 'N/A'}</div>
+                  <div className="text-sm font-medium text-gray-600 mb-1">Updat At</div>
+                  <div className="text-sm text-gray-800">{selectedWarrantyCase?.updatedDate || 'N/A'}</div>
                 </div>
               </div>
             </div>
@@ -2462,8 +2462,8 @@ const TechnicianDashboard = ({
                     <span className="font-semibold text-blue-900">{selectedWarrantyCase?.createdDate}</span>
                   </div>
                   <div className="flex justify-between items-center py-2">
-                    <span className="font-medium text-blue-700">Last Updated:</span>
-                    <span className="font-semibold text-blue-900">{selectedWarrantyCase?.updatedDate || 'N/A'}</span>
+                    <span className="font-medium text-blue-700">Updat At:</span>
+                    <span className="text-sm text-blue-900">{selectedWarrantyCase?.updatedDate || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -3057,7 +3057,7 @@ const TechnicianDashboard = ({
                     </div>
                     {selectedCaseLine?.updatedAt && (
                       <div className="space-y-2">
-                        <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Last Updated</span>
+                        <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Updat At</span>
                         <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-blue-100 shadow-sm">
                           <span className="text-sm text-gray-800">
                             {new Date(selectedCaseLine.updatedAt).toLocaleString('vi-VN', { 
@@ -3090,7 +3090,7 @@ const TechnicianDashboard = ({
                       <div className="space-y-2">
                         <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component Name</span>
                         <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
-                          <span className="text-sm font-semibold text-gray-900">{selectedCaseLine.componentName}</span>
+                          <span className="text-sm text-gray-900">{selectedCaseLine.componentName}</span>
                         </div>
                       </div>
                     )}
@@ -3112,7 +3112,7 @@ const TechnicianDashboard = ({
                       <div className="space-y-2">
                         <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Quantity</span>
                         <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
-                          <span className="text-xl font-bold text-gray-800">{selectedCaseLine.quantity}</span>
+                          <span className="text-sm text-gray-800">{selectedCaseLine.quantity}</span>
                         </div>
                       </div>
                     )}
@@ -3120,7 +3120,7 @@ const TechnicianDashboard = ({
                       <div className="space-y-2">
                         <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component Price</span>
                         <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
-                          <span className="text-lg font-bold text-gray-900">{selectedCaseLine.componentPrice.toLocaleString('vi-VN')} VND</span>
+                          <span className="text-sm text-gray-800">{selectedCaseLine.componentPrice.toLocaleString('vi-VN')} VND</span>
                         </div>
                       </div>
                     )}
@@ -3336,12 +3336,14 @@ const TechnicianDashboard = ({
       <Dialog open={viewCaseModalOpen} onOpenChange={setViewCaseModalOpen}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between">
               <div>
                 <DialogTitle className="text-2xl font-bold">Processing Record Details</DialogTitle>
-                <DialogDescription className="text-sm text-slate-500 mt-1">
-                  VIN: {selectedRecord?.vin}
-                </DialogDescription>
+                {selectedRecord?.recordId && (
+                  <div className="mt-1">
+                    <p className="text-xs font-mono text-gray-500">ID: {selectedRecord.recordId}</p>
+                  </div>
+                )}
               </div>
               {selectedRecord && (
                 <Badge 
@@ -3758,12 +3760,10 @@ const TechnicianDashboard = ({
               <div>
                 <DialogTitle className="text-2xl font-bold text-gray-900">Create Issue Diagnosis</DialogTitle>
                 <DialogDescription className="text-sm mt-1">
-                  <span className="font-semibold text-gray-700">VIN:</span> {selectedRecord?.vin || 'N/A'}
                   {selectedRecord?.recordId && (
-                    <span className="ml-2 text-xs font-mono text-gray-500">
-                      (ID: {(selectedRecord.recordId as string | undefined)?.substring?.(0, 8) ?? ''}...)
-                    </span>
+                    <div className="text-sm font-mono text-gray-700 mb-1">ID: {selectedRecord.recordId}</div>
                   )}
+                  <div className="text-sm font-mono text-gray-700">VIN: {selectedRecord?.vin || 'N/A'}</div>
                 </DialogDescription>
               </div>
             </div>
