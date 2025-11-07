@@ -1680,7 +1680,7 @@ const SuperAdvisor = () => {
     if (!ownerForm.fullName?.trim() || !ownerForm.phone?.trim() || !ownerForm.email?.trim() || !ownerForm.address?.trim()) {
       toast({
         title: 'Validation Error',
-        description: 'Please fill in all owner information (Full Name, Phone, Email, Address)',
+        description: 'Please fill in all owner information',
         variant: 'destructive'
       });
       return;
@@ -2452,7 +2452,6 @@ const SuperAdvisor = () => {
         {/* Search Section */}
         <Card className="mb-6 shadow-lg">
           <CardHeader className="pb-3">
-            <CardTitle className="text-xl">Search</CardTitle>
           </CardHeader>
           <CardContent>
             {/* Search Mode Buttons */}
@@ -2498,8 +2497,8 @@ const SuperAdvisor = () => {
                   <Input
                     placeholder={
                       searchMode === 'vehicle'
-                        ? "Enter VIN to find vehicle and customer records"
-                        : "Enter 10-digit phone number"
+                        ? "Enter VIN to find vehicle "
+                        : "Enter phone number"
                     }
                     className="pl-10 h-11"
                     value={searchMode === 'phone' ? customerSearchPhone : searchVin}
@@ -3073,7 +3072,7 @@ const SuperAdvisor = () => {
                                 const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
                                 setOwnerForm({ ...ownerForm, phone: numericValue });
                               }}
-                              placeholder="Enter 10-digit phone number"
+                              placeholder="Enter phone number"
                               maxLength={10}
                               className="bg-white border-green-300 focus:border-green-500 font-mono"
                               disabled={!!vehicleSearchResult.owner}
@@ -3133,7 +3132,7 @@ const SuperAdvisor = () => {
                     No Vehicle Search Performed
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    Enter a VIN above and click "Find Vehicle" to search for vehicle and owner information.
+                    Enter a VIN to find vehicle and owner information.
                   </p>
                 </div>
               )}
@@ -3394,9 +3393,7 @@ const SuperAdvisor = () => {
                   <h3 className="text-lg font-medium text-muted-foreground mb-2">
                     No Customer Search Performed
                   </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Enter a phone number above and click "Search Customer" to search for customer information.
-                  </p>
+                 
                 </div>
               )}
             </CardContent>
@@ -3532,7 +3529,7 @@ const SuperAdvisor = () => {
               <Label htmlFor="phone">Phone Number *</Label>
               <Input
                 id="phone"
-                placeholder="Enter 10-digit phone number"
+                placeholder="Enter phone number"
                 value={ownerForm.phone}
                 onChange={(e) => {
                   const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
@@ -3942,7 +3939,7 @@ const SuperAdvisor = () => {
                 htmlFor="visitor-same-as-customer"
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
               >
-                Visitor is the same as Customer (auto-fill name and phone)
+                Visitor is the same as Customer
               </label>
             </div>
 
@@ -4056,12 +4053,6 @@ const SuperAdvisor = () => {
                   placeholder="Describe the warranty case..."
                   rows={3}
                   className="flex-1"
-                  onKeyDown={(e) => {
-                    // Allow adding case with Ctrl+Enter
-                    if (e.ctrlKey && e.key === 'Enter' && warrantyRecordCaseText.trim()) {
-                      handleAddWarrantyCase();
-                    }
-                  }}
                 />
                 <Button
                   type="button"
@@ -4075,7 +4066,6 @@ const SuperAdvisor = () => {
                   Add
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">Press Ctrl+Enter or click "Add" to add the case</p>
 
               {/* Cases List */}
               {warrantyRecordForm.cases.length === 0 ? (
