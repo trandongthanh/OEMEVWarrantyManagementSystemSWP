@@ -638,9 +638,9 @@ const SuperAdvisor = () => {
       });
 
       toast({
-        title: 'Search Error',
-        description: 'An error occurred while searching for customer. You can enter new customer information.',
-        variant: 'default'
+        title: 'Error',
+        description: 'No customer founded',
+        variant: 'destructive'
       });
     } finally {
       //reset trạng thái để người dùng có thể click button
