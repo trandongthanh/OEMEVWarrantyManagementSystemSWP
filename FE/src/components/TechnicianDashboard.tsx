@@ -3385,6 +3385,16 @@ const TechnicianDashboard = ({
                   </div>
                   
                   <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-600">Assigner</p>
+                    <p className="text-sm font-bold text-slate-900">
+                      {selectedRecord.guaranteeCases?.[0]?.taskAssignments?.[0]?.assigner?.name || 'N/A'}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      ID: {selectedRecord.guaranteeCases?.[0]?.taskAssignments?.[0]?.assigner?.userId || 'N/A'}
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-1">
                     <p className="text-xs font-medium text-slate-600">Check-in Date</p>
                     <p className="text-sm font-bold text-slate-900">{formatDate(selectedRecord.checkInDate)}</p>
                   </div>
