@@ -1,7 +1,9 @@
+import { BadRequestError } from "../../error/index.js";
+
 class RoleController {
   #roleService;
 
-  constructor(roleService) {
+  constructor({ roleService }) {
     this.#roleService = roleService;
   }
 

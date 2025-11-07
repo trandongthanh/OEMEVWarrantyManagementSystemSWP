@@ -9,8 +9,44 @@ import {
   createInventoryAdjustmentBodySchema,
   // createInventoryAdjustmentQuerySchema,
 } from "../../validators/inventory.validator.js";
+import multer from "multer";
 
 const router = express.Router();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+  },
+  fileFilter: (req, file, cb) => {
+    if (
+      file.mimetype ===
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+      file.mimetype === "application/vnd.ms-excel"
+    ) {
+      cb(null, true);
+    } else {
+      cb(new Error("Chỉ chấp nhận file Excel (.xlsx, .xls)"));
+    }
+  },
+});
+
+router.post(
+  "/upload",
+  authentication,
+  authorizationByRole([
+    "parts_coordinator_service_center",
+    "parts_coordinator_company",
+  ]),
+
+  upload.single("file"),
+
+  async (req, res, next) => {
+    const inventoryController = req.container.resolve("inventoryController");
+
+    await inventoryController.uploadInventoryData(req, res, next);
+  }
+);
 
 /**
  * @swagger
@@ -365,8 +401,9 @@ router.post(
     "parts_coordinator_company",
     "parts_coordinator_service_center",
   ]),
+
   validate(createInventoryAdjustmentBodySchema, "body"),
-  // validate(createInventoryAdjustmentQuerySchema, "query"),
+
   attachCompanyContext,
 
   async (req, res, next) => {

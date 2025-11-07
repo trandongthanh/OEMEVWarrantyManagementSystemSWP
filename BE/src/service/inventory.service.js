@@ -1,6 +1,6 @@
-import { Transaction } from "sequelize";
-import db from "../models/index.cjs";
-import { NotFoundError } from "../error/index.js";
+import XlSX from "xlsx";
+import fs from "fs";
+import path from "path";
 
 class InventoryService {
   #inventoryRepository;
@@ -120,110 +120,19 @@ class InventoryService {
     return components;
   };
 
-  async createInventoryAdjustment(adjustmentData) {
-    const {
-      stockId,
-      adjustmentType,
-      quantity,
-      reason,
-      note,
-      adjustedByUserId,
-      roleName,
-      companyId,
-    } = adjustmentData;
-
-    const result = await db.sequelize.transaction(async (transaction) => {
-      const stock = await this.#warehouseRepository.findStockByStockId(
-        stockId,
-        transaction,
-        Transaction.LOCK.UPDATE
-      );
-
-      if (!stock) {
-        throw new NotFoundError("Stock item not found");
-      }
-
-      if (adjustmentType === "OUT" && stock.quantityAvailable < quantity) {
-        throw new Error(
-          `Insufficient available stock. Available: ${stock.quantityAvailable}, Requested: ${quantity}`
-        );
-      }
-
-      const existingUser = await this.#userRepository.findUserById(
-        { userId: adjustedByUserId },
-        transaction,
-        Transaction.LOCK.SHARE
-      );
-
-      if (!existingUser) {
-        throw new NotFoundError("Adjusting user not found");
-      }
-
-      const newAdjustment =
-        await this.#inventoryAdjustmentRepository.createInventoryAdjustment(
-          {
-            stockId,
-            adjustmentType,
-            quantity,
-            reason,
-            note,
-            adjustedByUserId,
-          },
-          transaction
-        );
-
-      let updatedStock;
-      if (adjustmentType === "IN") {
-        updatedStock = await this.#warehouseRepository.updateStockQuantities(
-          {
-            stockId,
-            quantityInStock: stock.quantityInStock + quantity,
-          },
-          transaction
-        );
-      } else if (adjustmentType === "OUT") {
-        updatedStock = await this.#warehouseRepository.updateStockQuantities(
-          {
-            stockId,
-            quantityInStock: stock.quantityInStock - quantity,
-          },
-          transaction
-        );
-      }
-
-      return { adjustment: newAdjustment, updatedStock, stock };
-    });
-
-    const { adjustment, updatedStock, stock } = result;
-
-    if (roleName === "parts_coordinator_company" && companyId) {
-      this.#notificationService.sendToRoom(
-        `parts_coordinator_company_${companyId}`,
-        "inventory_adjustment_created",
-        {
-          adjustment,
-          updatedStock,
-          adjustmentType,
-          quantity,
-          reason,
-        }
-      );
-    } else if (stock.warehouse?.serviceCenterId) {
-      this.#notificationService.sendToRoom(
-        `parts_coordinator_service_center_${stock.warehouse.serviceCenterId}`,
-        "inventory_adjustment_created",
-        {
-          adjustment,
-          updatedStock,
-          adjustmentType,
-          quantity,
-          reason,
-        }
-      );
-    }
-
-    return { adjustment, updatedStock };
-  }
+  uploadInventoryFromExcel = async ({
+    fileBuffer,
+    adjustedByUserId,
+    warehouseId,
+    adjustmentType,
+    reason,
+    note,
+  }) => {
+    const workbook = XlSX.read(fileBuffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const jsonData = XlSX.utils.sheet_to_json(worksheet, { defval: null });
+  };
 }
 
 export default InventoryService;

@@ -3,9 +3,13 @@ import db from "../models/index.cjs";
 const { Role } = db;
 
 class RoleRepository {
-  findAll = async ({ where: {}, limit, offset }) => {
+  findAll = async ({ roleNames, limit, offset }) => {
     const roles = await Role.findAll({
-      where: where,
+      where: {
+        roleName: {
+          [db.Sequelize.Op.in]: roleNames,
+        },
+      },
       limit: limit,
       offset: offset,
     });
