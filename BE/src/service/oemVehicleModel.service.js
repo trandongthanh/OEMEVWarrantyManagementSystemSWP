@@ -175,6 +175,130 @@ class OemVehicleModelService {
       };
     });
   };
+
+  async #ensureVehicleModelExists(vehicleModelId, transaction) {
+    const vehicleModel = await this.#vehicleModelRepository.findByPk(
+      vehicleModelId,
+      transaction
+    );
+
+    if (!vehicleModel) {
+      throw new NotFoundError(
+        `Vehicle model with ID ${vehicleModelId} not found`
+      );
+    }
+    return vehicleModel;
+  }
+
+  async #createNewTypeComponents(newTypeComponentsData, transaction) {
+    if (newTypeComponentsData.length === 0) {
+      return [];
+    }
+
+    const skus = newTypeComponentsData.map((item) => item.sku);
+
+    const existingBySku =
+      await this.#typeComponentRepository.findTypeComponentsBySkus(
+        skus,
+        transaction
+      );
+
+    if (existingBySku.length > 0) {
+      const existingSkus = existingBySku.map((item) => item.sku).join(", ");
+      throw new ConflictError(
+        `Type components with these SKUs already exist: ${existingSkus}`
+      );
+    }
+
+    return this.#typeComponentRepository.bulkCreateTypeComponents(
+      newTypeComponentsData,
+      transaction
+    );
+  }
+
+  #buildWarrantyComponentsPayload(
+    vehicleModelId,
+    typeComponentWarrantyList,
+    createdTypeComponents
+  ) {
+    const createdTypeComponentMap = new Map(
+      createdTypeComponents.map((c) => [c.sku, c])
+    );
+
+    return typeComponentWarrantyList.map((item) => {
+      let typeComponentId;
+
+      if (item.typeComponentId) {
+        typeComponentId = item.typeComponentId;
+      } else {
+        const createdComponent = createdTypeComponentMap.get(item.sku);
+
+        if (!createdComponent) {
+          throw new Error(
+            `Failed to find created type component for SKU: ${item.sku}`
+          );
+        }
+
+        typeComponentId = createdComponent.typeComponentId;
+      }
+
+      return {
+        vehicleModelId,
+        typeComponentId,
+        quantity: item.quantity,
+        durationMonth: item.durationMonth,
+        mileageLimit: item.mileageLimit,
+      };
+    });
+  }
+
+  createWarrantyComponentsForModel = async ({
+    vehicleModelId,
+    typeComponentWarrantyList,
+  }) => {
+    const seenIds = new Set();
+    const seenSkus = new Set();
+
+    for (const item of typeComponentWarrantyList) {
+      if (item.typeComponentId) {
+        if (seenIds.has(item.typeComponentId)) {
+          throw new ConflictError(
+            `Duplicate typeComponentId found in input: ${item.typeComponentId}`
+          );
+        }
+        seenIds.add(item.typeComponentId);
+      } else {
+        if (seenSkus.has(item.sku)) {
+          throw new ConflictError(`Duplicate SKU found in input: ${item.sku}`);
+        }
+        seenSkus.add(item.sku);
+      }
+    }
+
+    return db.sequelize.transaction(async (transaction) => {
+      await this.#ensureVehicleModelExists(vehicleModelId, transaction);
+
+      const newTypeComponentsData = typeComponentWarrantyList.filter(
+        (item) => !item.typeComponentId
+      );
+
+      const createdTypeComponents = await this.#createNewTypeComponents(
+        newTypeComponentsData,
+        transaction
+      );
+
+      const warrantyComponentsPayload = this.#buildWarrantyComponentsPayload(
+        vehicleModelId,
+        typeComponentWarrantyList,
+        createdTypeComponents
+      );
+
+      return this.#warrantyComponentRepository.bulkCreateWarrantyComponents({
+        warrantyComponents: warrantyComponentsPayload,
+        transaction,
+      });
+    });
+  };
 }
 
 export default OemVehicleModelService;

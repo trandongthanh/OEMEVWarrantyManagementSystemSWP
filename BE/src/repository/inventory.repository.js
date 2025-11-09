@@ -4,6 +4,8 @@ import db from "../models/index.cjs";
 const { Stock, Warehouse, TypeComponent } = db;
 
 class InventoryRepository {
+  
+
   getInventorySummary = async ({ warehouseWhereClause = {} }) => {
     const stockItems = await Stock.findAll({
       attributes: [
@@ -111,6 +113,28 @@ class InventoryRepository {
       rows: rows.map((row) => row.toJSON()),
       count,
     };
+  };
+
+  findStockForUpdate = async ({ where, transaction }) => {
+    const stock = await Stock.findOne({
+      where,
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    return stock;
+  };
+
+  findStock = async ({ where, transaction }) => {
+    const stock = await Stock.findOne({
+      where,
+      transaction,
+    });
+    return stock;
+  };
+
+  createStock = async (stockData, options = {}) => {
+    const newStock = await Stock.create(stockData, options);
+    return newStock;
   };
 }
 

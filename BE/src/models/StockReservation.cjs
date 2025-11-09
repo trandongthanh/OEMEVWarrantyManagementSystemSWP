@@ -1,5 +1,3 @@
-const { uniq } = require("awilix/lib/utils.js");
-
 module.exports = (sequelize, DataTypes) => {
   const StockReservation = sequelize.define(
     "StockReservation",

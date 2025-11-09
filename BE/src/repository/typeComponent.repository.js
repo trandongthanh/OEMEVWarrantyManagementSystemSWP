@@ -32,7 +32,7 @@ class TypeComponentRepository {
     return created.map((record) => record.toJSON());
   };
 
-  findBySkus = async (skus, transaction = null) => {
+  findTypeComponentsBySkus = async (skus, transaction = null) => {
     if (!skus || skus.length === 0) {
       return [];
     }

@@ -31,5 +31,21 @@ class OemVehicleModelController {
       data: result,
     });
   };
+
+  createWarrantyComponentsForModel = async (req, res) => {
+    const { vehicleModelId } = req.params;
+    const { typeComponentWarrantyList } = req.body;
+
+    const result =
+      await this.#oemVehicleModelService.createWarrantyComponentsForModel({
+        vehicleModelId,
+        typeComponentWarrantyList,
+      });
+
+    res.status(201).json({
+      status: "success",
+      data: result,
+    });
+  };
 }
 export default OemVehicleModelController;

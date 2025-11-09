@@ -184,6 +184,29 @@ class ComponentRepository {
     return component ? component.toJSON() : null;
   };
 
+  findComponentsBySerialNumbers = async (
+    serialNumbers,
+    transaction = null,
+    lock = null
+  ) => {
+    const components = await Component.findAll({
+      where: {
+        serialNumber: {
+          [Op.in]: serialNumbers,
+        },
+      },
+      transaction,
+      lock,
+    });
+
+    return components.map((component) => component.toJSON());
+  };
+
+  bulkCreateComponents = async (componentsData, options = {}) => {
+    const newComponents = await Component.bulkCreate(componentsData, options);
+    return newComponents.map((component) => component.toJSON());
+  };
+
   updateStatusComponentReturn = async (
     componentId,
     { status },
