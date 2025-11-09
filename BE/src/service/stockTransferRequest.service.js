@@ -11,7 +11,6 @@ class StockTransferRequestService {
   #caselineRepository;
   #warehouseRepository;
   #componentRepository;
-  #typeComponentRepository;
   #notificationService;
 
   constructor({
@@ -21,7 +20,6 @@ class StockTransferRequestService {
     caselineRepository,
     warehouseRepository,
     componentRepository,
-    typeComponentRepository,
     notificationService,
   }) {
     this.#stockTransferRequestRepository = stockTransferRequestRepository;
@@ -31,7 +29,6 @@ class StockTransferRequestService {
     this.#caselineRepository = caselineRepository;
     this.#warehouseRepository = warehouseRepository;
     this.#componentRepository = componentRepository;
-    this.#typeComponentRepository = typeComponentRepository;
     this.#notificationService = notificationService;
   }
 
@@ -160,110 +157,21 @@ class StockTransferRequestService {
     companyId,
     approvedByUserId,
   }) => {
-    const rawResult = await db.sequelize.transaction(async (transaction) => {
-      const approvedStockTransferRequest =
-        await this.#stockTransferRequestRepository.getStockTransferRequestById(
-          {
-            id,
-          },
-          transaction,
-          Transaction.LOCK.UPDATE
-        );
+    return db.sequelize.transaction(async (transaction) => {
+      const request = await this.#getAndValidatePendingRequest(id, transaction);
 
-      if (!approvedStockTransferRequest) {
-        return null;
-      }
-
-      if (approvedStockTransferRequest.status !== "PENDING_APPROVAL") {
-        throw new ConflictError(
-          `Only requests with status PENDING_APPROVAL can be approved. Current status: ${approvedStockTransferRequest.status}`
-        );
-      }
-
-      const requestId = approvedStockTransferRequest.id;
-
-      const stockTransferRequestItems =
-        await this.#stockTransferRequestItemRepository.getStockTransferRequestItemsByRequestId(
-          {
-            requestId: requestId,
-          },
-          transaction,
-          Transaction.LOCK.UPDATE
-        );
-
-      if (
-        !stockTransferRequestItems ||
-        stockTransferRequestItems.length === 0
-      ) {
-        throw new Error(`Request ${requestId} has no items.`);
-      }
-
-      const typeComponentIdsNeeded = stockTransferRequestItems.map(
-        (item) => item.typeComponentId
+      const requestItems = await this.#getAndValidateRequestItems(
+        request.id,
+        transaction
       );
 
-      const stocks =
-        await this.#warehouseRepository.findStocksByTypeComponentOrderByWarehousePriority(
-          {
-            typeComponentIds: typeComponentIdsNeeded,
-            context: "COMPANY",
-            entityId: companyId,
-          },
-          transaction,
-          Transaction.LOCK.UPDATE
+      const { stockReservationsToCreate, stockUpdates } =
+        await this.#prepareStockAllocation(
+          requestItems,
+          companyId,
+          request.id,
+          transaction
         );
-
-      const stocksGroupedByType = stocks.reduce((acc, stock) => {
-        if (!acc[stock.typeComponent.typeComponentId]) {
-          acc[stock.typeComponent.typeComponentId] = [];
-        }
-
-        acc[stock.typeComponent.typeComponentId].push(stock);
-
-        return acc;
-      }, {});
-
-      const stockReservationsToCreate = [];
-      const stockUpdates = [];
-
-      for (const item of stockTransferRequestItems) {
-        const stocksForItem = stocksGroupedByType[item.typeComponentId] || [];
-
-        const totalAvailable = stocksForItem.reduce(
-          (sum, s) => sum + (s.quantityInStock - s.quantityReserved),
-          0
-        );
-
-        if (totalAvailable < item.quantityRequested) {
-          throw new ConflictError(
-            `Not enough available stock in company warehouse for component '${item.typeComponentId}'. ` +
-              `Requested: ${item.quantityRequested}, Total available: ${totalAvailable}.`
-          );
-        }
-
-        const allocations = this.#allocateStock({
-          stocks: stocksForItem,
-          item: {
-            typeComponentId: item.typeComponentId,
-            quantityReserved: item.quantityRequested,
-          },
-        });
-
-        for (const allocation of allocations) {
-          stockReservationsToCreate.push({
-            stockId: allocation.stockId,
-            requestId: requestId,
-            typeComponentId: item.typeComponentId,
-            quantityReserved: allocation.quantityReserved,
-            status: "RESERVED",
-          });
-
-          stockUpdates.push({
-            stockId: allocation.stockId,
-            quantityReserved: allocation.quantityReserved,
-          });
-        }
-      }
 
       if (stockReservationsToCreate.length > 0) {
         await this.#stockReservationRepository.bulkCreate(
@@ -279,180 +187,67 @@ class StockTransferRequestService {
         );
       }
 
-      const updatedStockTransferRequest =
-        await this.#stockTransferRequestRepository.updateStockTransferRequestStatus(
-          { requestId, status: "APPROVED", approvedByUserId },
-          transaction
-        );
-
-      const requestWithDetails =
-        await this.#stockTransferRequestRepository.getStockTransferRequestById(
-          { id: requestId },
-          transaction
-        );
-
-      const roomName = `parts_coordinator_company_${companyId}`;
-      const eventName = "stock_transfer_request_approved";
-      const data = { requestWithDetails };
-
-      this.#notificationService.sendToRoom(roomName, eventName, data);
+      const updatedRequest = await this.#updateRequestStatusAndNotify(
+        request.id,
+        approvedByUserId,
+        companyId,
+        transaction
+      );
 
       return {
         stockReservations: stockReservationsToCreate,
-        updatedStockTransferRequest,
+        updatedStockTransferRequest: updatedRequest,
       };
     });
-
-    return rawResult;
   };
 
   shipStockTransferRequest = async ({
     requestId,
-    roleName,
     serviceCenterId,
     estimatedDeliveryDate,
-    companyId,
   }) => {
-    const rawResult = await db.sequelize.transaction(async (transaction) => {
-      const existingRequest =
-        await this.#stockTransferRequestRepository.getStockTransferRequestById(
-          { id: requestId },
-          transaction,
-          Transaction.LOCK.UPDATE
-        );
-
-      if (!existingRequest) {
-        throw new NotFoundError(
-          `Stock transfer request with ID ${requestId} not found`
-        );
-      }
-
-      if (existingRequest.status !== "APPROVED") {
-        throw new ConflictError(
-          `Only approved requests can be shipped. Current status: ${existingRequest.status}`
-        );
-      }
-
-      const reservations =
-        await this.#stockReservationRepository.findByRequestId(
-          { requestId },
-          transaction,
-          Transaction.LOCK.UPDATE
-        );
-
-      if (!reservations || reservations.length === 0) {
-        throw new Error(`No stock reservations found for request ${requestId}`);
-      }
-
-      const reservationsByType = reservations.reduce((acc, reservation) => {
-        if (!acc[reservation.typeComponentId]) {
-          acc[reservation.typeComponentId] = [];
-        }
-
-        acc[reservation.typeComponentId].push(reservation);
-        return acc;
-      }, {});
-
-      const stockIds = reservations.map((r) => r.stockId);
-
-      const stocks = await this.#warehouseRepository.findStocksByIds(
-        { stockIds },
-        transaction,
-        Transaction.LOCK.UPDATE
-      );
-
-      const stocksMap = new Map(stocks.map((s) => [s.stockId, s]));
-
-      const componentCollections = [];
-      for (const item of existingRequest.items) {
-        const reservationsForItem =
-          reservationsByType[item.typeComponentId] || [];
-
-        const componentIds = await this.#collectComponentsFromReservations({
-          reservations: reservationsForItem,
-          item,
-          stocksMap,
-          transaction,
-        });
-
-        componentCollections.push({
-          typeComponentId: item.typeComponentId,
-          componentIds,
-        });
-      }
-
-      const allComponentIds = componentCollections.flatMap(
-        (c) => c.componentIds
-      );
-
-      await this.#componentRepository.bulkUpdateStatus(
-        {
-          componentIds: allComponentIds,
-          status: "IN_TRANSIT",
-          requestId: requestId,
-        },
-        transaction
-      );
-
-      const stockUpdates = [];
-      for (const reservation of reservations) {
-        stockUpdates.push({
-          stockId: reservation.stockId,
-          quantityInStock: -reservation.quantityReserved,
-          quantityReserved: -reservation.quantityReserved,
-        });
-      }
-
-      await this.#warehouseRepository.bulkUpdateStockQuantities(
-        stockUpdates,
-        transaction
-      );
-
-  const reservationIds = reservations.map((r) => r.reservationId);
-      await this.#stockReservationRepository.bulkUpdateStatus(
-        { reservationIds, status: "SHIPPED" },
-        transaction
-      );
-
-      const updatedRequest =
-        await this.#stockTransferRequestRepository.updateStockTransferRequestStatus(
-          {
-            requestId,
-            status: "SHIPPED",
-            shippedAt: formatUTCtzHCM(dayjs()),
-            estimatedDeliveryDate,
-          },
+    const { updatedRequest, allComponentIds } = await db.sequelize.transaction(
+      async (transaction) => {
+        const request = await this.#getAndValidateApprovedRequest(
+          requestId,
           transaction
         );
 
-      return {
-        updatedRequest,
-        componentCollections,
-      };
-    });
+        const reservations = await this.#getAndValidateReservations(
+          requestId,
+          transaction
+        );
 
-    const roomNameServiceCenterStaff = `service_center_staff_${serviceCenterId}`;
-    const roomNameServiceCenterManager = `service_center_manager_${serviceCenterId}`;
-    const roomNamePartsCoordinatorServiceCenter = `parts_coordinator_service_center_${serviceCenterId}`;
+        const componentIds = await this.#collectComponentsForShipment(
+          request.items,
+          reservations,
+          transaction
+        );
 
-    const eventName = "stock_transfer_request_shipped";
-    const data = { requestId };
+        await this.#updateDatabaseForShipment(
+          componentIds,
+          reservations,
+          requestId,
+          estimatedDeliveryDate,
+          transaction
+        );
 
-    this.#notificationService.sendToRooms(
-      [
-        roomNameServiceCenterStaff,
-        roomNameServiceCenterManager,
-        roomNamePartsCoordinatorServiceCenter,
-      ],
-      eventName,
-      data
+        return {
+          updatedRequest:
+            await this.#stockTransferRequestRepository.getStockTransferRequestById(
+              { id: requestId },
+              transaction
+            ),
+          allComponentIds: componentIds,
+        };
+      }
     );
 
-    const { updatedRequest, componentCollections } = rawResult;
+    this.#sendShipmentNotifications(serviceCenterId, requestId);
 
     return {
       updatedRequest,
-      componentCollections,
+      shippedComponentsCount: allComponentIds.length,
     };
   };
 
@@ -793,6 +588,300 @@ class StockTransferRequestService {
     return rawResult;
   };
 
+  #getAndValidatePendingRequest = async (id, transaction) => {
+    const request =
+      await this.#stockTransferRequestRepository.getStockTransferRequestById(
+        { id },
+        transaction,
+        Transaction.LOCK.UPDATE
+      );
+
+    if (!request) {
+      throw new NotFoundError(
+        `Stock transfer request with ID ${id} not found.`
+      );
+    }
+
+    if (request.status !== "PENDING_APPROVAL") {
+      throw new ConflictError(
+        `Only requests with status PENDING_APPROVAL can be approved. Current status: ${request.status}`
+      );
+    }
+    return request;
+  };
+
+  #getAndValidateRequestItems = async (requestId, transaction) => {
+    const items =
+      await this.#stockTransferRequestItemRepository.getStockTransferRequestItemsByRequestId(
+        { requestId },
+        transaction,
+        Transaction.LOCK.UPDATE
+      );
+
+    if (!items || items.length === 0) {
+      throw new NotFoundError(`Request ${requestId} has no items.`);
+    }
+    return items;
+  };
+
+  #prepareStockAllocation = async (
+    requestItems,
+    companyId,
+    requestId,
+    transaction
+  ) => {
+    const typeComponentIdsNeeded = requestItems.map(
+      (item) => item.typeComponentId
+    );
+
+    const stocks =
+      await this.#warehouseRepository.findStocksByTypeComponentOrderByWarehousePriority(
+        {
+          typeComponentIds: typeComponentIdsNeeded,
+          context: "COMPANY",
+          entityId: companyId,
+        },
+        transaction,
+        Transaction.LOCK.UPDATE
+      );
+
+    const stocksGroupedByType = stocks.reduce((acc, stock) => {
+      if (!acc[stock.typeComponent.typeComponentId]) {
+        acc[stock.typeComponent.typeComponentId] = [];
+      }
+      acc[stock.typeComponent.typeComponentId].push(stock);
+      return acc;
+    }, {});
+
+    let allReservations = [];
+    let allStockUpdates = [];
+
+    for (const item of requestItems) {
+      const { reservations, stockUpdates } = this.#processItemAllocation(
+        item,
+        stocksGroupedByType,
+        requestId
+      );
+
+      allReservations.push(...reservations);
+      allStockUpdates.push(...stockUpdates);
+    }
+
+    return {
+      stockReservationsToCreate: allReservations,
+      stockUpdates: allStockUpdates,
+    };
+  };
+
+  #processItemAllocation = (item, stocksGroupedByType, requestId) => {
+    const stocksForItem = stocksGroupedByType[item.typeComponentId] || [];
+
+    const totalAvailable = stocksForItem.reduce(
+      (sum, s) => sum + (s.quantityInStock - s.quantityReserved),
+      0
+    );
+
+    if (totalAvailable < item.quantityRequested) {
+      throw new ConflictError(
+        `Not enough available stock for component '${item.typeComponentId}'. ` +
+          `Requested: ${item.quantityRequested}, Available: ${totalAvailable}.`
+      );
+    }
+
+    const allocations = this.#allocateStock({
+      stocks: stocksForItem,
+
+      item: {
+        typeComponentId: item.typeComponentId,
+        quantityReserved: item.quantityRequested,
+      },
+    });
+
+    const reservations = [];
+
+    const stockUpdates = [];
+
+    for (const allocation of allocations) {
+      reservations.push({
+        stockId: allocation.stockId,
+        requestId: requestId,
+        typeComponentId: item.typeComponentId,
+        quantityReserved: allocation.quantityReserved,
+        status: "RESERVED",
+      });
+
+      stockUpdates.push({
+        stockId: allocation.stockId,
+        quantityReserved: allocation.quantityReserved,
+      });
+    }
+
+    return { reservations, stockUpdates };
+  };
+
+  #updateRequestStatusAndNotify = async (
+    requestId,
+    approvedByUserId,
+    companyId,
+    transaction
+  ) => {
+    const updatedStockTransferRequest =
+      await this.#stockTransferRequestRepository.updateStockTransferRequestStatus(
+        { requestId, status: "APPROVED", approvedByUserId },
+        transaction
+      );
+
+    const requestWithDetails =
+      await this.#stockTransferRequestRepository.getStockTransferRequestById(
+        { id: requestId },
+        transaction
+      );
+
+    const roomName = `parts_coordinator_company_${companyId}`;
+    const eventName = "stock_transfer_request_approved";
+    const data = { requestWithDetails };
+
+    this.#notificationService.sendToRoom(roomName, eventName, data);
+    return updatedStockTransferRequest;
+  };
+
+  #getAndValidateApprovedRequest = async (requestId, transaction) => {
+    const request =
+      await this.#stockTransferRequestRepository.getStockTransferRequestById(
+        { id: requestId },
+        transaction,
+        Transaction.LOCK.UPDATE
+      );
+
+    if (!request) {
+      throw new NotFoundError(
+        `Stock transfer request with ID ${requestId} not found`
+      );
+    }
+
+    if (request.status !== "APPROVED") {
+      throw new ConflictError(
+        `Only approved requests can be shipped. Current status: ${request.status}`
+      );
+    }
+
+    return request;
+  };
+
+  #getAndValidateReservations = async (requestId, transaction) => {
+    const reservations = await this.#stockReservationRepository.findByRequestId(
+      { requestId },
+      transaction,
+      Transaction.LOCK.UPDATE
+    );
+
+    if (!reservations || reservations.length === 0) {
+      throw new Error(`No stock reservations found for request ${requestId}`);
+    }
+
+    return reservations;
+  };
+
+  #collectComponentsForShipment = async (
+    requestItems,
+    reservations,
+    transaction
+  ) => {
+    const reservationsByType = reservations.reduce((acc, reservation) => {
+      if (!acc[reservation.typeComponentId]) {
+        acc[reservation.typeComponentId] = [];
+      }
+      acc[reservation.typeComponentId].push(reservation);
+      return acc;
+    }, {});
+
+    const stockIds = reservations.map((r) => r.stockId);
+    const stocks = await this.#warehouseRepository.findStocksByIds(
+      { stockIds },
+      transaction,
+      Transaction.LOCK.UPDATE
+    );
+    const stocksMap = new Map(stocks.map((s) => [s.stockId, s]));
+
+    const allComponentIds = [];
+    for (const item of requestItems) {
+      const reservationsForItem =
+        reservationsByType[item.typeComponentId] || [];
+      const componentIds = await this.#collectComponentsFromReservations({
+        reservations: reservationsForItem,
+        item,
+        stocksMap,
+        transaction,
+      });
+      allComponentIds.push(...componentIds);
+    }
+
+    return allComponentIds;
+  };
+
+  #updateDatabaseForShipment = async (
+    allComponentIds,
+    reservations,
+    requestId,
+    estimatedDeliveryDate,
+    transaction
+  ) => {
+    await this.#componentRepository.bulkUpdateStatus(
+      {
+        componentIds: allComponentIds,
+        status: "IN_TRANSIT",
+        requestId: requestId,
+      },
+      transaction
+    );
+
+    const stockUpdates = reservations.map((reservation) => ({
+      stockId: reservation.stockId,
+      quantityInStock: -reservation.quantityReserved,
+      quantityReserved: -reservation.quantityReserved,
+    }));
+
+    await this.#warehouseRepository.bulkUpdateStockQuantities(
+      stockUpdates,
+      transaction
+    );
+
+    const reservationIds = reservations.map((r) => r.reservationId);
+    await this.#stockReservationRepository.bulkUpdateStatus(
+      { reservationIds, status: "SHIPPED" },
+      transaction
+    );
+
+    await this.#stockTransferRequestRepository.updateStockTransferRequestStatus(
+      {
+        requestId,
+        status: "SHIPPED",
+        shippedAt: formatUTCtzHCM(dayjs()),
+        estimatedDeliveryDate,
+      },
+      transaction
+    );
+  };
+
+  #sendShipmentNotifications = (serviceCenterId, requestId) => {
+    const roomNameServiceCenterStaff = `service_center_staff_${serviceCenterId}`;
+    const roomNameServiceCenterManager = `service_center_manager_${serviceCenterId}`;
+    const roomNamePartsCoordinatorServiceCenter = `parts_coordinator_service_center_${serviceCenterId}`;
+
+    const eventName = "stock_transfer_request_shipped";
+    const data = { requestId };
+
+    this.#notificationService.sendToRooms(
+      [
+        roomNameServiceCenterStaff,
+        roomNameServiceCenterManager,
+        roomNamePartsCoordinatorServiceCenter,
+      ],
+      eventName,
+      data
+    );
+  };
+
   #collectComponentsFromReservations = async ({
     reservations,
     item,
@@ -875,26 +964,6 @@ class StockTransferRequestService {
     }
 
     return reservations;
-  };
-
-  #validateStockAvailability = (stocks, item) => {
-    let totalAvailableQuantity = 0;
-
-    for (const stock of stocks) {
-      if (stock.typeComponentId === item.typeComponentId) {
-        const availableQuantity =
-          stock.quantity_in_stock - stock.quantity_reserved;
-        totalAvailableQuantity += availableQuantity;
-      }
-    }
-
-    if (totalAvailableQuantity < item.quantity) {
-      throw new Error(
-        `Insufficient stock for typeComponentId: ${item.typeComponentId}`
-      );
-    }
-
-    return true;
   };
 }
 

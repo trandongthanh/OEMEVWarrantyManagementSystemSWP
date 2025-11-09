@@ -58,6 +58,22 @@ class InventoryController {
     });
   };
 
+  getComponentUploadTemplate = async (req, res, next) => {
+    try {
+      const buffer = await this.#inventoryService.getComponentUploadTemplate();
+      const fileName = "component_upload_template.xlsx";
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
+      res.send(buffer);
+    } catch (error) {
+      next(error);
+    }
+  };
+
   uploadInventoryFromExcel = async (req, res, next) => {
     if (!req.file) {
       return res.status(400).json({
