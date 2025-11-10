@@ -28,11 +28,11 @@ interface StockTransferRequest {
   approvedByUserId: string | null;
   rejectedByUserId: string | null;
   cancelledByUserId: string | null;
+  receivedByUserId: string | null;
   status: string;
   rejectionReason: string | null;
   cancellationReason: string | null;
   requestedAt: string;
-  receivedByUserId: string | null;
   approvedAt: string | null;
   shippedAt: string | null;
   receivedAt: string | null;
@@ -45,17 +45,18 @@ interface StockTransferRequest {
     name: string;
     serviceCenterId: string;
   };
+  requestingWarehouse?: {
+    warehouseId: string;
+    name: string;
+    serviceCenterId: string | null;
+    vehicleCompanyId: string | null;
+  };
   items?: Array<{
     id: string;
-    quantityRequested: number;
-    quantityApproved: number | null;
+    requestId: string;
     typeComponentId: string;
-    caselineId?: string;
-    typeComponent?: {
-      typeComponentId: string;
-      nameComponent: string;
-      description: string | null;
-    };
+    quantityRequested: number;
+    caselineId?: string | null;
   }>;
 }
 
@@ -430,7 +431,7 @@ const PartsCompanyDashboard: React.FC = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Request ID</label>
-                        <p className="font-mono text-sm">#{selectedStockRequest.id.substring(0, 8)}</p>
+                        <p className="font-mono text-sm">#{selectedStockRequest.id.substring(0, 8)}...</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Status</label>
@@ -443,42 +444,44 @@ const PartsCompanyDashboard: React.FC = () => {
                       <div>
                         <label className="text-sm font-medium text-muted-foreground flex items-center">
                           <User className="mr-1 h-3 w-3" />
-                          Requester
+                          Requester Name
                         </label>
-                        <p className="text-sm">{selectedStockRequest.requester?.name || 'N/A'}</p>
+                        <p className="text-sm font-semibold">{selectedStockRequest.requester?.name || '---'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Requester ID</label>
+                        <p className="font-mono text-xs">{selectedStockRequest.requester?.userId ? `#${selectedStockRequest.requester.userId.substring(0, 8)}...` : '---'}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground flex items-center">
                           <Warehouse className="mr-1 h-3 w-3" />
-                          Warehouse ID
+                          Requesting Warehouse
                         </label>
-                        <p className="font-mono text-xs">{selectedStockRequest.requestingWarehouseId}</p>
+                        <p className="text-sm font-semibold">{selectedStockRequest.requestingWarehouse?.name || '---'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Warehouse ID</label>
+                        <p className="font-mono text-xs">{selectedStockRequest.requestingWarehouse?.warehouseId ? `#${selectedStockRequest.requestingWarehouse.warehouseId.substring(0, 8)}...` : '---'}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground flex items-center">
                           <Calendar className="mr-1 h-3 w-3" />
                           Requested At
                         </label>
-                        <p className="text-sm">{formatDate(selectedStockRequest.requestedAt)}</p>
+                        <p className="text-sm">{selectedStockRequest.requestedAt ? formatDate(selectedStockRequest.requestedAt) : '---'}</p>
                       </div>
-                      {selectedStockRequest.approvedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Approved At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.approvedAt)}</p>
-                        </div>
-                      )}
-                      {selectedStockRequest.shippedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Shipped At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.shippedAt)}</p>
-                        </div>
-                      )}
-                      {selectedStockRequest.receivedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Received At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.receivedAt)}</p>
-                        </div>
-                      )}
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Approved At</label>
+                        <p className="text-sm">{selectedStockRequest.approvedAt ? formatDate(selectedStockRequest.approvedAt) : '---'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Shipped At</label>
+                        <p className="text-sm">{selectedStockRequest.shippedAt ? formatDate(selectedStockRequest.shippedAt) : '---'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Received At</label>
+                        <p className="text-sm">{selectedStockRequest.receivedAt ? formatDate(selectedStockRequest.receivedAt) : '---'}</p>
+                      </div>
                     </div>
 
                     {selectedStockRequest.rejectionReason && (
@@ -511,12 +514,11 @@ const PartsCompanyDashboard: React.FC = () => {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>#</TableHead>
-                              <TableHead>Component ID</TableHead>
-                              <TableHead>Component Name</TableHead>
-                              <TableHead>Description</TableHead>
-                              <TableHead className="text-right">Qty Requested</TableHead>
-                              <TableHead className="text-right">Qty Approved</TableHead>
+                              <TableHead className="w-12">#</TableHead>
+                              <TableHead>Item ID</TableHead>
+                              <TableHead>Type Component ID</TableHead>
+                              <TableHead className="text-right w-24">Quantity</TableHead>
+                              <TableHead>Caseline ID</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -526,23 +528,16 @@ const PartsCompanyDashboard: React.FC = () => {
                                   {index + 1}
                                 </TableCell>
                                 <TableCell className="font-mono text-xs">
-                                  {item.typeComponentId ? `#${item.typeComponentId.substring(0, 8)}` : 'N/A'}
+                                  {item.id ? `#${item.id.substring(0, 8)}...` : '---'}
                                 </TableCell>
-                                <TableCell className="font-medium">
-                                  {item.typeComponent?.nameComponent || 'N/A'}
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground max-w-xs">
-                                  {item.typeComponent?.description || '-'}
+                                <TableCell className="font-mono text-xs">
+                                  {item.typeComponentId ? `#${item.typeComponentId.substring(0, 8)}...` : '---'}
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  <Badge variant="outline">{item.quantityRequested}</Badge>
+                                  <Badge variant="outline">{item.quantityRequested || 0}</Badge>
                                 </TableCell>
-                                <TableCell className="text-right">
-                                  {item.quantityApproved !== null && item.quantityApproved !== undefined ? (
-                                    <Badge variant="default">{item.quantityApproved}</Badge>
-                                  ) : (
-                                    <span className="text-muted-foreground text-sm">Pending</span>
-                                  )}
+                                <TableCell className="font-mono text-xs">
+                                  {item.caselineId ? `#${item.caselineId.substring(0, 8)}...` : '---'}
                                 </TableCell>
                               </TableRow>
                             ))}
