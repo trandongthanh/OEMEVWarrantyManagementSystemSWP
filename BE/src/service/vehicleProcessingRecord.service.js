@@ -636,6 +636,9 @@ class VehicleProcessingRecordService {
     );
 
     const updatedGuaranteeCases = [];
+    const guaranteeCaseIds = guaranteeCases.map(
+      (gc) => gc.guaranteeCaseId
+    );
     for (const guaranteeCase of guaranteeCases) {
       const updatedCase = await this.#guaranteeCaseRepository.updateStatus(
         {
@@ -646,6 +649,13 @@ class VehicleProcessingRecordService {
       );
       updatedGuaranteeCases.push(updatedCase);
     }
+
+    await this.#taskAssignmentRepository.completeDiagnosisTasksByGuaranteeCaseIds(
+      {
+        guaranteeCaseIds: guaranteeCaseIds,
+      },
+      transaction
+    );
 
     const draftCaseLineIds = guaranteeCases
       .flatMap((gc) => gc.caseLines || [])

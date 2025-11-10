@@ -66,9 +66,21 @@ class StockTransferRequestRepository {
         {
           model: User,
           as: "requester",
-          attributes: ["userId", "name", "serviceCenterId"],
-
+          attributes: ["userId", "name"],
+          include: [
+            {
+              model: db.ServiceCenter,
+              as: "serviceCenter",
+              attributes: ["name"],
+            },
+          ],
           required: true,
+        },
+        {
+          model: User,
+          as: "approver",
+          attributes: ["userId", "name"],
+          required: false,
         },
         {
           model: Warehouse,
@@ -80,6 +92,19 @@ class StockTransferRequestRepository {
             "vehicleCompanyId",
           ],
           required: true,
+        },
+        {
+          model: StockTransferRequestItem,
+          as: "items",
+          attributes: ["id", "quantityRequested"],
+          required: false,
+          include: [
+            {
+              model: db.TypeComponent,
+              as: "component",
+              attributes: ["name", "typeComponentId"],
+            },
+          ],
         },
       ],
       order: [["createdAt", "DESC"]],
@@ -125,9 +150,21 @@ class StockTransferRequestRepository {
         {
           model: User,
           as: "requester",
-          attributes: ["userId", "name", "serviceCenterId"],
-
+          attributes: ["userId", "name"],
+          include: [
+            {
+              model: db.ServiceCenter,
+              as: "serviceCenter",
+              attributes: ["name"],
+            },
+          ],
           required: true,
+        },
+        {
+          model: User,
+          as: "approver",
+          attributes: ["userId", "name"],
+          required: false,
         },
         {
           model: Warehouse,
@@ -140,18 +177,18 @@ class StockTransferRequestRepository {
           ],
           required: true,
         },
-
         {
           model: StockTransferRequestItem,
           as: "items",
-          attributes: [
-            "id",
-            "requestId",
-            "typeComponentId",
-            "quantityRequested",
-            "caselineId",
-          ],
+          attributes: ["id", "quantityRequested"],
           required: false,
+          include: [
+            {
+              model: db.TypeComponent,
+              as: "component",
+              attributes: ["name", "typeComponentId", "sku"],
+            },
+          ],
         },
       ],
 
