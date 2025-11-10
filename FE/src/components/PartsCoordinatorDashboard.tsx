@@ -25,7 +25,8 @@ import {
   Truck,
   CheckCircle,
   MapPin,
-  ClipboardList
+  ClipboardList,
+  AlertCircle
 } from "lucide-react";
 
 const API_BASE_URL = 'http://localhost:3000/api/v1';
@@ -155,11 +156,11 @@ interface StockTransferRequest {
   approvedByUserId: string | null;
   rejectedByUserId: string | null;
   cancelledByUserId: string | null;
+  receivedByUserId: string | null;
   status: string;
   rejectionReason: string | null;
   cancellationReason: string | null;
   requestedAt: string;
-  receivedByUserId: string | null;
   approvedAt: string | null;
   shippedAt: string | null;
   receivedAt: string | null;
@@ -172,17 +173,18 @@ interface StockTransferRequest {
     name: string;
     serviceCenterId: string;
   };
+  requestingWarehouse?: {
+    warehouseId: string;
+    name: string;
+    serviceCenterId: string;
+    vehicleCompanyId: string;
+  };
   items?: Array<{
     id: string;
-    quantityRequested: number;
-    quantityApproved: number | null;
+    requestId: string;
     typeComponentId: string;
-    caselineId?: string;
-    typeComponent?: {
-      typeComponentId: string;
-      nameComponent: string;
-      description: string | null;
-    };
+    quantityRequested: number;
+    caselineId: string | null;
   }>;
 }
 
@@ -1346,18 +1348,21 @@ const PartsCoordinatorDashboard: React.FC = () => {
             ) : selectedStockRequest ? (
               <div className="space-y-6">
                 {/* Request Information */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Request Information</CardTitle>
+                <Card className="border-l-4 border-l-blue-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Package className="h-4 w-4 text-blue-600" />
+                      Request Information
+                    </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3">
+                  <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground">Request ID</label>
-                        <p className="font-mono text-sm">#{selectedStockRequest.id.substring(0, 8)}</p>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Request ID</label>
+                        <p className="font-mono text-sm mt-1">#{selectedStockRequest.id.substring(0, 8)}...</p>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground">Status</label>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
                         <div className="mt-1">
                           <Badge variant={getStatusBadgeVariant(selectedStockRequest.status)}>
                             {selectedStockRequest.status}
@@ -1365,113 +1370,166 @@ const PartsCoordinatorDashboard: React.FC = () => {
                         </div>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground flex items-center">
-                          <User className="mr-1 h-3 w-3" />
-                          Requester
+                        <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
+                          <User className="h-3 w-3" />
+                          Requester Name
                         </label>
-                        <p className="text-sm">{selectedStockRequest.requester?.name || 'N/A'}</p>
+                        <p className="text-sm mt-1 font-medium">{selectedStockRequest.requester?.name || '---'}</p>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground flex items-center">
-                          <Warehouse className="mr-1 h-3 w-3" />
-                          Warehouse ID
-                        </label>
-                        <p className="font-mono text-xs">{selectedStockRequest.requestingWarehouseId}</p>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Requester ID</label>
+                        <p className="font-mono text-xs mt-1">{selectedStockRequest.requestedByUserId || '---'}</p>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground flex items-center">
-                          <Calendar className="mr-1 h-3 w-3" />
-                          Requested At
-                        </label>
-                        <p className="text-sm">{formatDate(selectedStockRequest.requestedAt)}</p>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Service Center ID</label>
+                        <p className="font-mono text-xs mt-1">{selectedStockRequest.requester?.serviceCenterId || '---'}</p>
                       </div>
-                      {selectedStockRequest.approvedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Approved At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.approvedAt)}</p>
-                        </div>
-                      )}
-                      {selectedStockRequest.shippedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Shipped At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.shippedAt)}</p>
-                        </div>
-                      )}
-                      {selectedStockRequest.receivedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Received At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.receivedAt)}</p>
-                        </div>
-                      )}
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Requesting Warehouse ID</label>
+                        <p className="font-mono text-xs mt-1">{selectedStockRequest.requestingWarehouseId || '---'}</p>
+                      </div>
                     </div>
 
+                    {/* Warehouse Information */}
+                    {selectedStockRequest.requestingWarehouse && (
+                      <div className="pt-3 border-t">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-3">Warehouse Details</h4>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
+                              <Warehouse className="h-3 w-3" />
+                              Warehouse Name
+                            </label>
+                            <p className="text-sm mt-1 font-medium">{selectedStockRequest.requestingWarehouse.name}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-semibold text-muted-foreground uppercase">Company ID</label>
+                            <p className="font-mono text-xs mt-1">{selectedStockRequest.requestingWarehouse.vehicleCompanyId || '---'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Timestamps */}
+                    <div className="pt-3 border-t">
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-3">Timeline</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            Requested At
+                          </label>
+                          <p className="text-sm mt-1">{formatDate(selectedStockRequest.requestedAt)}</p>
+                        </div>
+                        <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded">
+                          <label className="text-xs font-semibold text-muted-foreground">Approved At</label>
+                          <p className="text-sm mt-1">{selectedStockRequest.approvedAt ? formatDate(selectedStockRequest.approvedAt) : '---'}</p>
+                        </div>
+                        <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded">
+                          <label className="text-xs font-semibold text-muted-foreground">Shipped At</label>
+                          <p className="text-sm mt-1">{selectedStockRequest.shippedAt ? formatDate(selectedStockRequest.shippedAt) : '---'}</p>
+                        </div>
+                        <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded">
+                          <label className="text-xs font-semibold text-muted-foreground">Received At</label>
+                          <p className="text-sm mt-1">{selectedStockRequest.receivedAt ? formatDate(selectedStockRequest.receivedAt) : '---'}</p>
+                        </div>
+                        <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded">
+                          <label className="text-xs font-semibold text-muted-foreground">Rejected At</label>
+                          <p className="text-sm mt-1">{selectedStockRequest.rejectedAt ? formatDate(selectedStockRequest.rejectedAt) : '---'}</p>
+                        </div>
+                        <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded">
+                          <label className="text-xs font-semibold text-muted-foreground">Cancelled At</label>
+                          <p className="text-sm mt-1">{selectedStockRequest.cancelledAt ? formatDate(selectedStockRequest.cancelledAt) : '---'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* User IDs */}
+                    <div className="pt-3 border-t">
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-3">Action By Users</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Approved By User ID</label>
+                          <p className="font-mono text-xs mt-1">{selectedStockRequest.approvedByUserId || '---'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Received By User ID</label>
+                          <p className="font-mono text-xs mt-1">{selectedStockRequest.receivedByUserId || '---'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Rejected By User ID</label>
+                          <p className="font-mono text-xs mt-1">{selectedStockRequest.rejectedByUserId || '---'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Cancelled By User ID</label>
+                          <p className="font-mono text-xs mt-1">{selectedStockRequest.cancelledByUserId || '---'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Rejection/Cancellation Reasons */}
                     {selectedStockRequest.rejectionReason && (
-                      <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-                        <label className="text-sm font-medium text-destructive">Rejection Reason</label>
-                        <p className="text-sm mt-1">{selectedStockRequest.rejectionReason}</p>
+                      <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                        <label className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          Rejection Reason
+                        </label>
+                        <p className="text-sm mt-1 text-red-900 dark:text-red-100">{selectedStockRequest.rejectionReason}</p>
                       </div>
                     )}
 
                     {selectedStockRequest.cancellationReason && (
-                      <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-                        <label className="text-sm font-medium text-destructive">Cancellation Reason</label>
-                        <p className="text-sm mt-1">{selectedStockRequest.cancellationReason}</p>
+                      <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                        <label className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          Cancellation Reason
+                        </label>
+                        <p className="text-sm mt-1 text-red-900 dark:text-red-100">{selectedStockRequest.cancellationReason}</p>
                       </div>
                     )}
                   </CardContent>
                 </Card>
 
                 {/* Requested Items */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Requested Items</CardTitle>
+                <Card className="border-l-4 border-l-purple-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Package className="h-4 w-4 text-purple-600" />
+                      Requested Items
+                    </CardTitle>
                     <CardDescription>
-                      {selectedStockRequest.items?.length || 0} item(s) in this request
+                      {selectedStockRequest.items?.length || 0} component(s) in this request
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     {selectedStockRequest.items && selectedStockRequest.items.length > 0 ? (
-                      <div className="rounded-md border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>#</TableHead>
-                              <TableHead>Component ID</TableHead>
-                              <TableHead>Component Name</TableHead>
-                              <TableHead>Description</TableHead>
-                              <TableHead className="text-right">Qty Requested</TableHead>
-                              <TableHead className="text-right">Qty Approved</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {selectedStockRequest.items.map((item, index) => (
-                              <TableRow key={item.id || index}>
-                                <TableCell className="font-medium">
-                                  {index + 1}
-                                </TableCell>
-                                <TableCell className="font-mono text-xs">
-                                  {item.typeComponentId ? `#${item.typeComponentId.substring(0, 8)}` : 'N/A'}
-                                </TableCell>
-                                <TableCell className="font-medium">
-                                  {item.typeComponent?.nameComponent || 'N/A'}
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground max-w-xs">
-                                  {item.typeComponent?.description || '-'}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Badge variant="outline">{item.quantityRequested}</Badge>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {item.quantityApproved !== null && item.quantityApproved !== undefined ? (
-                                    <Badge variant="default">{item.quantityApproved}</Badge>
-                                  ) : (
-                                    <span className="text-muted-foreground text-sm">Pending</span>
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                      <div className="space-y-3">
+                        {selectedStockRequest.items.map((item, index) => (
+                          <div key={item.id || index} className="p-3 bg-slate-50 dark:bg-slate-900/30 rounded-lg border">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-semibold text-muted-foreground">Item #{index + 1}</span>
+                              <Badge variant="outline">Qty: {item.quantityRequested}</Badge>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                              <div>
+                                <span className="text-xs text-muted-foreground">Item ID:</span>
+                                <p className="font-mono text-xs mt-0.5">{item.id}</p>
+                              </div>
+                              <div>
+                                <span className="text-xs text-muted-foreground">Request ID:</span>
+                                <p className="font-mono text-xs mt-0.5">{item.requestId}</p>
+                              </div>
+                              <div>
+                                <span className="text-xs text-muted-foreground">Type Component ID:</span>
+                                <p className="font-mono text-xs mt-0.5">{item.typeComponentId}</p>
+                              </div>
+                              <div>
+                                <span className="text-xs text-muted-foreground">Case Line ID:</span>
+                                <p className="font-mono text-xs mt-0.5">{item.caselineId || '---'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground text-center py-4">No items found</p>
