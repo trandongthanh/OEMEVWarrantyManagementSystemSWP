@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { toast } from "@/hooks/use-toast";
 import {
   Package,
   LogOut,
@@ -26,7 +27,8 @@ import {
   CheckCircle,
   MapPin,
   ClipboardList,
-  AlertCircle
+  AlertCircle,
+  FileText
 } from "lucide-react";
 
 const API_BASE_URL = 'http://localhost:3000/api/v1';
@@ -129,6 +131,7 @@ interface CaseLine {
   repairTechnician: Technician;
   guaranteeCase: GuaranteeCase;
 }
+
 
 interface ComponentReservation {
   reservationId: string;
@@ -295,7 +298,6 @@ const PartsCoordinatorDashboard: React.FC = () => {
       setIsLoadingDetail(false);
     }
   };
-
   // Load requests on mount
   useEffect(() => {
     fetchStockTransferRequests();
@@ -512,7 +514,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
   // Open pickup modal
   const openPickupModal = () => {
     if (selectedReservationIds.length === 0) {
-      alert('Please select at least one reservation to pick up');
+      toast({
+        title: 'Selection Required',
+        description: 'Please select at least one reservation to pick up',
+        variant: 'destructive'
+      });
       return;
     }
 
@@ -522,13 +528,21 @@ const PartsCoordinatorDashboard: React.FC = () => {
     );
 
     if (selectedReservations.length === 0) {
-      alert('No valid reservations selected. Only RESERVED status can be picked up.');
+      toast({
+        title: 'Invalid Selection',
+        description: 'No valid reservations selected. Only RESERVED status can be picked up.',
+        variant: 'destructive'
+      });
       return;
     }
 
     const techIds = new Set(selectedReservations.map(r => r.caseLine.repairTechId));
     if (techIds.size > 1) {
-      alert('All selected reservations must have the same repair technician');
+      toast({
+        title: 'Invalid Selection',
+        description: 'All selected reservations must have the same repair technician',
+        variant: 'destructive'
+      });
       return;
     }
 
@@ -545,7 +559,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
       setIsPickingUp(false);
-      alert('Authentication required');
+      toast({
+        title: 'Authentication Required',
+        description: 'Please login again.',
+        variant: 'destructive'
+      });
       return;
     }
 
@@ -556,7 +574,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
       );
       
       if (selectedReservations.length === 0) {
-        alert('No valid reservations to pick up');
+        toast({
+          title: 'No Valid Reservations',
+          description: 'No valid reservations to pick up',
+          variant: 'destructive'
+        });
         setIsPickingUp(false);
         return;
       }
@@ -575,7 +597,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
       );
 
       if (response.data.status === 'success') {
-        alert(`Successfully picked up ${selectedReservationIds.length} component(s)`);
+        toast({
+          title: 'Success',
+          description: `Successfully picked up ${selectedReservationIds.length} component(s)`
+        });
         setShowPickupModal(false);
         setSelectedReservationIds([]);
         
@@ -584,7 +609,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Failed to pickup reservations:', error);
-      alert(error.response?.data?.message || 'Failed to pickup components');
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to pickup components',
+        variant: 'destructive'
+      });
     } finally {
       setIsPickingUp(false);
     }
@@ -593,7 +622,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
   // Handle stock adjustment
   const handleStockAdjustment = async () => {
     if (!selectedStock || !adjustmentForm.quantity || parseInt(adjustmentForm.quantity) <= 0) {
-      alert('Please enter a valid quantity');
+      toast({
+        title: 'Invalid Input',
+        description: 'Please enter a valid quantity',
+        variant: 'destructive'
+      });
       return;
     }
 
@@ -601,7 +634,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
       setIsAdjusting(false);
-      alert('Authentication required');
+      toast({
+        title: 'Authentication Required',
+        description: 'Please login again.',
+        variant: 'destructive'
+      });
       return;
     }
 
@@ -621,7 +658,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
       );
 
       if (response.data.status === 'success') {
-        alert('Stock adjustment completed successfully');
+        toast({
+          title: 'Success',
+          description: 'Stock adjustment completed successfully'
+        });
         setShowAdjustmentModal(false);
         
         // Update the stock in selectedWarehouse
@@ -651,7 +691,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Failed to adjust stock:', error);
-      alert(error.response?.data?.message || 'Failed to adjust stock');
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to adjust stock',
+        variant: 'destructive'
+      });
     } finally {
       setIsAdjusting(false);
     }
@@ -686,11 +730,18 @@ const PartsCoordinatorDashboard: React.FC = () => {
         await fetchStockTransferRequestDetail(requestId);
       }
       
-      alert('Request received successfully!');
+      toast({
+        title: 'Success',
+        description: 'Request received successfully!'
+      });
     } catch (error: any) {
       console.error('Failed to receive request:', error);
       const errorMessage = error.response?.data?.message || 'Failed to receive request';
-      alert(`Error: ${errorMessage}`);
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive'
+      });
     } finally {
       setReceivingRequestId(null);
     }
@@ -1508,7 +1559,9 @@ const PartsCoordinatorDashboard: React.FC = () => {
                           <div key={item.id || index} className="p-3 bg-slate-50 dark:bg-slate-900/30 rounded-lg border">
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-xs font-semibold text-muted-foreground">Item #{index + 1}</span>
-                              <Badge variant="outline">Qty: {item.quantityRequested}</Badge>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline">Qty: {item.quantityRequested}</Badge>
+                              </div>
                             </div>
                             <div className="grid grid-cols-2 gap-3 text-sm">
                               <div>

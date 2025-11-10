@@ -2016,9 +2016,6 @@ const TechnicianDashboard = ({
             <Card>
               <CardHeader>
                 <CardTitle>Work Schedules</CardTitle>
-                <CardDescription>
-                  View your assigned work schedules and availability. Use the Work Schedules API to fetch real data.
-                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between">
