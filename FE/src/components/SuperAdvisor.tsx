@@ -386,6 +386,19 @@ const SuperAdvisor = () => {
     }
   }, [otpCountdown, otpSent, toast]);
 
+  // Auto-update Owner Information when foundCustomer changes (after update in "Find Customer by Phone" mode)
+  useEffect(() => {
+    if (foundCustomer && warrantyStatus === 'valid') {
+      // Update ownerForm with latest customer data
+      setOwnerForm({
+        fullName: foundCustomer.fullName || '',
+        phone: foundCustomer.phone || '',
+        email: foundCustomer.email || '',
+        address: foundCustomer.address || ''
+      });
+    }
+  }, [foundCustomer, warrantyStatus]);
+
   const handleSearchVehicleByVin = async (vinToSearch?: string) => {
     try {
       // Reset customer search state and warranty info
@@ -589,11 +602,7 @@ const SuperAdvisor = () => {
             address: ''
           });
 
-          toast({
-            title: 'Customer Not Found',
-            description: 'No customer found with this phone number. You can enter new customer information.',
-            variant: 'default'
-          });
+
         }
         
         setHasSearchedCustomer(true);
@@ -610,16 +619,11 @@ const SuperAdvisor = () => {
           address: ''
         });
 
-        toast({
-          title: 'Customer Not Found',
-          description: 'No customer found with this phone number. You can enter new customer information.',
-          variant: 'default'
-        });
         
         setHasSearchedCustomer(true);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Failed to search customer:', error);
       setFoundCustomer(null);
       setHasSearchedCustomer(true);
@@ -632,9 +636,10 @@ const SuperAdvisor = () => {
         address: ''
       });
 
+      // Hiển thị lỗi được định nghĩa sẵn ở FE (không lấy message từ BE)
       toast({
-        title: 'No Result!',
-        description: 'No customer founded',
+        title: 'Error',
+        description: 'No Customer Found! You may register a new customer.',
         variant: 'destructive'
       });
     } finally {
@@ -762,6 +767,7 @@ const SuperAdvisor = () => {
 
       if (response.data && response.data.status === 'success') {
         // Update foundCustomer with new data
+        // This will trigger useEffect to auto-update Owner Information form in warranty flow
         setFoundCustomer({
           ...foundCustomer,
           ...updateData

@@ -524,102 +524,34 @@ class VehicleProcessingRecordService {
     vehicleProcessingRecordId,
   }) => {
     const rawResult = await db.sequelize.transaction(async (transaction) => {
-      const vehicleProcessingRecord =
-        await this.#vehicleProcessingRecordRepository.findDetailById(
-          {
-            id: vehicleProcessingRecordId,
-            roleName,
-            userId,
-            serviceCenterId: serviceCenterId,
-          },
-          transaction,
-          Transaction.LOCK.UPDATE
-        );
-
-      if (!vehicleProcessingRecord) {
-        throw new NotFoundError("Vehicle processing record not found");
-      }
+      const vehicleProcessingRecord = await this.#findAndValidateRecord(
+        {
+          vehicleProcessingRecordId,
+          roleName,
+          userId,
+          serviceCenterId,
+        },
+        transaction
+      );
 
       const guaranteeCases = vehicleProcessingRecord?.guaranteeCases || [];
 
-      for (const guaranteeCase of guaranteeCases) {
-        if (guaranteeCase.status !== "IN_DIAGNOSIS") {
-          throw new BadRequestError("Guarantee case is not in diagnosis");
-        }
+      this.#validateDiagnosisState(guaranteeCases);
 
-        const caseLines = guaranteeCase.caseLines || [];
+      const { updatedGuaranteeCases, updatedCaseLines } =
+        await this.#updateStatusesForApproval({
+          vehicleProcessingRecordId,
+          guaranteeCases,
+          transaction,
+        });
 
-        for (const caseLine of caseLines) {
-          const validStatuses = [
-            "DRAFT",
-            "REJECTED_BY_OUT_OF_WARRANTY",
-            "REJECTED_BY_TECH",
-          ];
-          if (!validStatuses.includes(caseLine.status)) {
-            throw new BadRequestError(
-              `Case line ${caseLine.id} has invalid status ${
-                caseLine.status
-              }. Must be one of: ${validStatuses.join(", ")}`
-            );
-          }
-        }
-      }
-
-      const updatedRecord =
-        await this.#vehicleProcessingRecordRepository.updateStatus(
-          {
-            vehicleProcessingRecordId: vehicleProcessingRecordId,
-            status: "WAITING_CUSTOMER_APPROVAL",
-          },
-          transaction
-        );
-
-      const updatedGuaranteeCases = [];
-
-      let caseLineIds = [];
-      for (const guaranteeCase of guaranteeCases) {
-        const updatedCase = await this.#guaranteeCaseRepository.updateStatus(
-          {
-            guaranteeCaseId: guaranteeCase.guaranteeCaseId,
-            status: "DIAGNOSED",
-          },
-          transaction
-        );
-
-        updatedGuaranteeCases.push(updatedCase);
-
-        for (const caseLine of guaranteeCase.caseLines) {
-          if (caseLine.status === "DRAFT") {
-            caseLineIds.push(caseLine.id);
-          }
-        }
-      }
-
-      const updatedCaseLines =
-        await this.#caselineRepository.bulkUpdateStatusByIds(
-          { caseLineIds: caseLineIds, status: "PENDING_APPROVAL" },
-          transaction
-        );
-
-      const record =
-        await this.#vehicleProcessingRecordRepository.findDetailById(
-          {
-            id: vehicleProcessingRecordId,
-            roleName,
-            userId,
-            serviceCenterId,
-          },
-          transaction
-        );
-
-      const roomName = `service_center_staff_${serviceCenterId}`;
-      const eventName = "vehicleProcessingRecordStatusUpdated";
-      const data = {
-        roomName,
-        record,
-      };
-
-      await this.#notificationService.sendToRoom(roomName, eventName, data);
+      const record = await this.#sendCompletionNotification({
+        vehicleProcessingRecordId,
+        serviceCenterId,
+        roleName,
+        userId,
+        transaction,
+      });
 
       return { record, updatedGuaranteeCases, updatedCaseLines };
     });
@@ -629,6 +561,134 @@ class VehicleProcessingRecordService {
       updatedGuaranteeCases: rawResult.updatedGuaranteeCases,
       updatedCaseLines: rawResult.updatedCaseLines,
     };
+  };
+
+  #findAndValidateRecord = async (
+    { vehicleProcessingRecordId, roleName, userId, serviceCenterId },
+    transaction
+  ) => {
+    const vehicleProcessingRecord =
+      await this.#vehicleProcessingRecordRepository.findDetailById(
+        {
+          id: vehicleProcessingRecordId,
+          roleName,
+          userId,
+          serviceCenterId,
+        },
+        transaction,
+        Transaction.LOCK.UPDATE
+      );
+
+    if (!vehicleProcessingRecord) {
+      throw new NotFoundError("Vehicle processing record not found");
+    }
+    return vehicleProcessingRecord;
+  };
+
+  #validateDiagnosisState = (guaranteeCases) => {
+    if (!guaranteeCases || guaranteeCases.length === 0) {
+      return;
+    }
+
+    for (const guaranteeCase of guaranteeCases) {
+      if (guaranteeCase.status !== "IN_DIAGNOSIS") {
+        throw new BadRequestError(
+          `Guarantee case ${guaranteeCase.guaranteeCaseId} is not in diagnosis.`
+        );
+      }
+
+      const caseLines = guaranteeCase.caseLines || [];
+
+      if (caseLines.length === 0) {
+        throw new BadRequestError(
+          `Guarantee case ${guaranteeCase.guaranteeCaseId} must have at least one case line to be completed.`
+        );
+      }
+
+      for (const caseLine of caseLines) {
+        const validStatuses = [
+          "DRAFT",
+          "REJECTED_BY_OUT_OF_WARRANTY",
+          "REJECTED_BY_TECH",
+        ];
+        if (!validStatuses.includes(caseLine.status)) {
+          throw new BadRequestError(
+            `Case line ${caseLine.id} has invalid status ${
+              caseLine.status
+            }. Must be one of: ${validStatuses.join(", ")}`
+          );
+        }
+      }
+    }
+  };
+
+  #updateStatusesForApproval = async ({
+    vehicleProcessingRecordId,
+    guaranteeCases,
+    transaction,
+  }) => {
+    await this.#vehicleProcessingRecordRepository.updateStatus(
+      {
+        vehicleProcessingRecordId,
+        status: "WAITING_CUSTOMER_APPROVAL",
+      },
+      transaction
+    );
+
+    const updatedGuaranteeCases = [];
+    for (const guaranteeCase of guaranteeCases) {
+      const updatedCase = await this.#guaranteeCaseRepository.updateStatus(
+        {
+          guaranteeCaseId: guaranteeCase.guaranteeCaseId,
+          status: "DIAGNOSED",
+        },
+        transaction
+      );
+      updatedGuaranteeCases.push(updatedCase);
+    }
+
+    const draftCaseLineIds = guaranteeCases
+      .flatMap((gc) => gc.caseLines || [])
+      .filter((cl) => cl.status === "DRAFT")
+      .map((cl) => cl.id);
+
+    const updatedCaseLines =
+      draftCaseLineIds.length > 0
+        ? await this.#caselineRepository.bulkUpdateStatusByIds(
+            { caseLineIds: draftCaseLineIds, status: "PENDING_APPROVAL" },
+            transaction
+          )
+        : [];
+
+    return { updatedGuaranteeCases, updatedCaseLines };
+  };
+
+  #sendCompletionNotification = async ({
+    vehicleProcessingRecordId,
+    serviceCenterId,
+    roleName,
+    userId,
+    transaction,
+  }) => {
+    const record = await this.#vehicleProcessingRecordRepository.findDetailById(
+      {
+        id: vehicleProcessingRecordId,
+        roleName,
+        userId,
+        serviceCenterId,
+      },
+      transaction
+    );
+
+    const roomName = `service_center_staff_${serviceCenterId}`;
+    const eventName = "vehicleProcessingRecordStatusUpdated";
+    const data = {
+      roomName,
+      record,
+    };
+
+    await this.#notificationService.sendToRoom(roomName, eventName, data);
+    return record;
   };
 
   #canAssignTask = async ({

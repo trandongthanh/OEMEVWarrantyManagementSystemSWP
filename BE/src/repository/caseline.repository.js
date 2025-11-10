@@ -167,6 +167,14 @@ class CaseLineRepository {
               model: Component,
               as: "component",
               attributes: ["componentId", "serialNumber", "status"],
+
+              include: [
+                {
+                  model: db.Warehouse,
+                  as: "warehouse",
+                  attributes: ["warehouseId", "name", "address"],
+                },
+              ],
             },
           ],
         },

@@ -691,14 +691,10 @@ const WarrantyDashboard: React.FC = () => {
                               )}
                               
                               <div className="pt-2 border-t border-blue-200">
-                                <span className="text-xs text-gray-600">🔍 Diagnosis:</span>
-                                <p className="text-sm text-gray-700 mt-1">{item.caselineInfo.diagnosisText}</p>
-                              </div>
-                              
-                              <div className="pt-2 border-t border-blue-200">
-                                <span className="text-xs text-gray-600">🔧 Correction:</span>
+                                <span className="text-xs text-gray-600">� Correction:</span>
                                 <p className="text-sm text-gray-700 mt-1">{item.caselineInfo.correctionText}</p>
                               </div>
+                              
                             </div>
                           ) : (
                             <div className="bg-gray-100 p-3 rounded-lg">
@@ -728,6 +724,19 @@ const WarrantyDashboard: React.FC = () => {
                               )}
                             </div>
                           </div>
+                          
+                          {/* Total Price - Below Quantity */}
+                          {item.caselineInfo?.typeComponent?.price && item.quantityRequested && (
+                            <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200">
+                              <span className="text-sm text-gray-600 font-medium">💰 Total Price:</span>
+                              <p className="font-bold text-green-600 text-2xl mt-1">
+                                ${(item.caselineInfo.typeComponent.price * item.quantityRequested).toFixed(2)}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                ({item.quantityRequested} × ${item.caselineInfo.typeComponent.price.toFixed(2)})
+                              </p>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
