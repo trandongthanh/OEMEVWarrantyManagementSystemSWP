@@ -2190,49 +2190,6 @@ const ServiceCenterDashboard = () => {
                   </CardContent>
                 </Card>
 
-                {/* Evidence Images */}
-                {selectedClaimForDetail.evidenceImageUrls && selectedClaimForDetail.evidenceImageUrls.length > 0 && (
-                  <Card className="shadow-md border">
-                    <CardHeader className="bg-gradient-to-r from-purple-50 to-transparent dark:from-purple-900/20 pb-3">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <div className="p-2 bg-purple-100 dark:bg-purple-900/40 rounded-lg">
-                          <Eye className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                        </div>
-                        Evidence Images ({selectedClaimForDetail.evidenceImageUrls.length})
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-4">
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {selectedClaimForDetail.evidenceImageUrls.map((url, idx) => (
-                          <a
-                            key={idx}
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="group relative aspect-square rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-700 hover:border-purple-500 transition-all shadow-sm hover:shadow-lg"
-                          >
-                            <img
-                              src={url}
-                              alt={`Evidence ${idx + 1}`}
-                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23999"%3ENo Image%3C/text%3E%3C/svg%3E';
-                              }}
-                            />
-                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <Eye className="h-6 w-6 text-white" />
-                            </div>
-                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
-                              <p className="text-xs text-white font-medium">Image {idx + 1}</p>
-                            </div>
-                          </a>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
                 {/* Guarantee Cases */}
                 {selectedClaimForDetail.guaranteeCases && selectedClaimForDetail.guaranteeCases.length > 0 && (
                   <Card className="shadow-md border">
@@ -2571,6 +2528,50 @@ const ServiceCenterDashboard = () => {
                     )}
                   </CardContent>
                 </Card>
+
+                {/* Evidence Images */}
+                {selectedClaimForDetail.evidenceImageUrls && selectedClaimForDetail.evidenceImageUrls.length > 0 && (
+                  <Card className="shadow-md border">
+                    <CardHeader className="bg-gradient-to-r from-purple-50 to-transparent dark:from-purple-900/20 pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <div className="p-2 bg-purple-100 dark:bg-purple-900/40 rounded-lg">
+                          <Eye className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        Evidence Images ({selectedClaimForDetail.evidenceImageUrls.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {selectedClaimForDetail.evidenceImageUrls.map((url, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => {
+                              setSelectedImageUrl(url);
+                              setShowImageModal(true);
+                            }}
+                            className="group relative aspect-square rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-700 hover:border-purple-500 transition-all shadow-sm hover:shadow-lg cursor-pointer"
+                          >
+                            <img
+                              src={url}
+                              alt={`Evidence ${idx + 1}`}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23999"%3ENo Image%3C/text%3E%3C/svg%3E';
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Eye className="h-6 w-6 text-white" />
+                            </div>
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+                              <p className="text-xs text-white font-medium">Image {idx + 1}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Timeline */}
                 <Card>

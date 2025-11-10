@@ -2219,7 +2219,7 @@ const TechnicianDashboard = ({
 
                 {selectedCaseLine?.updatedAt !== undefined && (
                   <div>
-                    <div className="text-sm text-gray-600">Updat At</div>
+                    <div className="text-sm text-gray-600">Update At</div>
                     <div className="bg-white px-3 py-2 rounded border mt-1 text-sm text-gray-800">{selectedCaseLine?.updatedAt ?? '—'}</div>
                   </div>
                 )}
@@ -2258,7 +2258,7 @@ const TechnicianDashboard = ({
                   <div className="text-lg font-semibold text-gray-900">{selectedWarrantyCase?.createdDate}</div>
                 </div>
                 <div className="bg-white p-4 rounded-lg border text-center">
-                  <div className="text-sm font-medium text-gray-600 mb-1">Updat At</div>
+                  <div className="text-sm font-medium text-gray-600 mb-1">Update At</div>
                   <div className="text-sm text-gray-800">{selectedWarrantyCase?.updatedDate || 'N/A'}</div>
                 </div>
               </div>
@@ -3025,14 +3025,14 @@ const TechnicianDashboard = ({
           <div className="space-y-6 pt-2">
             {/* Case Line Information - single row split into two sides */}
             <div className="grid grid-cols-1 gap-6">
-              {/* Left side: Basic Information */}
+              {/* Left side: Diagnosis Information */}
               <div className="space-y-4">
                 <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border-2 border-blue-200 shadow-sm">
                   <div className="flex items-center gap-3 mb-5">
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-md">
                       <FileText className="h-5 w-5 text-white" />
                     </div>
-                    <h4 className="font-bold text-lg text-blue-900">Basic Information</h4>
+                    <h4 className="font-bold text-lg text-blue-900">Diagnosis Information</h4>
                   </div>
                   <div className="space-y-4">
                     <div className="space-y-2">
@@ -3360,13 +3360,13 @@ const TechnicianDashboard = ({
           
           {selectedRecord && (
             <div className="space-y-6 mt-4">
-              {/* Basic Information Section */}
+              {/* Diagnosis Information Section */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
                 <div className="flex items-center gap-3 mb-5">
                   <div className="p-2 bg-blue-600 rounded-lg">
                     <Car className="h-5 w-5 text-white" />
                   </div>
-                  <h3 className="text-lg font-bold text-slate-800">Basic Information</h3>
+                  <h3 className="text-lg font-bold text-slate-800">Diagnosis Information</h3>
                 </div>
                 
                 <div className="grid grid-cols-3 gap-6">
@@ -3427,6 +3427,45 @@ const TechnicianDashboard = ({
                   </div>
                 </div>
               </div>
+
+              {/* Evidence Images Section */}
+              {selectedRecord.evidenceImageUrls && selectedRecord.evidenceImageUrls.length > 0 && (
+                <div className="bg-white border border-slate-300 rounded-xl p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Eye className="h-5 w-5 text-purple-600" />
+                    <h3 className="text-lg font-bold text-slate-800">Evidence Images</h3>
+                    <span className="text-sm text-slate-500">({selectedRecord.evidenceImageUrls.length})</span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {selectedRecord.evidenceImageUrls.map((url, idx) => (
+                      <div
+                        key={idx}
+                        className="group relative aspect-square rounded-lg overflow-hidden border-2 border-slate-200 hover:border-purple-500 transition-all shadow-sm hover:shadow-lg cursor-pointer"
+                        onClick={() => {
+                          setPreviewImageUrl(url);
+                          setImagePreviewModalOpen(true);
+                        }}
+                      >
+                        <img
+                          src={url}
+                          alt={`Evidence ${idx + 1}`}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23999"%3ENo Image%3C/text%3E%3C/svg%3E';
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <Eye className="h-6 w-6 text-white" />
+                        </div>
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+                          <p className="text-xs text-white font-medium">Image {idx + 1}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Guarantee Cases with nested Case Lines */}
               {selectedRecord?.guaranteeCases && selectedRecord.guaranteeCases.length > 0 && (
@@ -3610,9 +3649,16 @@ const TechnicianDashboard = ({
             <Button variant="outline" onClick={() => setViewCaseModalOpen(false)}>Close</Button>
 
             {selectedRecord && (selectedRecord.status !== 'COMPLETED') && (() => {
-              // Check if there are any case lines created for this record's guarantee cases
-              const guaranteeIds = selectedRecord.guaranteeCases?.map(gc => gc.guaranteeCaseId) || [];
-              const hasCaseLines = createdCaseLines.some(cl => guaranteeIds.includes(cl.guaranteeCaseId));
+              // Check if ALL guarantee cases have at least one case line
+              const guaranteeCases = selectedRecord.guaranteeCases || [];
+              const allGuaranteeCasesHaveCaseLines = guaranteeCases.length > 0 && guaranteeCases.every(gc => 
+                createdCaseLines.some(cl => cl.guaranteeCaseId === gc.guaranteeCaseId)
+              );
+              
+              // Count how many guarantee cases are missing case lines
+              const guaranteeCasesWithoutCaseLines = guaranteeCases.filter(gc =>
+                !createdCaseLines.some(cl => cl.guaranteeCaseId === gc.guaranteeCaseId)
+              );
               
               return (
                 <Button
@@ -3625,10 +3671,15 @@ const TechnicianDashboard = ({
                       toast({ title: 'Missing Record ID', description: 'Cannot complete record: ID not found', variant: 'destructive' });
                       return;
                     }
-                    if (!hasCaseLines) {
+                    if (!allGuaranteeCasesHaveCaseLines) {
+                      const missingCount = guaranteeCasesWithoutCaseLines.length;
+                      const missingCases = guaranteeCasesWithoutCaseLines.map((gc, idx) => 
+                        `Guarantee Case #${guaranteeCases.indexOf(gc) + 1}: ${gc.contentGuarantee.substring(0, 30)}...`
+                      ).join('\n');
+                      
                       toast({ 
                         title: 'Cannot Complete Record', 
-                        description: 'Please create at least one case line before completing this record.', 
+                        description: `All guarantee cases must have at least one case line. Missing case lines for ${missingCount} guarantee case(s):\n\n${missingCases}`, 
                         variant: 'destructive' 
                       });
                       return;
@@ -3639,8 +3690,8 @@ const TechnicianDashboard = ({
                       // error already handled in helper
                     }
                   }}
-                  disabled={isCompleting || !hasCaseLines}
-                  title={!hasCaseLines ? 'Create at least one case line before completing' : ''}
+                  disabled={isCompleting || !allGuaranteeCasesHaveCaseLines}
+                  title={!allGuaranteeCasesHaveCaseLines ? `All guarantee cases must have at least one case line (${guaranteeCasesWithoutCaseLines.length} missing)` : ''}
                 >
                   {isCompleting ? 'Completing...' : 'Complete Diagnosis'}
                 </Button>
