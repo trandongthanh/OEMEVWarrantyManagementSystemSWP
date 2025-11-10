@@ -195,6 +195,11 @@ interface ComponentReservation {
     status: string;
     warehouseId?: string | null;
     typeComponentId: string;
+    warehouse?: {
+      warehouseId: string;
+      name: string;
+      address: string;
+    };
   };
   pickedUpByTech?: {
     userId: string;
@@ -271,6 +276,54 @@ interface CaseLine {
   updatedAt?: string;
   evidenceImageUrls?: string[];
   guaranteeCaseId?: string; // Add guarantee case ID for proper display
+  
+  // New fields from API response
+  guaranteeCase?: {
+    guaranteeCaseId: string;
+    contentGuarantee: string;
+    status: string;
+    vehicleProcessingRecord?: {
+      vehicleProcessingRecordId: string;
+      vin: string;
+      createdByStaff?: {
+        userId: string;
+        serviceCenterId: string;
+        serviceCenter?: {
+          serviceCenterId: string;
+          vehicleCompanyId: string;
+        };
+      };
+    };
+  };
+  typeComponent?: {
+    typeComponentId: string;
+    sku: string;
+    name: string;
+    price: number;
+  };
+  diagnosticTechnician?: {
+    userId: string;
+    name: string;
+  };
+  repairTechnician?: {
+    userId: string;
+    name: string;
+  };
+  reservations?: Array<{
+    reservationId: string;
+    caseLineId: string;
+    status: string;
+    component: {
+      componentId: string;
+      serialNumber: string;
+      status: string;
+      warehouse: {
+        warehouseId: string;
+        name: string;
+        address: string;
+      };
+    };
+  }>;
 }
 
 interface WarrantyCase {
@@ -1596,22 +1649,21 @@ const TechnicianDashboard = ({
 
       // Map backend CaseLine to frontend CaseLine format
       const enriched: CaseLine = {
-        id: detailedCaseLine.caseLineId,
+        id: detailedCaseLine.caseLineId || detailedCaseLine.caseLineId,
         caseId: detailedCaseLine.guaranteeCaseId,
-        guaranteeCaseId: detailedCaseLine.guaranteeCaseId, // Store the guarantee case ID
+        guaranteeCaseId: detailedCaseLine.guaranteeCaseId,
         damageLevel: 'medium',
         repairPossibility: 'repairable',
         warrantyDecision: detailedCaseLine.warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
-        technicianNotes: detailedCaseLine.correctionText, // Backend only returns correctionText now
+        technicianNotes: detailedCaseLine.correctionText,
         photos: detailedCaseLine.evidenceImageUrls || [],
         evidenceImageUrls: detailedCaseLine.evidenceImageUrls || [],
         createdDate: formatSafeDate(detailedCaseLine.createdAt),
-  // Preserve backend status directly (do not coerce non-pending statuses to 'approved')
-  status: detailedCaseLine.status ?? 'submitted',
-        diagnosisText: '', // Backend does not return diagnosisText
+        status: detailedCaseLine.status ?? 'submitted',
+        diagnosisText: '',
         correctionText: detailedCaseLine.correctionText,
         componentId: detailedCaseLine.componentId,
-  componentName: detailedCaseLine.componentName ?? undefined,
+        componentName: detailedCaseLine.componentName ?? undefined,
         componentSku: detailedCaseLine.componentSku,
         componentPrice: detailedCaseLine.componentPrice,
         quantity: detailedCaseLine.quantity,
@@ -1619,7 +1671,14 @@ const TechnicianDashboard = ({
         diagnosticTechId: detailedCaseLine.techId,
         diagnosticTechnicianName: detailedCaseLine.diagnosticTechnicianName,
         repairTechnicianName: detailedCaseLine.repairTechnicianName,
-        updatedAt: detailedCaseLine.updatedAt
+        rejectionReason: detailedCaseLine.rejectionReason,
+        updatedAt: detailedCaseLine.updatedAt,
+        // New nested fields - cast to any to avoid type errors since the API returns these
+        guaranteeCase: (detailedCaseLine as any).guaranteeCase,
+        typeComponent: (detailedCaseLine as any).typeComponent,
+        diagnosticTechnician: (detailedCaseLine as any).diagnosticTechnician,
+        repairTechnician: (detailedCaseLine as any).repairTechnician,
+        reservations: (detailedCaseLine as any).reservations
       };
       setSelectedCaseLine(enriched);
     } catch (err) {
@@ -4495,6 +4554,15 @@ const TechnicianDashboard = ({
                                     {reservation.component.status}
                                   </Badge>
                                 </div>
+                                {reservation.component.warehouse && (
+                                  <>
+                                    <div className="col-span-2">
+                                      <span className="text-xs text-muted-foreground">Warehouse:</span>
+                                      <p className="text-xs font-medium">{reservation.component.warehouse.name}</p>
+                                      <p className="text-xs text-muted-foreground">{reservation.component.warehouse.address}</p>
+                                    </div>
+                                  </>
+                                )}
                               </>
                             )}
                           </div>
