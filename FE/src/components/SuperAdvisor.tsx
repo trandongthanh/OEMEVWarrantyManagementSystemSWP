@@ -638,7 +638,7 @@ const SuperAdvisor = () => {
       });
 
       toast({
-        title: 'Error',
+        title: 'No Result!',
         description: 'No customer founded',
         variant: 'destructive'
       });
