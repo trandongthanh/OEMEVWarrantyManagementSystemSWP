@@ -676,6 +676,9 @@ const PartsCoordinatorDashboard: React.FC = () => {
       // Refresh the list
       await fetchStockTransferRequests();
       
+      // Refresh warehouse data to reflect inventory changes
+      await fetchWarehouses();
+      
       // If modal is open, refresh the detail
       if (showDetailModal && selectedStockRequest?.id === requestId) {
         await fetchStockTransferRequestDetail(requestId);

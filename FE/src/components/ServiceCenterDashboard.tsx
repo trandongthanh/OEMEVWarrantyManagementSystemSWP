@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasPermission } from "@/utils/permissions";
+import { toast } from "@/hooks/use-toast";
 import { API_BASE_URL } from "@/config/api";
 import {
   Car,
@@ -499,6 +500,8 @@ const ServiceCenterDashboard = () => {
   // Registration states
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [availableRoles, setAvailableRoles] = useState<Array<{ roleId: string; roleName: string }>>([]);
+  const [isLoadingRoles, setIsLoadingRoles] = useState(false);
   const [registerForm, setRegisterForm] = useState({
     username: '',
     password: '',
@@ -509,6 +512,7 @@ const ServiceCenterDashboard = () => {
     roleId: ''
   });
   const [registerErrors, setRegisterErrors] = useState<Record<string, string>>({});
+  const registerFormRef = useRef<HTMLDivElement>(null);
 
   const { user, logout, getToken } = useAuth();
 
@@ -634,6 +638,38 @@ const ServiceCenterDashboard = () => {
     }
   };
 
+  // Fetch available roles from API
+  const fetchAvailableRoles = async () => {
+    setIsLoadingRoles(true);
+    try {
+      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+      const response = await axios.get('http://localhost:3000/api/v1/roles', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.data?.status === 'success' && Array.isArray(response.data.data)) {
+        setAvailableRoles(response.data.data);
+        console.log('✅ Fetched roles:', response.data.data);
+      } else {
+        console.warn('⚠️ Unexpected roles response format:', response.data);
+        setAvailableRoles([]);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching roles:', error);
+      toast({
+        title: "Error Loading Roles",
+        description: "Failed to load available roles. Using default roles.",
+        variant: "destructive"
+      });
+      // Fallback to empty array
+      setAvailableRoles([]);
+    } finally {
+      setIsLoadingRoles(false);
+    }
+  };
+
   // Validate registration form
   const validateRegisterForm = () => {
     const errors: Record<string, string> = {};
@@ -647,11 +683,19 @@ const ServiceCenterDashboard = () => {
       errors.username = 'Username can only contain letters, numbers, and underscores';
     }
 
-    // Password validation (min 6 characters)
+    // Password validation (min 8 characters + complexity requirements)
     if (!registerForm.password) {
       errors.password = 'Password is required';
-    } else if (registerForm.password.length < 6) {
-      errors.password = 'Password must be at least 6 characters';
+    } else if (registerForm.password.length < 8) {
+      errors.password = 'Password must be at least 8 characters';
+    } else if (!/(?=.*[a-z])/.test(registerForm.password)) {
+      errors.password = 'Password must contain at least one lowercase letter';
+    } else if (!/(?=.*[A-Z])/.test(registerForm.password)) {
+      errors.password = 'Password must contain at least one uppercase letter';
+    } else if (!/(?=.*\d)/.test(registerForm.password)) {
+      errors.password = 'Password must contain at least one number';
+    } else if (!/(?=.*[@$!%*?&#^()\-_=+\[\]{}|;:'",.<>\/\\`~])/.test(registerForm.password)) {
+      errors.password = 'Password must contain at least one special character';
     }
 
     // Email validation
@@ -685,6 +729,13 @@ const ServiceCenterDashboard = () => {
       errors.address = 'Address must be between 5 and 200 characters';
     }
 
+    // Role validation
+    if (!registerForm.roleId) {
+      errors.roleId = 'Please select a role';
+    } else if (availableRoles.length > 0 && !availableRoles.some(role => role.roleId === registerForm.roleId)) {
+      errors.roleId = 'Invalid role selected';
+    }
+
     setRegisterErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -693,6 +744,22 @@ const ServiceCenterDashboard = () => {
   const handleRegisterUser = async () => {
     // Validate form
     if (!validateRegisterForm()) {
+      // Scroll to top of form to show error fields
+      if (registerFormRef.current) {
+        registerFormRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      
+      // Get first error to show
+      const firstError = Object.entries(registerErrors)[0];
+      const errorCount = Object.keys(registerErrors).length;
+      
+      toast({
+        title: "Please Complete All Required Fields",
+        description: errorCount === 1 
+          ? `${firstError[0]}: ${firstError[1]}`
+          : `${errorCount} fields need attention. Please scroll up and check all required fields marked with *.`,
+        variant: "destructive"
+      });
       return;
     }
 
@@ -705,24 +772,22 @@ const ServiceCenterDashboard = () => {
     }
 
     try {
-      console.log('🔧 Registering new user:', {
+      const payload = {
         username: registerForm.username,
+        password: registerForm.password,
         email: registerForm.email,
+        phone: registerForm.phone,
         name: registerForm.name,
-        url: `${API_BASE_URL}/auth/register-in-service-center`
-      });
+        address: registerForm.address,
+        roleId: registerForm.roleId
+      };
+
+      console.log('🔧 Registering new user with payload:', payload);
+      console.log('🔑 Using roleId:', registerForm.roleId);
 
       const response = await axios.post(
         `${API_BASE_URL}/auth/register-in-service-center`,
-        {
-          username: registerForm.username,
-          password: registerForm.password,
-          email: registerForm.email,
-          phone: registerForm.phone,
-          name: registerForm.name,
-          address: registerForm.address,
-          roleId: registerForm.roleId
-        },
+        payload,
         {
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -734,7 +799,10 @@ const ServiceCenterDashboard = () => {
       console.log('✅ Registration response:', response.data);
 
       if (response.status === 200 || response.status === 201) {
-        alert(`User ${registerForm.name} registered successfully!`);
+        toast({
+          title: "User Registered Successfully",
+          description: `User ${registerForm.name} has been registered successfully!`,
+        });
         
         // Reset form and close modal
         setRegisterForm({
@@ -754,8 +822,17 @@ const ServiceCenterDashboard = () => {
       }
     } catch (error: any) {
       console.error('❌ Registration failed:', error);
-      const errorMessage = error.response?.data?.message || 'Failed to register user. Please try again.';
-      alert(`Registration Error: ${errorMessage}`);
+      console.error('❌ Error response:', error.response?.data);
+      console.error('❌ Error status:', error.response?.status);
+      
+      const errorMessage = error.response?.data?.message || error.response?.data?.error || 'Failed to register user. Please try again.';
+      const errorDetails = error.response?.data?.details || '';
+      
+      toast({
+        title: "Registration Failed",
+        description: `${errorMessage}${errorDetails ? ` - ${errorDetails}` : ''}`,
+        variant: "destructive"
+      });
     } finally {
       setIsRegistering(false);
     }
@@ -1653,7 +1730,10 @@ const ServiceCenterDashboard = () => {
               <div className="flex items-center space-x-3 ml-auto">
                 <Button 
                   variant="default" 
-                  onClick={() => setShowRegisterModal(true)}
+                  onClick={() => {
+                    setShowRegisterModal(true);
+                    fetchAvailableRoles();
+                  }}
                 >
                   <Plus className="mr-2 h-4 w-4" />
                   Register
@@ -2551,15 +2631,6 @@ const ServiceCenterDashboard = () => {
                           <div className="flex-1">
                             <span className="text-xs text-muted-foreground mr-2">VIN:</span>
                             <span className="font-mono font-medium text-sm">{selectedCaseForAssignment}</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <AlertCircle className="h-4 w-4 text-amber-600" />
-                          <div className="flex-1">
-                            <span className="text-xs text-muted-foreground mr-2">Issue:</span>
-                            <span className="font-medium text-sm">
-                              {claim?.guaranteeCases?.[0]?.contentGuarantee || 'No issue description'}
-                            </span>
                           </div>
                         </div>
                       </div>
@@ -4114,7 +4185,7 @@ const ServiceCenterDashboard = () => {
               </div>
             </DialogHeader>
 
-            <div className="mt-8">
+            <div className="mt-8" ref={registerFormRef}>
               {/* Use a form with autoComplete="off" and prevent submit to discourage browser autofill */}
               <form autoComplete="off" onSubmit={(e) => e.preventDefault()}>
                 {/* Honeypot fields to trick browser autofill - hidden from user */}
@@ -4164,7 +4235,7 @@ const ServiceCenterDashboard = () => {
                         autoComplete="new-password"
                         value={registerForm.password}
                         onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })}
-                        placeholder="Min 6 characters"
+                        placeholder="e.g., SecurePass123!"
                         className={`transition-all ${registerErrors.password ? 'border-red-500 focus:ring-red-500' : 'focus:ring-blue-500'}`}
                       />
                       {registerErrors.password && (
@@ -4172,7 +4243,7 @@ const ServiceCenterDashboard = () => {
                           <span>⚠</span> {registerErrors.password}
                         </p>
                       )}
-                      <p className="text-xs text-muted-foreground">Minimum 6 characters</p>
+                      <p className="text-xs text-muted-foreground">Min 8 characters with uppercase, lowercase, number and special character</p>
                     </div>
                   </div>
                 </div>
@@ -4270,6 +4341,73 @@ const ServiceCenterDashboard = () => {
                         </p>
                       )}
                       <p className="text-xs text-muted-foreground">5-200 characters</p>
+                    </div>
+
+                    {/* Role Selection */}
+                    <div className="md:col-span-2 space-y-2">
+                      <label className="text-sm font-semibold text-foreground flex items-center gap-1">
+                        User Role <span className="text-red-500">*</span>
+                      </label>
+                      <Select 
+                        value={registerForm.roleId} 
+                        onValueChange={(value) => setRegisterForm({ ...registerForm, roleId: value })}
+                        disabled={isLoadingRoles}
+                      >
+                        <SelectTrigger className={`transition-all ${registerErrors.roleId ? 'border-red-500 focus:ring-red-500' : 'focus:ring-indigo-500'}`}>
+                          <SelectValue placeholder={isLoadingRoles ? "Loading roles..." : "Select a role for this user"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {isLoadingRoles ? (
+                            <div className="p-4 text-center text-sm text-muted-foreground">
+                              Loading available roles...
+                            </div>
+                          ) : availableRoles.length > 0 ? (
+                            availableRoles.map((role) => {
+                              // Map role names to display info
+                              let icon = '👤';
+                              let color = 'text-gray-600';
+                              let displayName = role.roleName;
+                              
+                              if (role.roleName.includes('technician')) {
+                                icon = '🔧';
+                                color = 'text-blue-600';
+                                displayName = 'Technician';
+                              } else if (role.roleName.includes('staff')) {
+                                icon = '👔';
+                                color = 'text-green-600';
+                                displayName = 'Staff';
+                              } else if (role.roleName.includes('parts_coordinator')) {
+                                icon = '📦';
+                                color = 'text-orange-600';
+                                displayName = 'Parts Coordinator';
+                              } else if (role.roleName.includes('manager')) {
+                                icon = '👨‍💼';
+                                color = 'text-purple-600';
+                                displayName = 'Manager';
+                              }
+                              
+                              return (
+                                <SelectItem key={role.roleId} value={role.roleId}>
+                                  <div className="flex items-center gap-2">
+                                    <span className={color}>{icon}</span>
+                                    <span>{displayName}</span>
+                                  </div>
+                                </SelectItem>
+                              );
+                            })
+                          ) : (
+                            <div className="p-4 text-center text-sm text-muted-foreground">
+                              No roles available
+                            </div>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {registerErrors.roleId && (
+                        <p className="text-xs text-red-500 flex items-center gap-1">
+                          <span>⚠</span> {registerErrors.roleId}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground">Select the role for this user account</p>
                     </div>
                   </div>
                 </div>

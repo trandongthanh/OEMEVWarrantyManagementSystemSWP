@@ -80,7 +80,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 			const data = await response.json();
 
 			// Handle different response structures
-			if (data.data.token) {
+			if (data?.data?.token) {
 				const token = data.data.token;
 				if (token) {
 					localStorage.setItem("ev_warranty_token", token);
@@ -104,6 +104,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 					setIsLoading(false);
 					return false;
 				}
+			} else {
+				// Handle failed login (no token in response)
+				console.error("Login failed:", data?.message || "Invalid credentials");
+				setIsLoading(false);
+				return false;
 			}
 		} catch (error) {
 			console.error("Login error:", error);
