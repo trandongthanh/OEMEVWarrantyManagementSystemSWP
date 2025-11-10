@@ -898,17 +898,37 @@ const SuperAdvisor = () => {
   };
 
   // Handle create record for warranty-valid vehicle
-  const handleCreateRecord = async (vehicle: any) => {
-    if (!foundCustomer || !vehicle) {
+  const handleCreateRecord = async (options?: {
+    vehicle?: any,
+    customer?: any,
+    odometerValue?: string,
+    shouldCloseWarrantyDialog?: boolean
+  }) => {
+    // Xác định nguồn data - Fallback to state if options not provided
+    const vehicle = options?.vehicle || vehicleSearchResult;
+    const customer = options?.customer || foundCustomer || vehicleSearchResult?.owner;
+    const odometerValue = options?.odometerValue || vehicleOdometer || odometer;
+    
+    // Validation
+    if (!vehicle) {
       toast({
         title: 'Error',
-        description: 'Missing customer or vehicle information',
+        description: 'Vehicle information is required',
+        variant: 'destructive'
+      });
+      return;
+    }
+    
+    if (!customer) {
+      toast({
+        title: 'Error',
+        description: 'Vehicle must have an owner before creating a processing record',
         variant: 'destructive'
       });
       return;
     }
 
-    if (!vehicleOdometer) {
+    if (!odometerValue) {
       toast({
         title: 'Error',
         description: 'Please enter odometer reading first',
@@ -920,18 +940,22 @@ const SuperAdvisor = () => {
     // Prepare form data and open create warranty dialog
     setWarrantyRecordForm({
       vin: vehicle.vin,
-      odometer: vehicleOdometer,
-      purchaseDate: vehicle.purchaseDate,
-      customerName: foundCustomer.fullName || foundCustomer.name,
-      customerPhone: foundCustomer.phone || '', // Store customer phone for auto-fill
+      odometer: odometerValue,
+      purchaseDate: vehicle.purchaseDate || '',
+      customerName: customer.fullName || customer.name,
+      customerPhone: customer.phone || '',
       cases: [],
-      visitorFullName: '', // Visitor must be entered manually
-      visitorPhone: '', // Visitor must be entered manually
-      customerEmail: foundCustomer.email || ''
+      visitorFullName: '',
+      visitorPhone: '',
+      customerEmail: customer.email || ''
     });
     
-    // Close warranty dialog and open create dialog
-    setShowWarrantyDialog(false);
+    // Close warranty dialog if needed (only from phone search flow)
+    if (options?.shouldCloseWarrantyDialog) {
+      setShowWarrantyDialog(false);
+    }
+    
+    // Open create dialog
     setShowCreateWarrantyDialog(true);
   };
 
@@ -1805,43 +1829,6 @@ const SuperAdvisor = () => {
     }
   };
 
-  // Handle creating record from VIN search flow - prepare form and open dialog
-  const handleCreateRecordFromVin = () => {
-    if (!vehicleSearchResult || !odometer) {
-      toast({
-        title: 'Validation Error',
-        description: 'VIN and odometer are required',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    if (!vehicleSearchResult.owner) {
-      toast({
-        title: 'Error',
-        description: 'Vehicle must have an owner before creating a processing record',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    // Prepare form data and open create warranty dialog
-    setWarrantyRecordForm({
-      vin: vehicleSearchResult.vin,
-      odometer: odometer,
-      purchaseDate: vehicleSearchResult.purchaseDate || '',
-      customerName: vehicleSearchResult.owner.fullName,
-      customerPhone: vehicleSearchResult.owner.phone || '', // Store customer phone for auto-fill
-      cases: [],
-      visitorFullName: '', // Visitor must be entered manually
-      visitorPhone: '', // Visitor must be entered manually
-      customerEmail: vehicleSearchResult.owner.email || ''
-    });
-    
-    // Open create dialog
-    setShowCreateWarrantyDialog(true);
-  };
-
   const handleEditRecord = async (record: WarrantyRecord) => {
     
     setSelectedRecord(record);
@@ -2557,7 +2544,7 @@ const SuperAdvisor = () => {
                               className="text-blue-600 hover:bg-blue-50"
                             >
                               <FileText className="h-4 w-4 mr-1" />
-                              View Caselines
+                              View Diagnosis
                             </Button>
                           </div>
                         </TableCell>
@@ -2716,7 +2703,7 @@ const SuperAdvisor = () => {
                               {/* Create Record Button - Show ONLY when warranty is valid AND vehicle has owner */}
                               {warrantyStatus === 'valid' && vehicleSearchResult.owner && (
                                 <Button
-                                  onClick={handleCreateRecordFromVin}
+                                  onClick={() => handleCreateRecord()}
                                   className="flex-1 bg-green-600 hover:bg-green-700"
                                 >
                                   <Plus className="h-4 w-4 mr-2" />
@@ -3819,8 +3806,12 @@ const SuperAdvisor = () => {
             {vehicleWarrantyStatus === 'valid' && (
               <Button 
                 onClick={() => {
-                  handleCreateRecord(currentVehicleForWarranty);
-                  setShowWarrantyDialog(false);
+                  handleCreateRecord({
+                    vehicle: currentVehicleForWarranty,
+                    customer: foundCustomer,
+                    odometerValue: vehicleOdometer,
+                    shouldCloseWarrantyDialog: true
+                  });
                 }}
                 className="bg-green-600 hover:bg-green-700"
               >
@@ -3841,6 +3832,12 @@ const SuperAdvisor = () => {
           setOtpSent(false);
           setOtpVerified(false);
           setOtpCountdown(0);
+          // Reset visitor same as customer checkbox
+          setVisitorSameAsCustomer(false);
+          // Reset evidence images
+          setEvidenceImages([]);
+          // Reset warranty record case text
+          setWarrantyRecordCaseText('');
         }
       }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
