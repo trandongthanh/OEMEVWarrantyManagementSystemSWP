@@ -443,6 +443,16 @@ const ServiceCenterDashboard = () => {
   const [showClaimDetailModal, setShowClaimDetailModal] = useState(false);
   const [selectedClaimForDetail, setSelectedClaimForDetail] = useState<WarrantyClaim | null>(null);
 
+  // Out of Stock Modal States
+  const [showOutOfStockModal, setShowOutOfStockModal] = useState(false);
+  const [outOfStockInfo, setOutOfStockInfo] = useState<{
+    errorMessage: string;
+    guaranteeCaseId: string;
+    caseLineId: string;
+    typeComponentId: string;
+    quantity: number;
+  } | null>(null);
+
   // Track case lines with out of stock status
   // Technician Records Modal States
   const [showTechnicianRecordsModal, setShowTechnicianRecordsModal] = useState(false);
@@ -481,7 +491,7 @@ const ServiceCenterDashboard = () => {
   // Case line detail modal states
   const [showCaseLineDetailModal, setShowCaseLineDetailModal] = useState(false);
   const [selectedCaseLineDetail, setSelectedCaseLineDetail] = useState<DetailedCaseLine | null>(null);
-  const [isLoadingCaseLineDetail, setIsLoadingCaseLineDetail] = useState(false);
+  const [loadingCaseLineIds, setLoadingCaseLineIds] = useState<Set<string>>(new Set());
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [showImageModal, setShowImageModal] = useState(false);
 
@@ -1115,7 +1125,8 @@ const ServiceCenterDashboard = () => {
       return null;
     }
 
-    setIsLoadingCaseLineDetail(true);
+    // Add this caseLineId to loading set
+    setLoadingCaseLineIds(prev => new Set(prev).add(caseLineId));
     try {
       console.log('🔍 Fetching case line detail for ID:', caseLineId);
       console.log('🔍 API URL:', `${API_BASE_URL}/case-lines/${caseLineId}`);
@@ -1157,7 +1168,12 @@ const ServiceCenterDashboard = () => {
       });
       return null;
     } finally {
-      setIsLoadingCaseLineDetail(false);
+      // Remove this caseLineId from loading set
+      setLoadingCaseLineIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(caseLineId);
+        return newSet;
+      });
     }
   };
 
@@ -1469,31 +1485,28 @@ const ServiceCenterDashboard = () => {
 
       // Check if error is 409 Conflict (out of stock)  
       if (error.response?.status === 409) {
-        const shouldRequest = window.confirm(
-          `⚠️ Out of Stock!\n\n${errorMessage}\n\nWould you like to request this component from manufacturer?`
-        );
+        // Find the case line to get component info
+        const allCaseLines = Object.values(claimsByStatus)
+          .flat()
+          .flatMap(claim => claim.guaranteeCases.flatMap(gc => gc.caseLines || []));
+        const caseLine = allCaseLines.find(cl => cl.id === caseLineId);
         
-        if (shouldRequest) {
-          // Find the case line to get component info
-          const allCaseLines = Object.values(claimsByStatus)
-            .flat()
-            .flatMap(claim => claim.guaranteeCases.flatMap(gc => gc.caseLines || []));
-          const caseLine = allCaseLines.find(cl => cl.id === caseLineId);
-          
-          if (caseLine && caseLine.typeComponent) {
-            handleRequestFromManufacturer(
-              guaranteeCaseId,
-              caseLineId,
-              caseLine.typeComponent.typeComponentId,
-              caseLine.quantity
-            );
-          } else {
-            toast({
-              title: 'Error',
-              description: 'Cannot find component information to create request.',
-              variant: 'destructive'
-            });
-          }
+        if (caseLine && caseLine.typeComponent) {
+          // Open out of stock modal instead of confirm dialog
+          setOutOfStockInfo({
+            errorMessage,
+            guaranteeCaseId,
+            caseLineId,
+            typeComponentId: caseLine.typeComponent.typeComponentId,
+            quantity: caseLine.quantity
+          });
+          setShowOutOfStockModal(true);
+        } else {
+          toast({
+            title: 'Out of Stock',
+            description: errorMessage,
+            variant: 'destructive'
+          });
         }
       } else {
         // Show error message for other errors
@@ -1705,9 +1718,10 @@ const ServiceCenterDashboard = () => {
         // Refresh claim detail modal with updated data from backend
         if (selectedClaimForDetail) {
           const updatedClaims = Object.values(claimsByStatus).flat();
-          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
+          const updatedClaim = updatedClaims.find(c => c.recordId === selectedClaimForDetail.recordId);
           if (updatedClaim) {
             setSelectedClaimForDetail(updatedClaim);
+            console.log('✅ Refreshed claim detail modal with updated data');
           }
         }
       }
@@ -2526,11 +2540,11 @@ const ServiceCenterDashboard = () => {
                                                     size="sm"
                                                     variant="outline"
                                                     onClick={() => fetchCaseLineDetail(line.id)}
-                                                    disabled={isLoadingCaseLineDetail}
+                                                    disabled={loadingCaseLineIds.has(line.id)}
                                                     className="text-gray-700 hover:bg-gray-50 border-gray-300 text-xs h-6 px-2"
                                                   >
                                                     <Eye className="h-3 w-3 mr-1" />
-                                                    {isLoadingCaseLineDetail ? 'Loading...' : 'View Details'}
+                                                    {loadingCaseLineIds.has(line.id) ? 'Loading...' : 'View Details'}
                                                   </Button>
                                                 </div>
                                               </div>
@@ -3516,7 +3530,7 @@ const ServiceCenterDashboard = () => {
               </DialogDescription>
             </DialogHeader>
 
-            {isLoadingCaseLineDetail ? (
+            {loadingCaseLineIds.size > 0 && !selectedCaseLineDetail ? (
               <div className="text-center py-8">
                 <p className="text-muted-foreground">Loading case line details...</p>
               </div>
@@ -4738,6 +4752,72 @@ const ServiceCenterDashboard = () => {
                 )}
               </Button>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Out of Stock Modal */}
+        <Dialog open={showOutOfStockModal} onOpenChange={setShowOutOfStockModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-amber-600">
+                <AlertCircle className="h-6 w-6" />
+                Component Out of Stock
+              </DialogTitle>
+              <DialogDescription>
+                The requested component is not available in stock
+              </DialogDescription>
+            </DialogHeader>
+
+            {outOfStockInfo && (
+              <div className="space-y-4">
+                {/* Error Message */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <p className="text-sm text-amber-900">
+                    {outOfStockInfo.errorMessage}
+                  </p>
+                </div>
+
+                {/* Info */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-blue-900 mb-2">What would you like to do?</h4>
+                  <p className="text-sm text-blue-700">
+                    You can request this component from the manufacturer. A stock transfer request will be created.
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowOutOfStockModal(false);
+                      setOutOfStockInfo(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="default"
+                    className="bg-blue-600 hover:bg-blue-700"
+                    onClick={() => {
+                      if (outOfStockInfo) {
+                        handleRequestFromManufacturer(
+                          outOfStockInfo.guaranteeCaseId,
+                          outOfStockInfo.caseLineId,
+                          outOfStockInfo.typeComponentId,
+                          outOfStockInfo.quantity
+                        );
+                        setShowOutOfStockModal(false);
+                        setOutOfStockInfo(null);
+                      }
+                    }}
+                  >
+                    <Package className="h-4 w-4 mr-2" />
+                    Request from Manufacturer
+                  </Button>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
