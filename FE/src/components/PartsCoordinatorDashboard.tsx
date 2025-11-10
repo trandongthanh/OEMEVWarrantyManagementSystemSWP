@@ -88,7 +88,7 @@ interface Component {
   componentId: string;
   serialNumber: string;
   status: string;
-  warehouseId: string;
+  warehouseId: string | null;
   typeComponentId: string;
 }
 
@@ -97,6 +97,7 @@ interface Technician {
   name: string;
   email: string;
   phone: string;
+  roleId?: string;
 }
 
 interface Staff {
@@ -141,12 +142,15 @@ interface ComponentReservation {
   pickedUpBy: string | null;
   pickedUpAt: string | null;
   installedAt: string | null;
-  oldComponentSerial: string | null;
-  oldComponentReturned: boolean;
-  returnedAt: string | null;
+  oldComponentSerial?: string | null;
+  oldComponentReturned?: boolean;
+  returnedAt?: string | null;
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  case_line_id?: string; // snake_case from API
+  component_id?: string; // snake_case from API
+  picked_up_by?: string | null; // snake_case from API
   component: Component;
   pickedUpByTech: Technician | null;
   caseLine: CaseLine;
@@ -498,6 +502,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
 
   // View reservation details
   const viewReservationDetails = (reservation: ComponentReservation) => {
+    // Simply show the modal with the reservation data we already have from the list
     setSelectedReservation(reservation);
     setShowReservationDetailModal(true);
   };
@@ -2007,145 +2012,121 @@ const PartsCoordinatorDashboard: React.FC = () => {
 
         {/* Reservation Detail Modal */}
         <Dialog open={showReservationDetailModal} onOpenChange={setShowReservationDetailModal}>
-          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Component Reservation Details</DialogTitle>
+              <DialogTitle className="flex items-center gap-2 text-xl">
+                <ClipboardList className="h-6 w-6 text-blue-600" />
+                Component Reservation Details
+              </DialogTitle>
               <DialogDescription>
-                Detailed information about the component reservation
+                Complete information about the component reservation and related warranty case
               </DialogDescription>
             </DialogHeader>
 
             {selectedReservation && (
-              <div className="space-y-6">
-                {/* Reservation Information */}
-                <Card className="border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/50 to-transparent">
-                  <CardHeader className="pb-3 bg-blue-50/30">
-                    <CardTitle className="text-base flex items-center gap-2 text-blue-900">
-                      <ClipboardList className="h-5 w-5 text-blue-600" />
-                      Reservation Information
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4 pt-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Reservation ID</label>
-                        <p className="text-sm font-mono mt-1.5 text-gray-800">{selectedReservation.reservationId}</p>
+              <div className="space-y-5">
+                {/* Status Overview Bar */}
+                <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white border-0 shadow-lg">
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide opacity-90">Reservation Status</p>
+                        <p className="text-2xl font-bold mt-1">{selectedReservation.status}</p>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Status</label>
-                        <div className="mt-1.5">
-                          <Badge 
-                            className={`text-xs font-semibold ${
-                              selectedReservation.status === 'RESERVED' 
-                                ? 'bg-amber-100 text-amber-800 border-amber-400' :
-                              selectedReservation.status === 'PICKED_UP' 
-                                ? 'bg-blue-100 text-blue-800 border-blue-400' :
-                              selectedReservation.status === 'INSTALLED' 
-                                ? 'bg-green-100 text-green-800 border-green-400' :
-                              selectedReservation.status === 'CANCELLED' 
-                                ? 'bg-red-100 text-red-800 border-red-400' :
-                              selectedReservation.status === 'RETURNED'
-                                ? 'bg-purple-100 text-purple-800 border-purple-400' :
-                                'bg-gray-100 text-gray-800 border-gray-300'
-                            }`}
-                            variant="outline"
-                          >
-                            {selectedReservation.status}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Created At</label>
-                        <div className="flex items-center gap-1.5 text-sm mt-1.5 text-gray-700">
-                          <Calendar className="h-4 w-4 text-blue-500" />
-                          {new Date(selectedReservation.createdAt).toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Last Updated</label>
-                        <div className="flex items-center gap-1.5 text-sm mt-1.5 text-gray-700">
-                          <Calendar className="h-4 w-4 text-blue-500" />
-                          {new Date(selectedReservation.updatedAt).toLocaleString()}
-                        </div>
+                      <div className="text-right">
+                        <p className="text-xs font-semibold uppercase tracking-wide opacity-90">Reservation ID</p>
+                        <p className="text-sm font-mono mt-1 opacity-90">{selectedReservation.reservationId.substring(0, 13)}...</p>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
 
-                    {selectedReservation.pickedUpBy && (
-                      <div className="border-t-2 border-dashed border-blue-200 pt-4 mt-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-                            <label className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Picked Up By</label>
-                            <p className="text-sm mt-1.5 font-medium text-amber-900">{selectedReservation.pickedUpByTech?.name || 'N/A'}</p>
-                          </div>
-                          <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-                            <label className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Picked Up At</label>
-                            <p className="text-sm mt-1.5 text-amber-900">
-                              {selectedReservation.pickedUpAt 
-                                ? new Date(selectedReservation.pickedUpAt).toLocaleString() 
-                                : 'N/A'}
-                            </p>
-                          </div>
-                        </div>
+                {/* Timeline Information */}
+                <Card className="border-l-4 border-l-blue-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Calendar className="h-5 w-5 text-blue-600" />
+                      Timeline
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-4 gap-3">
+                      <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                        <label className="text-xs font-semibold text-blue-700 uppercase">Created</label>
+                        <p className="text-sm mt-1.5 text-blue-900">
+                          {new Date(selectedReservation.createdAt).toLocaleDateString('vi-VN')}
+                        </p>
+                        <p className="text-xs text-blue-600 mt-0.5">
+                          {new Date(selectedReservation.createdAt).toLocaleTimeString('vi-VN')}
+                        </p>
                       </div>
-                    )}
-
-                    {selectedReservation.installedAt && (
-                      <div className="border-t-2 border-dashed border-blue-200 pt-4 mt-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-                            <label className="text-xs font-semibold text-green-700 uppercase tracking-wide">Installed At</label>
-                            <p className="text-sm mt-1.5 text-green-900">
-                              {new Date(selectedReservation.installedAt).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-                            <label className="text-xs font-semibold text-green-700 uppercase tracking-wide">Old Component Serial</label>
-                            <p className="text-sm mt-1.5 font-mono text-green-900">
-                              {selectedReservation.oldComponentSerial || 'N/A'}
-                            </p>
-                          </div>
+                      {selectedReservation.pickedUpAt && (
+                        <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+                          <label className="text-xs font-semibold text-amber-700 uppercase">Picked Up</label>
+                          <p className="text-sm mt-1.5 text-amber-900">
+                            {new Date(selectedReservation.pickedUpAt).toLocaleDateString('vi-VN')}
+                          </p>
+                          <p className="text-xs text-amber-600 mt-0.5">
+                            {new Date(selectedReservation.pickedUpAt).toLocaleTimeString('vi-VN')}
+                          </p>
                         </div>
+                      )}
+                      {selectedReservation.installedAt && (
+                        <div className="bg-green-50 p-3 rounded-lg border border-green-200">
+                          <label className="text-xs font-semibold text-green-700 uppercase">Installed</label>
+                          <p className="text-sm mt-1.5 text-green-900">
+                            {new Date(selectedReservation.installedAt).toLocaleDateString('vi-VN')}
+                          </p>
+                          <p className="text-xs text-green-600 mt-0.5">
+                            {new Date(selectedReservation.installedAt).toLocaleTimeString('vi-VN')}
+                          </p>
+                        </div>
+                      )}
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                        <label className="text-xs font-semibold text-slate-700 uppercase">Last Updated</label>
+                        <p className="text-sm mt-1.5 text-slate-900">
+                          {new Date(selectedReservation.updatedAt).toLocaleDateString('vi-VN')}
+                        </p>
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          {new Date(selectedReservation.updatedAt).toLocaleTimeString('vi-VN')}
+                        </p>
                       </div>
-                    )}
+                    </div>
                   </CardContent>
                 </Card>
 
                 {/* Component Information */}
-                <Card className="border-l-4 border-l-purple-500 bg-gradient-to-r from-purple-50/50 to-transparent">
-                  <CardHeader className="pb-3 bg-purple-50/30">
-                    <CardTitle className="text-base flex items-center gap-2 text-purple-900">
+                <Card className="border-l-4 border-l-purple-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
                       <Package className="h-5 w-5 text-purple-600" />
-                      Component Information
+                      Component Details
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3 pt-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Serial Number</label>
-                        <code className="text-sm bg-purple-100 text-purple-900 px-3 py-1.5 rounded font-mono mt-1.5 inline-block font-semibold border border-purple-200">
+                  <CardContent>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="col-span-2 bg-purple-50 p-4 rounded-lg border border-purple-200">
+                        <label className="text-xs font-semibold text-purple-700 uppercase">Serial Number</label>
+                        <code className="text-lg bg-white text-purple-900 px-3 py-2 rounded font-mono mt-2 inline-block font-bold border-2 border-purple-300 shadow-sm">
                           {selectedReservation.component?.serialNumber || 'N/A'}
                         </code>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Component ID</label>
-                        <p className="text-sm font-mono mt-1.5 text-gray-700">{selectedReservation.component?.componentId || 'N/A'}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Component Status</label>
-                        <div className="mt-1.5">
+                      <div className="bg-white p-4 rounded-lg border shadow-sm">
+                        <label className="text-xs font-semibold text-purple-700 uppercase">Status</label>
+                        <div className="mt-2">
                           <Badge 
                             variant="outline" 
-                            className={`font-semibold ${
+                            className={`text-sm font-bold px-3 py-1 ${
                               selectedReservation.component?.status === 'AVAILABLE'
-                                ? 'bg-green-100 text-green-800 border-green-300' :
+                                ? 'bg-green-100 text-green-800 border-green-400' :
                               selectedReservation.component?.status === 'RESERVED'
-                                ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                                ? 'bg-amber-100 text-amber-800 border-amber-400' :
+                              selectedReservation.component?.status === 'INSTALLED'
+                                ? 'bg-blue-100 text-blue-800 border-blue-400' :
                               selectedReservation.component?.status === 'IN_USE'
-                                ? 'bg-blue-100 text-blue-800 border-blue-300' :
+                                ? 'bg-indigo-100 text-indigo-800 border-indigo-400' :
                               selectedReservation.component?.status === 'DEFECTIVE'
-                                ? 'bg-red-100 text-red-800 border-red-300' :
-                              selectedReservation.component?.status === 'MAINTENANCE'
-                                ? 'bg-orange-100 text-orange-800 border-orange-300' :
+                                ? 'bg-red-100 text-red-800 border-red-400' :
                                 'bg-purple-50 text-purple-700 border-purple-300'
                             }`}
                           >
@@ -2153,64 +2134,32 @@ const PartsCoordinatorDashboard: React.FC = () => {
                           </Badge>
                         </div>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Warehouse ID</label>
-                        <p className="text-sm font-mono mt-1.5 text-gray-700">
-                          {selectedReservation.component?.warehouseId?.substring(0, 20) || 'N/A'}...
-                        </p>
-                      </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Vehicle & Case Information */}
-                <Card className="border-l-4 border-l-orange-500 bg-gradient-to-r from-orange-50/50 to-transparent">
-                  <CardHeader className="pb-3 bg-orange-50/30">
-                    <CardTitle className="text-base flex items-center gap-2 text-orange-900">
+                {/* Vehicle Information */}
+                <Card className="border-l-4 border-l-orange-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
                       <Truck className="h-5 w-5 text-orange-600" />
-                      Vehicle & Warranty Case
+                      Vehicle Information
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3 pt-4">
+                  <CardContent>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-orange-600 uppercase tracking-wide">VIN</label>
-                        <p className="text-base font-bold mt-1.5 text-orange-900">
+                      <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                        <label className="text-xs font-semibold text-orange-700 uppercase">VIN (Vehicle Identification Number)</label>
+                        <p className="text-xl font-bold mt-2 text-orange-900 tracking-wider">
                           {selectedReservation.caseLine?.guaranteeCase?.vehicleProcessingRecord?.vin || 'N/A'}
                         </p>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-orange-600 uppercase tracking-wide">Guarantee Case ID</label>
-                        <p className="text-sm font-mono mt-1.5 text-gray-700">
-                          {selectedReservation.caseLine?.guaranteeCaseId || 'N/A'}
-                        </p>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-orange-600 uppercase tracking-wide">Case Status</label>
-                        <div className="mt-1.5">
-                          <Badge 
-                            variant="outline" 
-                            className={`font-semibold ${
-                              selectedReservation.caseLine?.guaranteeCase?.status === 'PENDING'
-                                ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
-                              selectedReservation.caseLine?.guaranteeCase?.status === 'DIAGNOSED'
-                                ? 'bg-blue-100 text-blue-800 border-blue-300' :
-                              selectedReservation.caseLine?.guaranteeCase?.status === 'IN_PROGRESS'
-                                ? 'bg-purple-100 text-purple-800 border-purple-300' :
-                              selectedReservation.caseLine?.guaranteeCase?.status === 'COMPLETED'
-                                ? 'bg-green-100 text-green-800 border-green-300' :
-                              selectedReservation.caseLine?.guaranteeCase?.status === 'REJECTED'
-                                ? 'bg-red-100 text-red-800 border-red-300' :
-                                'bg-gray-100 text-gray-800 border-gray-300'
-                            }`}
-                          >
-                            {selectedReservation.caseLine?.guaranteeCase?.status || 'N/A'}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-orange-600 uppercase tracking-wide">Created By Staff</label>
-                        <p className="text-sm mt-1.5 font-medium text-gray-800">
+                      <div className="bg-white p-4 rounded-lg border shadow-sm">
+                        <label className="text-xs font-semibold text-orange-700 uppercase flex items-center gap-1">
+                          <User className="h-3 w-3" />
+                          Service Staff
+                        </label>
+                        <p className="text-base font-semibold mt-2 text-orange-900">
                           {selectedReservation.caseLine?.guaranteeCase?.vehicleProcessingRecord?.createdByStaff?.name || 'N/A'}
                         </p>
                       </div>
@@ -2218,101 +2167,170 @@ const PartsCoordinatorDashboard: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                {/* Case Line Information */}
-                <Card className="border-l-4 border-l-emerald-500 bg-gradient-to-r from-emerald-50/50 to-transparent">
-                  <CardHeader className="pb-3 bg-emerald-50/30">
-                    <CardTitle className="text-base flex items-center gap-2 text-emerald-900">
+                {/* Warranty Case Information */}
+                <Card className="border-l-4 border-l-emerald-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
                       <CheckCircle className="h-5 w-5 text-emerald-600" />
-                      Case Line Details
+                      Warranty Case & Repair Details
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3 pt-4">
+                  <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">Case Line ID</label>
-                        <p className="text-sm font-mono mt-1.5 text-gray-700">{selectedReservation.caseLineId || 'N/A'}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">Status</label>
-                        <div className="mt-1.5">
+                      <div className="bg-white p-4 rounded-lg border shadow-sm">
+                        <label className="text-xs font-semibold text-emerald-700 uppercase">Case Status</label>
+                        <div className="mt-2">
                           <Badge 
-                            className={`text-xs font-semibold ${
-                              selectedReservation.caseLine?.status === 'PENDING'
-                                ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
-                              selectedReservation.caseLine?.status === 'READY_FOR_REPAIR' 
-                                ? 'bg-blue-100 text-blue-800 border-blue-300' :
-                              selectedReservation.caseLine?.status === 'IN_PROGRESS'
-                                ? 'bg-purple-100 text-purple-800 border-purple-300' :
-                              selectedReservation.caseLine?.status === 'COMPLETED' 
-                                ? 'bg-green-100 text-green-800 border-green-300' :
-                              selectedReservation.caseLine?.status === 'CANCELLED'
-                                ? 'bg-red-100 text-red-800 border-red-300' :
-                                'bg-gray-100 text-gray-800 border-gray-300'
+                            variant="outline" 
+                            className={`text-sm font-bold px-3 py-1 ${
+                              selectedReservation.caseLine?.guaranteeCase?.status === 'PENDING'
+                                ? 'bg-yellow-100 text-yellow-800 border-yellow-400' :
+                              selectedReservation.caseLine?.guaranteeCase?.status === 'DIAGNOSED'
+                                ? 'bg-blue-100 text-blue-800 border-blue-400' :
+                              selectedReservation.caseLine?.guaranteeCase?.status === 'IN_PROGRESS'
+                                ? 'bg-purple-100 text-purple-800 border-purple-400' :
+                              selectedReservation.caseLine?.guaranteeCase?.status === 'COMPLETED'
+                                ? 'bg-green-100 text-green-800 border-green-400' :
+                                'bg-gray-100 text-gray-800 border-gray-400'
                             }`}
+                          >
+                            {selectedReservation.caseLine?.guaranteeCase?.status || 'N/A'}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="bg-white p-4 rounded-lg border shadow-sm">
+                        <label className="text-xs font-semibold text-emerald-700 uppercase">Case Line Status</label>
+                        <div className="mt-2">
+                          <Badge 
                             variant="outline"
+                            className={`text-sm font-bold px-3 py-1 ${
+                              selectedReservation.caseLine?.status === 'PENDING'
+                                ? 'bg-yellow-100 text-yellow-800 border-yellow-400' :
+                              selectedReservation.caseLine?.status === 'READY_FOR_REPAIR' 
+                                ? 'bg-blue-100 text-blue-800 border-blue-400' :
+                              selectedReservation.caseLine?.status === 'IN_PROGRESS'
+                                ? 'bg-purple-100 text-purple-800 border-purple-400' :
+                              selectedReservation.caseLine?.status === 'COMPLETED' 
+                                ? 'bg-green-100 text-green-800 border-green-400' :
+                                'bg-gray-100 text-gray-800 border-gray-400'
+                            }`}
                           >
                             {selectedReservation.caseLine?.status?.replace(/_/g, ' ') || 'N/A'}
                           </Badge>
                         </div>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">Quantity Required</label>
-                        <p className="text-lg font-bold mt-1.5 text-emerald-700">{selectedReservation.caseLine?.quantity || 0}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">Type Component ID</label>
-                        <p className="text-sm font-mono mt-1.5 text-gray-700">
-                          {selectedReservation.caseLine?.typeComponentId?.substring(0, 20) || 'N/A'}...
-                        </p>
+                      <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-200">
+                        <label className="text-xs font-semibold text-emerald-700 uppercase">Component Quantity</label>
+                        <p className="text-2xl font-bold mt-2 text-emerald-900">{selectedReservation.caseLine?.quantity || 0}</p>
                       </div>
                     </div>
 
+                    {/* Technicians Section */}
                     <div className="border-t-2 border-dashed border-emerald-200 pt-4 mt-4">
-                      <h4 className="text-sm font-semibold mb-4 text-emerald-900 flex items-center gap-2">
+                      <h4 className="text-sm font-bold mb-4 text-emerald-900 flex items-center gap-2">
                         <User className="h-4 w-4" />
                         Assigned Technicians
                       </h4>
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-2 border-blue-200 rounded-lg p-4 shadow-sm">
-                          <label className="text-xs font-bold text-blue-700 uppercase tracking-wide flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            Diagnostic Technician
-                          </label>
-                          <div className="mt-3 space-y-2">
-                            <p className="text-sm font-bold text-blue-900">
-                              {selectedReservation.caseLine?.diagnosticTechnician?.name || 'N/A'}
+                        {/* Diagnostic Technician */}
+                        <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-2 border-blue-300 rounded-lg p-4 shadow-md">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="bg-blue-500 text-white rounded-full p-2">
+                              <User className="h-4 w-4" />
+                            </div>
+                            <label className="text-xs font-bold text-blue-700 uppercase tracking-wide">
+                              Diagnostic Technician
+                            </label>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-base font-bold text-blue-900">
+                              {selectedReservation.caseLine?.diagnosticTechnician?.name || 'Not Assigned'}
                             </p>
-                            <p className="text-xs text-blue-700 flex items-center gap-1">
-                              <span>📧</span>
-                              {selectedReservation.caseLine?.diagnosticTechnician?.email || 'N/A'}
-                            </p>
-                            <p className="text-xs text-blue-700 flex items-center gap-1">
-                              <span>📞</span>
-                              {selectedReservation.caseLine?.diagnosticTechnician?.phone || 'N/A'}
-                            </p>
+                            {selectedReservation.caseLine?.diagnosticTechnician?.email && (
+                              <p className="text-sm text-blue-700 flex items-center gap-2">
+                                <span className="text-base">📧</span>
+                                {selectedReservation.caseLine.diagnosticTechnician.email}
+                              </p>
+                            )}
+                            {selectedReservation.caseLine?.diagnosticTechnician?.phone && (
+                              <p className="text-sm text-blue-700 flex items-center gap-2">
+                                <span className="text-base">📞</span>
+                                {selectedReservation.caseLine.diagnosticTechnician.phone}
+                              </p>
+                            )}
                           </div>
                         </div>
-                        <div className="bg-gradient-to-br from-green-50 to-green-100/50 border-2 border-green-200 rounded-lg p-4 shadow-sm">
-                          <label className="text-xs font-bold text-green-700 uppercase tracking-wide flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            Repair Technician
-                          </label>
-                          <div className="mt-3 space-y-2">
-                            <p className="text-sm font-bold text-green-900">
-                              {selectedReservation.caseLine?.repairTechnician?.name || 'N/A'}
+
+                        {/* Repair Technician */}
+                        <div className="bg-gradient-to-br from-green-50 to-green-100/50 border-2 border-green-300 rounded-lg p-4 shadow-md">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="bg-green-500 text-white rounded-full p-2">
+                              <User className="h-4 w-4" />
+                            </div>
+                            <label className="text-xs font-bold text-green-700 uppercase tracking-wide">
+                              Repair Technician
+                            </label>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-base font-bold text-green-900">
+                              {selectedReservation.caseLine?.repairTechnician?.name || 'Not Assigned'}
                             </p>
-                            <p className="text-xs text-green-700 flex items-center gap-1">
-                              <span>📧</span>
-                              {selectedReservation.caseLine?.repairTechnician?.email || 'N/A'}
-                            </p>
-                            <p className="text-xs text-green-700 flex items-center gap-1">
-                              <span>📞</span>
-                              {selectedReservation.caseLine?.repairTechnician?.phone || 'N/A'}
-                            </p>
+                            {selectedReservation.caseLine?.repairTechnician?.email && (
+                              <p className="text-sm text-green-700 flex items-center gap-2">
+                                <span className="text-base">📧</span>
+                                {selectedReservation.caseLine.repairTechnician.email}
+                              </p>
+                            )}
+                            {selectedReservation.caseLine?.repairTechnician?.phone && (
+                              <p className="text-sm text-green-700 flex items-center gap-2">
+                                <span className="text-base">📞</span>
+                                {selectedReservation.caseLine.repairTechnician.phone}
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
                     </div>
+
+                    {/* Picked Up By */}
+                    {selectedReservation.pickedUpByTech && (
+                      <div className="border-t-2 border-dashed border-emerald-200 pt-4">
+                        <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 border-2 border-amber-300 rounded-lg p-4 shadow-md">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="bg-amber-500 text-white rounded-full p-2">
+                              <User className="h-4 w-4" />
+                            </div>
+                            <label className="text-xs font-bold text-amber-700 uppercase tracking-wide">
+                              Component Picked Up By
+                            </label>
+                          </div>
+                          <div className="grid grid-cols-3 gap-3">
+                            <div>
+                              <p className="text-sm text-amber-600 uppercase text-xs font-semibold mb-1">Name</p>
+                              <p className="text-base font-bold text-amber-900">
+                                {selectedReservation.pickedUpByTech.name}
+                              </p>
+                            </div>
+                            {selectedReservation.pickedUpByTech.email && (
+                              <div>
+                                <p className="text-sm text-amber-600 uppercase text-xs font-semibold mb-1">Email</p>
+                                <p className="text-sm text-amber-800">
+                                  {selectedReservation.pickedUpByTech.email}
+                                </p>
+                              </div>
+                            )}
+                            {selectedReservation.pickedUpByTech.phone && (
+                              <div>
+                                <p className="text-sm text-amber-600 uppercase text-xs font-semibold mb-1">Phone</p>
+                                <p className="text-sm text-amber-800">
+                                  {selectedReservation.pickedUpByTech.phone}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
