@@ -4434,6 +4434,22 @@ const SuperAdvisor = () => {
                         {getRawStatusBadge(viewRecordData.status)}
                       </div>
                     </div>
+                    {viewRecordData.checkOutDate && (
+                      <div>
+                        <Label className="text-xs text-gray-600">Check-out Date</Label>
+                        <p className="text-sm font-semibold text-green-600">
+                          {new Date(viewRecordData.checkOutDate).toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                    {viewRecordData.duration && (
+                      <div>
+                        <Label className="text-xs text-gray-600">Duration</Label>
+                        <p className="text-sm font-semibold text-blue-600">
+                          {viewRecordData.duration}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
