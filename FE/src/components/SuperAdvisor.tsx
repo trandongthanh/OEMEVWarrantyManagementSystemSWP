@@ -4653,7 +4653,7 @@ const SuperAdvisor = () => {
                                         {/* Correction */}
                                         {caseline.correctionText && (
                                           <div>
-                                            <Label className="text-xs text-gray-600 font-semibold">Correction:</Label>
+                                            <Label className="text-xs text-gray-600 font-semibold">Solution:</Label>
                                             <p className="text-sm mt-1 text-gray-800">{caseline.correctionText}</p>
                                           </div>
                                         )}
@@ -4925,20 +4925,12 @@ const SuperAdvisor = () => {
                   </div>
                 )}
 
-                {/* Diagnosis & Correction */}
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-sm font-semibold">Diagnosis</Label>
-                    <p className="mt-1 p-3 bg-blue-50 rounded-md text-sm whitespace-pre-wrap">
-                      {caselineDetailData.diagnosisText || 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-semibold">Correction</Label>
-                    <p className="mt-1 p-3 bg-green-50 rounded-md text-sm whitespace-pre-wrap">
-                      {caselineDetailData.correctionText || 'N/A'}
-                    </p>
-                  </div>
+                {/* Solution */}
+                <div>
+                  <Label className="text-sm font-semibold">Solution</Label>
+                  <p className="mt-1 p-3 bg-green-50 rounded-md text-sm whitespace-pre-wrap">
+                    {caselineDetailData.correctionText || 'N/A'}
+                  </p>
                 </div>
 
                 {/* Rejection Reason */}
