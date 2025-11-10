@@ -42,15 +42,15 @@ import {
 
 // Friendly labels and badge variants for case-line statuses (defined outside component for stability)
 const CASELINE_STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Mới',
-  PENDING_APPROVAL: 'Chờ duyệt',
-  CUSTOMER_APPROVED: 'Khách duyệt',
-  READY_FOR_REPAIR: 'Sẵn sàng sửa',
-  IN_REPAIR: 'Đang sửa',
-  COMPLETED: 'Hoàn thành',
-  CANCELLED: 'Hủy',
-  PENDING: 'Chờ xử lý',
-  SUBMITTED: 'Đã gửi',
+  DRAFT: 'Draft',
+  PENDING_APPROVAL: 'Pending Approval',
+  CUSTOMER_APPROVED: 'Customer Approved',
+  READY_FOR_REPAIR: 'Ready For Repair',
+  IN_REPAIR: 'In Repair',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
+  PENDING: 'Pending',
+  SUBMITTED: 'Submitted',
 };
 
 const getCaseLineStatusLabel = (status?: string | null): string => {
@@ -133,26 +133,28 @@ interface CaseLineResponse {
 // Assigned Tasks Interfaces
 interface AssignedCaseLine {
   id: string;
-  diagnosisText?: string;
-  correctionText?: string;
-  typeComponentId?: string;
-  quantity?: number;
-  warrantyStatus?: string;
+  correctionText: string;
+  typeComponentId: string;
+  quantity: number;
+  warrantyStatus: string;
   status: string;
-  rejectionReason?: string | null;
-  evidenceImageUrls?: string[];
-  updatedAt?: string;
+  rejectionReason: string | null;
+  updatedAt: string;
   guaranteeCase?: {
     guaranteeCaseId: string;
-    contentGuarantee?: string;
+    contentGuarantee: string;
     status: string;
     vehicleProcessingRecord?: {
       vehicleProcessingRecordId: string;
       vin: string;
       createdByStaff?: {
         userId: string;
-        serviceCenterId?: string;
-        name: string;
+        serviceCenterId: string;
+        vehicleCompanyId: string | null;
+        serviceCenter?: {
+          serviceCenterId: string;
+          vehicleCompanyId: string;
+        };
       };
     };
   };
@@ -163,7 +165,7 @@ interface AssignedCaseLine {
   repairTechnician?: {
     userId: string;
     name: string;
-  } | null;
+  };
   typeComponent?: {
     typeComponentId: string;
     sku: string;
@@ -4161,16 +4163,19 @@ const TechnicianDashboard = ({
               {/* Case Line Information */}
               <Card className="border-l-4 border-l-blue-500">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Case Line Information</CardTitle>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Case Line Information
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-xs font-semibold text-muted-foreground">Case Line ID</label>
+                      <label className="text-xs font-semibold text-muted-foreground uppercase">Case Line ID</label>
                       <p className="text-sm font-mono mt-1">{selectedAssignedCaseLine.id}</p>
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-muted-foreground">Status</label>
+                      <label className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
                       <div className="mt-1">
                         <Badge
                           className={`text-xs font-semibold ${
@@ -4185,31 +4190,60 @@ const TechnicianDashboard = ({
                               : 'bg-gray-100 text-gray-800'
                           }`}
                         >
-                          {selectedAssignedCaseLine.status}
+                          {getCaseLineStatusLabel(selectedAssignedCaseLine.status)}
                         </Badge>
                       </div>
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-muted-foreground">Warranty Status</label>
+                      <label className="text-xs font-semibold text-muted-foreground uppercase">Warranty Status</label>
                       <div className="mt-1">
                         <Badge variant={selectedAssignedCaseLine.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}>
-                          {selectedAssignedCaseLine.warrantyStatus || 'N/A'}
+                          {selectedAssignedCaseLine.warrantyStatus}
                         </Badge>
                       </div>
                     </div>
                     <div>
-                      <label className="text-xs font-semibold text-muted-foreground">Quantity</label>
-                      <p className="text-sm font-semibold mt-1">{selectedAssignedCaseLine.quantity || 0}</p>
+                      <label className="text-xs font-semibold text-muted-foreground uppercase">Quantity</label>
+                      <p className="text-sm font-semibold mt-1">{selectedAssignedCaseLine.quantity}</p>
+                    </div>
+                    {selectedAssignedCaseLine.updatedAt && (
+                      <div className="col-span-2">
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Last Updated</label>
+                        <p className="text-sm mt-1">
+                          {new Date(selectedAssignedCaseLine.updatedAt).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Solution (Correction Text) */}
+                  <div className="pt-2">
+                    <div className="p-3 bg-green-50/80 dark:bg-green-900/10 rounded border-l-2 border-green-400">
+                      <div className="flex items-center gap-1 mb-1">
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                        <span className="font-semibold text-sm text-green-700 dark:text-green-400">Solution</span>
+                      </div>
+                      <p className="text-sm text-gray-700 dark:text-gray-300">
+                        {selectedAssignedCaseLine.correctionText}
+                      </p>
                     </div>
                   </div>
 
-                  {/* Diagnosis was removed from the UI per backend validation — show correction only */}
-
-                  {selectedAssignedCaseLine.correctionText && (
-                    <div>
-                      <label className="text-xs font-semibold text-muted-foreground">Correction</label>
-                      <p className="text-sm mt-1 p-3 bg-slate-50 rounded border">
-                        {selectedAssignedCaseLine.correctionText}
+                  {/* Rejection Reason (if any) */}
+                  {selectedAssignedCaseLine.rejectionReason && (
+                    <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-200">
+                      <label className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" />
+                        Rejection Reason
+                      </label>
+                      <p className="text-sm text-red-900 dark:text-red-100 mt-1">
+                        {selectedAssignedCaseLine.rejectionReason}
                       </p>
                     </div>
                   )}
@@ -4220,27 +4254,70 @@ const TechnicianDashboard = ({
               {selectedAssignedCaseLine.typeComponent && (
                 <Card className="border-l-4 border-l-purple-500">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Component Information</CardTitle>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Package className="h-4 w-4" />
+                      Component Information
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-xs font-semibold text-muted-foreground">Name</label>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Name</label>
                         <p className="text-sm font-medium mt-1">
                           {selectedAssignedCaseLine.typeComponent.name}
                         </p>
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-muted-foreground">SKU</label>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">SKU</label>
                         <p className="text-sm font-mono mt-1">
                           {selectedAssignedCaseLine.typeComponent.sku}
                         </p>
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-muted-foreground">Price</label>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Component ID</label>
+                        <p className="text-sm font-mono mt-1">
+                          {selectedAssignedCaseLine.typeComponent.typeComponentId}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Price</label>
                         <p className="text-sm font-semibold mt-1">
                           {selectedAssignedCaseLine.typeComponent.price?.toLocaleString()} VND
                         </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Guarantee Case Information */}
+              {selectedAssignedCaseLine.guaranteeCase && (
+                <Card className="border-l-4 border-l-amber-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Guarantee Case
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Case ID</label>
+                        <p className="text-sm font-mono mt-1">
+                          {selectedAssignedCaseLine.guaranteeCase.guaranteeCaseId}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Content</label>
+                        <p className="text-sm mt-1 p-2 bg-slate-50 rounded border">
+                          {selectedAssignedCaseLine.guaranteeCase.contentGuarantee}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
+                        <div className="mt-1">
+                          <Badge variant="outline">{selectedAssignedCaseLine.guaranteeCase.status}</Badge>
+                        </div>
                       </div>
                     </div>
                   </CardContent>
@@ -4251,46 +4328,128 @@ const TechnicianDashboard = ({
               {selectedAssignedCaseLine.guaranteeCase?.vehicleProcessingRecord && (
                 <Card className="border-l-4 border-l-orange-500">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Vehicle Information</CardTitle>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Car className="h-4 w-4" />
+                      Vehicle Information
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-xs font-semibold text-muted-foreground">VIN</label>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">VIN</label>
                         <p className="text-sm font-mono font-bold mt-1">
                           {selectedAssignedCaseLine.guaranteeCase.vehicleProcessingRecord.vin}
                         </p>
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-muted-foreground">Created By</label>
-                        <p className="text-sm mt-1">
-                          {selectedAssignedCaseLine.guaranteeCase.vehicleProcessingRecord.createdByStaff?.name || 'N/A'}
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Processing Record ID</label>
+                        <p className="text-sm font-mono mt-1">
+                          {selectedAssignedCaseLine.guaranteeCase.vehicleProcessingRecord.vehicleProcessingRecordId}
                         </p>
                       </div>
+                      {selectedAssignedCaseLine.guaranteeCase.vehicleProcessingRecord.createdByStaff && (
+                        <>
+                          <div>
+                            <label className="text-xs font-semibold text-muted-foreground uppercase">Created By</label>
+                            <p className="text-sm mt-1">
+                              {selectedAssignedCaseLine.guaranteeCase.vehicleProcessingRecord.createdByStaff.userId}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-semibold text-muted-foreground uppercase">Service Center ID</label>
+                            <p className="text-sm font-mono mt-1">
+                              {selectedAssignedCaseLine.guaranteeCase.vehicleProcessingRecord.createdByStaff.serviceCenterId}
+                            </p>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
               )}
 
-              {/* Evidence Images */}
-              {selectedAssignedCaseLine.evidenceImageUrls && selectedAssignedCaseLine.evidenceImageUrls.length > 0 && (
-                <Card className="border-l-4 border-l-green-500">
+              {/* Technicians Information */}
+              <Card className="border-l-4 border-l-indigo-500">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Assigned Technicians
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-4">
+                    {selectedAssignedCaseLine.diagnosticTechnician && (
+                      <div className="p-3 bg-blue-50 dark:bg-blue-900/10 rounded border">
+                        <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase">Diagnostic Technician</label>
+                        <p className="text-sm font-medium mt-1">
+                          {selectedAssignedCaseLine.diagnosticTechnician.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                          ID: {selectedAssignedCaseLine.diagnosticTechnician.userId}
+                        </p>
+                      </div>
+                    )}
+                    {selectedAssignedCaseLine.repairTechnician && (
+                      <div className="p-3 bg-purple-50 dark:bg-purple-900/10 rounded border">
+                        <label className="text-xs font-semibold text-purple-700 dark:text-purple-400 uppercase">Repair Technician</label>
+                        <p className="text-sm font-medium mt-1">
+                          {selectedAssignedCaseLine.repairTechnician.name}
+                        </p>
+                        <p className="text-xs text-muted-foreground font-mono mt-0.5">
+                          ID: {selectedAssignedCaseLine.repairTechnician.userId}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Component Reservations */}
+              {selectedAssignedCaseLine.reservations && selectedAssignedCaseLine.reservations.length > 0 && (
+                <Card className="border-l-4 border-l-teal-500">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Evidence Images</CardTitle>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Package className="h-4 w-4" />
+                      Component Reservations ({selectedAssignedCaseLine.reservations.length})
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-3 gap-4">
-                      {selectedAssignedCaseLine.evidenceImageUrls.map((url, index) => (
-                        <div key={index} className="relative group">
-                          <img
-                            src={url}
-                            alt={`Evidence ${index + 1}`}
-                            className="w-full h-32 object-cover rounded border cursor-pointer hover:opacity-75"
-                            onClick={() => {
-                              setPreviewImageUrl(url);
-                              setImagePreviewModalOpen(true);
-                            }}
-                          />
+                    <div className="space-y-3">
+                      {selectedAssignedCaseLine.reservations.map((reservation, index) => (
+                        <div key={reservation.reservationId} className="p-3 bg-slate-50 dark:bg-slate-900/30 rounded border">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-semibold text-muted-foreground">Reservation #{index + 1}</span>
+                            <Badge 
+                              variant={
+                                reservation.status === 'RESERVED' ? 'outline' :
+                                reservation.status === 'PICKED_UP' ? 'secondary' :
+                                reservation.status === 'INSTALLED' ? 'default' :
+                                'destructive'
+                              }
+                            >
+                              {reservation.status}
+                            </Badge>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <span className="text-xs text-muted-foreground">Reservation ID:</span>
+                              <p className="font-mono text-xs">{reservation.reservationId}</p>
+                            </div>
+                            {reservation.component && (
+                              <>
+                                <div>
+                                  <span className="text-xs text-muted-foreground">Serial Number:</span>
+                                  <p className="font-mono text-xs font-semibold">{reservation.component.serialNumber}</p>
+                                </div>
+                                <div>
+                                  <span className="text-xs text-muted-foreground">Component Status:</span>
+                                  <Badge variant="outline" className="text-xs mt-1">
+                                    {reservation.component.status}
+                                  </Badge>
+                                </div>
+                              </>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>

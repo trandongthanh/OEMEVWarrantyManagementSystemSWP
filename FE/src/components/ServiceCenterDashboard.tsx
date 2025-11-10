@@ -2634,15 +2634,6 @@ const ServiceCenterDashboard = () => {
                             <span className="font-mono font-medium text-sm">{selectedCaseForAssignment}</span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <AlertCircle className="h-4 w-4 text-amber-600" />
-                          <div className="flex-1">
-                            <span className="text-xs text-muted-foreground mr-2">Issue:</span>
-                            <span className="font-medium text-sm">
-                              {claim?.guaranteeCases?.[0]?.contentGuarantee || 'No issue description'}
-                            </span>
-                          </div>
-                        </div>
                       </div>
                     );
                   })()}
