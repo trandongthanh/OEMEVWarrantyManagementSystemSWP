@@ -76,7 +76,7 @@ const WarrantyDashboard: React.FC = () => {
   const [isLoadingTransfers, setIsLoadingTransfers] = useState<boolean>(false);
   const [page, setPage] = useState<number>(1);
   const [limit, setLimit] = useState<number>(10);
-  const [status, setStatus] = useState<string>('PENDING_APPROVAL');
+  const [status, setStatus] = useState<string>('');
   const [totalPages, setTotalPages] = useState<number>(1);
   const [selectedRequest, setSelectedRequest] = useState<StockTransferRequestDetail | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState<boolean>(false);
@@ -134,7 +134,20 @@ const WarrantyDashboard: React.FC = () => {
       
       // Handle API response structure: { status: "success", data: { stockTransferRequests: [...] } }
       if (data.status === 'success' && data.data?.stockTransferRequests) {
-        setStockTransferRequests(data.data.stockTransferRequests);
+        let requests = data.data.stockTransferRequests;
+        
+        // If status filter is empty (All Status), sort with PENDING_APPROVAL first
+        if (!status || status === '') {
+          requests = requests.sort((a: StockTransferRequest, b: StockTransferRequest) => {
+            // PENDING_APPROVAL should come first
+            if (a.status === 'PENDING_APPROVAL' && b.status !== 'PENDING_APPROVAL') return -1;
+            if (a.status !== 'PENDING_APPROVAL' && b.status === 'PENDING_APPROVAL') return 1;
+            // Otherwise maintain original order
+            return 0;
+          });
+        }
+        
+        setStockTransferRequests(requests);
         setTotalPages(data.data.totalPages || 1);
       } else {
         setStockTransferRequests([]);
@@ -443,13 +456,13 @@ const WarrantyDashboard: React.FC = () => {
                     onChange={(e) => setStatus(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
+                    <option value="">All Status</option>
                     <option value="PENDING_APPROVAL">Pending Approval</option>
                     <option value="APPROVED">Approved</option>
                     <option value="REJECTED">Rejected</option>
                     <option value="CANCELLED">Cancelled</option>
                     <option value="RECEIVED">Received</option>
                     <option value="COMPLETED">Completed</option>
-                    <option value="">All Status</option>
                   </select>
                 </div>
                 

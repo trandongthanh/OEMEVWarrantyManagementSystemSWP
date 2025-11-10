@@ -412,9 +412,9 @@ const SuperAdvisor = () => {
       
       if (!vin) {
         toast({
-          title: 'Error',
-          description: 'Please enter VIN to search vehicle',
-          variant: 'destructive'
+          title: 'Enter valid VIN!',
+          description: 'Please enter VIN number to search for vehicle information.',
+          variant: 'default'
         });
         return;
       }
@@ -495,9 +495,9 @@ const SuperAdvisor = () => {
         }
       } else {
         toast({
-          title: 'Vehicle Not Found',
-          description: 'No vehicle found with this VIN',
-          variant: 'destructive'
+          title: 'No vehicle found!',
+          description: 'Cannot find vehicle with this VIN. Please enter another VIN.',
+          variant: 'default'
         });
         setVehicleSearchResult(null);
       }
@@ -512,9 +512,9 @@ const SuperAdvisor = () => {
       });
       
       toast({
-        title: 'Error',
-        description: error.response?.data?.message || 'An error occurred while searching for vehicle',
-        variant: 'destructive'
+        title: 'No vehicle found!',
+        description: 'Cannot find vehicle with this VIN. Please enter another VIN.',
+        variant: 'default'
       });
       setVehicleSearchResult(null);
     }
@@ -525,9 +525,9 @@ const SuperAdvisor = () => {
     
     if (!phoneNumber) {
       toast({
-        title: 'Error',
-        description: 'Please enter phone number',
-        variant: 'destructive'
+        title: 'Enter valid phone!',
+        description: 'Please enter a 10-digit phone number to search for customer.',
+        variant: 'default'
       });
       return;
     }
@@ -602,7 +602,11 @@ const SuperAdvisor = () => {
             address: ''
           });
 
-
+          toast({
+            title: 'No customer found!',
+            description: 'No customer found with this phone number. You can enter new customer information.',
+            variant: 'default'
+          });
         }
         
         setHasSearchedCustomer(true);
@@ -619,6 +623,11 @@ const SuperAdvisor = () => {
           address: ''
         });
 
+        toast({
+          title: 'No customer found!',
+          description: 'No customer found with this phone number. You can enter new customer information.',
+          variant: 'default'
+        });
         
         setHasSearchedCustomer(true);
       }
@@ -636,11 +645,11 @@ const SuperAdvisor = () => {
         address: ''
       });
 
-      // Hiển thị lỗi được định nghĩa sẵn ở FE (không lấy message từ BE)
+      // Hiển thị thông báo không tìm thấy (màu trắng)
       toast({
-        title: 'Error',
-        description: 'No Customer Found! You may register a new customer.',
-        variant: 'destructive'
+        title: 'No customer found!',
+        description: 'No customer found with this phone number. You can enter new customer information.',
+        variant: 'default'
       });
     } finally {
       //reset trạng thái để người dùng có thể click button
