@@ -3,6 +3,7 @@ import axios from "axios";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
@@ -16,7 +17,9 @@ import {
   Calendar,
   User,
   Warehouse,
-  Truck
+  Truck,
+  Tag,
+  CheckCircle
 } from "lucide-react";
 
 const API_BASE_URL = 'http://localhost:3000/api/v1';
@@ -28,11 +31,11 @@ interface StockTransferRequest {
   approvedByUserId: string | null;
   rejectedByUserId: string | null;
   cancelledByUserId: string | null;
+  receivedByUserId: string | null;
   status: string;
   rejectionReason: string | null;
   cancellationReason: string | null;
   requestedAt: string;
-  receivedByUserId: string | null;
   approvedAt: string | null;
   shippedAt: string | null;
   receivedAt: string | null;
@@ -40,21 +43,54 @@ interface StockTransferRequest {
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  // Snake_case fields from API
+  requesting_warehouse_id?: string;
+  requested_by_user_id?: string;
+  approved_by_user_id?: string | null;
+  rejected_by_user_id?: string | null;
+  cancelled_by_user_id?: string | null;
+  received_by_user_id?: string | null;
+  // Nested objects
   requester?: {
     userId: string;
     name: string;
+    serviceCenterId?: string;
+    serviceCenter?: {
+      name: string;
+    };
+  };
+  approver?: {
+    userId: string;
+    name: string;
+    serviceCenterId?: string;
+    serviceCenter?: {
+      name: string;
+    };
+  } | null;
+  requestingWarehouse?: {
+    warehouseId: string;
+    name: string;
     serviceCenterId: string;
+    vehicleCompanyId: string;
+    address?: string;
   };
   items?: Array<{
     id: string;
+    requestId?: string;
+    typeComponentId?: string;
     quantityRequested: number;
-    quantityApproved: number | null;
-    typeComponentId: string;
-    caselineId?: string;
+    quantityApproved?: number | null;
+    caselineId?: string | null;
+    component?: {
+      name: string;
+      typeComponentId: string;
+      sku?: string;
+    };
     typeComponent?: {
       typeComponentId: string;
-      nameComponent: string;
-      description: string | null;
+      nameComponent?: string;
+      name?: string;
+      description?: string | null;
     };
   }>;
 }
@@ -71,6 +107,9 @@ const PartsCompanyDashboard: React.FC = () => {
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
   const [shippingRequestId, setShippingRequestId] = useState<string | null>(null);
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
+  const [selectedCaseLine, setSelectedCaseLine] = useState<any | null>(null);
+  const [isLoadingCaseLine, setIsLoadingCaseLine] = useState<boolean>(false);
+  const [showCaseLineModal, setShowCaseLineModal] = useState<boolean>(false);
 
   // Fetch all stock transfer requests
   const fetchStockTransferRequests = async () => {
@@ -132,6 +171,35 @@ const PartsCompanyDashboard: React.FC = () => {
     }
   };
 
+  // Fetch CaseLine detail by id
+  const fetchCaseLineDetail = async (caseLineId: string) => {
+    if (!caseLineId) return;
+    setIsLoadingCaseLine(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingCaseLine(false);
+      return;
+    }
+    try {
+      const response = await axios.get(`${API_BASE_URL}/case-lines/${caseLineId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const caseLine = response.data?.data?.caseLine || response.data?.data || null;
+      console.log('🩺 CaseLine detail:', caseLine);
+      setSelectedCaseLine(caseLine);
+      setShowCaseLineModal(true);
+    } catch (error) {
+      console.error('Failed to fetch case line detail:', error);
+      toast({
+        title: 'Lỗi khi tải Case Line',
+        description: 'Không thể tải chi tiết Case Line. Kiểm tra console để biết thêm thông tin.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingCaseLine(false);
+    }
+  };
+
   // Load requests on mount
   useEffect(() => {
     fetchStockTransferRequests();
@@ -172,11 +240,19 @@ const PartsCompanyDashboard: React.FC = () => {
         await fetchStockTransferRequestDetail(requestId);
       }
       
-      alert('Request shipped successfully!');
+      toast({
+        title: 'Đã gửi hàng',
+        description: 'Yêu cầu vận chuyển đã được đánh dấu là shipped.',
+        variant: 'default'
+      });
     } catch (error: any) {
       console.error('Failed to ship request:', error);
       const errorMessage = error.response?.data?.message || 'Failed to ship request';
-      alert(`Error: ${errorMessage}`);
+      toast({
+        title: 'Lỗi khi gửi hàng',
+        description: errorMessage,
+        variant: 'destructive'
+      });
     } finally {
       setShippingRequestId(null);
     }
@@ -196,7 +272,7 @@ const PartsCompanyDashboard: React.FC = () => {
       case 'SHIPPED':
         return 'default';
       case 'RECEIVED':
-        return 'success';
+        return 'default'; // Changed from 'success' to 'default'
       case 'REJECTED':
       case 'CANCELLED':
         return 'destructive';
@@ -313,6 +389,7 @@ const PartsCompanyDashboard: React.FC = () => {
                         <TableHead>Request ID</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Requester</TableHead>
+                        <TableHead>Warehouse</TableHead>
                         <TableHead>Requested At</TableHead>
                         <TableHead>Items</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
@@ -330,15 +407,43 @@ const PartsCompanyDashboard: React.FC = () => {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {request.requester?.name || 'N/A'}
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-medium">{request.requester?.name || 'N/A'}</p>
+                              {request.requester?.serviceCenter?.name && (
+                                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <Building2 className="h-3 w-3" />
+                                  {request.requester.serviceCenter.name}
+                                </p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-medium">
+                                {request.requestingWarehouse?.name || 'N/A'}
+                              </p>
+                              {request.requestingWarehouse?.address && (
+                                <p className="text-xs text-muted-foreground">
+                                  {request.requestingWarehouse.address}
+                                </p>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-sm">
                             {formatDate(request.requestedAt)}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">
-                              {request.items?.length || 0} items
-                            </Badge>
+                            <div className="space-y-1">
+                              <Badge variant="outline">
+                                {request.items?.length || 0} items
+                              </Badge>
+                              {request.items && request.items.length > 0 && request.items[0].component?.name && (
+                                <p className="text-xs text-muted-foreground line-clamp-1">
+                                  {request.items[0].component.name}
+                                  {request.items.length > 1 && ` +${request.items.length - 1} more`}
+                                </p>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -356,9 +461,9 @@ const PartsCompanyDashboard: React.FC = () => {
                                   size="sm"
                                   variant="default"
                                   onClick={() => handleShipRequest(request.id)}
-                                  disabled={shippingRequestId !== null}
+                                  disabled={shippingRequestId === request.id}
                                 >
-                                  {shippingRequestId !== null ? (
+                                  {shippingRequestId === request.id ? (
                                     <>
                                       <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                                       Shipping...
@@ -394,9 +499,9 @@ const PartsCompanyDashboard: React.FC = () => {
                     size="sm"
                     variant="default"
                     onClick={() => handleShipRequest(selectedStockRequest.id)}
-                    disabled={shippingRequestId !== null}
+                    disabled={shippingRequestId === selectedStockRequest.id}
                   >
-                    {shippingRequestId !== null ? (
+                    {shippingRequestId === selectedStockRequest.id ? (
                       <>
                         <Loader2 className="mr-1 h-4 w-4 animate-spin" />
                         Shipping...
@@ -430,7 +535,7 @@ const PartsCompanyDashboard: React.FC = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Request ID</label>
-                        <p className="font-mono text-sm">#{selectedStockRequest.id.substring(0, 8)}</p>
+                        <p className="font-mono text-sm">#{selectedStockRequest.id.substring(0, 8)}...</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Status</label>
@@ -445,41 +550,69 @@ const PartsCompanyDashboard: React.FC = () => {
                           <User className="mr-1 h-3 w-3" />
                           Requester
                         </label>
-                        <p className="text-sm">{selectedStockRequest.requester?.name || 'N/A'}</p>
+                        <p className="text-sm font-semibold">{selectedStockRequest.requester?.name || '---'}</p>
+                        {selectedStockRequest.requester?.serviceCenter?.name && (
+                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                            <Building2 className="h-3 w-3" />
+                            {selectedStockRequest.requester.serviceCenter.name}
+                          </p>
+                        )}
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground flex items-center">
                           <Warehouse className="mr-1 h-3 w-3" />
-                          Warehouse ID
+                          Requesting Warehouse
                         </label>
-                        <p className="font-mono text-xs">{selectedStockRequest.requestingWarehouseId}</p>
+                        <p className="text-sm font-semibold">{selectedStockRequest.requestingWarehouse?.name || '---'}</p>
+                        {selectedStockRequest.requestingWarehouse?.address && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {selectedStockRequest.requestingWarehouse.address}
+                          </p>
+                        )}
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground flex items-center">
                           <Calendar className="mr-1 h-3 w-3" />
                           Requested At
                         </label>
-                        <p className="text-sm">{formatDate(selectedStockRequest.requestedAt)}</p>
+                        <p className="text-sm">{selectedStockRequest.requestedAt ? formatDate(selectedStockRequest.requestedAt) : '---'}</p>
                       </div>
-                      {selectedStockRequest.approvedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Approved At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.approvedAt)}</p>
-                        </div>
-                      )}
-                      {selectedStockRequest.shippedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Shipped At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.shippedAt)}</p>
-                        </div>
-                      )}
-                      {selectedStockRequest.receivedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Received At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.receivedAt)}</p>
-                        </div>
-                      )}
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Approved At</label>
+                        <p className="text-sm">{selectedStockRequest.approvedAt ? formatDate(selectedStockRequest.approvedAt) : '---'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Shipped At</label>
+                        <p className="text-sm">{selectedStockRequest.shippedAt ? formatDate(selectedStockRequest.shippedAt) : '---'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Received At</label>
+                        <p className="text-sm">{selectedStockRequest.receivedAt ? formatDate(selectedStockRequest.receivedAt) : '---'}</p>
+                      </div>
                     </div>
+
+                    {/* Approver Information */}
+                    {selectedStockRequest.approver && (
+                      <div className="pt-3 border-t">
+                        <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-md border border-green-200">
+                          <label className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" />
+                            Approved By
+                          </label>
+                          <div className="mt-2 space-y-1">
+                            <p className="text-sm font-medium text-green-900 dark:text-green-100">
+                              {selectedStockRequest.approver.name}
+                            </p>
+                            {selectedStockRequest.approver.serviceCenter?.name && (
+                              <p className="text-xs text-green-700 dark:text-green-300 flex items-center gap-1">
+                                <Building2 className="h-3 w-3" />
+                                {selectedStockRequest.approver.serviceCenter.name}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {selectedStockRequest.rejectionReason && (
                       <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
@@ -507,47 +640,90 @@ const PartsCompanyDashboard: React.FC = () => {
                   </CardHeader>
                   <CardContent>
                     {selectedStockRequest.items && selectedStockRequest.items.length > 0 ? (
-                      <div className="rounded-md border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>#</TableHead>
-                              <TableHead>Component ID</TableHead>
-                              <TableHead>Component Name</TableHead>
-                              <TableHead>Description</TableHead>
-                              <TableHead className="text-right">Qty Requested</TableHead>
-                              <TableHead className="text-right">Qty Approved</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {selectedStockRequest.items.map((item, index) => (
-                              <TableRow key={item.id || index}>
-                                <TableCell className="font-medium">
-                                  {index + 1}
-                                </TableCell>
-                                <TableCell className="font-mono text-xs">
-                                  {item.typeComponentId ? `#${item.typeComponentId.substring(0, 8)}` : 'N/A'}
-                                </TableCell>
-                                <TableCell className="font-medium">
-                                  {item.typeComponent?.nameComponent || 'N/A'}
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground max-w-xs">
-                                  {item.typeComponent?.description || '-'}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Badge variant="outline">{item.quantityRequested}</Badge>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {item.quantityApproved !== null && item.quantityApproved !== undefined ? (
-                                    <Badge variant="default">{item.quantityApproved}</Badge>
-                                  ) : (
-                                    <span className="text-muted-foreground text-sm">Pending</span>
+                      <div className="space-y-3">
+                        {selectedStockRequest.items.map((item, index) => {
+                          // Get component info with priority: item.component (new API) > typeComponent (old format)
+                          let componentName = 'Unknown Component';
+                          let componentDescription = '';
+                          
+                          // Priority 1: New API response with component object
+                          if (item.component?.name) {
+                            componentName = item.component.name;
+                          }
+                          // Priority 2: Fallback to old typeComponent format
+                          else if (item.typeComponent?.nameComponent || item.typeComponent?.name) {
+                            componentName = item.typeComponent.nameComponent || item.typeComponent.name || 'Unknown';
+                            componentDescription = item.typeComponent.description || '';
+                          }
+                          
+                          return (
+                          <div key={item.id || index} className="p-4 bg-white dark:bg-gray-800 rounded-lg border shadow-sm">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div className="space-y-2">
+                                <div>
+                                  <label className="text-xs font-semibold text-muted-foreground uppercase">Component Name</label>
+                                  <p className="font-medium text-base mt-1">
+                                    {componentName}
+                                  </p>
+                                  {componentDescription && (
+                                    <p className="text-xs text-muted-foreground mt-1">{componentDescription}</p>
                                   )}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                                  <div className="flex flex-wrap gap-2 mt-2">
+                                    {item.component?.sku && (
+                                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded border border-indigo-200">
+                                        <Tag className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                                        <span className="font-mono text-xs text-indigo-700 dark:text-indigo-300">
+                                          {item.component.sku}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {item.component?.typeComponentId && (
+                                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200">
+                                        <span className="font-mono text-xs text-muted-foreground">
+                                          Type ID: {item.component.typeComponentId}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                {item.caselineId && (
+                                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200">
+                                    <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase flex items-center justify-between">
+                                      <span>Case Line ID</span>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => fetchCaseLineDetail(item.caselineId!)}
+                                        disabled={isLoadingCaseLine}
+                                        className="h-6 px-2"
+                                      >
+                                        <Eye className="h-3 w-3" />
+                                      </Button>
+                                    </label>
+                                    <p className="font-mono text-xs text-blue-900 dark:text-blue-100 mt-1">
+                                      {item.caselineId}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-muted-foreground uppercase">Quantity Requested</label>
+                                <p className="font-semibold text-lg mt-1 text-blue-600 dark:text-blue-400">
+                                  {item.quantityRequested}
+                                </p>
+                              </div>
+                              {item.quantityApproved !== null && item.quantityApproved !== undefined && (
+                                <div>
+                                  <label className="text-xs font-semibold text-muted-foreground uppercase">Quantity Approved</label>
+                                  <p className="font-semibold text-lg mt-1 text-green-600 dark:text-green-400">
+                                    {item.quantityApproved}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          );
+                        })}
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground text-center py-4">No items found</p>
@@ -557,6 +733,77 @@ const PartsCompanyDashboard: React.FC = () => {
               </div>
             ) : (
               <p className="text-center text-muted-foreground py-8">No details available</p>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* CaseLine Detail Modal */}
+        <Dialog open={showCaseLineModal} onOpenChange={setShowCaseLineModal}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Case Line Details</DialogTitle>
+              <DialogDescription>Full case line information returned from the API</DialogDescription>
+            </DialogHeader>
+
+            {isLoadingCaseLine ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : selectedCaseLine ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Case Line ID</label>
+                    <p className="font-mono text-sm">{selectedCaseLine.caseLineId || selectedCaseLine.id || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Guarantee Case ID</label>
+                    <p className="font-mono text-sm">{selectedCaseLine.guaranteeCaseId || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Diagnosis Text</label>
+                    <p className="text-sm">{selectedCaseLine.diagnosisText || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Correction Text</label>
+                    <p className="text-sm">{selectedCaseLine.correctionText || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Component ID</label>
+                    <p className="font-mono text-sm">{selectedCaseLine.componentId || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Quantity</label>
+                    <p className="text-sm">{(selectedCaseLine.quantity != null) ? selectedCaseLine.quantity : '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Quantity Reserved</label>
+                    <p className="text-sm">{(selectedCaseLine.quantityReserved != null) ? selectedCaseLine.quantityReserved : '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Warranty Status</label>
+                    <p className="text-sm">{selectedCaseLine.warrantyStatus || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Status</label>
+                    <p className="text-sm">{selectedCaseLine.status || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Tech ID</label>
+                    <p className="font-mono text-sm">{selectedCaseLine.techId || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Created At</label>
+                    <p className="text-sm">{selectedCaseLine.createdAt ? formatDate(selectedCaseLine.createdAt) : '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Updated At</label>
+                    <p className="text-sm">{selectedCaseLine.updatedAt ? formatDate(selectedCaseLine.updatedAt) : '---'}</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-center text-muted-foreground py-6">No case line details available</p>
             )}
           </DialogContent>
         </Dialog>

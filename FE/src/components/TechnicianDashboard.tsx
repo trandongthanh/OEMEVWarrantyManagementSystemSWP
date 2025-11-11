@@ -195,6 +195,11 @@ interface ComponentReservation {
     status: string;
     warehouseId?: string | null;
     typeComponentId: string;
+    warehouse?: {
+      warehouseId: string;
+      name: string;
+      address: string;
+    };
   };
   pickedUpByTech?: {
     userId: string;
@@ -271,6 +276,54 @@ interface CaseLine {
   updatedAt?: string;
   evidenceImageUrls?: string[];
   guaranteeCaseId?: string; // Add guarantee case ID for proper display
+  
+  // New fields from API response
+  guaranteeCase?: {
+    guaranteeCaseId: string;
+    contentGuarantee: string;
+    status: string;
+    vehicleProcessingRecord?: {
+      vehicleProcessingRecordId: string;
+      vin: string;
+      createdByStaff?: {
+        userId: string;
+        serviceCenterId: string;
+        serviceCenter?: {
+          serviceCenterId: string;
+          vehicleCompanyId: string;
+        };
+      };
+    };
+  };
+  typeComponent?: {
+    typeComponentId: string;
+    sku: string;
+    name: string;
+    price: number;
+  };
+  diagnosticTechnician?: {
+    userId: string;
+    name: string;
+  };
+  repairTechnician?: {
+    userId: string;
+    name: string;
+  };
+  reservations?: Array<{
+    reservationId: string;
+    caseLineId: string;
+    status: string;
+    component: {
+      componentId: string;
+      serialNumber: string;
+      status: string;
+      warehouse: {
+        warehouseId: string;
+        name: string;
+        address: string;
+      };
+    };
+  }>;
 }
 
 interface WarrantyCase {
@@ -1596,22 +1649,21 @@ const TechnicianDashboard = ({
 
       // Map backend CaseLine to frontend CaseLine format
       const enriched: CaseLine = {
-        id: detailedCaseLine.caseLineId,
+        id: detailedCaseLine.caseLineId || detailedCaseLine.caseLineId,
         caseId: detailedCaseLine.guaranteeCaseId,
-        guaranteeCaseId: detailedCaseLine.guaranteeCaseId, // Store the guarantee case ID
+        guaranteeCaseId: detailedCaseLine.guaranteeCaseId,
         damageLevel: 'medium',
         repairPossibility: 'repairable',
         warrantyDecision: detailedCaseLine.warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
-        technicianNotes: detailedCaseLine.correctionText, // Backend only returns correctionText now
+        technicianNotes: detailedCaseLine.correctionText,
         photos: detailedCaseLine.evidenceImageUrls || [],
         evidenceImageUrls: detailedCaseLine.evidenceImageUrls || [],
         createdDate: formatSafeDate(detailedCaseLine.createdAt),
-  // Preserve backend status directly (do not coerce non-pending statuses to 'approved')
-  status: detailedCaseLine.status ?? 'submitted',
-        diagnosisText: '', // Backend does not return diagnosisText
+        status: detailedCaseLine.status ?? 'submitted',
+        diagnosisText: '',
         correctionText: detailedCaseLine.correctionText,
         componentId: detailedCaseLine.componentId,
-  componentName: detailedCaseLine.componentName ?? undefined,
+        componentName: detailedCaseLine.componentName ?? undefined,
         componentSku: detailedCaseLine.componentSku,
         componentPrice: detailedCaseLine.componentPrice,
         quantity: detailedCaseLine.quantity,
@@ -1619,7 +1671,14 @@ const TechnicianDashboard = ({
         diagnosticTechId: detailedCaseLine.techId,
         diagnosticTechnicianName: detailedCaseLine.diagnosticTechnicianName,
         repairTechnicianName: detailedCaseLine.repairTechnicianName,
-        updatedAt: detailedCaseLine.updatedAt
+        rejectionReason: detailedCaseLine.rejectionReason,
+        updatedAt: detailedCaseLine.updatedAt,
+        // New nested fields - cast to any to avoid type errors since the API returns these
+        guaranteeCase: (detailedCaseLine as any).guaranteeCase,
+        typeComponent: (detailedCaseLine as any).typeComponent,
+        diagnosticTechnician: (detailedCaseLine as any).diagnosticTechnician,
+        repairTechnician: (detailedCaseLine as any).repairTechnician,
+        reservations: (detailedCaseLine as any).reservations
       };
       setSelectedCaseLine(enriched);
     } catch (err) {
@@ -2016,16 +2075,10 @@ const TechnicianDashboard = ({
             <Card>
               <CardHeader>
                 <CardTitle>Work Schedules</CardTitle>
-                <CardDescription>
-                  View your assigned work schedules and availability. Use the Work Schedules API to fetch real data.
-                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-muted-foreground">
-                    This tab shows your personal work schedules. Data is fetched from
-                    <code className="ml-2 font-mono">/work-schedules/my-schedule</code>.
-                  </div>
+                  <div className="text-sm text-muted-foreground">{/* Description removed per request */}</div>
                   <div className="flex items-center gap-2">
                     <Button size="sm" variant="outline" onClick={() => fetchMySchedules()}>
                       <RefreshCw className="mr-2 h-4 w-4" />
@@ -2219,7 +2272,7 @@ const TechnicianDashboard = ({
 
                 {selectedCaseLine?.updatedAt !== undefined && (
                   <div>
-                    <div className="text-sm text-gray-600">Updat At</div>
+                    <div className="text-sm text-gray-600">Update At</div>
                     <div className="bg-white px-3 py-2 rounded border mt-1 text-sm text-gray-800">{selectedCaseLine?.updatedAt ?? '—'}</div>
                   </div>
                 )}
@@ -2258,7 +2311,7 @@ const TechnicianDashboard = ({
                   <div className="text-lg font-semibold text-gray-900">{selectedWarrantyCase?.createdDate}</div>
                 </div>
                 <div className="bg-white p-4 rounded-lg border text-center">
-                  <div className="text-sm font-medium text-gray-600 mb-1">Updat At</div>
+                  <div className="text-sm font-medium text-gray-600 mb-1">Update At</div>
                   <div className="text-sm text-gray-800">{selectedWarrantyCase?.updatedDate || 'N/A'}</div>
                 </div>
               </div>
@@ -3025,14 +3078,14 @@ const TechnicianDashboard = ({
           <div className="space-y-6 pt-2">
             {/* Case Line Information - single row split into two sides */}
             <div className="grid grid-cols-1 gap-6">
-              {/* Left side: Basic Information */}
+              {/* Left side: Diagnosis Information */}
               <div className="space-y-4">
                 <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-xl border-2 border-blue-200 shadow-sm">
                   <div className="flex items-center gap-3 mb-5">
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-md">
                       <FileText className="h-5 w-5 text-white" />
                     </div>
-                    <h4 className="font-bold text-lg text-blue-900">Basic Information</h4>
+                    <h4 className="font-bold text-lg text-blue-900">Diagnosis Information</h4>
                   </div>
                   <div className="space-y-4">
                     <div className="space-y-2">
@@ -3104,12 +3157,7 @@ const TechnicianDashboard = ({
                         </div>
                       </div>
                     )}
-                    <div className="space-y-2">
-                      <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component ID</span>
-                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
-                        <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine?.componentId || 'N/A'}</span>
-                      </div>
-                    </div>
+                    {/* Component ID removed from Issue Diagnosis Details per UX request */}
                     {selectedCaseLine?.quantity !== undefined && (
                       <div className="space-y-2">
                         <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Quantity</span>
@@ -3360,13 +3408,13 @@ const TechnicianDashboard = ({
           
           {selectedRecord && (
             <div className="space-y-6 mt-4">
-              {/* Basic Information Section */}
+              {/* Diagnosis Information Section */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
                 <div className="flex items-center gap-3 mb-5">
                   <div className="p-2 bg-blue-600 rounded-lg">
                     <Car className="h-5 w-5 text-white" />
                   </div>
-                  <h3 className="text-lg font-bold text-slate-800">Basic Information</h3>
+                  <h3 className="text-lg font-bold text-slate-800">Diagnosis Information</h3>
                 </div>
                 
                 <div className="grid grid-cols-3 gap-6">
@@ -3378,7 +3426,6 @@ const TechnicianDashboard = ({
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-slate-600">Vehicle Model</p>
                     <p className="text-sm font-bold text-slate-900">{selectedRecord.vehicle.model.name}</p>
-                    <p className="text-xs text-slate-500">Model ID: {selectedRecord.vehicle.model.vehicleModelId}</p>
                   </div>
                   
                   <div className="space-y-1">
@@ -3391,9 +3438,6 @@ const TechnicianDashboard = ({
                     <p className="text-sm font-bold text-slate-900">
                       {selectedRecord.guaranteeCases?.[0]?.taskAssignments?.[0]?.assigner?.name || 'N/A'}
                     </p>
-                    <p className="text-xs text-slate-500">
-                      ID: {selectedRecord.guaranteeCases?.[0]?.taskAssignments?.[0]?.assigner?.userId || 'N/A'}
-                    </p>
                   </div>
                   
                   <div className="space-y-1">
@@ -3404,7 +3448,6 @@ const TechnicianDashboard = ({
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-slate-600">Created by Staff</p>
                     <p className="text-sm font-bold text-slate-900">{selectedRecord.createdByStaff.name}</p>
-                    <p className="text-xs text-slate-500">Staff ID: {selectedRecord.createdByStaff.userId}</p>
                   </div>
                 </div>
               </div>
@@ -3413,7 +3456,7 @@ const TechnicianDashboard = ({
               <div className="bg-white border border-slate-300 rounded-xl p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <Users className="h-5 w-5 text-blue-600" />
-                  <h3 className="text-lg font-bold text-slate-800">Assigned Technicians</h3>
+                  <h3 className="text-lg font-bold text-slate-800">Diagnosis Technician</h3>
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
@@ -3422,11 +3465,50 @@ const TechnicianDashboard = ({
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{selectedRecord.mainTechnician?.name}</p>
-                      <p className="text-xs text-slate-500">Main Technician • ID: {selectedRecord.mainTechnician?.userId}</p>
+                      <p className="text-xs text-slate-500">Main Technician</p>
                     </div>
                   </div>
                 </div>
               </div>
+
+              {/* Evidence Images Section */}
+              {selectedRecord.evidenceImageUrls && selectedRecord.evidenceImageUrls.length > 0 && (
+                <div className="bg-white border border-slate-300 rounded-xl p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Eye className="h-5 w-5 text-purple-600" />
+                    <h3 className="text-lg font-bold text-slate-800">Evidence Images</h3>
+                    <span className="text-sm text-slate-500">({selectedRecord.evidenceImageUrls.length})</span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {selectedRecord.evidenceImageUrls.map((url, idx) => (
+                      <div
+                        key={idx}
+                        className="group relative aspect-square rounded-lg overflow-hidden border-2 border-slate-200 hover:border-purple-500 transition-all shadow-sm hover:shadow-lg cursor-pointer"
+                        onClick={() => {
+                          setPreviewImageUrl(url);
+                          setImagePreviewModalOpen(true);
+                        }}
+                      >
+                        <img
+                          src={url}
+                          alt={`Evidence ${idx + 1}`}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23999"%3ENo Image%3C/text%3E%3C/svg%3E';
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <Eye className="h-6 w-6 text-white" />
+                        </div>
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+                          <p className="text-xs text-white font-medium">Image {idx + 1}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Guarantee Cases with nested Case Lines */}
               {selectedRecord?.guaranteeCases && selectedRecord.guaranteeCases.length > 0 && (
@@ -3456,11 +3538,9 @@ const TechnicianDashboard = ({
                                 </Badge>
                               </div>
                               <p className="text-sm text-slate-600">
-                                <span className="font-medium">Content:</span> {guaranteeCase.contentGuarantee}
+                                <span className="font-bold">Content:</span> {guaranteeCase.contentGuarantee}
                               </p>
-                              <p className="text-xs text-slate-400 mt-1 font-mono">
-                                ID: {guaranteeCase.guaranteeCaseId}
-                              </p>
+                              {/* Guarantee case id hidden from view per request */}
                             </div>
                           </div>
                         </div>
@@ -3475,9 +3555,7 @@ const TechnicianDashboard = ({
                                     <span className="flex items-center justify-center w-6 h-6 bg-blue-600 text-white text-xs font-bold rounded-full">
                                       {clIndex + 1}
                                     </span>
-                                    <span className="text-xs font-mono text-slate-500">
-                                      {caseLine.caseLineId}
-                                    </span>
+                                    {/* caseLine ID hidden from view per UX request */}
                                   </div>
                                   <Badge 
                                     variant={
@@ -3610,9 +3688,16 @@ const TechnicianDashboard = ({
             <Button variant="outline" onClick={() => setViewCaseModalOpen(false)}>Close</Button>
 
             {selectedRecord && (selectedRecord.status !== 'COMPLETED') && (() => {
-              // Check if there are any case lines created for this record's guarantee cases
-              const guaranteeIds = selectedRecord.guaranteeCases?.map(gc => gc.guaranteeCaseId) || [];
-              const hasCaseLines = createdCaseLines.some(cl => guaranteeIds.includes(cl.guaranteeCaseId));
+              // Check if ALL guarantee cases have at least one case line
+              const guaranteeCases = selectedRecord.guaranteeCases || [];
+              const allGuaranteeCasesHaveCaseLines = guaranteeCases.length > 0 && guaranteeCases.every(gc => 
+                createdCaseLines.some(cl => cl.guaranteeCaseId === gc.guaranteeCaseId)
+              );
+              
+              // Count how many guarantee cases are missing case lines
+              const guaranteeCasesWithoutCaseLines = guaranteeCases.filter(gc =>
+                !createdCaseLines.some(cl => cl.guaranteeCaseId === gc.guaranteeCaseId)
+              );
               
               return (
                 <Button
@@ -3625,10 +3710,15 @@ const TechnicianDashboard = ({
                       toast({ title: 'Missing Record ID', description: 'Cannot complete record: ID not found', variant: 'destructive' });
                       return;
                     }
-                    if (!hasCaseLines) {
+                    if (!allGuaranteeCasesHaveCaseLines) {
+                      const missingCount = guaranteeCasesWithoutCaseLines.length;
+                      const missingCases = guaranteeCasesWithoutCaseLines.map((gc, idx) => 
+                        `Guarantee Case #${guaranteeCases.indexOf(gc) + 1}: ${gc.contentGuarantee.substring(0, 30)}...`
+                      ).join('\n');
+                      
                       toast({ 
                         title: 'Cannot Complete Record', 
-                        description: 'Please create at least one case line before completing this record.', 
+                        description: `All guarantee cases must have at least one case line. Missing case lines for ${missingCount} guarantee case(s):\n\n${missingCases}`, 
                         variant: 'destructive' 
                       });
                       return;
@@ -3639,8 +3729,8 @@ const TechnicianDashboard = ({
                       // error already handled in helper
                     }
                   }}
-                  disabled={isCompleting || !hasCaseLines}
-                  title={!hasCaseLines ? 'Create at least one case line before completing' : ''}
+                  disabled={isCompleting || !allGuaranteeCasesHaveCaseLines}
+                  title={!allGuaranteeCasesHaveCaseLines ? `All guarantee cases must have at least one case line (${guaranteeCasesWithoutCaseLines.length} missing)` : ''}
                 >
                   {isCompleting ? 'Completing...' : 'Complete Diagnosis'}
                 </Button>
@@ -4373,7 +4463,7 @@ const TechnicianDashboard = ({
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Users className="h-4 w-4" />
-                    Assigned Technicians
+                    Diagnosis Technician
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -4447,6 +4537,15 @@ const TechnicianDashboard = ({
                                     {reservation.component.status}
                                   </Badge>
                                 </div>
+                                {reservation.component.warehouse && (
+                                  <>
+                                    <div className="col-span-2">
+                                      <span className="text-xs text-muted-foreground">Warehouse:</span>
+                                      <p className="text-xs font-medium">{reservation.component.warehouse.name}</p>
+                                      <p className="text-xs text-muted-foreground">{reservation.component.warehouse.address}</p>
+                                    </div>
+                                  </>
+                                )}
                               </>
                             )}
                           </div>

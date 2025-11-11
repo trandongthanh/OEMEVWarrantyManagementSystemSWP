@@ -42,6 +42,27 @@ class TaskAssignmentRepository {
     return affectedRows;
   };
 
+  completeDiagnosisTasksByGuaranteeCaseIds = async (
+    { guaranteeCaseIds },
+    transaction
+  ) => {
+    const whereClause = {
+      guaranteeCaseId: guaranteeCaseIds,
+      taskType: "DIAGNOSIS",
+      isActive: true,
+    };
+
+    const [affectedRows] = await TaskAssignment.update(
+      { isActive: false, completedAt: new Date() },
+      {
+        where: whereClause,
+        transaction,
+      }
+    );
+
+    return affectedRows;
+  };
+
   bulkCreateTaskAssignments = async (
     { guaranteeCaseIds, technicianId, assignedBy },
     transaction

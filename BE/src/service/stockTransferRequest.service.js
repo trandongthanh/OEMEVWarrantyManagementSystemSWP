@@ -158,7 +158,14 @@ class StockTransferRequestService {
     approvedByUserId,
   }) => {
     return db.sequelize.transaction(async (transaction) => {
-      const request = await this.#getAndValidatePendingRequest(id, transaction);
+      const request = await this.#getAndValidatePendingRequest(
+        {
+          requestId: id,
+          roleName,
+          companyId,
+        },
+        transaction
+      );
 
       const requestItems = await this.#getAndValidateRequestItems(
         request.id,
@@ -173,8 +180,9 @@ class StockTransferRequestService {
           transaction
         );
 
+      let createdReservations = [];
       if (stockReservationsToCreate.length > 0) {
-        await this.#stockReservationRepository.bulkCreate(
+        createdReservations = await this.#stockReservationRepository.bulkCreate(
           { reservations: stockReservationsToCreate },
           transaction
         );
@@ -195,7 +203,7 @@ class StockTransferRequestService {
       );
 
       return {
-        stockReservations: stockReservationsToCreate,
+        stockReservations: createdReservations,
         updatedStockTransferRequest: updatedRequest,
       };
     });
@@ -203,13 +211,20 @@ class StockTransferRequestService {
 
   shipStockTransferRequest = async ({
     requestId,
+    roleName,
+    companyId,
     serviceCenterId,
     estimatedDeliveryDate,
   }) => {
     const { updatedRequest, allComponentIds } = await db.sequelize.transaction(
       async (transaction) => {
         const request = await this.#getAndValidateApprovedRequest(
-          requestId,
+          {
+            requestId,
+            roleName,
+            companyId,
+            serviceCenterId,
+          },
           transaction
         );
 
@@ -588,17 +603,25 @@ class StockTransferRequestService {
     return rawResult;
   };
 
-  #getAndValidatePendingRequest = async (id, transaction) => {
+  #getAndValidatePendingRequest = async (
+    { requestId, roleName, companyId, serviceCenterId },
+    transaction
+  ) => {
     const request =
       await this.#stockTransferRequestRepository.getStockTransferRequestById(
-        { id },
+        {
+          id: requestId,
+          roleName,
+          companyId,
+          serviceCenterId,
+        },
         transaction,
         Transaction.LOCK.UPDATE
       );
 
     if (!request) {
       throw new NotFoundError(
-        `Stock transfer request with ID ${id} not found.`
+        `Stock transfer request with ID ${requestId} not found.`
       );
     }
 
@@ -745,10 +768,18 @@ class StockTransferRequestService {
     return updatedStockTransferRequest;
   };
 
-  #getAndValidateApprovedRequest = async (requestId, transaction) => {
+  #getAndValidateApprovedRequest = async (
+    { requestId, roleName, companyId, serviceCenterId },
+    transaction
+  ) => {
     const request =
       await this.#stockTransferRequestRepository.getStockTransferRequestById(
-        { id: requestId },
+        {
+          id: requestId,
+          roleName,
+          companyId,
+          serviceCenterId,
+        },
         transaction,
         Transaction.LOCK.UPDATE
       );
@@ -776,7 +807,9 @@ class StockTransferRequestService {
     );
 
     if (!reservations || reservations.length === 0) {
-      throw new Error(`No stock reservations found for request ${requestId}`);
+      throw new ConflictError(
+        `No stock reservations found for request ${requestId}`
+      );
     }
 
     return reservations;
@@ -801,18 +834,41 @@ class StockTransferRequestService {
       transaction,
       Transaction.LOCK.UPDATE
     );
+
     const stocksMap = new Map(stocks.map((s) => [s.stockId, s]));
 
     const allComponentIds = [];
     for (const item of requestItems) {
-      const reservationsForItem =
-        reservationsByType[item.typeComponentId] || [];
+      const reservationsQueue = reservationsByType[item.typeComponentId];
+
+      if (!reservationsQueue || reservationsQueue.length === 0) {
+        throw new ConflictError(
+          `No reservations found for type component ${item.typeComponentId}`
+        );
+      }
+
+      let remaining = item.quantityRequested;
+      const reservationsForItem = [];
+
+      while (remaining > 0 && reservationsQueue.length > 0) {
+        const nextReservation = reservationsQueue.shift();
+        reservationsForItem.push(nextReservation);
+        remaining -= nextReservation.quantityReserved;
+      }
+
+      if (remaining > 0) {
+        throw new ConflictError(
+          `Reserved quantity for type component ${item.typeComponentId} is insufficient for shipment`
+        );
+      }
+
       const componentIds = await this.#collectComponentsFromReservations({
         reservations: reservationsForItem,
         item,
         stocksMap,
         transaction,
       });
+
       allComponentIds.push(...componentIds);
     }
 

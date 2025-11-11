@@ -34,7 +34,8 @@ import {
   BoxIcon as Box,
   Edit,
   Trash,
-  Eye
+  Eye,
+  Building2
 } from "lucide-react";
 
 interface Technician {
@@ -185,21 +186,53 @@ interface StockTransferRequest {
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  // Snake_case fields from API
+  requesting_warehouse_id?: string;
+  requested_by_user_id?: string;
+  approved_by_user_id?: string | null;
+  rejected_by_user_id?: string | null;
+  cancelled_by_user_id?: string | null;
+  received_by_user_id?: string | null;
+  // Nested objects
   requester?: {
     userId: string;
     name: string;
     serviceCenterId: string;
+    serviceCenter?: {
+      name: string;
+    };
+  };
+  approver?: {
+    userId: string;
+    name: string;
+    serviceCenterId?: string;
+    serviceCenter?: {
+      name: string;
+    };
+  } | null;
+  requestingWarehouse?: {
+    warehouseId: string;
+    name: string;
+    serviceCenterId: string;
+    vehicleCompanyId: string;
+    address?: string;
   };
   items?: Array<{
     id: string;
     quantityRequested: number;
-    quantityApproved: number | null;
-    typeComponentId: string;
-    caselineId?: string; // Add caselineId from backend response
+    quantityApproved?: number | null;
+    typeComponentId?: string;
+    caselineId?: string;
+    component?: {
+      name: string;
+      typeComponentId: string;
+      sku?: string;
+    };
     typeComponent?: {
       typeComponentId: string;
-      nameComponent: string;
-      description: string | null;
+      nameComponent?: string;
+      name?: string;
+      description?: string | null;
     };
   }>;
   caseLines?: Array<{
@@ -443,11 +476,22 @@ const ServiceCenterDashboard = () => {
   const [showClaimDetailModal, setShowClaimDetailModal] = useState(false);
   const [selectedClaimForDetail, setSelectedClaimForDetail] = useState<WarrantyClaim | null>(null);
 
+  // Out of Stock Modal States
+  const [showOutOfStockModal, setShowOutOfStockModal] = useState(false);
+  const [outOfStockInfo, setOutOfStockInfo] = useState<{
+    errorMessage: string;
+    guaranteeCaseId: string;
+    caseLineId: string;
+    typeComponentId: string;
+    quantity: number;
+  } | null>(null);
+
   // Track case lines with out of stock status
   // Technician Records Modal States
   const [showTechnicianRecordsModal, setShowTechnicianRecordsModal] = useState(false);
   const [selectedTechnicianForRecords, setSelectedTechnicianForRecords] = useState<Technician | null>(null);
   const [technicianRecords, setTechnicianRecords] = useState<WarrantyClaim[]>([]);
+  const [technicianCaseLines, setTechnicianCaseLines] = useState<any[]>([]);
 
   // Warehouse States
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
@@ -480,7 +524,7 @@ const ServiceCenterDashboard = () => {
   // Case line detail modal states
   const [showCaseLineDetailModal, setShowCaseLineDetailModal] = useState(false);
   const [selectedCaseLineDetail, setSelectedCaseLineDetail] = useState<DetailedCaseLine | null>(null);
-  const [isLoadingCaseLineDetail, setIsLoadingCaseLineDetail] = useState(false);
+  const [loadingCaseLineIds, setLoadingCaseLineIds] = useState<Set<string>>(new Set());
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [showImageModal, setShowImageModal] = useState(false);
 
@@ -559,7 +603,11 @@ const ServiceCenterDashboard = () => {
   // Fetch workload config from backend
   const fetchWorkloadConfig = async () => {
     if (!serviceCenterId) {
-      alert('Service Center ID not found in token');
+      toast({
+        title: 'Error',
+        description: 'Service Center ID not found in token',
+        variant: 'destructive'
+      });
       return;
     }
     setIsLoadingWorkloadConfig(true);
@@ -580,7 +628,11 @@ const ServiceCenterDashboard = () => {
       setShowWorkloadConfigModal(true);
     } catch (error) {
       console.error('Failed to fetch workload config:', error);
-      alert('Failed to load workload configuration');
+      toast({
+        title: 'Error',
+        description: 'Failed to load workload configuration',
+        variant: 'destructive'
+      });
     } finally {
       setIsLoadingWorkloadConfig(false);
     }
@@ -589,7 +641,11 @@ const ServiceCenterDashboard = () => {
   // Save workload config to backend
   const saveWorkloadConfig = async () => {
     if (!serviceCenterId) {
-      alert('Service Center ID not found');
+      toast({
+        title: 'Error',
+        description: 'Service Center ID not found',
+        variant: 'destructive'
+      });
       return;
     }
     
@@ -626,13 +682,20 @@ const ServiceCenterDashboard = () => {
       setMaxWorkload(updatedMaxTasks);
       setEditingMaxWorkload(updatedMaxTasks);
       console.log('✅ Saved workload config:', updatedMaxTasks);
-      alert(`Max workload updated successfully to ${updatedMaxTasks} tasks per technician`);
+      toast({
+        title: 'Success',
+        description: `Max workload updated successfully to ${updatedMaxTasks} tasks per technician`
+      });
     } catch (error: any) {
       console.error('❌ Failed to save workload config:', error);
       console.error('❌ Error response:', error.response);
       console.error('❌ Error data:', error.response?.data);
       const errorMessage = error.response?.data?.message || 'Failed to save workload configuration';
-      alert(`Error: ${errorMessage}`);
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive'
+      });
     } finally {
       setIsSavingWorkloadConfig(false);
     }
@@ -766,7 +829,11 @@ const ServiceCenterDashboard = () => {
     setIsRegistering(true);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
-      alert('Authentication required. Please login again.');
+      toast({
+        title: 'Authentication Required',
+        description: 'Please login again.',
+        variant: 'destructive'
+      });
       setIsRegistering(false);
       return;
     }
@@ -1083,11 +1150,16 @@ const ServiceCenterDashboard = () => {
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
       console.error('❌ No auth token available');
-      alert('Authentication token not found. Please log in again.');
+      toast({
+        title: 'Authentication Required',
+        description: 'Authentication token not found. Please log in again.',
+        variant: 'destructive'
+      });
       return null;
     }
 
-    setIsLoadingCaseLineDetail(true);
+    // Add this caseLineId to loading set
+    setLoadingCaseLineIds(prev => new Set(prev).add(caseLineId));
     try {
       console.log('🔍 Fetching case line detail for ID:', caseLineId);
       console.log('🔍 API URL:', `${API_BASE_URL}/case-lines/${caseLineId}`);
@@ -1108,7 +1180,11 @@ const ServiceCenterDashboard = () => {
         setShowCaseLineDetailModal(true);
       } else {
         console.warn('⚠️ No case line data found in response');
-        alert('No case line data found. The response structure may be different.');
+        toast({
+          title: 'No Data Found',
+          description: 'No case line data found. The response structure may be different.',
+          variant: 'destructive'
+        });
       }
       
       return caseLineData;
@@ -1118,10 +1194,19 @@ const ServiceCenterDashboard = () => {
       console.error('❌ Error message:', error.message);
       
       const errorMsg = error.response?.data?.message || error.message || 'Unknown error';
-      alert(`Failed to load case line details: ${errorMsg}`);
+      toast({
+        title: 'Error',
+        description: `Failed to load case line details: ${errorMsg}`,
+        variant: 'destructive'
+      });
       return null;
     } finally {
-      setIsLoadingCaseLineDetail(false);
+      // Remove this caseLineId from loading set
+      setLoadingCaseLineIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(caseLineId);
+        return newSet;
+      });
     }
   };
 
@@ -1164,7 +1249,11 @@ const ServiceCenterDashboard = () => {
     // ✅ Check if technician can be assigned (workload < maxWorkload)
     if (!canAssignTechnician(technician, maxWorkload)) {
       const workload = technician.workload || 0;
-      alert(`Cannot assign ${technician.name}. Technician has reached maximum capacity (${workload}/${maxWorkload} tasks). Please assign a different technician.`);
+      toast({
+        title: 'Cannot Assign Technician',
+        description: `Cannot assign ${technician.name}. Technician has reached maximum capacity (${workload}/${maxWorkload} tasks). Please assign a different technician.`,
+        variant: 'destructive'
+      });
       return;
     }
 
@@ -1179,14 +1268,22 @@ const ServiceCenterDashboard = () => {
     }
 
     if (!claim || !claim.recordId) {
-      alert('Record ID not found');
+      toast({
+        title: 'Error',
+        description: 'Record ID not found',
+        variant: 'destructive'
+      });
       return;
     }
 
     try {
       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
       if (!token) {
-        alert('Authentication required');
+        toast({
+          title: 'Authentication Required',
+          description: 'Please login again.',
+          variant: 'destructive'
+        });
         return;
       }
 
@@ -1198,7 +1295,10 @@ const ServiceCenterDashboard = () => {
       );
 
       if (response.data?.status === 'success') {
-        alert(`Technician ${technician.name} assigned successfully!`);
+        toast({
+          title: 'Success',
+          description: `Technician ${technician.name} assigned successfully!`
+        });
         
         // Close modal
         setShowTechnicianModal(false);
@@ -1222,9 +1322,17 @@ const ServiceCenterDashboard = () => {
     } catch (error: any) {
       console.error('Failed to assign technician:', error);
       if (error.response?.data?.message) {
-        alert(`Failed to assign technician: ${error.response.data.message}`);
+        toast({
+          title: 'Error',
+          description: `Failed to assign technician: ${error.response.data.message}`,
+          variant: 'destructive'
+        });
       } else {
-        alert('Failed to assign technician. Please try again.');
+        toast({
+          title: 'Error',
+          description: 'Failed to assign technician. Please try again.',
+          variant: 'destructive'
+        });
       }
     }
   };
@@ -1279,26 +1387,47 @@ const ServiceCenterDashboard = () => {
   };
 
   // View technician's assigned records
-  const viewTechnicianRecords = (technician: Technician) => {
-    // Filter all records to find ones assigned to this technician
-    const allRecords: WarrantyClaim[] = [];
-    Object.values(claimsByStatus).forEach(claims => {
-      allRecords.push(...claims);
-    });
+  const viewTechnicianRecords = async (technician: Technician) => {
+    try {
+      // Filter all records to find ones assigned to this technician
+      const allRecords: WarrantyClaim[] = [];
+      Object.values(claimsByStatus).forEach(claims => {
+        allRecords.push(...claims);
+      });
 
-    const techRecords = allRecords.filter(claim =>
-      (claim.assignedTechnicians || []).some(tech => tech.id === technician.id)
-    );
+      const techRecords = allRecords.filter(claim =>
+        (claim.assignedTechnicians || []).some(tech => tech.id === technician.id)
+      );
 
-    setSelectedTechnicianForRecords(technician);
-    setTechnicianRecords(techRecords);
-    setShowTechnicianRecordsModal(true);
+      setSelectedTechnicianForRecords(technician);
+      setTechnicianRecords(techRecords);
+      setShowTechnicianRecordsModal(true);
+
+      // Fetch assigned caselines for this technician
+      const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
+      if (token) {
+        try {
+          const response = await axios.get(`${API_BASE_URL}/users/${technician.id}/assigned-caselines`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          console.log('📋 Technician assigned caselines:', response.data);
+          const caseLines = response.data?.data?.caseLines || [];
+          setTechnicianCaseLines(caseLines);
+        } catch (error) {
+          console.error('Failed to fetch technician caselines:', error);
+          setTechnicianCaseLines([]);
+        }
+      }
+    } catch (error) {
+      console.error('Error viewing technician records:', error);
+    }
   };
 
   const closeTechnicianRecordsModal = () => {
     setShowTechnicianRecordsModal(false);
     setSelectedTechnicianForRecords(null);
     setTechnicianRecords([]);
+    setTechnicianCaseLines([]);
     // Refresh data when closing modal
     fetchAllStatuses();
   };
@@ -1338,7 +1467,10 @@ const ServiceCenterDashboard = () => {
 
       if (response.status === 200 || response.status === 201) {
         console.log('✅ Allocation successful!');
-        alert('Component allocated successfully!');
+        toast({
+          title: 'Success',
+          description: 'Component allocated successfully!'
+        });
 
         // Remove from case line to request mapping (allocation successful, no longer need the request reference)
         setCaseLineToRequestMap(prev => {
@@ -1386,31 +1518,36 @@ const ServiceCenterDashboard = () => {
 
       // Check if error is 409 Conflict (out of stock)  
       if (error.response?.status === 409) {
-        const shouldRequest = window.confirm(
-          `⚠️ Out of Stock!\n\n${errorMessage}\n\nWould you like to request this component from manufacturer?`
-        );
+        // Find the case line to get component info
+        const allCaseLines = Object.values(claimsByStatus)
+          .flat()
+          .flatMap(claim => claim.guaranteeCases.flatMap(gc => gc.caseLines || []));
+        const caseLine = allCaseLines.find(cl => cl.id === caseLineId);
         
-        if (shouldRequest) {
-          // Find the case line to get component info
-          const allCaseLines = Object.values(claimsByStatus)
-            .flat()
-            .flatMap(claim => claim.guaranteeCases.flatMap(gc => gc.caseLines || []));
-          const caseLine = allCaseLines.find(cl => cl.id === caseLineId);
-          
-          if (caseLine && caseLine.typeComponent) {
-            handleRequestFromManufacturer(
-              guaranteeCaseId,
-              caseLineId,
-              caseLine.typeComponent.typeComponentId,
-              caseLine.quantity
-            );
-          } else {
-            alert('Cannot find component information to create request.');
-          }
+        if (caseLine && caseLine.typeComponent) {
+          // Open out of stock modal instead of confirm dialog
+          setOutOfStockInfo({
+            errorMessage,
+            guaranteeCaseId,
+            caseLineId,
+            typeComponentId: caseLine.typeComponent.typeComponentId,
+            quantity: caseLine.quantity
+          });
+          setShowOutOfStockModal(true);
+        } else {
+          toast({
+            title: 'Out of Stock',
+            description: errorMessage,
+            variant: 'destructive'
+          });
         }
       } else {
         // Show error message for other errors
-        alert(`⚠️ ${errorMessage}`);
+        toast({
+          title: 'Error',
+          description: errorMessage,
+          variant: 'destructive'
+        });
       }
     }
   };
@@ -1439,7 +1576,11 @@ const ServiceCenterDashboard = () => {
     try {
       const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
       if (!token) {
-        alert('Authentication required');
+        toast({
+          title: 'Authentication Required',
+          description: 'Please login again.',
+          variant: 'destructive'
+        });
         return;
       }
 
@@ -1447,7 +1588,11 @@ const ServiceCenterDashboard = () => {
       const technician = availableTechnicians.find(t => t.id === technicianId);
       if (technician && !canAssignTechnician(technician, maxWorkload)) {
         const workload = technician.workload || 0;
-        alert(`Cannot assign ${technician.name}. Technician has reached maximum capacity (${workload}/${maxWorkload} tasks). Please assign a different technician.`);
+        toast({
+          title: 'Cannot Assign Technician',
+          description: `Cannot assign ${technician.name}. Technician has reached maximum capacity (${workload}/${maxWorkload} tasks). Please assign a different technician.`,
+          variant: 'destructive'
+        });
         return;
       }
 
@@ -1470,7 +1615,10 @@ const ServiceCenterDashboard = () => {
 
       if (response.status === 200 || response.status === 201) {
         console.log('✅ Technician assigned successfully');
-        alert('Technician assigned to case line successfully!');
+        toast({
+          title: 'Success',
+          description: 'Technician assigned to case line successfully!'
+        });
         
         // Close modal
         setShowTechnicianSelectionModal(false);
@@ -1494,7 +1642,11 @@ const ServiceCenterDashboard = () => {
     } catch (error: any) {
       console.error('Error assigning technician to case line:', error);
       const errorMessage = error.response?.data?.message || 'Failed to assign technician. Please try again.';
-      alert(errorMessage);
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive'
+      });
     }
   };
 
@@ -1505,7 +1657,11 @@ const ServiceCenterDashboard = () => {
     try {
       const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
       if (!token) {
-        alert('Authentication required');
+        toast({
+          title: 'Authentication Required',
+          description: 'Please login again.',
+          variant: 'destructive'
+        });
         return;
       }
 
@@ -1577,7 +1733,10 @@ const ServiceCenterDashboard = () => {
           return newMap;
         });
 
-        alert('Stock transfer request sent successfully!');
+        toast({
+          title: 'Success',
+          description: 'Stock transfer request sent successfully!'
+        });
         
         // Close modal and reset
         setShowWarehouseSelectionModal(false);
@@ -1592,30 +1751,43 @@ const ServiceCenterDashboard = () => {
         // Refresh claim detail modal with updated data from backend
         if (selectedClaimForDetail) {
           const updatedClaims = Object.values(claimsByStatus).flat();
-          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
+          const updatedClaim = updatedClaims.find(c => c.recordId === selectedClaimForDetail.recordId);
           if (updatedClaim) {
             setSelectedClaimForDetail(updatedClaim);
+            console.log('✅ Refreshed claim detail modal with updated data');
           }
         }
       }
     } catch (error: any) {
       console.error('Error requesting from manufacturer:', error);
       const errorMessage = error.response?.data?.message || 'Failed to send request to manufacturer. Please try again.';
-      alert(errorMessage);
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive'
+      });
     }
   };
 
   // Cancel stock transfer request
   const handleCancelStockRequest = async () => {
     if (!cancelRequestId || !cancellationReason.trim()) {
-      alert('Please provide a cancellation reason');
+      toast({
+        title: 'Validation Error',
+        description: 'Please provide a cancellation reason',
+        variant: 'destructive'
+      });
       return;
     }
 
     try {
       const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
       if (!token) {
-        alert('Authentication required');
+        toast({
+          title: 'Authentication Required',
+          description: 'Please login again.',
+          variant: 'destructive'
+        });
         return;
       }
 
@@ -1630,7 +1802,10 @@ const ServiceCenterDashboard = () => {
       );
 
       if (response.status === 200 || response.status === 201) {
-        alert('Stock transfer request cancelled successfully!');
+        toast({
+          title: 'Success',
+          description: 'Stock transfer request cancelled successfully!'
+        });
         
         // Close modal and reset
         setShowCancelRequestModal(false);
@@ -1657,7 +1832,11 @@ const ServiceCenterDashboard = () => {
     } catch (error: any) {
       console.error('Error cancelling stock request:', error);
       const errorMessage = error.response?.data?.message || 'Failed to cancel request. Please try again.';
-      alert(errorMessage);
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive'
+      });
     }
   };
 
@@ -2151,11 +2330,6 @@ const ServiceCenterDashboard = () => {
                         <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
                           <label className="text-xs font-semibold text-muted-foreground uppercase">Vehicle Model</label>
                           <p className="text-sm font-medium mt-0.5">{selectedClaimForDetail.model}</p>
-                          {selectedClaimForDetail.modelId && (
-                            <p className="font-mono text-xs text-muted-foreground mt-1">
-                              Model ID: {selectedClaimForDetail.modelId}
-                            </p>
-                          )}
                         </div>
                         <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
                           <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
@@ -2179,59 +2353,11 @@ const ServiceCenterDashboard = () => {
                             Created By Staff
                           </label>
                           <p className="text-sm font-semibold mt-0.5">{selectedClaimForDetail.serviceCenter}</p>
-                          {selectedClaimForDetail.createdByStaffId && (
-                            <p className="font-mono text-xs text-muted-foreground mt-1">
-                              ID: {selectedClaimForDetail.createdByStaffId}
-                            </p>
-                          )}
                         </div>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
-
-                {/* Evidence Images */}
-                {selectedClaimForDetail.evidenceImageUrls && selectedClaimForDetail.evidenceImageUrls.length > 0 && (
-                  <Card className="shadow-md border">
-                    <CardHeader className="bg-gradient-to-r from-purple-50 to-transparent dark:from-purple-900/20 pb-3">
-                      <CardTitle className="flex items-center gap-2 text-base">
-                        <div className="p-2 bg-purple-100 dark:bg-purple-900/40 rounded-lg">
-                          <Eye className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                        </div>
-                        Evidence Images ({selectedClaimForDetail.evidenceImageUrls.length})
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="pt-4">
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {selectedClaimForDetail.evidenceImageUrls.map((url, idx) => (
-                          <a
-                            key={idx}
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="group relative aspect-square rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-700 hover:border-purple-500 transition-all shadow-sm hover:shadow-lg"
-                          >
-                            <img
-                              src={url}
-                              alt={`Evidence ${idx + 1}`}
-                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23999"%3ENo Image%3C/text%3E%3C/svg%3E';
-                              }}
-                            />
-                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <Eye className="h-6 w-6 text-white" />
-                            </div>
-                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
-                              <p className="text-xs text-white font-medium">Image {idx + 1}</p>
-                            </div>
-                          </a>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
 
                 {/* Guarantee Cases */}
                 {selectedClaimForDetail.guaranteeCases && selectedClaimForDetail.guaranteeCases.length > 0 && (
@@ -2447,11 +2573,11 @@ const ServiceCenterDashboard = () => {
                                                     size="sm"
                                                     variant="outline"
                                                     onClick={() => fetchCaseLineDetail(line.id)}
-                                                    disabled={isLoadingCaseLineDetail}
+                                                    disabled={loadingCaseLineIds.has(line.id)}
                                                     className="text-gray-700 hover:bg-gray-50 border-gray-300 text-xs h-6 px-2"
                                                   >
                                                     <Eye className="h-3 w-3 mr-1" />
-                                                    {isLoadingCaseLineDetail ? 'Loading...' : 'View Details'}
+                                                    {loadingCaseLineIds.has(line.id) ? 'Loading...' : 'View Details'}
                                                   </Button>
                                                 </div>
                                               </div>
@@ -2571,6 +2697,50 @@ const ServiceCenterDashboard = () => {
                     )}
                   </CardContent>
                 </Card>
+
+                {/* Evidence Images */}
+                {selectedClaimForDetail.evidenceImageUrls && selectedClaimForDetail.evidenceImageUrls.length > 0 && (
+                  <Card className="shadow-md border">
+                    <CardHeader className="bg-gradient-to-r from-purple-50 to-transparent dark:from-purple-900/20 pb-3">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <div className="p-2 bg-purple-100 dark:bg-purple-900/40 rounded-lg">
+                          <Eye className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        Evidence Images ({selectedClaimForDetail.evidenceImageUrls.length})
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-4">
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {selectedClaimForDetail.evidenceImageUrls.map((url, idx) => (
+                          <button
+                            key={idx}
+                            onClick={() => {
+                              setSelectedImageUrl(url);
+                              setShowImageModal(true);
+                            }}
+                            className="group relative aspect-square rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-700 hover:border-purple-500 transition-all shadow-sm hover:shadow-lg cursor-pointer"
+                          >
+                            <img
+                              src={url}
+                              alt={`Evidence ${idx + 1}`}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="100" height="100"%3E%3Crect fill="%23ddd" width="100" height="100"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" fill="%23999"%3ENo Image%3C/text%3E%3C/svg%3E';
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Eye className="h-6 w-6 text-white" />
+                            </div>
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2">
+                              <p className="text-xs text-white font-medium">Image {idx + 1}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Timeline */}
                 <Card>
@@ -2736,87 +2906,248 @@ const ServiceCenterDashboard = () => {
 
         {/* Technician Records Modal */}
         <Dialog open={showTechnicianRecordsModal} onOpenChange={setShowTechnicianRecordsModal}>
-          <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>
-                Records Assigned to {selectedTechnicianForRecords?.name || 'Technician'}
+              <DialogTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5 text-blue-600" />
+                Work Assignments for {selectedTechnicianForRecords?.name || 'Technician'}
               </DialogTitle>
               <DialogDescription>
-                Viewing all warranty claims currently assigned to this technician
+                View all assigned records and case lines for this technician
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4">
-              {technicianRecords.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No records assigned to this technician
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Users className="w-4 h-4" />
-                    <span>Total: {technicianRecords.length} record(s)</span>
-                  </div>
+            <div className="space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-3 gap-4">
+                <Card className="border-l-4 border-l-blue-500">
+                  <CardContent className="pt-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase font-semibold">Total Records</p>
+                        <p className="text-2xl font-bold mt-1">{technicianRecords.length}</p>
+                      </div>
+                      <Car className="h-8 w-8 text-blue-500 opacity-50" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-l-4 border-l-purple-500">
+                  <CardContent className="pt-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase font-semibold">Total Case Lines</p>
+                        <p className="text-2xl font-bold mt-1">{technicianCaseLines.length}</p>
+                      </div>
+                      <FileText className="h-8 w-8 text-purple-500 opacity-50" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="border-l-4 border-l-orange-500">
+                  <CardContent className="pt-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground uppercase font-semibold">Workload</p>
+                        <p className="text-2xl font-bold mt-1">{selectedTechnicianForRecords?.workload || 0}</p>
+                      </div>
+                      <Wrench className="h-8 w-8 text-orange-500 opacity-50" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
 
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>VIN</TableHead>
-                        <TableHead>Model</TableHead>
-                        <TableHead>Issue</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Check-in Date</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {technicianRecords.map((record) => (
-                        <TableRow key={record.recordId}>
-                          <TableCell className="font-mono text-xs">{record.vin}</TableCell>
-                          <TableCell>{displayValue(record.model)}</TableCell>
-                          <TableCell>
-                            {record.guaranteeCases && record.guaranteeCases.length > 0 ? (
-                              <div className="space-y-1">
-                                {record.guaranteeCases.map((gCase, idx) => (
-                                  <div key={gCase.guaranteeCaseId} className="text-xs">
-                                    <Badge variant="outline" className="mr-1">#{idx + 1}</Badge>
-                                    {gCase.contentGuarantee}
+              {/* Assigned Records Section */}
+              <Card className="border-l-4 border-l-blue-500">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Car className="h-4 w-4 text-blue-600" />
+                    Assigned Vehicle Processing Records ({technicianRecords.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {technicianRecords.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Car className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                      <p>No records assigned to this technician</p>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>VIN</TableHead>
+                            <TableHead>Model</TableHead>
+                            <TableHead>Guarantee Cases</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Check-in Date</TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {technicianRecords.map((record) => (
+                            <TableRow key={record.recordId}>
+                              <TableCell className="font-mono text-xs font-semibold">{record.vin}</TableCell>
+                              <TableCell>{displayValue(record.model)}</TableCell>
+                              <TableCell>
+                                {record.guaranteeCases && record.guaranteeCases.length > 0 ? (
+                                  <div className="space-y-1">
+                                    {record.guaranteeCases.slice(0, 2).map((gCase, idx) => (
+                                      <div key={gCase.guaranteeCaseId} className="text-xs">
+                                        <Badge variant="outline" className="mr-1">#{idx + 1}</Badge>
+                                        {gCase.contentGuarantee.substring(0, 40)}
+                                        {gCase.contentGuarantee.length > 40 ? '...' : ''}
+                                      </div>
+                                    ))}
+                                    {record.guaranteeCases.length > 2 && (
+                                      <Badge variant="secondary" className="text-xs">
+                                        +{record.guaranteeCases.length - 2} more
+                                      </Badge>
+                                    )}
                                   </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">No cases</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={getStatusBadgeVariant(record.status)}>
-                              {getDisplayStatus(record.status)}
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">No cases</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={getStatusBadgeVariant(record.status)}>
+                                  {getDisplayStatus(record.status)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-xs">
+                                {new Date(record.checkInDate).toLocaleDateString()}
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setSelectedClaimForDetail(record);
+                                    setShowClaimDetailModal(true);
+                                  }}
+                                >
+                                  <Eye className="h-3 w-3 mr-1" />
+                                  View
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Assigned Case Lines Section */}
+              <Card className="border-l-4 border-l-purple-500">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-purple-600" />
+                    Assigned Case Lines ({technicianCaseLines.length})
+                  </CardTitle>
+                  <CardDescription>
+                    Individual repair tasks assigned to this technician
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {technicianCaseLines.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <FileText className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                      <p>No case lines assigned to this technician</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {technicianCaseLines.map((caseLine, index) => (
+                        <div key={caseLine.id || index} className="p-4 bg-slate-50 dark:bg-slate-900/30 rounded-lg border hover:border-purple-300 transition-colors">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="font-mono text-xs">
+                                #{index + 1}
+                              </Badge>
+                              <Badge 
+                                variant={
+                                  caseLine.status === 'READY_FOR_REPAIR' ? 'default' :
+                                  caseLine.status === 'IN_REPAIR' ? 'secondary' :
+                                  caseLine.status === 'COMPLETED' ? 'default' :
+                                  'outline'
+                                }
+                                className="text-xs"
+                              >
+                                {caseLine.status}
+                              </Badge>
+                            </div>
+                            <Badge variant={caseLine.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'} className="text-xs">
+                              {caseLine.warrantyStatus}
                             </Badge>
-                          </TableCell>
-                          <TableCell className="text-xs">
-                            {new Date(record.checkInDate).toLocaleDateString()}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setSelectedClaimForDetail(record);
-                                setShowClaimDetailModal(true);
-                              }}
-                            >
-                              View Details
-                            </Button>
-                          </TableCell>
-                        </TableRow>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                            <div>
+                              <span className="text-xs text-muted-foreground">Case Line ID:</span>
+                              <p className="font-mono text-xs mt-0.5">{caseLine.id}</p>
+                            </div>
+                            <div>
+                              <span className="text-xs text-muted-foreground">VIN:</span>
+                              <p className="font-mono text-xs font-semibold mt-0.5">
+                                {caseLine.guaranteeCase?.vehicleProcessingRecord?.vin || 'N/A'}
+                              </p>
+                            </div>
+                            {caseLine.typeComponent && (
+                              <>
+                                <div>
+                                  <span className="text-xs text-muted-foreground">Component:</span>
+                                  <p className="text-xs font-medium mt-0.5">{caseLine.typeComponent.name}</p>
+                                </div>
+                                <div>
+                                  <span className="text-xs text-muted-foreground">SKU:</span>
+                                  <p className="font-mono text-xs mt-0.5">{caseLine.typeComponent.sku}</p>
+                                </div>
+                              </>
+                            )}
+                            <div>
+                              <span className="text-xs text-muted-foreground">Quantity:</span>
+                              <p className="text-xs font-semibold mt-0.5">{caseLine.quantity}</p>
+                            </div>
+                            {caseLine.guaranteeCase && (
+                              <div>
+                                <span className="text-xs text-muted-foreground">Guarantee Case:</span>
+                                <p className="text-xs mt-0.5">{caseLine.guaranteeCase.contentGuarantee?.substring(0, 30)}...</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {caseLine.correctionText && (
+                            <div className="mt-3 p-2 bg-green-50 dark:bg-green-900/10 rounded border-l-2 border-green-400">
+                              <div className="flex items-center gap-1 mb-1">
+                                <CheckCircle className="h-3 w-3 text-green-600" />
+                                <span className="text-xs font-semibold text-green-700 dark:text-green-400">Solution</span>
+                              </div>
+                              <p className="text-xs text-gray-700 dark:text-gray-300">
+                                {caseLine.correctionText}
+                              </p>
+                            </div>
+                          )}
+
+                          {caseLine.rejectionReason && (
+                            <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 rounded border border-red-200">
+                              <span className="text-xs font-semibold text-red-700 dark:text-red-400">Rejection:</span>
+                              <p className="text-xs text-red-900 dark:text-red-100 mt-1">{caseLine.rejectionReason}</p>
+                            </div>
+                          )}
+
+                          {caseLine.updatedAt && (
+                            <div className="mt-2 text-xs text-muted-foreground">
+                              Last updated: {new Date(caseLine.updatedAt).toLocaleString()}
+                            </div>
+                          )}
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
-                </>
-              )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
 
-            <div className="flex justify-end gap-2 pt-4">
+            <div className="flex justify-end gap-2 pt-4 border-t">
               <Button variant="outline" onClick={closeTechnicianRecordsModal}>
                 Close
               </Button>
@@ -3232,7 +3563,7 @@ const ServiceCenterDashboard = () => {
               </DialogDescription>
             </DialogHeader>
 
-            {isLoadingCaseLineDetail ? (
+            {loadingCaseLineIds.size > 0 && !selectedCaseLineDetail ? (
               <div className="text-center py-8">
                 <p className="text-muted-foreground">Loading case line details...</p>
               </div>
@@ -3664,14 +3995,30 @@ const ServiceCenterDashboard = () => {
                           </div>
                         </div>
                         <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
-                          <label className="text-xs font-semibold text-muted-foreground uppercase">Requesting Warehouse ID</label>
-                          <p className="font-mono text-sm mt-0.5">{selectedStockRequest.requestingWarehouseId}</p>
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Requesting Warehouse</label>
+                          <p className="font-medium text-sm mt-0.5">
+                            {selectedStockRequest.requestingWarehouse?.name || 'Unknown Warehouse'}
+                          </p>
+                          {selectedStockRequest.requestingWarehouse?.address && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {selectedStockRequest.requestingWarehouse.address}
+                            </p>
+                          )}
+                          <p className="font-mono text-xs text-muted-foreground mt-1">
+                            ID: {selectedStockRequest.requestingWarehouseId}
+                          </p>
                         </div>
                       </div>
                       <div className="space-y-3">
                         <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
                           <label className="text-xs font-semibold text-muted-foreground uppercase">Requester</label>
                           <p className="font-medium text-sm mt-0.5">{selectedStockRequest.requester?.name || 'Unknown'}</p>
+                          {selectedStockRequest.requester?.serviceCenter?.name && (
+                            <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
+                              <Building2 className="h-3 w-3" />
+                              {selectedStockRequest.requester.serviceCenter.name}
+                            </p>
+                          )}
                           <p className="font-mono text-xs text-muted-foreground mt-1">
                             User ID: {selectedStockRequest.requestedByUserId}
                           </p>
@@ -3728,6 +4075,30 @@ const ServiceCenterDashboard = () => {
                       </div>
                     </div>
 
+                    {/* Approver Information */}
+                    {selectedStockRequest.approver && (
+                      <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-md border border-green-200">
+                        <label className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase flex items-center gap-1">
+                          <CheckCircle className="h-3 w-3" />
+                          Approved By
+                        </label>
+                        <div className="mt-2 space-y-1">
+                          <p className="text-sm font-medium text-green-900 dark:text-green-100">
+                            {selectedStockRequest.approver.name}
+                          </p>
+                          {selectedStockRequest.approver.serviceCenter?.name && (
+                            <p className="text-xs text-green-700 dark:text-green-300 flex items-center gap-1">
+                              <Building2 className="h-3 w-3" />
+                              {selectedStockRequest.approver.serviceCenter.name}
+                            </p>
+                          )}
+                          <p className="font-mono text-xs text-green-600 dark:text-green-400">
+                            User ID: {selectedStockRequest.approvedByUserId}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {selectedStockRequest.rejectionReason && (
                       <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-md border border-red-200">
                         <label className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase">Rejection Reason</label>
@@ -3757,21 +4128,24 @@ const ServiceCenterDashboard = () => {
                     <CardContent className="pt-4">
                       <div className="space-y-3">
                         {selectedStockRequest.items.map((item, index) => {
-                          // Find component info from case line using caselineId
+                          // Get component info with priority: item.component (new API) > case line > typeComponent (old format)
                           let componentName = 'Unknown Component';
                           let componentDescription = '';
                           let relatedCaseLine = null;
                           
-                          // First try to find from fetched case lines using caselineId
-                          if (item.caselineId && selectedStockRequest.caseLines) {
+                          // Priority 1: New API response with component object
+                          if (item.component?.name) {
+                            componentName = item.component.name;
+                          }
+                          // Priority 2: Find from fetched case lines using caselineId
+                          else if (item.caselineId && selectedStockRequest.caseLines) {
                             relatedCaseLine = selectedStockRequest.caseLines.find(cl => cl.id === item.caselineId);
                             if (relatedCaseLine?.typeComponent) {
                               componentName = relatedCaseLine.typeComponent.name;
                             }
                           }
-                          
-                          // Fallback to API response if available
-                          if (componentName === 'Unknown Component' && item.typeComponent?.nameComponent) {
+                          // Priority 3: Fallback to old typeComponent format
+                          else if (item.typeComponent?.nameComponent) {
                             componentName = item.typeComponent.nameComponent;
                             componentDescription = item.typeComponent.description || '';
                           }
@@ -3788,6 +4162,23 @@ const ServiceCenterDashboard = () => {
                                   {componentDescription && (
                                     <p className="text-xs text-muted-foreground mt-1">{componentDescription}</p>
                                   )}
+                                  <div className="flex flex-wrap gap-2 mt-2">
+                                    {item.component?.sku && (
+                                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded border border-indigo-200">
+                                        <Tag className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                                        <span className="font-mono text-xs text-indigo-700 dark:text-indigo-300">
+                                          {item.component.sku}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {item.component?.typeComponentId && (
+                                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200">
+                                        <span className="font-mono text-xs text-muted-foreground">
+                                          Type ID: {item.component.typeComponentId}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                                 {item.caselineId && (
                                   <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200">
@@ -4454,6 +4845,72 @@ const ServiceCenterDashboard = () => {
                 )}
               </Button>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Out of Stock Modal */}
+        <Dialog open={showOutOfStockModal} onOpenChange={setShowOutOfStockModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-amber-600">
+                <AlertCircle className="h-6 w-6" />
+                Component Out of Stock
+              </DialogTitle>
+              <DialogDescription>
+                The requested component is not available in stock
+              </DialogDescription>
+            </DialogHeader>
+
+            {outOfStockInfo && (
+              <div className="space-y-4">
+                {/* Error Message */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <p className="text-sm text-amber-900">
+                    {outOfStockInfo.errorMessage}
+                  </p>
+                </div>
+
+                {/* Info */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="text-sm font-semibold text-blue-900 mb-2">What would you like to do?</h4>
+                  <p className="text-sm text-blue-700">
+                    You can request this component from the manufacturer. A stock transfer request will be created.
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowOutOfStockModal(false);
+                      setOutOfStockInfo(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="default"
+                    className="bg-blue-600 hover:bg-blue-700"
+                    onClick={() => {
+                      if (outOfStockInfo) {
+                        handleRequestFromManufacturer(
+                          outOfStockInfo.guaranteeCaseId,
+                          outOfStockInfo.caseLineId,
+                          outOfStockInfo.typeComponentId,
+                          outOfStockInfo.quantity
+                        );
+                        setShowOutOfStockModal(false);
+                        setOutOfStockInfo(null);
+                      }
+                    }}
+                  >
+                    <Package className="h-4 w-4 mr-2" />
+                    Request from Manufacturer
+                  </Button>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
