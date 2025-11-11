@@ -66,15 +66,16 @@ class StockTransferRequestRepository {
         {
           model: User,
           as: "requester",
-          attributes: ["userId", "name"],
+          attributes: ["userId", "name", "serviceCenterId"],
+          required: true,
+
           include: [
             {
-              model: db.ServiceCenter,
-              as: "serviceCenter",
+              association: "serviceCenter",
               attributes: ["name"],
+              required: true,
             },
           ],
-          required: true,
         },
         {
           model: User,
