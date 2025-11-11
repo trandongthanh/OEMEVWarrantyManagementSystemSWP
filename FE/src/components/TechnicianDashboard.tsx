@@ -2078,10 +2078,7 @@ const TechnicianDashboard = ({
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-muted-foreground">
-                    This tab shows your personal work schedules. Data is fetched from
-                    <code className="ml-2 font-mono">/work-schedules/my-schedule</code>.
-                  </div>
+                  <div className="text-sm text-muted-foreground">{/* Description removed per request */}</div>
                   <div className="flex items-center gap-2">
                     <Button size="sm" variant="outline" onClick={() => fetchMySchedules()}>
                       <RefreshCw className="mr-2 h-4 w-4" />
@@ -3160,12 +3157,7 @@ const TechnicianDashboard = ({
                         </div>
                       </div>
                     )}
-                    <div className="space-y-2">
-                      <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component ID</span>
-                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
-                        <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine?.componentId || 'N/A'}</span>
-                      </div>
-                    </div>
+                    {/* Component ID removed from Issue Diagnosis Details per UX request */}
                     {selectedCaseLine?.quantity !== undefined && (
                       <div className="space-y-2">
                         <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Quantity</span>
@@ -3434,7 +3426,6 @@ const TechnicianDashboard = ({
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-slate-600">Vehicle Model</p>
                     <p className="text-sm font-bold text-slate-900">{selectedRecord.vehicle.model.name}</p>
-                    <p className="text-xs text-slate-500">Model ID: {selectedRecord.vehicle.model.vehicleModelId}</p>
                   </div>
                   
                   <div className="space-y-1">
@@ -3447,9 +3438,6 @@ const TechnicianDashboard = ({
                     <p className="text-sm font-bold text-slate-900">
                       {selectedRecord.guaranteeCases?.[0]?.taskAssignments?.[0]?.assigner?.name || 'N/A'}
                     </p>
-                    <p className="text-xs text-slate-500">
-                      ID: {selectedRecord.guaranteeCases?.[0]?.taskAssignments?.[0]?.assigner?.userId || 'N/A'}
-                    </p>
                   </div>
                   
                   <div className="space-y-1">
@@ -3460,7 +3448,6 @@ const TechnicianDashboard = ({
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-slate-600">Created by Staff</p>
                     <p className="text-sm font-bold text-slate-900">{selectedRecord.createdByStaff.name}</p>
-                    <p className="text-xs text-slate-500">Staff ID: {selectedRecord.createdByStaff.userId}</p>
                   </div>
                 </div>
               </div>
@@ -3469,7 +3456,7 @@ const TechnicianDashboard = ({
               <div className="bg-white border border-slate-300 rounded-xl p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <Users className="h-5 w-5 text-blue-600" />
-                  <h3 className="text-lg font-bold text-slate-800">Assigned Technicians</h3>
+                  <h3 className="text-lg font-bold text-slate-800">Diagnosis Technician</h3>
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
@@ -3478,7 +3465,7 @@ const TechnicianDashboard = ({
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{selectedRecord.mainTechnician?.name}</p>
-                      <p className="text-xs text-slate-500">Main Technician • ID: {selectedRecord.mainTechnician?.userId}</p>
+                      <p className="text-xs text-slate-500">Main Technician</p>
                     </div>
                   </div>
                 </div>
@@ -3551,11 +3538,9 @@ const TechnicianDashboard = ({
                                 </Badge>
                               </div>
                               <p className="text-sm text-slate-600">
-                                <span className="font-medium">Content:</span> {guaranteeCase.contentGuarantee}
+                                <span className="font-bold">Content:</span> {guaranteeCase.contentGuarantee}
                               </p>
-                              <p className="text-xs text-slate-400 mt-1 font-mono">
-                                ID: {guaranteeCase.guaranteeCaseId}
-                              </p>
+                              {/* Guarantee case id hidden from view per request */}
                             </div>
                           </div>
                         </div>
@@ -3570,9 +3555,7 @@ const TechnicianDashboard = ({
                                     <span className="flex items-center justify-center w-6 h-6 bg-blue-600 text-white text-xs font-bold rounded-full">
                                       {clIndex + 1}
                                     </span>
-                                    <span className="text-xs font-mono text-slate-500">
-                                      {caseLine.caseLineId}
-                                    </span>
+                                    {/* caseLine ID hidden from view per UX request */}
                                   </div>
                                   <Badge 
                                     variant={
@@ -4480,7 +4463,7 @@ const TechnicianDashboard = ({
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Users className="h-4 w-4" />
-                    Assigned Technicians
+                    Diagnosis Technician
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
