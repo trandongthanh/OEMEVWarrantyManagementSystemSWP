@@ -92,6 +92,27 @@ class VehicleProcessingRecordService {
           Transaction.LOCK.SHARE
         );
 
+      const recordsBefore = this.#vehicleProcessingRecordRepository.findAll({
+        serviceCenterId,
+        limit,
+        offset,
+        status: "COMPLETED",
+        userId,
+        roleName,
+      });
+
+      const recordBefore = recordsBefore[0];
+
+      if (recordBefore) {
+        const odometerBefore = recordBefore.odometer || 0;
+
+        if (odometer < odometerBefore) {
+          throw new BadRequestError(
+            `Odometer reading ${odometer} is less than the previous recorded value of ${odometerBefore}. Please provide a valid odometer reading.`
+          );
+        }
+      }
+
       if (existingRecord) {
         throw new ConflictError("Vehicle already has an active record");
       }
@@ -636,9 +657,7 @@ class VehicleProcessingRecordService {
     );
 
     const updatedGuaranteeCases = [];
-    const guaranteeCaseIds = guaranteeCases.map(
-      (gc) => gc.guaranteeCaseId
-    );
+    const guaranteeCaseIds = guaranteeCases.map((gc) => gc.guaranteeCaseId);
     for (const guaranteeCase of guaranteeCases) {
       const updatedCase = await this.#guaranteeCaseRepository.updateStatus(
         {

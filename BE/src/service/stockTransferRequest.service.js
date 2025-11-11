@@ -834,6 +834,7 @@ class StockTransferRequestService {
       transaction,
       Transaction.LOCK.UPDATE
     );
+
     const stocksMap = new Map(stocks.map((s) => [s.stockId, s]));
 
     const allComponentIds = [];
@@ -867,6 +868,7 @@ class StockTransferRequestService {
         stocksMap,
         transaction,
       });
+
       allComponentIds.push(...componentIds);
     }
 
