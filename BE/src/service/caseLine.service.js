@@ -954,8 +954,34 @@ class CaseLineService {
           Transaction.LOCK.SHARE
         );
 
-      if (reservations && reservations.length > 0) {
-        for (const reservation of reservations) {
+      const activeReservationStatuses = new Set([
+        "RESERVED",
+        "PICKED_UP",
+        "INSTALLED",
+      ]);
+
+      const relevantReservations = (reservations || []).filter((reservation) =>
+        activeReservationStatuses.has(reservation.status)
+      );
+
+      if (relevantReservations.length > 0) {
+        const recordVin = guaranteeCase?.vehicleProcessingRecord?.vin;
+
+        if (!recordVin) {
+          throw new ConflictError(
+            "Cannot verify installed components without vehicle VIN"
+          );
+        }
+
+        const normalizedRecordVin = recordVin.trim().toUpperCase();
+
+        for (const reservation of relevantReservations) {
+          if (reservation.status !== "INSTALLED") {
+            throw new ConflictError(
+              "All reserved components must be installed before completing the repair"
+            );
+          }
+
           const component = await this.#componentRepository.findById(
             reservation.componentId,
             transaction,
@@ -968,9 +994,11 @@ class CaseLineService {
             );
           }
 
+          const componentVin = component.vehicleVin?.trim()?.toUpperCase();
+
           if (
             component.status !== "INSTALLED" ||
-            !component.vehicleVin ||
+            !componentVin ||
             !component.installedAt
           ) {
             throw new ConflictError(
@@ -978,11 +1006,10 @@ class CaseLineService {
             );
           }
 
-          const isReservationInstalled = reservation.status === "INSTALLED";
-
-          if (!isReservationInstalled) {
-            const reason = `Component ${component.serialNumber} must be installed before marking repair as completed`;
-            throw new ConflictError(reason);
+          if (componentVin !== normalizedRecordVin) {
+            throw new ConflictError(
+              `Component ${component.serialNumber} is installed on VIN ${component.vehicleVin}, expected ${recordVin}`
+            );
           }
         }
       }

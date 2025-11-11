@@ -180,8 +180,9 @@ class StockTransferRequestService {
           transaction
         );
 
+      let createdReservations = [];
       if (stockReservationsToCreate.length > 0) {
-        await this.#stockReservationRepository.bulkCreate(
+        createdReservations = await this.#stockReservationRepository.bulkCreate(
           { reservations: stockReservationsToCreate },
           transaction
         );
@@ -202,7 +203,7 @@ class StockTransferRequestService {
       );
 
       return {
-        stockReservations: stockReservationsToCreate,
+        stockReservations: createdReservations,
         updatedStockTransferRequest: updatedRequest,
       };
     });
