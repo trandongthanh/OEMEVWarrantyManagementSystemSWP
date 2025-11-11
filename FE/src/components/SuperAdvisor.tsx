@@ -2033,8 +2033,8 @@ const SuperAdvisor = () => {
         return;
       }
 
-      // Fetch record details with caselines
-      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
+      // Fetch processing record to get caseline IDs
+      const recordResponse = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -2042,31 +2042,97 @@ const SuperAdvisor = () => {
         }
       });
 
-      const result = await response.json();
+      const recordResult = await recordResponse.json();
 
-      if (result.status === 'success' && result.data?.record) {
-        const recordData = result.data.record;
+      if (recordResult.status === 'success' && recordResult.data?.record) {
+        const recordData = recordResult.data.record;
         
-        const allCaselines: any[] = [];
-
-        // Extract caselines from all guarantee cases
+        // Extract caseline IDs from guarantee cases
+        const allCaselineIds: string[] = [];
         if (recordData.guaranteeCases && Array.isArray(recordData.guaranteeCases)) {
           recordData.guaranteeCases.forEach((guaranteeCase: any) => {
             if (guaranteeCase.caseLines && Array.isArray(guaranteeCase.caseLines)) {
               guaranteeCase.caseLines.forEach((caseline: any) => {
-                allCaselines.push({
-                  ...caseline,
-                  guaranteeCaseId: guaranteeCase.guaranteeCaseId,
-                  contentGuarantee: guaranteeCase.contentGuarantee
-                });
+                if (caseline.id) {
+                  allCaselineIds.push(caseline.id);
+                }
               });
             }
           });
         }
 
-        setCaselines(allCaselines);
+        // Fetch detailed information for each caseline using new API
+        const caselinesDetails = [];
+        for (const caselineId of allCaselineIds) {
+          try {
+            const caselineResponse = await fetch(`${API_BASE_URL}/case-lines/${caselineId}`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            });
 
-        if (allCaselines.length === 0) {
+            const caselineResult = await caselineResponse.json();
+
+            if (caselineResult.status === 'success' && caselineResult.data?.caseLine) {
+              const caseLine = caselineResult.data.caseLine;
+              
+              // Map all data from API response
+              caselinesDetails.push({
+                // Basic caseline info
+                id: caseLine.id,
+                correctionText: caseLine.correctionText,
+                typeComponentId: caseLine.typeComponentId,
+                quantity: caseLine.quantity,
+                warrantyStatus: caseLine.warrantyStatus,
+                status: caseLine.status,
+                rejectionReason: caseLine.rejectionReason,
+                updatedAt: caseLine.updatedAt,
+                
+                // Guarantee Case info
+                guaranteeCase: caseLine.guaranteeCase,
+                guaranteeCaseId: caseLine.guaranteeCase?.guaranteeCaseId,
+                contentGuarantee: caseLine.guaranteeCase?.contentGuarantee,
+                guaranteeCaseStatus: caseLine.guaranteeCase?.status,
+                
+                // Diagnostic Technician
+                diagnosticTechnician: caseLine.diagnosticTechnician,
+                diagnosticTechId: caseLine.diagnosticTechnician?.userId,
+                diagnosticTechName: caseLine.diagnosticTechnician?.name,
+                
+                // Repair Technician
+                repairTechnician: caseLine.repairTechnician,
+                repairTechId: caseLine.repairTechnician?.userId,
+                repairTechName: caseLine.repairTechnician?.name,
+                
+                // Type Component
+                typeComponent: caseLine.typeComponent,
+                typeComponentName: caseLine.typeComponent?.name,
+                typeComponentSku: caseLine.typeComponent?.sku,
+                typeComponentPrice: caseLine.typeComponent?.price,
+                
+                // Reservations with full component details
+                reservations: caseLine.reservations?.map((reservation: any) => ({
+                  reservationId: reservation.reservationId,
+                  caseLineId: reservation.caseLineId,
+                  status: reservation.status,
+                  component: {
+                    componentId: reservation.component?.componentId,
+                    serialNumber: reservation.component?.serialNumber,
+                    status: reservation.component?.status
+                  }
+                })) || []
+              });
+            }
+          } catch (caselineError) {
+            console.error(`Error fetching caseline ${caselineId}:`, caselineError);
+          }
+        }
+
+        setCaselines(caselinesDetails);
+
+        if (caselinesDetails.length === 0) {
           toast({
             title: 'No Caselines',
             description: 'This record has no caselines yet. Technician needs to create them.',
@@ -2145,17 +2211,6 @@ const SuperAdvisor = () => {
     setShowViewRecordDialog(true);
     setViewRecordData(null);
     await fetchRecordDetails(record.id);
-  };
-
-  // Handle refresh record details
-  const handleRefreshRecordDetails = async () => {
-    if (viewRecordData?.id) {
-      await fetchRecordDetails(viewRecordData.id);
-      toast({
-        title: 'Refreshed',
-        description: 'Record details have been updated',
-      });
-    }
   };
 
   // Check if all caselines are completed
@@ -4194,23 +4249,6 @@ const SuperAdvisor = () => {
               </div>
             ) : (
               <>
-                {caselines.filter(c => c.status === 'PENDING_APPROVAL').length > 0 && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                    <div className="flex items-start gap-3">
-                      <div className="bg-yellow-100 rounded-full p-2">
-                        <Clock className="h-5 w-5 text-yellow-700" />
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-yellow-900 mb-1">
-                          {caselines.filter(c => c.status === 'PENDING_APPROVAL').length} Caseline{caselines.filter(c => c.status === 'PENDING_APPROVAL').length > 1 ? 's' : ''} Awaiting Your Decision
-                        </h4>
-                        <p className="text-sm text-yellow-800">
-                          Review and approve or reject the caselines below. Click the buttons on each caseline, then submit your decisions.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
               <div className="space-y-4">
                 {caselines.map((caseline, index) => {
                   const isApproved = selectedCaselineIds.approved.includes(caseline.id);
@@ -4255,26 +4293,53 @@ const SuperAdvisor = () => {
 
                     <div className="grid gap-3">
                       {/* Guarantee Case Info */}
-                      {caseline.contentGuarantee && (
+                      {caseline.guaranteeCase && (
                         <div className="bg-blue-50 border border-blue-200 rounded p-3">
                           <Label className="text-xs text-blue-700 font-semibold">Related Case:</Label>
-                          <p className="text-sm text-blue-900 mt-1">{caseline.contentGuarantee}</p>
-                        </div>
-                      )}
-
-                      {/* Diagnosis Text */}
-                      {caseline.diagnosisText && (
-                        <div>
-                          <Label className="text-xs text-gray-600 font-semibold">Diagnosis:</Label>
-                          <p className="text-sm mt-1 text-gray-800">{caseline.diagnosisText}</p>
+                          {caseline.contentGuarantee && (
+                            <p className="text-sm text-blue-900 mt-1">{caseline.contentGuarantee}</p>
+                          )}
+                          {caseline.guaranteeCaseStatus && (
+                            <div className="mt-2">
+                              <span className="text-xs text-blue-600">Case Status:</span>
+                              <Badge className="bg-blue-100 text-blue-800 ml-2">{caseline.guaranteeCaseStatus}</Badge>
+                            </div>
+                          )}
                         </div>
                       )}
 
                       {/* Correction Text */}
                       {caseline.correctionText && (
                         <div>
-                          <Label className="text-xs text-gray-600 font-semibold">Correction:</Label>
+                          <Label className="text-xs text-gray-600 font-semibold">Solution/Correction:</Label>
                           <p className="text-sm mt-1 text-gray-800">{caseline.correctionText}</p>
+                        </div>
+                      )}
+
+                      {/* Type Component Info */}
+                      {caseline.typeComponent && (
+                        <div className="bg-purple-50 border border-purple-200 rounded p-3">
+                          <Label className="text-xs text-purple-700 font-semibold">Component:</Label>
+                          <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
+                            {caseline.typeComponentName && (
+                              <div>
+                                <span className="text-xs text-purple-600">Name:</span>
+                                <p className="font-semibold text-purple-900">{caseline.typeComponentName}</p>
+                              </div>
+                            )}
+                            {caseline.typeComponentSku && (
+                              <div>
+                                <span className="text-xs text-purple-600">SKU:</span>
+                                <p className="font-mono text-purple-900">{caseline.typeComponentSku}</p>
+                              </div>
+                            )}
+                            {caseline.typeComponentPrice && (
+                              <div>
+                                <span className="text-xs text-purple-600">Price:</span>
+                                <p className="font-semibold text-purple-900">{caseline.typeComponentPrice.toLocaleString()} VND</p>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
 
@@ -4283,6 +4348,35 @@ const SuperAdvisor = () => {
                         <div>
                           <Label className="text-xs text-gray-600 font-semibold">Quantity:</Label>
                           <p className="text-sm mt-1 text-gray-800">{caseline.quantity}</p>
+                        </div>
+                      )}
+
+                      {/* Reservations */}
+                      {caseline.reservations && caseline.reservations.length > 0 && (
+                        <div className="bg-indigo-50 border border-indigo-200 rounded p-3">
+                          <Label className="text-xs text-indigo-700 font-semibold">Component Reservations ({caseline.reservations.length}):</Label>
+                          <div className="space-y-2 mt-2">
+                            {caseline.reservations.map((reservation: any, idx: number) => (
+                              <div key={reservation.reservationId || idx} className="bg-white rounded p-2 text-sm">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <span className="text-xs text-indigo-600">Serial Number:</span>
+                                    <p className="font-mono text-indigo-900">{reservation.component?.serialNumber || 'N/A'}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-xs text-indigo-600">Status:</span>
+                                    <Badge className={
+                                      reservation.status === 'INSTALLED' ? 'bg-green-100 text-green-800 ml-2' :
+                                      reservation.status === 'RESERVED' ? 'bg-yellow-100 text-yellow-800 ml-2' :
+                                      'bg-gray-100 text-gray-800 ml-2'
+                                    }>
+                                      {reservation.status}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
 
@@ -4295,14 +4389,30 @@ const SuperAdvisor = () => {
                       )}
 
                       {/* Technician Info */}
-                      <div className="flex gap-4 text-xs text-gray-500">
-                        {caseline.diagnosticTechId && (
-                          <span>Diagnostic Tech ID: {caseline.diagnosticTechId}</span>
-                        )}
-                        {caseline.repairTechId && (
-                          <span>Repair Tech ID: {caseline.repairTechId}</span>
-                        )}
+                      <div className="border-t pt-3 mt-2">
+                        <Label className="text-xs text-gray-600 font-semibold mb-2 block">Technicians:</Label>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          {caseline.diagnosticTechnician && (
+                            <div className="bg-blue-50 rounded p-2">
+                              <span className="text-xs text-blue-600">Diagnostic:</span>
+                              <p className="font-semibold text-blue-900">{caseline.diagnosticTechName}</p>
+                            </div>
+                          )}
+                          {caseline.repairTechnician && (
+                            <div className="bg-green-50 rounded p-2">
+                              <span className="text-xs text-green-600">Repair:</span>
+                              <p className="font-semibold text-green-900">{caseline.repairTechName}</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
+
+                      {/* Updated At */}
+                      {caseline.updatedAt && (
+                        <div className="text-xs text-gray-500">
+                          Last updated: {new Date(caseline.updatedAt).toLocaleString()}
+                        </div>
+                      )}
 
                       {/* Approve/Reject Buttons for PENDING_APPROVAL status */}
                       {caseline.status === 'PENDING_APPROVAL' && (
@@ -4377,30 +4487,9 @@ const SuperAdvisor = () => {
       <Dialog open={showViewRecordDialog} onOpenChange={setShowViewRecordDialog}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <FileText className="h-5 w-5" />
-                <span>Processing Record Details</span>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRefreshRecordDetails}
-                disabled={isLoadingRecordDetail}
-                className="ml-4"
-              >
-                {isLoadingRecordDetail ? (
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
-                      <polyline points="23 4 23 10 17 10"></polyline>
-                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                    </svg>
-                    Refresh
-                  </>
-                )}
-              </Button>
+            <DialogTitle className="flex items-center space-x-2">
+              <FileText className="h-5 w-5" />
+              <span>Processing Record Details</span>
             </DialogTitle>
             <DialogDescription>
               Complete information from processing record
@@ -4472,16 +4561,10 @@ const SuperAdvisor = () => {
                         <p className="font-mono text-sm">{viewRecordData.vehicle.vin}</p>
                       </div>
                       {viewRecordData.vehicle.model && (
-                        <>
-                          <div>
-                            <Label className="text-xs text-blue-700">Model</Label>
-                            <p className="text-sm font-semibold">{viewRecordData.vehicle.model.name}</p>
-                          </div>
-                          <div>
-                            <Label className="text-xs text-blue-700">Model ID</Label>
-                            <p className="text-xs font-mono">{viewRecordData.vehicle.model.vehicleModelId}</p>
-                          </div>
-                        </>
+                        <div>
+                          <Label className="text-xs text-blue-700">Model</Label>
+                          <p className="text-sm font-semibold">{viewRecordData.vehicle.model.name}</p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -4499,10 +4582,6 @@ const SuperAdvisor = () => {
                         <Label className="text-xs text-purple-700">Name</Label>
                         <p className="text-sm font-semibold">{viewRecordData.mainTechnician.name}</p>
                       </div>
-                      <div>
-                        <Label className="text-xs text-purple-700">User ID</Label>
-                        <p className="text-xs font-mono">{viewRecordData.mainTechnician.userId}</p>
-                      </div>
                     </div>
                   </div>
                 )}
@@ -4518,10 +4597,6 @@ const SuperAdvisor = () => {
                       <div>
                         <Label className="text-xs text-green-700">Name</Label>
                         <p className="text-sm font-semibold">{viewRecordData.createdByStaff.name}</p>
-                      </div>
-                      <div>
-                        <Label className="text-xs text-green-700">User ID</Label>
-                        <p className="text-xs font-mono">{viewRecordData.createdByStaff.userId}</p>
                       </div>
                     </div>
                   </div>
