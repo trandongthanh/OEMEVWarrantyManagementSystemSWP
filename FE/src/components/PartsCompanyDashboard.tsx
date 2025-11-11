@@ -3,6 +3,7 @@ import axios from "axios";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
@@ -72,6 +73,9 @@ const PartsCompanyDashboard: React.FC = () => {
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
   const [shippingRequestId, setShippingRequestId] = useState<string | null>(null);
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
+  const [selectedCaseLine, setSelectedCaseLine] = useState<any | null>(null);
+  const [isLoadingCaseLine, setIsLoadingCaseLine] = useState<boolean>(false);
+  const [showCaseLineModal, setShowCaseLineModal] = useState<boolean>(false);
 
   // Fetch all stock transfer requests
   const fetchStockTransferRequests = async () => {
@@ -133,6 +137,35 @@ const PartsCompanyDashboard: React.FC = () => {
     }
   };
 
+  // Fetch CaseLine detail by id
+  const fetchCaseLineDetail = async (caseLineId: string) => {
+    if (!caseLineId) return;
+    setIsLoadingCaseLine(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingCaseLine(false);
+      return;
+    }
+    try {
+      const response = await axios.get(`${API_BASE_URL}/case-lines/${caseLineId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const caseLine = response.data?.data?.caseLine || response.data?.data || null;
+      console.log('🩺 CaseLine detail:', caseLine);
+      setSelectedCaseLine(caseLine);
+      setShowCaseLineModal(true);
+    } catch (error) {
+      console.error('Failed to fetch case line detail:', error);
+      toast({
+        title: 'Lỗi khi tải Case Line',
+        description: 'Không thể tải chi tiết Case Line. Kiểm tra console để biết thêm thông tin.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingCaseLine(false);
+    }
+  };
+
   // Load requests on mount
   useEffect(() => {
     fetchStockTransferRequests();
@@ -173,11 +206,19 @@ const PartsCompanyDashboard: React.FC = () => {
         await fetchStockTransferRequestDetail(requestId);
       }
       
-      alert('Request shipped successfully!');
+      toast({
+        title: 'Đã gửi hàng',
+        description: 'Yêu cầu vận chuyển đã được đánh dấu là shipped.',
+        variant: 'default'
+      });
     } catch (error: any) {
       console.error('Failed to ship request:', error);
       const errorMessage = error.response?.data?.message || 'Failed to ship request';
-      alert(`Error: ${errorMessage}`);
+      toast({
+        title: 'Lỗi khi gửi hàng',
+        description: errorMessage,
+        variant: 'destructive'
+      });
     } finally {
       setShippingRequestId(null);
     }
@@ -537,7 +578,20 @@ const PartsCompanyDashboard: React.FC = () => {
                                   <Badge variant="outline">{item.quantityRequested || 0}</Badge>
                                 </TableCell>
                                 <TableCell className="font-mono text-xs">
-                                  {item.caselineId ? `#${item.caselineId.substring(0, 8)}...` : '---'}
+                                  <div className="flex items-center gap-2">
+                                    <span>{item.caselineId ? `#${item.caselineId.substring(0, 8)}...` : '---'}</span>
+                                    {item.caselineId && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => fetchCaseLineDetail(item.caselineId)}
+                                        disabled={isLoadingCaseLine}
+                                      >
+                                        <Eye className="mr-1 h-3 w-3" />
+                                        View
+                                      </Button>
+                                    )}
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -552,6 +606,77 @@ const PartsCompanyDashboard: React.FC = () => {
               </div>
             ) : (
               <p className="text-center text-muted-foreground py-8">No details available</p>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* CaseLine Detail Modal */}
+        <Dialog open={showCaseLineModal} onOpenChange={setShowCaseLineModal}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Case Line Details</DialogTitle>
+              <DialogDescription>Full case line information returned from the API</DialogDescription>
+            </DialogHeader>
+
+            {isLoadingCaseLine ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : selectedCaseLine ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Case Line ID</label>
+                    <p className="font-mono text-sm">{selectedCaseLine.caseLineId || selectedCaseLine.id || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Guarantee Case ID</label>
+                    <p className="font-mono text-sm">{selectedCaseLine.guaranteeCaseId || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Diagnosis Text</label>
+                    <p className="text-sm">{selectedCaseLine.diagnosisText || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Correction Text</label>
+                    <p className="text-sm">{selectedCaseLine.correctionText || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Component ID</label>
+                    <p className="font-mono text-sm">{selectedCaseLine.componentId || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Quantity</label>
+                    <p className="text-sm">{(selectedCaseLine.quantity != null) ? selectedCaseLine.quantity : '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Quantity Reserved</label>
+                    <p className="text-sm">{(selectedCaseLine.quantityReserved != null) ? selectedCaseLine.quantityReserved : '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Warranty Status</label>
+                    <p className="text-sm">{selectedCaseLine.warrantyStatus || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Status</label>
+                    <p className="text-sm">{selectedCaseLine.status || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Tech ID</label>
+                    <p className="font-mono text-sm">{selectedCaseLine.techId || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Created At</label>
+                    <p className="text-sm">{selectedCaseLine.createdAt ? formatDate(selectedCaseLine.createdAt) : '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Updated At</label>
+                    <p className="text-sm">{selectedCaseLine.updatedAt ? formatDate(selectedCaseLine.updatedAt) : '---'}</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-center text-muted-foreground py-6">No case line details available</p>
             )}
           </DialogContent>
         </Dialog>
