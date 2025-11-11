@@ -34,7 +34,8 @@ import {
   BoxIcon as Box,
   Edit,
   Trash,
-  Eye
+  Eye,
+  Building2
 } from "lucide-react";
 
 interface Technician {
@@ -185,21 +186,53 @@ interface StockTransferRequest {
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  // Snake_case fields from API
+  requesting_warehouse_id?: string;
+  requested_by_user_id?: string;
+  approved_by_user_id?: string | null;
+  rejected_by_user_id?: string | null;
+  cancelled_by_user_id?: string | null;
+  received_by_user_id?: string | null;
+  // Nested objects
   requester?: {
     userId: string;
     name: string;
     serviceCenterId: string;
+    serviceCenter?: {
+      name: string;
+    };
+  };
+  approver?: {
+    userId: string;
+    name: string;
+    serviceCenterId?: string;
+    serviceCenter?: {
+      name: string;
+    };
+  } | null;
+  requestingWarehouse?: {
+    warehouseId: string;
+    name: string;
+    serviceCenterId: string;
+    vehicleCompanyId: string;
+    address?: string;
   };
   items?: Array<{
     id: string;
     quantityRequested: number;
-    quantityApproved: number | null;
-    typeComponentId: string;
-    caselineId?: string; // Add caselineId from backend response
+    quantityApproved?: number | null;
+    typeComponentId?: string;
+    caselineId?: string;
+    component?: {
+      name: string;
+      typeComponentId: string;
+      sku?: string;
+    };
     typeComponent?: {
       typeComponentId: string;
-      nameComponent: string;
-      description: string | null;
+      nameComponent?: string;
+      name?: string;
+      description?: string | null;
     };
   }>;
   caseLines?: Array<{
@@ -3962,14 +3995,30 @@ const ServiceCenterDashboard = () => {
                           </div>
                         </div>
                         <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
-                          <label className="text-xs font-semibold text-muted-foreground uppercase">Requesting Warehouse ID</label>
-                          <p className="font-mono text-sm mt-0.5">{selectedStockRequest.requestingWarehouseId}</p>
+                          <label className="text-xs font-semibold text-muted-foreground uppercase">Requesting Warehouse</label>
+                          <p className="font-medium text-sm mt-0.5">
+                            {selectedStockRequest.requestingWarehouse?.name || 'Unknown Warehouse'}
+                          </p>
+                          {selectedStockRequest.requestingWarehouse?.address && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {selectedStockRequest.requestingWarehouse.address}
+                            </p>
+                          )}
+                          <p className="font-mono text-xs text-muted-foreground mt-1">
+                            ID: {selectedStockRequest.requestingWarehouseId}
+                          </p>
                         </div>
                       </div>
                       <div className="space-y-3">
                         <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
                           <label className="text-xs font-semibold text-muted-foreground uppercase">Requester</label>
                           <p className="font-medium text-sm mt-0.5">{selectedStockRequest.requester?.name || 'Unknown'}</p>
+                          {selectedStockRequest.requester?.serviceCenter?.name && (
+                            <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
+                              <Building2 className="h-3 w-3" />
+                              {selectedStockRequest.requester.serviceCenter.name}
+                            </p>
+                          )}
                           <p className="font-mono text-xs text-muted-foreground mt-1">
                             User ID: {selectedStockRequest.requestedByUserId}
                           </p>
@@ -4026,6 +4075,30 @@ const ServiceCenterDashboard = () => {
                       </div>
                     </div>
 
+                    {/* Approver Information */}
+                    {selectedStockRequest.approver && (
+                      <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-md border border-green-200">
+                        <label className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase flex items-center gap-1">
+                          <CheckCircle className="h-3 w-3" />
+                          Approved By
+                        </label>
+                        <div className="mt-2 space-y-1">
+                          <p className="text-sm font-medium text-green-900 dark:text-green-100">
+                            {selectedStockRequest.approver.name}
+                          </p>
+                          {selectedStockRequest.approver.serviceCenter?.name && (
+                            <p className="text-xs text-green-700 dark:text-green-300 flex items-center gap-1">
+                              <Building2 className="h-3 w-3" />
+                              {selectedStockRequest.approver.serviceCenter.name}
+                            </p>
+                          )}
+                          <p className="font-mono text-xs text-green-600 dark:text-green-400">
+                            User ID: {selectedStockRequest.approvedByUserId}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {selectedStockRequest.rejectionReason && (
                       <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 rounded-md border border-red-200">
                         <label className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase">Rejection Reason</label>
@@ -4055,21 +4128,24 @@ const ServiceCenterDashboard = () => {
                     <CardContent className="pt-4">
                       <div className="space-y-3">
                         {selectedStockRequest.items.map((item, index) => {
-                          // Find component info from case line using caselineId
+                          // Get component info with priority: item.component (new API) > case line > typeComponent (old format)
                           let componentName = 'Unknown Component';
                           let componentDescription = '';
                           let relatedCaseLine = null;
                           
-                          // First try to find from fetched case lines using caselineId
-                          if (item.caselineId && selectedStockRequest.caseLines) {
+                          // Priority 1: New API response with component object
+                          if (item.component?.name) {
+                            componentName = item.component.name;
+                          }
+                          // Priority 2: Find from fetched case lines using caselineId
+                          else if (item.caselineId && selectedStockRequest.caseLines) {
                             relatedCaseLine = selectedStockRequest.caseLines.find(cl => cl.id === item.caselineId);
                             if (relatedCaseLine?.typeComponent) {
                               componentName = relatedCaseLine.typeComponent.name;
                             }
                           }
-                          
-                          // Fallback to API response if available
-                          if (componentName === 'Unknown Component' && item.typeComponent?.nameComponent) {
+                          // Priority 3: Fallback to old typeComponent format
+                          else if (item.typeComponent?.nameComponent) {
                             componentName = item.typeComponent.nameComponent;
                             componentDescription = item.typeComponent.description || '';
                           }
@@ -4086,6 +4162,23 @@ const ServiceCenterDashboard = () => {
                                   {componentDescription && (
                                     <p className="text-xs text-muted-foreground mt-1">{componentDescription}</p>
                                   )}
+                                  <div className="flex flex-wrap gap-2 mt-2">
+                                    {item.component?.sku && (
+                                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded border border-indigo-200">
+                                        <Tag className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                                        <span className="font-mono text-xs text-indigo-700 dark:text-indigo-300">
+                                          {item.component.sku}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {item.component?.typeComponentId && (
+                                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200">
+                                        <span className="font-mono text-xs text-muted-foreground">
+                                          Type ID: {item.component.typeComponentId}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                                 {item.caselineId && (
                                   <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200">

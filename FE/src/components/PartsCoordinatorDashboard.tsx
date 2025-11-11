@@ -28,7 +28,9 @@ import {
   MapPin,
   ClipboardList,
   AlertCircle,
-  FileText
+  FileText,
+  Building2,
+  Tag
 } from "lucide-react";
 
 const API_BASE_URL = 'http://localhost:3000/api/v1';
@@ -175,23 +177,55 @@ interface StockTransferRequest {
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  // Snake_case fields from API
+  requesting_warehouse_id?: string;
+  requested_by_user_id?: string;
+  approved_by_user_id?: string | null;
+  rejected_by_user_id?: string | null;
+  cancelled_by_user_id?: string | null;
+  received_by_user_id?: string | null;
+  // Nested objects
   requester?: {
     userId: string;
     name: string;
-    serviceCenterId: string;
+    serviceCenterId?: string;
+    serviceCenter?: {
+      name: string;
+    };
   };
+  approver?: {
+    userId: string;
+    name: string;
+    serviceCenterId?: string;
+    serviceCenter?: {
+      name: string;
+    };
+  } | null;
   requestingWarehouse?: {
     warehouseId: string;
     name: string;
     serviceCenterId: string;
     vehicleCompanyId: string;
+    address?: string;
   };
   items?: Array<{
     id: string;
-    requestId: string;
-    typeComponentId: string;
+    requestId?: string;
+    typeComponentId?: string;
     quantityRequested: number;
-    caselineId: string | null;
+    quantityApproved?: number | null;
+    caselineId?: string | null;
+    component?: {
+      name: string;
+      typeComponentId: string;
+      sku?: string;
+    };
+    typeComponent?: {
+      typeComponentId: string;
+      nameComponent?: string;
+      name?: string;
+      description?: string | null;
+    };
   }>;
 }
 
@@ -891,6 +925,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
                         <TableHead>Request ID</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Requester</TableHead>
+                        <TableHead>Warehouse</TableHead>
                         <TableHead>Requested At</TableHead>
                         <TableHead>Items</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
@@ -908,15 +943,43 @@ const PartsCoordinatorDashboard: React.FC = () => {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {request.requester?.name || 'N/A'}
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-medium">{request.requester?.name || 'N/A'}</p>
+                              {request.requester?.serviceCenter?.name && (
+                                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <Building2 className="h-3 w-3" />
+                                  {request.requester.serviceCenter.name}
+                                </p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-medium">
+                                {request.requestingWarehouse?.name || 'N/A'}
+                              </p>
+                              {request.requestingWarehouse?.address && (
+                                <p className="text-xs text-muted-foreground">
+                                  {request.requestingWarehouse.address}
+                                </p>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-sm">
                             {formatDate(request.requestedAt)}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">
-                              {request.items?.length || 0} items
-                            </Badge>
+                            <div className="space-y-1">
+                              <Badge variant="outline">
+                                {request.items?.length || 0} items
+                              </Badge>
+                              {request.items && request.items.length > 0 && request.items[0].component?.name && (
+                                <p className="text-xs text-muted-foreground line-clamp-1">
+                                  {request.items[0].component.name}
+                                  {request.items.length > 1 && ` +${request.items.length - 1} more`}
+                                </p>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -1428,39 +1491,50 @@ const PartsCoordinatorDashboard: React.FC = () => {
                       <div>
                         <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
                           <User className="h-3 w-3" />
-                          Requester Name
+                          Requester
                         </label>
-                        <p className="text-sm mt-1 font-medium">{selectedStockRequest.requester?.name || '---'}</p>
+                        <p className="text-sm mt-1 font-medium">{selectedStockRequest.requester?.name || 'Unknown'}</p>
+                        {selectedStockRequest.requester?.serviceCenter?.name && (
+                          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                            <Building2 className="h-3 w-3" />
+                            {selectedStockRequest.requester.serviceCenter.name}
+                          </p>
+                        )}
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-muted-foreground uppercase">Requester ID</label>
-                        <p className="font-mono text-xs mt-1">{selectedStockRequest.requestedByUserId || '---'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-muted-foreground uppercase">Service Center ID</label>
-                        <p className="font-mono text-xs mt-1">{selectedStockRequest.requester?.serviceCenterId || '---'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-muted-foreground uppercase">Requesting Warehouse ID</label>
-                        <p className="font-mono text-xs mt-1">{selectedStockRequest.requestingWarehouseId || '---'}</p>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
+                          <Warehouse className="h-3 w-3" />
+                          Requesting Warehouse
+                        </label>
+                        <p className="text-sm mt-1 font-medium">
+                          {selectedStockRequest.requestingWarehouse?.name || 'Unknown Warehouse'}
+                        </p>
+                        {selectedStockRequest.requestingWarehouse?.address && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {selectedStockRequest.requestingWarehouse.address}
+                          </p>
+                        )}
                       </div>
                     </div>
 
-                    {/* Warehouse Information */}
-                    {selectedStockRequest.requestingWarehouse && (
+                    {/* Approver Information */}
+                    {selectedStockRequest.approver && (
                       <div className="pt-3 border-t">
-                        <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-3">Warehouse Details</h4>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
-                              <Warehouse className="h-3 w-3" />
-                              Warehouse Name
-                            </label>
-                            <p className="text-sm mt-1 font-medium">{selectedStockRequest.requestingWarehouse.name}</p>
-                          </div>
-                          <div>
-                            <label className="text-xs font-semibold text-muted-foreground uppercase">Company ID</label>
-                            <p className="font-mono text-xs mt-1">{selectedStockRequest.requestingWarehouse.vehicleCompanyId || '---'}</p>
+                        <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-md border border-green-200">
+                          <label className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" />
+                            Approved By
+                          </label>
+                          <div className="mt-2 space-y-1">
+                            <p className="text-sm font-medium text-green-900 dark:text-green-100">
+                              {selectedStockRequest.approver.name}
+                            </p>
+                            {selectedStockRequest.approver.serviceCenter?.name && (
+                              <p className="text-xs text-green-700 dark:text-green-300 flex items-center gap-1">
+                                <Building2 className="h-3 w-3" />
+                                {selectedStockRequest.approver.serviceCenter.name}
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1560,34 +1634,80 @@ const PartsCoordinatorDashboard: React.FC = () => {
                   <CardContent>
                     {selectedStockRequest.items && selectedStockRequest.items.length > 0 ? (
                       <div className="space-y-3">
-                        {selectedStockRequest.items.map((item, index) => (
-                          <div key={item.id || index} className="p-3 bg-slate-50 dark:bg-slate-900/30 rounded-lg border">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs font-semibold text-muted-foreground">Item #{index + 1}</span>
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline">Qty: {item.quantityRequested}</Badge>
+                        {selectedStockRequest.items.map((item, index) => {
+                          // Get component info with priority: item.component (new API) > typeComponent (old format)
+                          let componentName = 'Unknown Component';
+                          let componentDescription = '';
+                          
+                          // Priority 1: New API response with component object
+                          if (item.component?.name) {
+                            componentName = item.component.name;
+                          }
+                          // Priority 2: Fallback to old typeComponent format
+                          else if (item.typeComponent?.nameComponent || item.typeComponent?.name) {
+                            componentName = item.typeComponent.nameComponent || item.typeComponent.name || 'Unknown';
+                            componentDescription = item.typeComponent.description || '';
+                          }
+                          
+                          return (
+                          <div key={item.id || index} className="p-4 bg-white dark:bg-gray-800 rounded-lg border shadow-sm">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div className="space-y-2">
+                                <div>
+                                  <label className="text-xs font-semibold text-muted-foreground uppercase">Component Name</label>
+                                  <p className="font-medium text-base mt-1">
+                                    {componentName}
+                                  </p>
+                                  {componentDescription && (
+                                    <p className="text-xs text-muted-foreground mt-1">{componentDescription}</p>
+                                  )}
+                                  <div className="flex flex-wrap gap-2 mt-2">
+                                    {item.component?.sku && (
+                                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded border border-indigo-200">
+                                        <Tag className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                                        <span className="font-mono text-xs text-indigo-700 dark:text-indigo-300">
+                                          {item.component.sku}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {item.component?.typeComponentId && (
+                                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200">
+                                        <span className="font-mono text-xs text-muted-foreground">
+                                          Type ID: {item.component.typeComponentId}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                {item.caselineId && (
+                                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200">
+                                    <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase">
+                                      Case Line ID
+                                    </label>
+                                    <p className="font-mono text-xs text-blue-900 dark:text-blue-100 mt-1">
+                                      {item.caselineId}
+                                    </p>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3 text-sm">
                               <div>
-                                <span className="text-xs text-muted-foreground">Item ID:</span>
-                                <p className="font-mono text-xs mt-0.5">{item.id}</p>
+                                <label className="text-xs font-semibold text-muted-foreground uppercase">Quantity Requested</label>
+                                <p className="font-semibold text-lg mt-1 text-blue-600 dark:text-blue-400">
+                                  {item.quantityRequested}
+                                </p>
                               </div>
-                              <div>
-                                <span className="text-xs text-muted-foreground">Request ID:</span>
-                                <p className="font-mono text-xs mt-0.5">{item.requestId}</p>
-                              </div>
-                              <div>
-                                <span className="text-xs text-muted-foreground">Type Component ID:</span>
-                                <p className="font-mono text-xs mt-0.5">{item.typeComponentId}</p>
-                              </div>
-                              <div>
-                                <span className="text-xs text-muted-foreground">Case Line ID:</span>
-                                <p className="font-mono text-xs mt-0.5">{item.caselineId || '---'}</p>
-                              </div>
+                              {item.quantityApproved !== null && item.quantityApproved !== undefined && (
+                                <div>
+                                  <label className="text-xs font-semibold text-muted-foreground uppercase">Quantity Approved</label>
+                                  <p className="font-semibold text-lg mt-1 text-green-600 dark:text-green-400">
+                                    {item.quantityApproved}
+                                  </p>
+                                </div>
+                              )}
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground text-center py-4">No items found</p>
