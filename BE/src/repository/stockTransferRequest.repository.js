@@ -157,6 +157,7 @@ class StockTransferRequestRepository {
               model: db.ServiceCenter,
               as: "serviceCenter",
               attributes: ["name"],
+              required: true,
             },
           ],
           required: true,
