@@ -68,7 +68,7 @@ const AllClaims = () => {
 
   // Filtering and sorting logic
   const filteredAndSortedClaims = useMemo(() => {
-    let filtered = allClaims.filter(claim => {
+    const filtered = allClaims.filter(claim => {
       // Search filter
       const searchMatch = !searchTerm ||
         claim.id.toLowerCase().includes(searchTerm.toLowerCase()) ||

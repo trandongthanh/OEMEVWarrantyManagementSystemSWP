@@ -1,0 +1,44 @@
+name: Deploy Backend to GCP Ubuntu
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🧾 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🚀 Upload to server
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "BE/*"
+          target: "/home/${{ secrets.SSH_USER }}/myapp/backend"
+          strip_components: 1
+
+      - name: 🔁 Install & Restart via PM2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm install 18 && nvm use 18
+            command -v pm2 >/dev/null 2>&1 || npm i -g pm2
+
+            cd ~/myapp/backend
+            npm ci --omit=dev || npm install --production
+
+            # đổi index.js nếu entry khác (vd: src/server.js)
+            pm2 describe backend-app >/dev/null 2>&1 && pm2 restart backend-app || pm2 start server.js --name backend-app
+            pm2 save

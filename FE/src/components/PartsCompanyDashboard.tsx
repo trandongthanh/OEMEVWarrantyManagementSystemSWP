@@ -3,6 +3,7 @@ import axios from "axios";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/AuthContext";
@@ -28,11 +29,11 @@ interface StockTransferRequest {
   approvedByUserId: string | null;
   rejectedByUserId: string | null;
   cancelledByUserId: string | null;
+  receivedByUserId: string | null;
   status: string;
   rejectionReason: string | null;
   cancellationReason: string | null;
   requestedAt: string;
-  receivedByUserId: string | null;
   approvedAt: string | null;
   shippedAt: string | null;
   receivedAt: string | null;
@@ -45,17 +46,18 @@ interface StockTransferRequest {
     name: string;
     serviceCenterId: string;
   };
+  requestingWarehouse?: {
+    warehouseId: string;
+    name: string;
+    serviceCenterId: string | null;
+    vehicleCompanyId: string | null;
+  };
   items?: Array<{
     id: string;
-    quantityRequested: number;
-    quantityApproved: number | null;
+    requestId: string;
     typeComponentId: string;
-    caselineId?: string;
-    typeComponent?: {
-      typeComponentId: string;
-      nameComponent: string;
-      description: string | null;
-    };
+    quantityRequested: number;
+    caselineId?: string | null;
   }>;
 }
 
@@ -69,8 +71,11 @@ const PartsCompanyDashboard: React.FC = () => {
   const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
   const [isLoadingRequests, setIsLoadingRequests] = useState<boolean>(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
-  const [isShipping, setIsShipping] = useState<boolean>(false);
+  const [shippingRequestId, setShippingRequestId] = useState<string | null>(null);
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
+  const [selectedCaseLine, setSelectedCaseLine] = useState<any | null>(null);
+  const [isLoadingCaseLine, setIsLoadingCaseLine] = useState<boolean>(false);
+  const [showCaseLineModal, setShowCaseLineModal] = useState<boolean>(false);
 
   // Fetch all stock transfer requests
   const fetchStockTransferRequests = async () => {
@@ -132,6 +137,35 @@ const PartsCompanyDashboard: React.FC = () => {
     }
   };
 
+  // Fetch CaseLine detail by id
+  const fetchCaseLineDetail = async (caseLineId: string) => {
+    if (!caseLineId) return;
+    setIsLoadingCaseLine(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingCaseLine(false);
+      return;
+    }
+    try {
+      const response = await axios.get(`${API_BASE_URL}/case-lines/${caseLineId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const caseLine = response.data?.data?.caseLine || response.data?.data || null;
+      console.log('🩺 CaseLine detail:', caseLine);
+      setSelectedCaseLine(caseLine);
+      setShowCaseLineModal(true);
+    } catch (error) {
+      console.error('Failed to fetch case line detail:', error);
+      toast({
+        title: 'Lỗi khi tải Case Line',
+        description: 'Không thể tải chi tiết Case Line. Kiểm tra console để biết thêm thông tin.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingCaseLine(false);
+    }
+  };
+
   // Load requests on mount
   useEffect(() => {
     fetchStockTransferRequests();
@@ -148,10 +182,10 @@ const PartsCompanyDashboard: React.FC = () => {
 
   // Ship stock transfer request
   const handleShipRequest = async (requestId: string) => {
-    setIsShipping(true);
+    setShippingRequestId(requestId);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
-      setIsShipping(false);
+      setShippingRequestId(null);
       return;
     }
     try {
@@ -172,13 +206,21 @@ const PartsCompanyDashboard: React.FC = () => {
         await fetchStockTransferRequestDetail(requestId);
       }
       
-      alert('Request shipped successfully!');
+      toast({
+        title: 'Đã gửi hàng',
+        description: 'Yêu cầu vận chuyển đã được đánh dấu là shipped.',
+        variant: 'default'
+      });
     } catch (error: any) {
       console.error('Failed to ship request:', error);
       const errorMessage = error.response?.data?.message || 'Failed to ship request';
-      alert(`Error: ${errorMessage}`);
+      toast({
+        title: 'Lỗi khi gửi hàng',
+        description: errorMessage,
+        variant: 'destructive'
+      });
     } finally {
-      setIsShipping(false);
+      setShippingRequestId(null);
     }
   };
 
@@ -356,10 +398,19 @@ const PartsCompanyDashboard: React.FC = () => {
                                   size="sm"
                                   variant="default"
                                   onClick={() => handleShipRequest(request.id)}
-                                  disabled={isShipping}
+                                  disabled={shippingRequestId !== null}
                                 >
-                                  <Truck className="mr-1 h-3 w-3" />
-                                  {isShipping ? 'Shipping...' : 'Ship'}
+                                  {shippingRequestId !== null ? (
+                                    <>
+                                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                      Shipping...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Truck className="mr-1 h-3 w-3" />
+                                      Ship
+                                    </>
+                                  )}
                                 </Button>
                               )}
                             </div>
@@ -385,10 +436,19 @@ const PartsCompanyDashboard: React.FC = () => {
                     size="sm"
                     variant="default"
                     onClick={() => handleShipRequest(selectedStockRequest.id)}
-                    disabled={isShipping}
+                    disabled={shippingRequestId !== null}
                   >
-                    <Truck className="mr-1 h-4 w-4" />
-                    {isShipping ? 'Shipping...' : 'Ship Request'}
+                    {shippingRequestId !== null ? (
+                      <>
+                        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                        Shipping...
+                      </>
+                    ) : (
+                      <>
+                        <Truck className="mr-1 h-4 w-4" />
+                        Ship Request
+                      </>
+                    )}
                   </Button>
                 )}
               </DialogTitle>
@@ -412,7 +472,7 @@ const PartsCompanyDashboard: React.FC = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Request ID</label>
-                        <p className="font-mono text-sm">#{selectedStockRequest.id.substring(0, 8)}</p>
+                        <p className="font-mono text-sm">#{selectedStockRequest.id.substring(0, 8)}...</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Status</label>
@@ -425,42 +485,44 @@ const PartsCompanyDashboard: React.FC = () => {
                       <div>
                         <label className="text-sm font-medium text-muted-foreground flex items-center">
                           <User className="mr-1 h-3 w-3" />
-                          Requester
+                          Requester Name
                         </label>
-                        <p className="text-sm">{selectedStockRequest.requester?.name || 'N/A'}</p>
+                        <p className="text-sm font-semibold">{selectedStockRequest.requester?.name || '---'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Requester ID</label>
+                        <p className="font-mono text-xs">{selectedStockRequest.requester?.userId ? `#${selectedStockRequest.requester.userId.substring(0, 8)}...` : '---'}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground flex items-center">
                           <Warehouse className="mr-1 h-3 w-3" />
-                          Warehouse ID
+                          Requesting Warehouse
                         </label>
-                        <p className="font-mono text-xs">{selectedStockRequest.requestingWarehouseId}</p>
+                        <p className="text-sm font-semibold">{selectedStockRequest.requestingWarehouse?.name || '---'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Warehouse ID</label>
+                        <p className="font-mono text-xs">{selectedStockRequest.requestingWarehouse?.warehouseId ? `#${selectedStockRequest.requestingWarehouse.warehouseId.substring(0, 8)}...` : '---'}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground flex items-center">
                           <Calendar className="mr-1 h-3 w-3" />
                           Requested At
                         </label>
-                        <p className="text-sm">{formatDate(selectedStockRequest.requestedAt)}</p>
+                        <p className="text-sm">{selectedStockRequest.requestedAt ? formatDate(selectedStockRequest.requestedAt) : '---'}</p>
                       </div>
-                      {selectedStockRequest.approvedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Approved At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.approvedAt)}</p>
-                        </div>
-                      )}
-                      {selectedStockRequest.shippedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Shipped At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.shippedAt)}</p>
-                        </div>
-                      )}
-                      {selectedStockRequest.receivedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Received At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.receivedAt)}</p>
-                        </div>
-                      )}
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Approved At</label>
+                        <p className="text-sm">{selectedStockRequest.approvedAt ? formatDate(selectedStockRequest.approvedAt) : '---'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Shipped At</label>
+                        <p className="text-sm">{selectedStockRequest.shippedAt ? formatDate(selectedStockRequest.shippedAt) : '---'}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Received At</label>
+                        <p className="text-sm">{selectedStockRequest.receivedAt ? formatDate(selectedStockRequest.receivedAt) : '---'}</p>
+                      </div>
                     </div>
 
                     {selectedStockRequest.rejectionReason && (
@@ -493,12 +555,11 @@ const PartsCompanyDashboard: React.FC = () => {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>#</TableHead>
-                              <TableHead>Component ID</TableHead>
-                              <TableHead>Component Name</TableHead>
-                              <TableHead>Description</TableHead>
-                              <TableHead className="text-right">Qty Requested</TableHead>
-                              <TableHead className="text-right">Qty Approved</TableHead>
+                              <TableHead className="w-12">#</TableHead>
+                              <TableHead>Item ID</TableHead>
+                              <TableHead>Type Component ID</TableHead>
+                              <TableHead className="text-right w-24">Quantity</TableHead>
+                              <TableHead>Caseline ID</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -508,23 +569,29 @@ const PartsCompanyDashboard: React.FC = () => {
                                   {index + 1}
                                 </TableCell>
                                 <TableCell className="font-mono text-xs">
-                                  {item.typeComponentId ? `#${item.typeComponentId.substring(0, 8)}` : 'N/A'}
+                                  {item.id ? `#${item.id.substring(0, 8)}...` : '---'}
                                 </TableCell>
-                                <TableCell className="font-medium">
-                                  {item.typeComponent?.nameComponent || 'N/A'}
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground max-w-xs">
-                                  {item.typeComponent?.description || '-'}
+                                <TableCell className="font-mono text-xs">
+                                  {item.typeComponentId ? `#${item.typeComponentId.substring(0, 8)}...` : '---'}
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  <Badge variant="outline">{item.quantityRequested}</Badge>
+                                  <Badge variant="outline">{item.quantityRequested || 0}</Badge>
                                 </TableCell>
-                                <TableCell className="text-right">
-                                  {item.quantityApproved !== null && item.quantityApproved !== undefined ? (
-                                    <Badge variant="default">{item.quantityApproved}</Badge>
-                                  ) : (
-                                    <span className="text-muted-foreground text-sm">Pending</span>
-                                  )}
+                                <TableCell className="font-mono text-xs">
+                                  <div className="flex items-center gap-2">
+                                    <span>{item.caselineId ? `#${item.caselineId.substring(0, 8)}...` : '---'}</span>
+                                    {item.caselineId && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => fetchCaseLineDetail(item.caselineId)}
+                                        disabled={isLoadingCaseLine}
+                                      >
+                                        <Eye className="mr-1 h-3 w-3" />
+                                        View
+                                      </Button>
+                                    )}
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -539,6 +606,77 @@ const PartsCompanyDashboard: React.FC = () => {
               </div>
             ) : (
               <p className="text-center text-muted-foreground py-8">No details available</p>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* CaseLine Detail Modal */}
+        <Dialog open={showCaseLineModal} onOpenChange={setShowCaseLineModal}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Case Line Details</DialogTitle>
+              <DialogDescription>Full case line information returned from the API</DialogDescription>
+            </DialogHeader>
+
+            {isLoadingCaseLine ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : selectedCaseLine ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Case Line ID</label>
+                    <p className="font-mono text-sm">{selectedCaseLine.caseLineId || selectedCaseLine.id || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Guarantee Case ID</label>
+                    <p className="font-mono text-sm">{selectedCaseLine.guaranteeCaseId || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Diagnosis Text</label>
+                    <p className="text-sm">{selectedCaseLine.diagnosisText || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Correction Text</label>
+                    <p className="text-sm">{selectedCaseLine.correctionText || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Component ID</label>
+                    <p className="font-mono text-sm">{selectedCaseLine.componentId || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Quantity</label>
+                    <p className="text-sm">{(selectedCaseLine.quantity != null) ? selectedCaseLine.quantity : '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Quantity Reserved</label>
+                    <p className="text-sm">{(selectedCaseLine.quantityReserved != null) ? selectedCaseLine.quantityReserved : '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Warranty Status</label>
+                    <p className="text-sm">{selectedCaseLine.warrantyStatus || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Status</label>
+                    <p className="text-sm">{selectedCaseLine.status || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Tech ID</label>
+                    <p className="font-mono text-sm">{selectedCaseLine.techId || '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Created At</label>
+                    <p className="text-sm">{selectedCaseLine.createdAt ? formatDate(selectedCaseLine.createdAt) : '---'}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-muted-foreground">Updated At</label>
+                    <p className="text-sm">{selectedCaseLine.updatedAt ? formatDate(selectedCaseLine.updatedAt) : '---'}</p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-center text-muted-foreground py-6">No case line details available</p>
             )}
           </DialogContent>
         </Dialog>

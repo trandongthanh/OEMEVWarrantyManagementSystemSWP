@@ -49,12 +49,26 @@ export interface ProcessingRecord {
     contentGuarantee: string;
     leadTechId?: string;
     caseLines?: CaseLine[];
+    taskAssignments?: Array<{
+      taskAssignmentId: string;
+      taskType: string;
+      assignedBy: string;
+      isActive: boolean;
+      assigner: {
+        userId: string;
+        name: string;
+        role?: {
+          roleName: string;
+        };
+      };
+    }>;
   }>;
   createdByStaff: {
     userId: string;
     name: string;
     serviceCenterId?: string;
   };
+  evidenceImageUrls?: string[];
 }
 
 export interface ProcessingRecordsResponse {

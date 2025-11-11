@@ -25,6 +25,12 @@ const createProcessingRecord = async (recordData: {
   vin: string;
   odometer: number;
   guaranteeCases: { contentGuarantee: string }[];
+  visitorInfo?: {
+    fullName: string;
+    phone: string;
+    email: string;
+  };
+  evidenceImageUrls?: string[];
 }) => {
   const token = localStorage.getItem("ev_warranty_token");
   
@@ -38,6 +44,8 @@ const createProcessingRecord = async (recordData: {
   });
   
   const result = await response.json();
+  
+  console.log('📥 createProcessingRecord API result:', result);
   
   // Check for API errors
   if (!response.ok || result.status === 'error') {
@@ -111,6 +119,7 @@ interface VehicleSearchResult {
   company?: string;
   licensePlate?: string;
   purchaseDate?: string;
+  registrationDate?: string | null;
   owner?: {
     id: string;
     fullName: string;
@@ -172,11 +181,6 @@ const SuperAdvisor = () => {
   const [selectedRecordForCaseline, setSelectedRecordForCaseline] = useState<WarrantyRecord | null>(null);
   const [caselines, setCaselines] = useState<any[]>([]);
   const [isLoadingCaselines, setIsLoadingCaselines] = useState(false);
-
-  // Caseline detail dialog states
-  const [showCaselineDetailDialog, setShowCaselineDetailDialog] = useState(false);
-  const [caselineDetailData, setCaselineDetailData] = useState<any>(null);
-  const [isLoadingCaselineDetail, setIsLoadingCaselineDetail] = useState(false);
 
   // View Record dialog states
   const [showViewRecordDialog, setShowViewRecordDialog] = useState(false);
@@ -349,7 +353,6 @@ const SuperAdvisor = () => {
         // Don't clear existing records if API has no data
       }
     } catch (error) {
-      console.error('Error loading processing records:', error);
       // Keep existing records if API fails
       toast({
         title: 'Warning',
@@ -382,6 +385,19 @@ const SuperAdvisor = () => {
     }
   }, [otpCountdown, otpSent, toast]);
 
+  // Auto-update Owner Information when foundCustomer changes (after update in "Find Customer by Phone" mode)
+  useEffect(() => {
+    if (foundCustomer && warrantyStatus === 'valid') {
+      // Update ownerForm with latest customer data
+      setOwnerForm({
+        fullName: foundCustomer.fullName || '',
+        phone: foundCustomer.phone || '',
+        email: foundCustomer.email || '',
+        address: foundCustomer.address || ''
+      });
+    }
+  }, [foundCustomer, warrantyStatus]);
+
   const handleSearchVehicleByVin = async (vinToSearch?: string) => {
     try {
       // Reset customer search state and warranty info
@@ -395,9 +411,9 @@ const SuperAdvisor = () => {
       
       if (!vin) {
         toast({
-          title: 'Error',
-          description: 'Please enter VIN to search vehicle',
-          variant: 'destructive'
+          title: 'Enter valid VIN!',
+          description: 'Please enter VIN number to search for vehicle information.',
+          variant: 'default'
         });
         return;
       }
@@ -434,6 +450,8 @@ const SuperAdvisor = () => {
           company: vehicle.company || 'N/A',
           licensePlate: vehicle.licensePlate,
           purchaseDate: vehicle.purchaseDate,
+          // Backend trả về registerationDate (lỗi chính tả trong DB/model)
+          registrationDate: vehicle.registerationDate || null,
           owner: vehicle.owner
         });
 
@@ -476,15 +494,14 @@ const SuperAdvisor = () => {
         }
       } else {
         toast({
-          title: 'Vehicle Not Found',
-          description: 'No vehicle found with this VIN',
-          variant: 'destructive'
+          title: 'No vehicle found!',
+          description: 'Cannot find vehicle with this VIN. Please enter another VIN.',
+          variant: 'default'
         });
         setVehicleSearchResult(null);
       }
 
     } catch (error) {
-      console.error("❌ Failed to search vehicle:", error);
       console.error("Error details:", {
         message: error.message,
         status: error.response?.status,
@@ -493,9 +510,9 @@ const SuperAdvisor = () => {
       });
       
       toast({
-        title: 'Error',
-        description: error.response?.data?.message || 'An error occurred while searching for vehicle',
-        variant: 'destructive'
+        title: 'No vehicle found!',
+        description: 'Cannot find vehicle with this VIN. Please enter another VIN.',
+        variant: 'default'
       });
       setVehicleSearchResult(null);
     }
@@ -506,9 +523,9 @@ const SuperAdvisor = () => {
     
     if (!phoneNumber) {
       toast({
-        title: 'Error',
-        description: 'Please enter phone number',
-        variant: 'destructive'
+        title: 'Enter valid phone!',
+        description: 'Please enter a 10-digit phone number to search for customer.',
+        variant: 'default'
       });
       return;
     }
@@ -541,7 +558,18 @@ const SuperAdvisor = () => {
 
       // Kiểm tra API có trả về thành công không
       if (response.data && response.data.status === 'success') {
-        const customer = response.data.data?.customer;
+        let customer = response.data.data?.customer;
+        
+        // Map registerationDate (backend typo) to registrationDate (UI standard) cho vehicles
+        if (customer && Array.isArray(customer.vehicles)) {
+          customer = {
+            ...customer,
+            vehicles: customer.vehicles.map((v: any) => ({
+              ...v,
+              registrationDate: v.registerationDate || v.registrationDate
+            }))
+          };
+        }
         
         // nếu API get về có customer id tức có tồn tại cả obj customer
         if (customer.id) {
@@ -573,7 +601,7 @@ const SuperAdvisor = () => {
           });
 
           toast({
-            title: 'Customer Not Found',
+            title: 'No customer found!',
             description: 'No customer found with this phone number. You can enter new customer information.',
             variant: 'default'
           });
@@ -594,7 +622,7 @@ const SuperAdvisor = () => {
         });
 
         toast({
-          title: 'Customer Not Found',
+          title: 'No customer found!',
           description: 'No customer found with this phone number. You can enter new customer information.',
           variant: 'default'
         });
@@ -602,8 +630,7 @@ const SuperAdvisor = () => {
         setHasSearchedCustomer(true);
       }
 
-    } catch (error) {
-      console.error('❌ Failed to search customer:', error);
+    } catch (error: any) {
       setFoundCustomer(null);
       setHasSearchedCustomer(true);
       
@@ -615,9 +642,10 @@ const SuperAdvisor = () => {
         address: ''
       });
 
+      // Hiển thị thông báo không tìm thấy (màu trắng)
       toast({
-        title: 'Search Error',
-        description: 'An error occurred while searching for customer. You can enter new customer information.',
+        title: 'No customer found!',
+        description: 'No customer found with this phone number. You can enter new customer information.',
         variant: 'default'
       });
     } finally {
@@ -745,6 +773,7 @@ const SuperAdvisor = () => {
 
       if (response.data && response.data.status === 'success') {
         // Update foundCustomer with new data
+        // This will trigger useEffect to auto-update Owner Information form in warranty flow
         setFoundCustomer({
           ...foundCustomer,
           ...updateData
@@ -758,7 +787,6 @@ const SuperAdvisor = () => {
         setIsEditingCustomer(false);
       }
     } catch (error: any) {
-      console.error('Error updating customer:', error);
       toast({
         title: 'Error',
         description: error.response?.data?.message || 'Failed to update customer information',
@@ -825,7 +853,6 @@ const SuperAdvisor = () => {
 
       setIsCheckingVehicleWarranty(false);
     } catch (error) {
-      console.error('Warranty check error:', error);
       setIsCheckingVehicleWarranty(false);
       toast({
         title: 'Error',
@@ -869,23 +896,42 @@ const SuperAdvisor = () => {
         await handleSearchVehicleByVin(vinToSearch);
         // User will manually enter odometer and click "Check Warranty Policy"
       } catch (error) {
-        console.error('Auto search failed:', error);
       }
     }, 300);
   };
 
   // Handle create record for warranty-valid vehicle
-  const handleCreateRecord = async (vehicle: any) => {
-    if (!foundCustomer || !vehicle) {
+  const handleCreateRecord = async (options?: {
+    vehicle?: any,
+    customer?: any,
+    odometerValue?: string,
+    shouldCloseWarrantyDialog?: boolean
+  }) => {
+    // Xác định nguồn data - Fallback to state if options not provided
+    const vehicle = options?.vehicle || vehicleSearchResult;
+    const customer = options?.customer || foundCustomer || vehicleSearchResult?.owner;
+    const odometerValue = options?.odometerValue || vehicleOdometer || odometer;
+    
+    // Validation
+    if (!vehicle) {
       toast({
         title: 'Error',
-        description: 'Missing customer or vehicle information',
+        description: 'Vehicle information is required',
+        variant: 'destructive'
+      });
+      return;
+    }
+    
+    if (!customer) {
+      toast({
+        title: 'Error',
+        description: 'Vehicle must have an owner before creating a processing record',
         variant: 'destructive'
       });
       return;
     }
 
-    if (!vehicleOdometer) {
+    if (!odometerValue) {
       toast({
         title: 'Error',
         description: 'Please enter odometer reading first',
@@ -897,18 +943,22 @@ const SuperAdvisor = () => {
     // Prepare form data and open create warranty dialog
     setWarrantyRecordForm({
       vin: vehicle.vin,
-      odometer: vehicleOdometer,
-      purchaseDate: vehicle.purchaseDate,
-      customerName: foundCustomer.fullName || foundCustomer.name,
-      customerPhone: foundCustomer.phone || '', // Store customer phone for auto-fill
+      odometer: odometerValue,
+      purchaseDate: vehicle.purchaseDate || '',
+      customerName: customer.fullName || customer.name,
+      customerPhone: customer.phone || '',
       cases: [],
-      visitorFullName: '', // Visitor must be entered manually
-      visitorPhone: '', // Visitor must be entered manually
-      customerEmail: foundCustomer.email || ''
+      visitorFullName: '',
+      visitorPhone: '',
+      customerEmail: customer.email || ''
     });
     
-    // Close warranty dialog and open create dialog
-    setShowWarrantyDialog(false);
+    // Close warranty dialog if needed (only from phone search flow)
+    if (options?.shouldCloseWarrantyDialog) {
+      setShowWarrantyDialog(false);
+    }
+    
+    // Open create dialog
     setShowCreateWarrantyDialog(true);
   };
 
@@ -960,7 +1010,6 @@ const SuperAdvisor = () => {
         throw new Error(result.message || 'Failed to send OTP');
       }
     } catch (error) {
-      console.error('Error sending OTP:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to send OTP. Please try again.',
@@ -1007,7 +1056,6 @@ const SuperAdvisor = () => {
         throw new Error(result.message || 'Invalid or expired OTP code');
       }
     } catch (error) {
-      console.error('Error verifying OTP:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to verify OTP. Please try again.',
@@ -1138,7 +1186,6 @@ const SuperAdvisor = () => {
         });
       }
     } catch (error) {
-      console.error('Error uploading images:', error);
       toast({
         title: 'Upload Failed',
         description: error instanceof Error ? error.message : 'Failed to upload images. Please try again.',
@@ -1468,7 +1515,6 @@ const SuperAdvisor = () => {
       setHasSearchedCustomer(false);
 
     } catch (error) {
-      console.error('❌ Error saving changes:', error);
       if (error.response) {
         console.error('Backend error:', error.response.data);
         const errorMessage = error.response.data.message || 'Server error';
@@ -1617,7 +1663,6 @@ const SuperAdvisor = () => {
                 try {
                   await handleSearchCustomerByPhone(phoneToSearch);
                 } catch (error) {
-                  console.error('❌ Auto-search failed:', error);
                 }
               }, 600);
             }
@@ -1642,7 +1687,6 @@ const SuperAdvisor = () => {
       setIsCheckingWarranty(false);
 
     } catch (error) {
-      console.error('❌ Failed to check warranty:', error);
       setIsCheckingWarranty(false);
       setWarrantyStatus('expired');
       
@@ -1658,7 +1702,7 @@ const SuperAdvisor = () => {
     if (!ownerForm.fullName?.trim() || !ownerForm.phone?.trim() || !ownerForm.email?.trim() || !ownerForm.address?.trim()) {
       toast({
         title: 'Validation Error',
-        description: 'Please fill in all owner information (Full Name, Phone, Email, Address)',
+        description: 'Please fill in all owner information',
         variant: 'destructive'
       });
       return;
@@ -1773,50 +1817,12 @@ const SuperAdvisor = () => {
       }
 
     } catch (error) {
-      console.error('Error registering owner:', error);
       toast({
         title: 'Error',
         description: error.response?.data?.message || 'Failed to register owner. Please try again.',
         variant: 'destructive'
       });
     }
-  };
-
-  // Handle creating record from VIN search flow - prepare form and open dialog
-  const handleCreateRecordFromVin = () => {
-    if (!vehicleSearchResult || !odometer) {
-      toast({
-        title: 'Validation Error',
-        description: 'VIN and odometer are required',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    if (!vehicleSearchResult.owner) {
-      toast({
-        title: 'Error',
-        description: 'Vehicle must have an owner before creating a processing record',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    // Prepare form data and open create warranty dialog
-    setWarrantyRecordForm({
-      vin: vehicleSearchResult.vin,
-      odometer: odometer,
-      purchaseDate: vehicleSearchResult.purchaseDate || '',
-      customerName: vehicleSearchResult.owner.fullName,
-      customerPhone: vehicleSearchResult.owner.phone || '', // Store customer phone for auto-fill
-      cases: [],
-      visitorFullName: '', // Visitor must be entered manually
-      visitorPhone: '', // Visitor must be entered manually
-      customerEmail: vehicleSearchResult.owner.email || ''
-    });
-    
-    // Open create dialog
-    setShowCreateWarrantyDialog(true);
   };
 
   const handleEditRecord = async (record: WarrantyRecord) => {
@@ -1867,7 +1873,6 @@ const SuperAdvisor = () => {
             apiCustomerName = vehicleResult.data.vehicle.owner.fullName || 'Unknown Customer';
           }
         } catch (vehicleError) {
-          console.error('❌ Error fetching vehicle details:', vehicleError);
         }
         
         setEditRecord({
@@ -1896,7 +1901,6 @@ const SuperAdvisor = () => {
         });
       }
     } catch (error) {
-      console.error('Error fetching record details:', error);
       // Fallback to record data without visitorInfo
       setEditRecord({
         vinNumber: record.vinNumber,
@@ -2014,8 +2018,8 @@ const SuperAdvisor = () => {
         return;
       }
 
-      // Fetch record details with caselines
-      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
+      // Fetch processing record to get caseline IDs
+      const recordResponse = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -2023,31 +2027,97 @@ const SuperAdvisor = () => {
         }
       });
 
-      const result = await response.json();
+      const recordResult = await recordResponse.json();
 
-      if (result.status === 'success' && result.data?.record) {
-        const recordData = result.data.record;
+      if (recordResult.status === 'success' && recordResult.data?.record) {
+        const recordData = recordResult.data.record;
         
-        const allCaselines: any[] = [];
-
-        // Extract caselines from all guarantee cases
+        // Extract caseline IDs from guarantee cases
+        const allCaselineIds: string[] = [];
         if (recordData.guaranteeCases && Array.isArray(recordData.guaranteeCases)) {
           recordData.guaranteeCases.forEach((guaranteeCase: any) => {
             if (guaranteeCase.caseLines && Array.isArray(guaranteeCase.caseLines)) {
               guaranteeCase.caseLines.forEach((caseline: any) => {
-                allCaselines.push({
-                  ...caseline,
-                  guaranteeCaseId: guaranteeCase.guaranteeCaseId,
-                  contentGuarantee: guaranteeCase.contentGuarantee
-                });
+                if (caseline.id) {
+                  allCaselineIds.push(caseline.id);
+                }
               });
             }
           });
         }
 
-        setCaselines(allCaselines);
+        // Fetch detailed information for each caseline using new API
+        const caselinesDetails = [];
+        for (const caselineId of allCaselineIds) {
+          try {
+            const caselineResponse = await fetch(`${API_BASE_URL}/case-lines/${caselineId}`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            });
 
-        if (allCaselines.length === 0) {
+            const caselineResult = await caselineResponse.json();
+
+            if (caselineResult.status === 'success' && caselineResult.data?.caseLine) {
+              const caseLine = caselineResult.data.caseLine;
+              
+              // Map all data from API response
+              caselinesDetails.push({
+                // Basic caseline info
+                id: caseLine.id,
+                correctionText: caseLine.correctionText,
+                typeComponentId: caseLine.typeComponentId,
+                quantity: caseLine.quantity,
+                warrantyStatus: caseLine.warrantyStatus,
+                status: caseLine.status,
+                rejectionReason: caseLine.rejectionReason,
+                updatedAt: caseLine.updatedAt,
+                
+                // Guarantee Case info
+                guaranteeCase: caseLine.guaranteeCase,
+                guaranteeCaseId: caseLine.guaranteeCase?.guaranteeCaseId,
+                contentGuarantee: caseLine.guaranteeCase?.contentGuarantee,
+                guaranteeCaseStatus: caseLine.guaranteeCase?.status,
+                
+                // Diagnostic Technician
+                diagnosticTechnician: caseLine.diagnosticTechnician,
+                diagnosticTechId: caseLine.diagnosticTechnician?.userId,
+                diagnosticTechName: caseLine.diagnosticTechnician?.name,
+                
+                // Repair Technician
+                repairTechnician: caseLine.repairTechnician,
+                repairTechId: caseLine.repairTechnician?.userId,
+                repairTechName: caseLine.repairTechnician?.name,
+                
+                // Type Component
+                typeComponent: caseLine.typeComponent,
+                typeComponentName: caseLine.typeComponent?.name,
+                typeComponentSku: caseLine.typeComponent?.sku,
+                typeComponentPrice: caseLine.typeComponent?.price,
+                
+                // Reservations with full component details
+                reservations: caseLine.reservations?.map((reservation: any) => ({
+                  reservationId: reservation.reservationId,
+                  caseLineId: reservation.caseLineId,
+                  status: reservation.status,
+                  component: {
+                    componentId: reservation.component?.componentId,
+                    serialNumber: reservation.component?.serialNumber,
+                    status: reservation.component?.status
+                  }
+                })) || []
+              });
+            }
+          } catch (caselineError) {
+            console.error(`Error fetching caseline ${caselineId}:`, caselineError);
+          }
+        }
+
+        setCaselines(caselinesDetails);
+
+        if (caselinesDetails.length === 0) {
           toast({
             title: 'No Caselines',
             description: 'This record has no caselines yet. Technician needs to create them.',
@@ -2060,7 +2130,6 @@ const SuperAdvisor = () => {
 
       setIsLoadingCaselines(false);
     } catch (error) {
-      console.error('Error fetching caselines:', error);
       setIsLoadingCaselines(false);
       toast({
         title: 'Error',
@@ -2110,7 +2179,6 @@ const SuperAdvisor = () => {
         throw new Error('Failed to fetch record details');
       }
     } catch (error) {
-      console.error('Error fetching record details:', error);
       setIsLoadingRecordDetail(false);
       toast({
         title: 'Error',
@@ -2126,17 +2194,6 @@ const SuperAdvisor = () => {
     setShowViewRecordDialog(true);
     setViewRecordData(null);
     await fetchRecordDetails(record.id);
-  };
-
-  // Handle refresh record details
-  const handleRefreshRecordDetails = async () => {
-    if (viewRecordData?.id) {
-      await fetchRecordDetails(viewRecordData.id);
-      toast({
-        title: 'Refreshed',
-        description: 'Record details have been updated',
-      });
-    }
   };
 
   // Check if all caselines are completed
@@ -2172,46 +2229,6 @@ const SuperAdvisor = () => {
     }
 
     return true;
-  };
-
-  // Handle view caseline detail
-  const handleViewCaselineDetail = async (caselineId: string) => {
-    setIsLoadingCaselineDetail(true);
-    setShowCaselineDetailDialog(true);
-    setCaselineDetailData(null);
-
-    try {
-      const token = localStorage.getItem('ev_warranty_token');
-      if (!token) {
-        throw new Error('Authentication token not found');
-      }
-
-      const response = await fetch(`${API_BASE_URL}/case-lines/${caselineId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const result = await response.json();
-
-      if (result.status === 'success' && result.data?.caseLine) {
-        setCaselineDetailData(result.data.caseLine);
-      } else {
-        throw new Error(result.message || 'Failed to fetch caseline details');
-      }
-    } catch (error) {
-      console.error('Error fetching caseline detail:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to load caseline details',
-        variant: 'destructive'
-      });
-      setShowCaselineDetailDialog(false);
-    } finally {
-      setIsLoadingCaselineDetail(false);
-    }
   };
 
   // Handle complete record
@@ -2288,7 +2305,6 @@ const SuperAdvisor = () => {
       }, 1500);
 
     } catch (error) {
-      console.error('Error completing record:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to complete record',
@@ -2388,7 +2404,6 @@ const SuperAdvisor = () => {
       }
 
     } catch (error) {
-      console.error('Error processing caselines:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to process caselines',
@@ -2430,7 +2445,6 @@ const SuperAdvisor = () => {
         {/* Search Section */}
         <Card className="mb-6 shadow-lg">
           <CardHeader className="pb-3">
-            <CardTitle className="text-xl">Search</CardTitle>
           </CardHeader>
           <CardContent>
             {/* Search Mode Buttons */}
@@ -2476,8 +2490,8 @@ const SuperAdvisor = () => {
                   <Input
                     placeholder={
                       searchMode === 'vehicle'
-                        ? "Enter VIN to find vehicle and customer records"
-                        : "Enter 10-digit phone number"
+                        ? "Enter VIN to find vehicle "
+                        : "Enter phone number"
                     }
                     className="pl-10 h-11"
                     value={searchMode === 'phone' ? customerSearchPhone : searchVin}
@@ -2575,7 +2589,7 @@ const SuperAdvisor = () => {
                               className="text-blue-600 hover:bg-blue-50"
                             >
                               <FileText className="h-4 w-4 mr-1" />
-                              View Caselines
+                              View Diagnosis
                             </Button>
                           </div>
                         </TableCell>
@@ -2596,8 +2610,7 @@ const SuperAdvisor = () => {
           <Card className="shadow-lg">
             <CardHeader>
               <CardTitle className="text-xl">Vehicle Search Results</CardTitle>
-              <CardDescription>Search for vehicles and register owners if needed</CardDescription>
-            </CardHeader>
+             </CardHeader>
             <CardContent>
               {vehicleSearchResult ? (
                 <div className="space-y-6">
@@ -2710,29 +2723,32 @@ const SuperAdvisor = () => {
                         <div className="md:col-span-2">
                           <div className="space-y-2">
                             <div className="flex gap-2">
-                              <Button
-                                onClick={handleCheckWarranty}
-                                disabled={isCheckingWarranty || !odometer}
-                                className="flex-1 bg-purple-600 hover:bg-purple-700"
-                                data-action="check-warranty"
-                              >
-                                {isCheckingWarranty ? (
-                                  <>
-                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                                    Checking Warranty...
-                                  </>
-                                ) : (
-                                  <>
-                                    <CheckCircle className="h-4 w-4 mr-2" />
-                                    Check Warranty Policy
-                                  </>
-                                )}
-                              </Button>
+                              {/* Only show Check Warranty button if warranty status is not yet determined */}
+                              {!warrantyStatus && (
+                                <Button
+                                  onClick={handleCheckWarranty}
+                                  disabled={isCheckingWarranty || !odometer}
+                                  className="flex-1 bg-purple-600 hover:bg-purple-700"
+                                  data-action="check-warranty"
+                                >
+                                  {isCheckingWarranty ? (
+                                    <>
+                                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                      Checking Warranty...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CheckCircle className="h-4 w-4 mr-2" />
+                                      Check Warranty Policy
+                                    </>
+                                  )}
+                                </Button>
+                              )}
                               
                               {/* Create Record Button - Show ONLY when warranty is valid AND vehicle has owner */}
                               {warrantyStatus === 'valid' && vehicleSearchResult.owner && (
                                 <Button
-                                  onClick={handleCreateRecordFromVin}
+                                  onClick={() => handleCreateRecord()}
                                   className="flex-1 bg-green-600 hover:bg-green-700"
                                 >
                                   <Plus className="h-4 w-4 mr-2" />
@@ -3051,7 +3067,7 @@ const SuperAdvisor = () => {
                                 const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
                                 setOwnerForm({ ...ownerForm, phone: numericValue });
                               }}
-                              placeholder="Enter 10-digit phone number"
+                              placeholder="Enter phone number"
                               maxLength={10}
                               className="bg-white border-green-300 focus:border-green-500 font-mono"
                               disabled={!!vehicleSearchResult.owner}
@@ -3111,7 +3127,7 @@ const SuperAdvisor = () => {
                     No Vehicle Search Performed
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    Enter a VIN above and click "Find Vehicle" to search for vehicle and owner information.
+                    Enter a VIN to find vehicle and owner information.
                   </p>
                 </div>
               )}
@@ -3266,6 +3282,18 @@ const SuperAdvisor = () => {
                                     : 'N/A'}
                                 </span>
                               </div>
+                              <div>
+                                <span className="text-sm font-medium text-gray-600">Register Date: </span>
+                                <span className="text-sm">
+                                  {vehicle?.registrationDate 
+                                    ? new Date(vehicle.registrationDate).toLocaleDateString('en-GB', {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        year: 'numeric'
+                                      }).split('/').join('/')
+                                    : 'N/A'}
+                                </span>
+                              </div>
                             </div>
 
                             {/* Warranty Check Section for this vehicle */}
@@ -3360,9 +3388,7 @@ const SuperAdvisor = () => {
                   <h3 className="text-lg font-medium text-muted-foreground mb-2">
                     No Customer Search Performed
                   </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Enter a phone number above and click "Search Customer" to search for customer information.
-                  </p>
+                 
                 </div>
               )}
             </CardContent>
@@ -3498,7 +3524,7 @@ const SuperAdvisor = () => {
               <Label htmlFor="phone">Phone Number *</Label>
               <Input
                 id="phone"
-                placeholder="Enter 10-digit phone number"
+                placeholder="Enter phone number"
                 value={ownerForm.phone}
                 onChange={(e) => {
                   const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 10);
@@ -3825,8 +3851,12 @@ const SuperAdvisor = () => {
             {vehicleWarrantyStatus === 'valid' && (
               <Button 
                 onClick={() => {
-                  handleCreateRecord(currentVehicleForWarranty);
-                  setShowWarrantyDialog(false);
+                  handleCreateRecord({
+                    vehicle: currentVehicleForWarranty,
+                    customer: foundCustomer,
+                    odometerValue: vehicleOdometer,
+                    shouldCloseWarrantyDialog: true
+                  });
                 }}
                 className="bg-green-600 hover:bg-green-700"
               >
@@ -3847,6 +3877,12 @@ const SuperAdvisor = () => {
           setOtpSent(false);
           setOtpVerified(false);
           setOtpCountdown(0);
+          // Reset visitor same as customer checkbox
+          setVisitorSameAsCustomer(false);
+          // Reset evidence images
+          setEvidenceImages([]);
+          // Reset warranty record case text
+          setWarrantyRecordCaseText('');
         }
       }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -3908,7 +3944,7 @@ const SuperAdvisor = () => {
                 htmlFor="visitor-same-as-customer"
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
               >
-                Visitor is the same as Customer (auto-fill name and phone)
+                Visitor is the same as Customer
               </label>
             </div>
 
@@ -4022,12 +4058,6 @@ const SuperAdvisor = () => {
                   placeholder="Describe the warranty case..."
                   rows={3}
                   className="flex-1"
-                  onKeyDown={(e) => {
-                    // Allow adding case with Ctrl+Enter
-                    if (e.ctrlKey && e.key === 'Enter' && warrantyRecordCaseText.trim()) {
-                      handleAddWarrantyCase();
-                    }
-                  }}
                 />
                 <Button
                   type="button"
@@ -4041,7 +4071,6 @@ const SuperAdvisor = () => {
                   Add
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">Press Ctrl+Enter or click "Add" to add the case</p>
 
               {/* Cases List */}
               {warrantyRecordForm.cases.length === 0 ? (
@@ -4201,23 +4230,6 @@ const SuperAdvisor = () => {
               </div>
             ) : (
               <>
-                {caselines.filter(c => c.status === 'PENDING_APPROVAL').length > 0 && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                    <div className="flex items-start gap-3">
-                      <div className="bg-yellow-100 rounded-full p-2">
-                        <Clock className="h-5 w-5 text-yellow-700" />
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-yellow-900 mb-1">
-                          {caselines.filter(c => c.status === 'PENDING_APPROVAL').length} Caseline{caselines.filter(c => c.status === 'PENDING_APPROVAL').length > 1 ? 's' : ''} Awaiting Your Decision
-                        </h4>
-                        <p className="text-sm text-yellow-800">
-                          Review and approve or reject the caselines below. Click the buttons on each caseline, then submit your decisions.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
               <div className="space-y-4">
                 {caselines.map((caseline, index) => {
                   const isApproved = selectedCaselineIds.approved.includes(caseline.id);
@@ -4262,26 +4274,53 @@ const SuperAdvisor = () => {
 
                     <div className="grid gap-3">
                       {/* Guarantee Case Info */}
-                      {caseline.contentGuarantee && (
+                      {caseline.guaranteeCase && (
                         <div className="bg-blue-50 border border-blue-200 rounded p-3">
                           <Label className="text-xs text-blue-700 font-semibold">Related Case:</Label>
-                          <p className="text-sm text-blue-900 mt-1">{caseline.contentGuarantee}</p>
-                        </div>
-                      )}
-
-                      {/* Diagnosis Text */}
-                      {caseline.diagnosisText && (
-                        <div>
-                          <Label className="text-xs text-gray-600 font-semibold">Diagnosis:</Label>
-                          <p className="text-sm mt-1 text-gray-800">{caseline.diagnosisText}</p>
+                          {caseline.contentGuarantee && (
+                            <p className="text-sm text-blue-900 mt-1">{caseline.contentGuarantee}</p>
+                          )}
+                          {caseline.guaranteeCaseStatus && (
+                            <div className="mt-2">
+                              <span className="text-xs text-blue-600">Case Status:</span>
+                              <Badge className="bg-blue-100 text-blue-800 ml-2">{caseline.guaranteeCaseStatus}</Badge>
+                            </div>
+                          )}
                         </div>
                       )}
 
                       {/* Correction Text */}
                       {caseline.correctionText && (
                         <div>
-                          <Label className="text-xs text-gray-600 font-semibold">Correction:</Label>
+                          <Label className="text-xs text-gray-600 font-semibold">Solution/Correction:</Label>
                           <p className="text-sm mt-1 text-gray-800">{caseline.correctionText}</p>
+                        </div>
+                      )}
+
+                      {/* Type Component Info */}
+                      {caseline.typeComponent && (
+                        <div className="bg-purple-50 border border-purple-200 rounded p-3">
+                          <Label className="text-xs text-purple-700 font-semibold">Component:</Label>
+                          <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
+                            {caseline.typeComponentName && (
+                              <div>
+                                <span className="text-xs text-purple-600">Name:</span>
+                                <p className="font-semibold text-purple-900">{caseline.typeComponentName}</p>
+                              </div>
+                            )}
+                            {caseline.typeComponentSku && (
+                              <div>
+                                <span className="text-xs text-purple-600">SKU:</span>
+                                <p className="font-mono text-purple-900">{caseline.typeComponentSku}</p>
+                              </div>
+                            )}
+                            {caseline.typeComponentPrice && (
+                              <div>
+                                <span className="text-xs text-purple-600">Price:</span>
+                                <p className="font-semibold text-purple-900">{caseline.typeComponentPrice.toLocaleString()} VND</p>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
 
@@ -4290,6 +4329,35 @@ const SuperAdvisor = () => {
                         <div>
                           <Label className="text-xs text-gray-600 font-semibold">Quantity:</Label>
                           <p className="text-sm mt-1 text-gray-800">{caseline.quantity}</p>
+                        </div>
+                      )}
+
+                      {/* Reservations */}
+                      {caseline.reservations && caseline.reservations.length > 0 && (
+                        <div className="bg-indigo-50 border border-indigo-200 rounded p-3">
+                          <Label className="text-xs text-indigo-700 font-semibold">Component Reservations ({caseline.reservations.length}):</Label>
+                          <div className="space-y-2 mt-2">
+                            {caseline.reservations.map((reservation: any, idx: number) => (
+                              <div key={reservation.reservationId || idx} className="bg-white rounded p-2 text-sm">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <span className="text-xs text-indigo-600">Serial Number:</span>
+                                    <p className="font-mono text-indigo-900">{reservation.component?.serialNumber || 'N/A'}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-xs text-indigo-600">Status:</span>
+                                    <Badge className={
+                                      reservation.status === 'INSTALLED' ? 'bg-green-100 text-green-800 ml-2' :
+                                      reservation.status === 'RESERVED' ? 'bg-yellow-100 text-yellow-800 ml-2' :
+                                      'bg-gray-100 text-gray-800 ml-2'
+                                    }>
+                                      {reservation.status}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
 
@@ -4302,26 +4370,30 @@ const SuperAdvisor = () => {
                       )}
 
                       {/* Technician Info */}
-                      <div className="flex gap-4 text-xs text-gray-500">
-                        {caseline.diagnosticTechId && (
-                          <span>Diagnostic Tech ID: {caseline.diagnosticTechId}</span>
-                        )}
-                        {caseline.repairTechId && (
-                          <span>Repair Tech ID: {caseline.repairTechId}</span>
-                        )}
+                      <div className="border-t pt-3 mt-2">
+                        <Label className="text-xs text-gray-600 font-semibold mb-2 block">Technicians:</Label>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          {caseline.diagnosticTechnician && (
+                            <div className="bg-blue-50 rounded p-2">
+                              <span className="text-xs text-blue-600">Diagnostic:</span>
+                              <p className="font-semibold text-blue-900">{caseline.diagnosticTechName}</p>
+                            </div>
+                          )}
+                          {caseline.repairTechnician && (
+                            <div className="bg-green-50 rounded p-2">
+                              <span className="text-xs text-green-600">Repair:</span>
+                              <p className="font-semibold text-green-900">{caseline.repairTechName}</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
-                      {/* View Detail Button */}
-                      <div className="mt-3">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleViewCaselineDetail(caseline.id)}
-                        >
-                          <FileText className="h-4 w-4 mr-2" />
-                          View Detail
-                        </Button>
-                      </div>
+                      {/* Updated At */}
+                      {caseline.updatedAt && (
+                        <div className="text-xs text-gray-500">
+                          Last updated: {new Date(caseline.updatedAt).toLocaleString()}
+                        </div>
+                      )}
 
                       {/* Approve/Reject Buttons for PENDING_APPROVAL status */}
                       {caseline.status === 'PENDING_APPROVAL' && (
@@ -4396,30 +4468,9 @@ const SuperAdvisor = () => {
       <Dialog open={showViewRecordDialog} onOpenChange={setShowViewRecordDialog}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <FileText className="h-5 w-5" />
-                <span>Processing Record Details</span>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRefreshRecordDetails}
-                disabled={isLoadingRecordDetail}
-                className="ml-4"
-              >
-                {isLoadingRecordDetail ? (
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
-                      <polyline points="23 4 23 10 17 10"></polyline>
-                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                    </svg>
-                    Refresh
-                  </>
-                )}
-              </Button>
+            <DialogTitle className="flex items-center space-x-2">
+              <FileText className="h-5 w-5" />
+              <span>Processing Record Details</span>
             </DialogTitle>
             <DialogDescription>
               Complete information from processing record
@@ -4460,10 +4511,18 @@ const SuperAdvisor = () => {
                       </div>
                     </div>
                     {viewRecordData.checkOutDate && (
-                      <div className="col-span-2">
+                      <div>
                         <Label className="text-xs text-gray-600">Check-out Date</Label>
                         <p className="text-sm font-semibold text-green-600">
                           {new Date(viewRecordData.checkOutDate).toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                    {viewRecordData.duration && (
+                      <div>
+                        <Label className="text-xs text-gray-600">Duration</Label>
+                        <p className="text-sm font-semibold text-blue-600">
+                          {viewRecordData.duration}
                         </p>
                       </div>
                     )}
@@ -4483,16 +4542,10 @@ const SuperAdvisor = () => {
                         <p className="font-mono text-sm">{viewRecordData.vehicle.vin}</p>
                       </div>
                       {viewRecordData.vehicle.model && (
-                        <>
-                          <div>
-                            <Label className="text-xs text-blue-700">Model</Label>
-                            <p className="text-sm font-semibold">{viewRecordData.vehicle.model.name}</p>
-                          </div>
-                          <div>
-                            <Label className="text-xs text-blue-700">Model ID</Label>
-                            <p className="text-xs font-mono">{viewRecordData.vehicle.model.vehicleModelId}</p>
-                          </div>
-                        </>
+                        <div>
+                          <Label className="text-xs text-blue-700">Model</Label>
+                          <p className="text-sm font-semibold">{viewRecordData.vehicle.model.name}</p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -4510,10 +4563,6 @@ const SuperAdvisor = () => {
                         <Label className="text-xs text-purple-700">Name</Label>
                         <p className="text-sm font-semibold">{viewRecordData.mainTechnician.name}</p>
                       </div>
-                      <div>
-                        <Label className="text-xs text-purple-700">User ID</Label>
-                        <p className="text-xs font-mono">{viewRecordData.mainTechnician.userId}</p>
-                      </div>
                     </div>
                   </div>
                 )}
@@ -4529,10 +4578,6 @@ const SuperAdvisor = () => {
                       <div>
                         <Label className="text-xs text-green-700">Name</Label>
                         <p className="text-sm font-semibold">{viewRecordData.createdByStaff.name}</p>
-                      </div>
-                      <div>
-                        <Label className="text-xs text-green-700">User ID</Label>
-                        <p className="text-xs font-mono">{viewRecordData.createdByStaff.userId}</p>
                       </div>
                     </div>
                   </div>
@@ -4627,7 +4672,7 @@ const SuperAdvisor = () => {
                                         {/* Correction */}
                                         {caseline.correctionText && (
                                           <div>
-                                            <Label className="text-xs text-gray-600 font-semibold">Correction:</Label>
+                                            <Label className="text-xs text-gray-600 font-semibold">Solution:</Label>
                                             <p className="text-sm mt-1 text-gray-800">{caseline.correctionText}</p>
                                           </div>
                                         )}
@@ -4764,236 +4809,6 @@ const SuperAdvisor = () => {
                 </Button>
               </>
             )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Caseline Detail Dialog */}
-      <Dialog open={showCaselineDetailDialog} onOpenChange={setShowCaselineDetailDialog}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center space-x-2">
-              <FileText className="h-5 w-5" />
-              <span>Caseline Details</span>
-            </DialogTitle>
-            <DialogDescription>
-              Complete information for this caseline
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="py-4">
-            {isLoadingCaselineDetail ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                <span className="ml-3 text-muted-foreground">Loading caseline details...</span>
-              </div>
-            ) : caselineDetailData ? (
-              <div className="space-y-6">
-                {/* Basic Information */}
-                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">Caseline ID</p>
-                    <p className="text-base font-semibold break-all">{caselineDetailData.id}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">Status</p>
-                    <Badge className={
-                      caselineDetailData.status === 'COMPLETED' ? 'bg-green-100 text-green-800 hover:bg-green-100' :
-                      caselineDetailData.status === 'PENDING_APPROVAL' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-100' :
-                      caselineDetailData.status === 'REJECTED_BY_TECH' || caselineDetailData.status === 'REJECTED_BY_CUSTOMER' || caselineDetailData.status === 'REJECTED_BY_OUT_OF_WARRANTY' ? 'bg-red-100 text-red-800 hover:bg-red-100' :
-                      caselineDetailData.status === 'CANCELLED' ? 'bg-gray-100 text-gray-800 hover:bg-gray-100' :
-                      'bg-blue-100 text-blue-800 hover:bg-blue-100'
-                    }>
-                      {caselineDetailData.status}
-                    </Badge>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">Warranty Status</p>
-                    <Badge className={
-                      caselineDetailData.warrantyStatus === 'ELIGIBLE'
-                        ? 'bg-green-100 text-green-800 hover:bg-green-100'
-                        : 'bg-red-100 text-red-800 hover:bg-red-100'
-                    }>
-                      {caselineDetailData.warrantyStatus}
-                    </Badge>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">Quantity</p>
-                    <p className="text-base">{caselineDetailData.quantity}</p>
-                  </div>
-                  {caselineDetailData.typeComponent && (
-                    <div className="col-span-2">
-                      <p className="text-sm font-medium text-gray-500">Component Type</p>
-                      <p className="text-base">{caselineDetailData.typeComponent.name || caselineDetailData.typeComponent}</p>
-                    </div>
-                  )}
-                  <div className="col-span-2">
-                    <p className="text-sm font-medium text-gray-500">Last Updated</p>
-                    <p className="text-base">{new Date(caselineDetailData.updatedAt).toLocaleString('vi-VN')}</p>
-                  </div>
-                </div>
-
-                {/* Guarantee Case Information */}
-                {caselineDetailData.guaranteeCase && (
-                  <div className="p-4 bg-blue-50 rounded-lg space-y-3">
-                    <h3 className="font-semibold text-base text-blue-900">Guarantee Case Information</h3>
-                    
-                    {/* Warranty Content */}
-                    {caselineDetailData.guaranteeCase.contentGuarantee && (
-                      <div className="col-span-2">
-                        <Label className="text-sm font-semibold text-blue-700">Warranty Content</Label>
-                        <p className="mt-1 p-3 bg-white rounded-md text-sm">
-                          {caselineDetailData.guaranteeCase.contentGuarantee}
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-3 text-sm">
-                      <div>
-                        <p className="text-xs font-medium text-blue-700">Case ID</p>
-                        <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.guaranteeCaseId}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium text-blue-700">Status</p>
-                        <Badge className="bg-blue-200 text-blue-900">
-                          {caselineDetailData.guaranteeCase.status}
-                        </Badge>
-                      </div>
-                      
-                      {/* Vehicle Processing Record Info */}
-                      {caselineDetailData.guaranteeCase.vehicleProcessingRecord && (
-                        <>
-                          <div>
-                            <p className="text-xs font-medium text-blue-700">VIN</p>
-                            <p className="font-mono text-sm font-semibold">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.vin}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs font-medium text-blue-700">Record ID</p>
-                            <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.vehicleProcessingRecordId}</p>
-                          </div>
-                          
-                          {/* Created By Staff Info */}
-                          {caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff && (
-                            <>
-                              <div>
-                                <p className="text-xs font-medium text-blue-700">Staff ID</p>
-                                <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff.userId}</p>
-                              </div>
-                              {caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff.serviceCenter && (
-                                <>
-                                  <div>
-                                    <p className="text-xs font-medium text-blue-700">Service Center ID</p>
-                                    <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff.serviceCenter.serviceCenterId}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-xs font-medium text-blue-700">Vehicle Company ID</p>
-                                    <p className="font-mono text-xs break-all">{caselineDetailData.guaranteeCase.vehicleProcessingRecord.createdByStaff.serviceCenter.vehicleCompanyId}</p>
-                                  </div>
-                                </>
-                              )}
-                            </>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Diagnosis & Correction */}
-                <div className="space-y-4">
-                  <div>
-                    <Label className="text-sm font-semibold">Diagnosis</Label>
-                    <p className="mt-1 p-3 bg-blue-50 rounded-md text-sm whitespace-pre-wrap">
-                      {caselineDetailData.diagnosisText || 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-sm font-semibold">Correction</Label>
-                    <p className="mt-1 p-3 bg-green-50 rounded-md text-sm whitespace-pre-wrap">
-                      {caselineDetailData.correctionText || 'N/A'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Rejection Reason */}
-                {caselineDetailData.rejectionReason && (
-                  <div>
-                    <Label className="text-sm font-semibold text-red-700">Rejection Reason</Label>
-                    <p className="mt-1 p-3 bg-red-50 rounded-md text-sm text-red-900 whitespace-pre-wrap">
-                      {caselineDetailData.rejectionReason}
-                    </p>
-                  </div>
-                )}
-
-                {/* Technician Information */}
-                {(caselineDetailData.diagnosticTechnician || caselineDetailData.repairTechnician) && (
-                  <div className="p-4 bg-gray-50 rounded-lg space-y-3">
-                    <h3 className="font-semibold text-sm">Technician Information</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      {caselineDetailData.diagnosticTechnician && (
-                        <div>
-                          <p className="text-xs font-medium text-gray-500">Diagnostic Technician</p>
-                          <p className="text-sm font-semibold">{caselineDetailData.diagnosticTechnician.name}</p>
-                          <p className="text-xs text-gray-600 font-mono break-all">ID: {caselineDetailData.diagnosticTechnician.userId}</p>
-                        </div>
-                      )}
-                      {caselineDetailData.repairTechnician && (
-                        <div>
-                          <p className="text-xs font-medium text-gray-500">Repair Technician</p>
-                          <p className="text-sm font-semibold">{caselineDetailData.repairTechnician.name}</p>
-                          <p className="text-xs text-gray-600 font-mono break-all">ID: {caselineDetailData.repairTechnician.userId}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Reservations Information */}
-                {caselineDetailData.reservations && caselineDetailData.reservations.length > 0 && (
-                  <div className="p-4 bg-purple-50 rounded-lg space-y-3">
-                    <h3 className="font-semibold text-sm text-purple-900">Component Reservations ({caselineDetailData.reservations.length})</h3>
-                    <div className="space-y-3">
-                      {caselineDetailData.reservations.map((reservation: any, index: number) => (
-                        <div key={index} className="p-3 bg-white rounded-md border border-purple-200">
-                          <div className="grid grid-cols-2 gap-2 text-sm">
-                            <div>
-                              <p className="text-xs font-medium text-purple-700">Reservation ID</p>
-                              <p className="font-mono text-xs break-all">{reservation.id}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs font-medium text-purple-700">Status</p>
-                              <Badge className="bg-purple-200 text-purple-900">{reservation.status}</Badge>
-                            </div>
-                            {reservation.quantity && (
-                              <div>
-                                <p className="text-xs font-medium text-purple-700">Quantity</p>
-                                <p className="text-sm">{reservation.quantity}</p>
-                              </div>
-                            )}
-                            {reservation.createdAt && (
-                              <div>
-                                <p className="text-xs font-medium text-purple-700">Created At</p>
-                                <p className="text-xs">{new Date(reservation.createdAt).toLocaleString('vi-VN')}</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                No data available
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCaselineDetailDialog(false)}>
-              Close
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

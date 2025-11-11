@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { toast } from "@/hooks/use-toast";
 import {
   Package,
   LogOut,
@@ -25,7 +26,11 @@ import {
   Truck,
   CheckCircle,
   MapPin,
-  ClipboardList
+  ClipboardList,
+  AlertCircle,
+  FileText,
+  Building2,
+  Tag
 } from "lucide-react";
 
 const API_BASE_URL = 'http://localhost:3000/api/v1';
@@ -85,7 +90,7 @@ interface Component {
   componentId: string;
   serialNumber: string;
   status: string;
-  warehouseId: string;
+  warehouseId: string | null;
   typeComponentId: string;
 }
 
@@ -94,6 +99,7 @@ interface Technician {
   name: string;
   email: string;
   phone: string;
+  roleId?: string;
 }
 
 interface Staff {
@@ -129,6 +135,7 @@ interface CaseLine {
   guaranteeCase: GuaranteeCase;
 }
 
+
 interface ComponentReservation {
   reservationId: string;
   caseLineId: string;
@@ -137,12 +144,15 @@ interface ComponentReservation {
   pickedUpBy: string | null;
   pickedUpAt: string | null;
   installedAt: string | null;
-  oldComponentSerial: string | null;
-  oldComponentReturned: boolean;
-  returnedAt: string | null;
+  oldComponentSerial?: string | null;
+  oldComponentReturned?: boolean;
+  returnedAt?: string | null;
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  case_line_id?: string; // snake_case from API
+  component_id?: string; // snake_case from API
+  picked_up_by?: string | null; // snake_case from API
   component: Component;
   pickedUpByTech: Technician | null;
   caseLine: CaseLine;
@@ -155,11 +165,11 @@ interface StockTransferRequest {
   approvedByUserId: string | null;
   rejectedByUserId: string | null;
   cancelledByUserId: string | null;
+  receivedByUserId: string | null;
   status: string;
   rejectionReason: string | null;
   cancellationReason: string | null;
   requestedAt: string;
-  receivedByUserId: string | null;
   approvedAt: string | null;
   shippedAt: string | null;
   receivedAt: string | null;
@@ -167,21 +177,54 @@ interface StockTransferRequest {
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  // Snake_case fields from API
+  requesting_warehouse_id?: string;
+  requested_by_user_id?: string;
+  approved_by_user_id?: string | null;
+  rejected_by_user_id?: string | null;
+  cancelled_by_user_id?: string | null;
+  received_by_user_id?: string | null;
+  // Nested objects
   requester?: {
     userId: string;
     name: string;
+    serviceCenterId?: string;
+    serviceCenter?: {
+      name: string;
+    };
+  };
+  approver?: {
+    userId: string;
+    name: string;
+    serviceCenterId?: string;
+    serviceCenter?: {
+      name: string;
+    };
+  } | null;
+  requestingWarehouse?: {
+    warehouseId: string;
+    name: string;
     serviceCenterId: string;
+    vehicleCompanyId: string;
+    address?: string;
   };
   items?: Array<{
     id: string;
+    requestId?: string;
+    typeComponentId?: string;
     quantityRequested: number;
-    quantityApproved: number | null;
-    typeComponentId: string;
-    caselineId?: string;
+    quantityApproved?: number | null;
+    caselineId?: string | null;
+    component?: {
+      name: string;
+      typeComponentId: string;
+      sku?: string;
+    };
     typeComponent?: {
       typeComponentId: string;
-      nameComponent: string;
-      description: string | null;
+      nameComponent?: string;
+      name?: string;
+      description?: string | null;
     };
   }>;
 }
@@ -196,7 +239,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
   const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
   const [isLoadingRequests, setIsLoadingRequests] = useState<boolean>(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
-  const [isReceiving, setIsReceiving] = useState<boolean>(false);
+  const [receivingRequestId, setReceivingRequestId] = useState<string | null>(null);
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
 
   // Warehouse States
@@ -219,6 +262,8 @@ const PartsCoordinatorDashboard: React.FC = () => {
 
   // Component Reservation States
   const [reservations, setReservations] = useState<ComponentReservation[]>([]);
+  const [filteredReservations, setFilteredReservations] = useState<ComponentReservation[]>([]);
+  const [selectedReservationStatus, setSelectedReservationStatus] = useState<string>('ALL');
   const [isLoadingReservations, setIsLoadingReservations] = useState(false);
   const [showReservationDetailModal, setShowReservationDetailModal] = useState(false);
   const [selectedReservation, setSelectedReservation] = useState<ComponentReservation | null>(null);
@@ -291,7 +336,6 @@ const PartsCoordinatorDashboard: React.FC = () => {
       setIsLoadingDetail(false);
     }
   };
-
   // Load requests on mount
   useEffect(() => {
     fetchStockTransferRequests();
@@ -307,6 +351,15 @@ const PartsCoordinatorDashboard: React.FC = () => {
       setFilteredRequests(stockTransferRequests.filter(req => req.status === selectedStatus));
     }
   }, [selectedStatus, stockTransferRequests]);
+
+  // Filter reservations by status
+  useEffect(() => {
+    if (selectedReservationStatus === 'ALL') {
+      setFilteredReservations(reservations);
+    } else {
+      setFilteredReservations(reservations.filter(r => r.status === selectedReservationStatus));
+    }
+  }, [selectedReservationStatus, reservations]);
 
   // Fetch warehouses
   const fetchWarehouses = async () => {
@@ -483,6 +536,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
 
   // View reservation details
   const viewReservationDetails = (reservation: ComponentReservation) => {
+    // Simply show the modal with the reservation data we already have from the list
     setSelectedReservation(reservation);
     setShowReservationDetailModal(true);
   };
@@ -499,7 +553,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
   // Open pickup modal
   const openPickupModal = () => {
     if (selectedReservationIds.length === 0) {
-      alert('Please select at least one reservation to pick up');
+      toast({
+        title: 'Selection Required',
+        description: 'Please select at least one reservation to pick up',
+        variant: 'destructive'
+      });
       return;
     }
 
@@ -509,13 +567,21 @@ const PartsCoordinatorDashboard: React.FC = () => {
     );
 
     if (selectedReservations.length === 0) {
-      alert('No valid reservations selected. Only RESERVED status can be picked up.');
+      toast({
+        title: 'Invalid Selection',
+        description: 'No valid reservations selected. Only RESERVED status can be picked up.',
+        variant: 'destructive'
+      });
       return;
     }
 
     const techIds = new Set(selectedReservations.map(r => r.caseLine.repairTechId));
     if (techIds.size > 1) {
-      alert('All selected reservations must have the same repair technician');
+      toast({
+        title: 'Invalid Selection',
+        description: 'All selected reservations must have the same repair technician',
+        variant: 'destructive'
+      });
       return;
     }
 
@@ -532,7 +598,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
       setIsPickingUp(false);
-      alert('Authentication required');
+      toast({
+        title: 'Authentication Required',
+        description: 'Please login again.',
+        variant: 'destructive'
+      });
       return;
     }
 
@@ -543,7 +613,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
       );
       
       if (selectedReservations.length === 0) {
-        alert('No valid reservations to pick up');
+        toast({
+          title: 'No Valid Reservations',
+          description: 'No valid reservations to pick up',
+          variant: 'destructive'
+        });
         setIsPickingUp(false);
         return;
       }
@@ -562,7 +636,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
       );
 
       if (response.data.status === 'success') {
-        alert(`Successfully picked up ${selectedReservationIds.length} component(s)`);
+        toast({
+          title: 'Success',
+          description: `Successfully picked up ${selectedReservationIds.length} component(s)`
+        });
         setShowPickupModal(false);
         setSelectedReservationIds([]);
         
@@ -571,7 +648,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Failed to pickup reservations:', error);
-      alert(error.response?.data?.message || 'Failed to pickup components');
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to pickup components',
+        variant: 'destructive'
+      });
     } finally {
       setIsPickingUp(false);
     }
@@ -580,7 +661,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
   // Handle stock adjustment
   const handleStockAdjustment = async () => {
     if (!selectedStock || !adjustmentForm.quantity || parseInt(adjustmentForm.quantity) <= 0) {
-      alert('Please enter a valid quantity');
+      toast({
+        title: 'Invalid Input',
+        description: 'Please enter a valid quantity',
+        variant: 'destructive'
+      });
       return;
     }
 
@@ -588,7 +673,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
       setIsAdjusting(false);
-      alert('Authentication required');
+      toast({
+        title: 'Authentication Required',
+        description: 'Please login again.',
+        variant: 'destructive'
+      });
       return;
     }
 
@@ -608,7 +697,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
       );
 
       if (response.data.status === 'success') {
-        alert('Stock adjustment completed successfully');
+        toast({
+          title: 'Success',
+          description: 'Stock adjustment completed successfully'
+        });
         setShowAdjustmentModal(false);
         
         // Update the stock in selectedWarehouse
@@ -638,7 +730,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Failed to adjust stock:', error);
-      alert(error.response?.data?.message || 'Failed to adjust stock');
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to adjust stock',
+        variant: 'destructive'
+      });
     } finally {
       setIsAdjusting(false);
     }
@@ -646,10 +742,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
 
   // Receive stock transfer request
   const handleReceiveRequest = async (requestId: string) => {
-    setIsReceiving(true);
+    setReceivingRequestId(requestId);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
-      setIsReceiving(false);
+      setReceivingRequestId(null);
       return;
     }
     try {
@@ -665,18 +761,28 @@ const PartsCoordinatorDashboard: React.FC = () => {
       // Refresh the list
       await fetchStockTransferRequests();
       
+      // Refresh warehouse data to reflect inventory changes
+      await fetchWarehouses();
+      
       // If modal is open, refresh the detail
       if (showDetailModal && selectedStockRequest?.id === requestId) {
         await fetchStockTransferRequestDetail(requestId);
       }
       
-      alert('Request received successfully!');
+      toast({
+        title: 'Success',
+        description: 'Request received successfully!'
+      });
     } catch (error: any) {
       console.error('Failed to receive request:', error);
       const errorMessage = error.response?.data?.message || 'Failed to receive request';
-      alert(`Error: ${errorMessage}`);
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive'
+      });
     } finally {
-      setIsReceiving(false);
+      setReceivingRequestId(null);
     }
   };
 
@@ -819,6 +925,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
                         <TableHead>Request ID</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Requester</TableHead>
+                        <TableHead>Warehouse</TableHead>
                         <TableHead>Requested At</TableHead>
                         <TableHead>Items</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
@@ -836,15 +943,43 @@ const PartsCoordinatorDashboard: React.FC = () => {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {request.requester?.name || 'N/A'}
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-medium">{request.requester?.name || 'N/A'}</p>
+                              {request.requester?.serviceCenter?.name && (
+                                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <Building2 className="h-3 w-3" />
+                                  {request.requester.serviceCenter.name}
+                                </p>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-medium">
+                                {request.requestingWarehouse?.name || 'N/A'}
+                              </p>
+                              {request.requestingWarehouse?.address && (
+                                <p className="text-xs text-muted-foreground">
+                                  {request.requestingWarehouse.address}
+                                </p>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-sm">
                             {formatDate(request.requestedAt)}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">
-                              {request.items?.length || 0} items
-                            </Badge>
+                            <div className="space-y-1">
+                              <Badge variant="outline">
+                                {request.items?.length || 0} items
+                              </Badge>
+                              {request.items && request.items.length > 0 && request.items[0].component?.name && (
+                                <p className="text-xs text-muted-foreground line-clamp-1">
+                                  {request.items[0].component.name}
+                                  {request.items.length > 1 && ` +${request.items.length - 1} more`}
+                                </p>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -862,10 +997,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
                                   size="sm"
                                   variant="default"
                                   onClick={() => handleReceiveRequest(request.id)}
-                                  disabled={isReceiving}
+                                  disabled={receivingRequestId === request.id}
                                 >
                                   <CheckCircle className="mr-1 h-3 w-3" />
-                                  {isReceiving ? 'Receiving...' : 'Receive'}
+                                  {receivingRequestId === request.id ? 'Receiving...' : 'Receive'}
                                 </Button>
                               )}
                             </div>
@@ -1040,6 +1175,26 @@ const PartsCoordinatorDashboard: React.FC = () => {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {/* Status Filter Tabs */}
+                  <div className="mb-4 flex items-center gap-2 flex-wrap">
+                    {['ALL', 'RESERVED', 'PICKED_UP', 'INSTALLED', 'CANCELLED'].map((status) => {
+                      const count = status === 'ALL' 
+                        ? reservations.length 
+                        : reservations.filter(r => r.status === status).length;
+                      return (
+                        <Button
+                          key={status}
+                          variant={selectedReservationStatus === status ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setSelectedReservationStatus(status)}
+                          className="border-dashed"
+                        >
+                          {status.replace(/_/g, ' ')} ({count})
+                        </Button>
+                      );
+                    })}
+                  </div>
+
                   {/* Pickup Button */}
                   {reservations.some(r => r.status === 'RESERVED') && (
                     <div className="mb-4 flex items-center justify-between bg-blue-50 p-3 rounded-lg border border-blue-200">
@@ -1064,12 +1219,15 @@ const PartsCoordinatorDashboard: React.FC = () => {
                     <div className="flex items-center justify-center py-12">
                       <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     </div>
-                  ) : reservations.length === 0 ? (
+                  ) : filteredReservations.length === 0 ? (
                     <div className="text-center py-12">
                       <ClipboardList className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
                       <p className="text-lg font-medium text-muted-foreground">No reservations found</p>
                       <p className="text-sm text-muted-foreground mt-2">
-                        There are no component reservations at the moment
+                        {selectedReservationStatus === 'ALL' 
+                          ? 'There are no component reservations at the moment'
+                          : `No reservations with status "${selectedReservationStatus.replace(/_/g, ' ')}"`
+                        }
                       </p>
                     </div>
                   ) : (
@@ -1089,7 +1247,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {reservations.map((reservation, index) => (
+                          {filteredReservations.map((reservation, index) => (
                             <TableRow key={reservation.reservationId}>
                               <TableCell>
                                 <Checkbox
@@ -1290,10 +1448,10 @@ const PartsCoordinatorDashboard: React.FC = () => {
                     size="sm"
                     variant="default"
                     onClick={() => handleReceiveRequest(selectedStockRequest.id)}
-                    disabled={isReceiving}
+                    disabled={receivingRequestId === selectedStockRequest.id}
                   >
                     <CheckCircle className="mr-1 h-4 w-4" />
-                    {isReceiving ? 'Receiving...' : 'Receive Request'}
+                    {receivingRequestId === selectedStockRequest.id ? 'Receiving...' : 'Receive Request'}
                   </Button>
                 )}
               </DialogTitle>
@@ -1309,18 +1467,21 @@ const PartsCoordinatorDashboard: React.FC = () => {
             ) : selectedStockRequest ? (
               <div className="space-y-6">
                 {/* Request Information */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Request Information</CardTitle>
+                <Card className="border-l-4 border-l-blue-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Package className="h-4 w-4 text-blue-600" />
+                      Request Information
+                    </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3">
+                  <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground">Request ID</label>
-                        <p className="font-mono text-sm">#{selectedStockRequest.id.substring(0, 8)}</p>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Request ID</label>
+                        <p className="font-mono text-sm mt-1">#{selectedStockRequest.id.substring(0, 8)}...</p>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground">Status</label>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
                         <div className="mt-1">
                           <Badge variant={getStatusBadgeVariant(selectedStockRequest.status)}>
                             {selectedStockRequest.status}
@@ -1328,113 +1489,225 @@ const PartsCoordinatorDashboard: React.FC = () => {
                         </div>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground flex items-center">
-                          <User className="mr-1 h-3 w-3" />
+                        <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
+                          <User className="h-3 w-3" />
                           Requester
                         </label>
-                        <p className="text-sm">{selectedStockRequest.requester?.name || 'N/A'}</p>
+                        <p className="text-sm mt-1 font-medium">{selectedStockRequest.requester?.name || 'Unknown'}</p>
+                        {selectedStockRequest.requester?.serviceCenter?.name && (
+                          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                            <Building2 className="h-3 w-3" />
+                            {selectedStockRequest.requester.serviceCenter.name}
+                          </p>
+                        )}
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-muted-foreground flex items-center">
-                          <Warehouse className="mr-1 h-3 w-3" />
-                          Warehouse ID
+                        <label className="text-xs font-semibold text-muted-foreground uppercase flex items-center gap-1">
+                          <Warehouse className="h-3 w-3" />
+                          Requesting Warehouse
                         </label>
-                        <p className="font-mono text-xs">{selectedStockRequest.requestingWarehouseId}</p>
+                        <p className="text-sm mt-1 font-medium">
+                          {selectedStockRequest.requestingWarehouse?.name || 'Unknown Warehouse'}
+                        </p>
+                        {selectedStockRequest.requestingWarehouse?.address && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {selectedStockRequest.requestingWarehouse.address}
+                          </p>
+                        )}
                       </div>
-                      <div>
-                        <label className="text-sm font-medium text-muted-foreground flex items-center">
-                          <Calendar className="mr-1 h-3 w-3" />
-                          Requested At
-                        </label>
-                        <p className="text-sm">{formatDate(selectedStockRequest.requestedAt)}</p>
-                      </div>
-                      {selectedStockRequest.approvedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Approved At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.approvedAt)}</p>
-                        </div>
-                      )}
-                      {selectedStockRequest.shippedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Shipped At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.shippedAt)}</p>
-                        </div>
-                      )}
-                      {selectedStockRequest.receivedAt && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">Received At</label>
-                          <p className="text-sm">{formatDate(selectedStockRequest.receivedAt)}</p>
-                        </div>
-                      )}
                     </div>
 
+                    {/* Approver Information */}
+                    {selectedStockRequest.approver && (
+                      <div className="pt-3 border-t">
+                        <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-md border border-green-200">
+                          <label className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" />
+                            Approved By
+                          </label>
+                          <div className="mt-2 space-y-1">
+                            <p className="text-sm font-medium text-green-900 dark:text-green-100">
+                              {selectedStockRequest.approver.name}
+                            </p>
+                            {selectedStockRequest.approver.serviceCenter?.name && (
+                              <p className="text-xs text-green-700 dark:text-green-300 flex items-center gap-1">
+                                <Building2 className="h-3 w-3" />
+                                {selectedStockRequest.approver.serviceCenter.name}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Timestamps */}
+                    <div className="pt-3 border-t">
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-3">Timeline</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded">
+                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            Requested At
+                          </label>
+                          <p className="text-sm mt-1">{formatDate(selectedStockRequest.requestedAt)}</p>
+                        </div>
+                        <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded">
+                          <label className="text-xs font-semibold text-muted-foreground">Approved At</label>
+                          <p className="text-sm mt-1">{selectedStockRequest.approvedAt ? formatDate(selectedStockRequest.approvedAt) : '---'}</p>
+                        </div>
+                        <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded">
+                          <label className="text-xs font-semibold text-muted-foreground">Shipped At</label>
+                          <p className="text-sm mt-1">{selectedStockRequest.shippedAt ? formatDate(selectedStockRequest.shippedAt) : '---'}</p>
+                        </div>
+                        <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded">
+                          <label className="text-xs font-semibold text-muted-foreground">Received At</label>
+                          <p className="text-sm mt-1">{selectedStockRequest.receivedAt ? formatDate(selectedStockRequest.receivedAt) : '---'}</p>
+                        </div>
+                        <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded">
+                          <label className="text-xs font-semibold text-muted-foreground">Rejected At</label>
+                          <p className="text-sm mt-1">{selectedStockRequest.rejectedAt ? formatDate(selectedStockRequest.rejectedAt) : '---'}</p>
+                        </div>
+                        <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded">
+                          <label className="text-xs font-semibold text-muted-foreground">Cancelled At</label>
+                          <p className="text-sm mt-1">{selectedStockRequest.cancelledAt ? formatDate(selectedStockRequest.cancelledAt) : '---'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* User IDs */}
+                    <div className="pt-3 border-t">
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-3">Action By Users</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-muted-foreground">Approved By User ID</label>
+                          <p className="font-mono text-xs mt-1">{selectedStockRequest.approvedByUserId || '---'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Received By User ID</label>
+                          <p className="font-mono text-xs mt-1">{selectedStockRequest.receivedByUserId || '---'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Rejected By User ID</label>
+                          <p className="font-mono text-xs mt-1">{selectedStockRequest.rejectedByUserId || '---'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">Cancelled By User ID</label>
+                          <p className="font-mono text-xs mt-1">{selectedStockRequest.cancelledByUserId || '---'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Rejection/Cancellation Reasons */}
                     {selectedStockRequest.rejectionReason && (
-                      <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-                        <label className="text-sm font-medium text-destructive">Rejection Reason</label>
-                        <p className="text-sm mt-1">{selectedStockRequest.rejectionReason}</p>
+                      <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                        <label className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          Rejection Reason
+                        </label>
+                        <p className="text-sm mt-1 text-red-900 dark:text-red-100">{selectedStockRequest.rejectionReason}</p>
                       </div>
                     )}
 
                     {selectedStockRequest.cancellationReason && (
-                      <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-                        <label className="text-sm font-medium text-destructive">Cancellation Reason</label>
-                        <p className="text-sm mt-1">{selectedStockRequest.cancellationReason}</p>
+                      <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                        <label className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" />
+                          Cancellation Reason
+                        </label>
+                        <p className="text-sm mt-1 text-red-900 dark:text-red-100">{selectedStockRequest.cancellationReason}</p>
                       </div>
                     )}
                   </CardContent>
                 </Card>
 
                 {/* Requested Items */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">Requested Items</CardTitle>
+                <Card className="border-l-4 border-l-purple-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Package className="h-4 w-4 text-purple-600" />
+                      Requested Items
+                    </CardTitle>
                     <CardDescription>
-                      {selectedStockRequest.items?.length || 0} item(s) in this request
+                      {selectedStockRequest.items?.length || 0} component(s) in this request
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     {selectedStockRequest.items && selectedStockRequest.items.length > 0 ? (
-                      <div className="rounded-md border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>#</TableHead>
-                              <TableHead>Component ID</TableHead>
-                              <TableHead>Component Name</TableHead>
-                              <TableHead>Description</TableHead>
-                              <TableHead className="text-right">Qty Requested</TableHead>
-                              <TableHead className="text-right">Qty Approved</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {selectedStockRequest.items.map((item, index) => (
-                              <TableRow key={item.id || index}>
-                                <TableCell className="font-medium">
-                                  {index + 1}
-                                </TableCell>
-                                <TableCell className="font-mono text-xs">
-                                  {item.typeComponentId ? `#${item.typeComponentId.substring(0, 8)}` : 'N/A'}
-                                </TableCell>
-                                <TableCell className="font-medium">
-                                  {item.typeComponent?.nameComponent || 'N/A'}
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground max-w-xs">
-                                  {item.typeComponent?.description || '-'}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Badge variant="outline">{item.quantityRequested}</Badge>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {item.quantityApproved !== null && item.quantityApproved !== undefined ? (
-                                    <Badge variant="default">{item.quantityApproved}</Badge>
-                                  ) : (
-                                    <span className="text-muted-foreground text-sm">Pending</span>
+                      <div className="space-y-3">
+                        {selectedStockRequest.items.map((item, index) => {
+                          // Get component info with priority: item.component (new API) > typeComponent (old format)
+                          let componentName = 'Unknown Component';
+                          let componentDescription = '';
+                          
+                          // Priority 1: New API response with component object
+                          if (item.component?.name) {
+                            componentName = item.component.name;
+                          }
+                          // Priority 2: Fallback to old typeComponent format
+                          else if (item.typeComponent?.nameComponent || item.typeComponent?.name) {
+                            componentName = item.typeComponent.nameComponent || item.typeComponent.name || 'Unknown';
+                            componentDescription = item.typeComponent.description || '';
+                          }
+                          
+                          return (
+                          <div key={item.id || index} className="p-4 bg-white dark:bg-gray-800 rounded-lg border shadow-sm">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div className="space-y-2">
+                                <div>
+                                  <label className="text-xs font-semibold text-muted-foreground uppercase">Component Name</label>
+                                  <p className="font-medium text-base mt-1">
+                                    {componentName}
+                                  </p>
+                                  {componentDescription && (
+                                    <p className="text-xs text-muted-foreground mt-1">{componentDescription}</p>
                                   )}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
+                                  <div className="flex flex-wrap gap-2 mt-2">
+                                    {item.component?.sku && (
+                                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded border border-indigo-200">
+                                        <Tag className="h-3 w-3 text-indigo-600 dark:text-indigo-400" />
+                                        <span className="font-mono text-xs text-indigo-700 dark:text-indigo-300">
+                                          {item.component.sku}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {item.component?.typeComponentId && (
+                                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200">
+                                        <span className="font-mono text-xs text-muted-foreground">
+                                          Type ID: {item.component.typeComponentId}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                {item.caselineId && (
+                                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200">
+                                    <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase">
+                                      Case Line ID
+                                    </label>
+                                    <p className="font-mono text-xs text-blue-900 dark:text-blue-100 mt-1">
+                                      {item.caselineId}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <label className="text-xs font-semibold text-muted-foreground uppercase">Quantity Requested</label>
+                                <p className="font-semibold text-lg mt-1 text-blue-600 dark:text-blue-400">
+                                  {item.quantityRequested}
+                                </p>
+                              </div>
+                              {item.quantityApproved !== null && item.quantityApproved !== undefined && (
+                                <div>
+                                  <label className="text-xs font-semibold text-muted-foreground uppercase">Quantity Approved</label>
+                                  <p className="font-semibold text-lg mt-1 text-green-600 dark:text-green-400">
+                                    {item.quantityApproved}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          );
+                        })}
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground text-center py-4">No items found</p>
@@ -1859,145 +2132,121 @@ const PartsCoordinatorDashboard: React.FC = () => {
 
         {/* Reservation Detail Modal */}
         <Dialog open={showReservationDetailModal} onOpenChange={setShowReservationDetailModal}>
-          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Component Reservation Details</DialogTitle>
+              <DialogTitle className="flex items-center gap-2 text-xl">
+                <ClipboardList className="h-6 w-6 text-blue-600" />
+                Component Reservation Details
+              </DialogTitle>
               <DialogDescription>
-                Detailed information about the component reservation
+                Complete information about the component reservation and related warranty case
               </DialogDescription>
             </DialogHeader>
 
             {selectedReservation && (
-              <div className="space-y-6">
-                {/* Reservation Information */}
-                <Card className="border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/50 to-transparent">
-                  <CardHeader className="pb-3 bg-blue-50/30">
-                    <CardTitle className="text-base flex items-center gap-2 text-blue-900">
-                      <ClipboardList className="h-5 w-5 text-blue-600" />
-                      Reservation Information
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4 pt-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Reservation ID</label>
-                        <p className="text-sm font-mono mt-1.5 text-gray-800">{selectedReservation.reservationId}</p>
+              <div className="space-y-5">
+                {/* Status Overview Bar */}
+                <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white border-0 shadow-lg">
+                  <CardContent className="py-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide opacity-90">Reservation Status</p>
+                        <p className="text-2xl font-bold mt-1">{selectedReservation.status}</p>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Status</label>
-                        <div className="mt-1.5">
-                          <Badge 
-                            className={`text-xs font-semibold ${
-                              selectedReservation.status === 'RESERVED' 
-                                ? 'bg-amber-100 text-amber-800 border-amber-400' :
-                              selectedReservation.status === 'PICKED_UP' 
-                                ? 'bg-blue-100 text-blue-800 border-blue-400' :
-                              selectedReservation.status === 'INSTALLED' 
-                                ? 'bg-green-100 text-green-800 border-green-400' :
-                              selectedReservation.status === 'CANCELLED' 
-                                ? 'bg-red-100 text-red-800 border-red-400' :
-                              selectedReservation.status === 'RETURNED'
-                                ? 'bg-purple-100 text-purple-800 border-purple-400' :
-                                'bg-gray-100 text-gray-800 border-gray-300'
-                            }`}
-                            variant="outline"
-                          >
-                            {selectedReservation.status}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Created At</label>
-                        <div className="flex items-center gap-1.5 text-sm mt-1.5 text-gray-700">
-                          <Calendar className="h-4 w-4 text-blue-500" />
-                          {new Date(selectedReservation.createdAt).toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Last Updated</label>
-                        <div className="flex items-center gap-1.5 text-sm mt-1.5 text-gray-700">
-                          <Calendar className="h-4 w-4 text-blue-500" />
-                          {new Date(selectedReservation.updatedAt).toLocaleString()}
-                        </div>
+                      <div className="text-right">
+                        <p className="text-xs font-semibold uppercase tracking-wide opacity-90">Reservation ID</p>
+                        <p className="text-sm font-mono mt-1 opacity-90">{selectedReservation.reservationId.substring(0, 13)}...</p>
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
 
-                    {selectedReservation.pickedUpBy && (
-                      <div className="border-t-2 border-dashed border-blue-200 pt-4 mt-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-                            <label className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Picked Up By</label>
-                            <p className="text-sm mt-1.5 font-medium text-amber-900">{selectedReservation.pickedUpByTech?.name || 'N/A'}</p>
-                          </div>
-                          <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-                            <label className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Picked Up At</label>
-                            <p className="text-sm mt-1.5 text-amber-900">
-                              {selectedReservation.pickedUpAt 
-                                ? new Date(selectedReservation.pickedUpAt).toLocaleString() 
-                                : 'N/A'}
-                            </p>
-                          </div>
-                        </div>
+                {/* Timeline Information */}
+                <Card className="border-l-4 border-l-blue-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Calendar className="h-5 w-5 text-blue-600" />
+                      Timeline
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-4 gap-3">
+                      <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                        <label className="text-xs font-semibold text-blue-700 uppercase">Created</label>
+                        <p className="text-sm mt-1.5 text-blue-900">
+                          {new Date(selectedReservation.createdAt).toLocaleDateString('vi-VN')}
+                        </p>
+                        <p className="text-xs text-blue-600 mt-0.5">
+                          {new Date(selectedReservation.createdAt).toLocaleTimeString('vi-VN')}
+                        </p>
                       </div>
-                    )}
-
-                    {selectedReservation.installedAt && (
-                      <div className="border-t-2 border-dashed border-blue-200 pt-4 mt-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-                            <label className="text-xs font-semibold text-green-700 uppercase tracking-wide">Installed At</label>
-                            <p className="text-sm mt-1.5 text-green-900">
-                              {new Date(selectedReservation.installedAt).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="bg-green-50 p-3 rounded-lg border border-green-200">
-                            <label className="text-xs font-semibold text-green-700 uppercase tracking-wide">Old Component Serial</label>
-                            <p className="text-sm mt-1.5 font-mono text-green-900">
-                              {selectedReservation.oldComponentSerial || 'N/A'}
-                            </p>
-                          </div>
+                      {selectedReservation.pickedUpAt && (
+                        <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+                          <label className="text-xs font-semibold text-amber-700 uppercase">Picked Up</label>
+                          <p className="text-sm mt-1.5 text-amber-900">
+                            {new Date(selectedReservation.pickedUpAt).toLocaleDateString('vi-VN')}
+                          </p>
+                          <p className="text-xs text-amber-600 mt-0.5">
+                            {new Date(selectedReservation.pickedUpAt).toLocaleTimeString('vi-VN')}
+                          </p>
                         </div>
+                      )}
+                      {selectedReservation.installedAt && (
+                        <div className="bg-green-50 p-3 rounded-lg border border-green-200">
+                          <label className="text-xs font-semibold text-green-700 uppercase">Installed</label>
+                          <p className="text-sm mt-1.5 text-green-900">
+                            {new Date(selectedReservation.installedAt).toLocaleDateString('vi-VN')}
+                          </p>
+                          <p className="text-xs text-green-600 mt-0.5">
+                            {new Date(selectedReservation.installedAt).toLocaleTimeString('vi-VN')}
+                          </p>
+                        </div>
+                      )}
+                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                        <label className="text-xs font-semibold text-slate-700 uppercase">Last Updated</label>
+                        <p className="text-sm mt-1.5 text-slate-900">
+                          {new Date(selectedReservation.updatedAt).toLocaleDateString('vi-VN')}
+                        </p>
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          {new Date(selectedReservation.updatedAt).toLocaleTimeString('vi-VN')}
+                        </p>
                       </div>
-                    )}
+                    </div>
                   </CardContent>
                 </Card>
 
                 {/* Component Information */}
-                <Card className="border-l-4 border-l-purple-500 bg-gradient-to-r from-purple-50/50 to-transparent">
-                  <CardHeader className="pb-3 bg-purple-50/30">
-                    <CardTitle className="text-base flex items-center gap-2 text-purple-900">
+                <Card className="border-l-4 border-l-purple-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
                       <Package className="h-5 w-5 text-purple-600" />
-                      Component Information
+                      Component Details
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3 pt-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Serial Number</label>
-                        <code className="text-sm bg-purple-100 text-purple-900 px-3 py-1.5 rounded font-mono mt-1.5 inline-block font-semibold border border-purple-200">
+                  <CardContent>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="col-span-2 bg-purple-50 p-4 rounded-lg border border-purple-200">
+                        <label className="text-xs font-semibold text-purple-700 uppercase">Serial Number</label>
+                        <code className="text-lg bg-white text-purple-900 px-3 py-2 rounded font-mono mt-2 inline-block font-bold border-2 border-purple-300 shadow-sm">
                           {selectedReservation.component?.serialNumber || 'N/A'}
                         </code>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Component ID</label>
-                        <p className="text-sm font-mono mt-1.5 text-gray-700">{selectedReservation.component?.componentId || 'N/A'}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Component Status</label>
-                        <div className="mt-1.5">
+                      <div className="bg-white p-4 rounded-lg border shadow-sm">
+                        <label className="text-xs font-semibold text-purple-700 uppercase">Status</label>
+                        <div className="mt-2">
                           <Badge 
                             variant="outline" 
-                            className={`font-semibold ${
+                            className={`text-sm font-bold px-3 py-1 ${
                               selectedReservation.component?.status === 'AVAILABLE'
-                                ? 'bg-green-100 text-green-800 border-green-300' :
+                                ? 'bg-green-100 text-green-800 border-green-400' :
                               selectedReservation.component?.status === 'RESERVED'
-                                ? 'bg-amber-100 text-amber-800 border-amber-300' :
+                                ? 'bg-amber-100 text-amber-800 border-amber-400' :
+                              selectedReservation.component?.status === 'INSTALLED'
+                                ? 'bg-blue-100 text-blue-800 border-blue-400' :
                               selectedReservation.component?.status === 'IN_USE'
-                                ? 'bg-blue-100 text-blue-800 border-blue-300' :
+                                ? 'bg-indigo-100 text-indigo-800 border-indigo-400' :
                               selectedReservation.component?.status === 'DEFECTIVE'
-                                ? 'bg-red-100 text-red-800 border-red-300' :
-                              selectedReservation.component?.status === 'MAINTENANCE'
-                                ? 'bg-orange-100 text-orange-800 border-orange-300' :
+                                ? 'bg-red-100 text-red-800 border-red-400' :
                                 'bg-purple-50 text-purple-700 border-purple-300'
                             }`}
                           >
@@ -2005,64 +2254,32 @@ const PartsCoordinatorDashboard: React.FC = () => {
                           </Badge>
                         </div>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Warehouse ID</label>
-                        <p className="text-sm font-mono mt-1.5 text-gray-700">
-                          {selectedReservation.component?.warehouseId?.substring(0, 20) || 'N/A'}...
-                        </p>
-                      </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Vehicle & Case Information */}
-                <Card className="border-l-4 border-l-orange-500 bg-gradient-to-r from-orange-50/50 to-transparent">
-                  <CardHeader className="pb-3 bg-orange-50/30">
-                    <CardTitle className="text-base flex items-center gap-2 text-orange-900">
+                {/* Vehicle Information */}
+                <Card className="border-l-4 border-l-orange-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
                       <Truck className="h-5 w-5 text-orange-600" />
-                      Vehicle & Warranty Case
+                      Vehicle Information
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3 pt-4">
+                  <CardContent>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-orange-600 uppercase tracking-wide">VIN</label>
-                        <p className="text-base font-bold mt-1.5 text-orange-900">
+                      <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                        <label className="text-xs font-semibold text-orange-700 uppercase">VIN (Vehicle Identification Number)</label>
+                        <p className="text-xl font-bold mt-2 text-orange-900 tracking-wider">
                           {selectedReservation.caseLine?.guaranteeCase?.vehicleProcessingRecord?.vin || 'N/A'}
                         </p>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-orange-600 uppercase tracking-wide">Guarantee Case ID</label>
-                        <p className="text-sm font-mono mt-1.5 text-gray-700">
-                          {selectedReservation.caseLine?.guaranteeCaseId || 'N/A'}
-                        </p>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-orange-600 uppercase tracking-wide">Case Status</label>
-                        <div className="mt-1.5">
-                          <Badge 
-                            variant="outline" 
-                            className={`font-semibold ${
-                              selectedReservation.caseLine?.guaranteeCase?.status === 'PENDING'
-                                ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
-                              selectedReservation.caseLine?.guaranteeCase?.status === 'DIAGNOSED'
-                                ? 'bg-blue-100 text-blue-800 border-blue-300' :
-                              selectedReservation.caseLine?.guaranteeCase?.status === 'IN_PROGRESS'
-                                ? 'bg-purple-100 text-purple-800 border-purple-300' :
-                              selectedReservation.caseLine?.guaranteeCase?.status === 'COMPLETED'
-                                ? 'bg-green-100 text-green-800 border-green-300' :
-                              selectedReservation.caseLine?.guaranteeCase?.status === 'REJECTED'
-                                ? 'bg-red-100 text-red-800 border-red-300' :
-                                'bg-gray-100 text-gray-800 border-gray-300'
-                            }`}
-                          >
-                            {selectedReservation.caseLine?.guaranteeCase?.status || 'N/A'}
-                          </Badge>
-                        </div>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-orange-600 uppercase tracking-wide">Created By Staff</label>
-                        <p className="text-sm mt-1.5 font-medium text-gray-800">
+                      <div className="bg-white p-4 rounded-lg border shadow-sm">
+                        <label className="text-xs font-semibold text-orange-700 uppercase flex items-center gap-1">
+                          <User className="h-3 w-3" />
+                          Service Staff
+                        </label>
+                        <p className="text-base font-semibold mt-2 text-orange-900">
                           {selectedReservation.caseLine?.guaranteeCase?.vehicleProcessingRecord?.createdByStaff?.name || 'N/A'}
                         </p>
                       </div>
@@ -2070,101 +2287,170 @@ const PartsCoordinatorDashboard: React.FC = () => {
                   </CardContent>
                 </Card>
 
-                {/* Case Line Information */}
-                <Card className="border-l-4 border-l-emerald-500 bg-gradient-to-r from-emerald-50/50 to-transparent">
-                  <CardHeader className="pb-3 bg-emerald-50/30">
-                    <CardTitle className="text-base flex items-center gap-2 text-emerald-900">
+                {/* Warranty Case Information */}
+                <Card className="border-l-4 border-l-emerald-500">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
                       <CheckCircle className="h-5 w-5 text-emerald-600" />
-                      Case Line Details
+                      Warranty Case & Repair Details
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3 pt-4">
+                  <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">Case Line ID</label>
-                        <p className="text-sm font-mono mt-1.5 text-gray-700">{selectedReservation.caseLineId || 'N/A'}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">Status</label>
-                        <div className="mt-1.5">
+                      <div className="bg-white p-4 rounded-lg border shadow-sm">
+                        <label className="text-xs font-semibold text-emerald-700 uppercase">Case Status</label>
+                        <div className="mt-2">
                           <Badge 
-                            className={`text-xs font-semibold ${
-                              selectedReservation.caseLine?.status === 'PENDING'
-                                ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
-                              selectedReservation.caseLine?.status === 'READY_FOR_REPAIR' 
-                                ? 'bg-blue-100 text-blue-800 border-blue-300' :
-                              selectedReservation.caseLine?.status === 'IN_PROGRESS'
-                                ? 'bg-purple-100 text-purple-800 border-purple-300' :
-                              selectedReservation.caseLine?.status === 'COMPLETED' 
-                                ? 'bg-green-100 text-green-800 border-green-300' :
-                              selectedReservation.caseLine?.status === 'CANCELLED'
-                                ? 'bg-red-100 text-red-800 border-red-300' :
-                                'bg-gray-100 text-gray-800 border-gray-300'
+                            variant="outline" 
+                            className={`text-sm font-bold px-3 py-1 ${
+                              selectedReservation.caseLine?.guaranteeCase?.status === 'PENDING'
+                                ? 'bg-yellow-100 text-yellow-800 border-yellow-400' :
+                              selectedReservation.caseLine?.guaranteeCase?.status === 'DIAGNOSED'
+                                ? 'bg-blue-100 text-blue-800 border-blue-400' :
+                              selectedReservation.caseLine?.guaranteeCase?.status === 'IN_PROGRESS'
+                                ? 'bg-purple-100 text-purple-800 border-purple-400' :
+                              selectedReservation.caseLine?.guaranteeCase?.status === 'COMPLETED'
+                                ? 'bg-green-100 text-green-800 border-green-400' :
+                                'bg-gray-100 text-gray-800 border-gray-400'
                             }`}
+                          >
+                            {selectedReservation.caseLine?.guaranteeCase?.status || 'N/A'}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="bg-white p-4 rounded-lg border shadow-sm">
+                        <label className="text-xs font-semibold text-emerald-700 uppercase">Case Line Status</label>
+                        <div className="mt-2">
+                          <Badge 
                             variant="outline"
+                            className={`text-sm font-bold px-3 py-1 ${
+                              selectedReservation.caseLine?.status === 'PENDING'
+                                ? 'bg-yellow-100 text-yellow-800 border-yellow-400' :
+                              selectedReservation.caseLine?.status === 'READY_FOR_REPAIR' 
+                                ? 'bg-blue-100 text-blue-800 border-blue-400' :
+                              selectedReservation.caseLine?.status === 'IN_PROGRESS'
+                                ? 'bg-purple-100 text-purple-800 border-purple-400' :
+                              selectedReservation.caseLine?.status === 'COMPLETED' 
+                                ? 'bg-green-100 text-green-800 border-green-400' :
+                                'bg-gray-100 text-gray-800 border-gray-400'
+                            }`}
                           >
                             {selectedReservation.caseLine?.status?.replace(/_/g, ' ') || 'N/A'}
                           </Badge>
                         </div>
                       </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">Quantity Required</label>
-                        <p className="text-lg font-bold mt-1.5 text-emerald-700">{selectedReservation.caseLine?.quantity || 0}</p>
-                      </div>
-                      <div className="bg-white p-3 rounded-lg border shadow-sm">
-                        <label className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">Type Component ID</label>
-                        <p className="text-sm font-mono mt-1.5 text-gray-700">
-                          {selectedReservation.caseLine?.typeComponentId?.substring(0, 20) || 'N/A'}...
-                        </p>
+                      <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-200">
+                        <label className="text-xs font-semibold text-emerald-700 uppercase">Component Quantity</label>
+                        <p className="text-2xl font-bold mt-2 text-emerald-900">{selectedReservation.caseLine?.quantity || 0}</p>
                       </div>
                     </div>
 
+                    {/* Technicians Section */}
                     <div className="border-t-2 border-dashed border-emerald-200 pt-4 mt-4">
-                      <h4 className="text-sm font-semibold mb-4 text-emerald-900 flex items-center gap-2">
+                      <h4 className="text-sm font-bold mb-4 text-emerald-900 flex items-center gap-2">
                         <User className="h-4 w-4" />
                         Assigned Technicians
                       </h4>
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-2 border-blue-200 rounded-lg p-4 shadow-sm">
-                          <label className="text-xs font-bold text-blue-700 uppercase tracking-wide flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            Diagnostic Technician
-                          </label>
-                          <div className="mt-3 space-y-2">
-                            <p className="text-sm font-bold text-blue-900">
-                              {selectedReservation.caseLine?.diagnosticTechnician?.name || 'N/A'}
+                        {/* Diagnostic Technician */}
+                        <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 border-2 border-blue-300 rounded-lg p-4 shadow-md">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="bg-blue-500 text-white rounded-full p-2">
+                              <User className="h-4 w-4" />
+                            </div>
+                            <label className="text-xs font-bold text-blue-700 uppercase tracking-wide">
+                              Diagnostic Technician
+                            </label>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-base font-bold text-blue-900">
+                              {selectedReservation.caseLine?.diagnosticTechnician?.name || 'Not Assigned'}
                             </p>
-                            <p className="text-xs text-blue-700 flex items-center gap-1">
-                              <span>📧</span>
-                              {selectedReservation.caseLine?.diagnosticTechnician?.email || 'N/A'}
-                            </p>
-                            <p className="text-xs text-blue-700 flex items-center gap-1">
-                              <span>📞</span>
-                              {selectedReservation.caseLine?.diagnosticTechnician?.phone || 'N/A'}
-                            </p>
+                            {selectedReservation.caseLine?.diagnosticTechnician?.email && (
+                              <p className="text-sm text-blue-700 flex items-center gap-2">
+                                <span className="text-base">📧</span>
+                                {selectedReservation.caseLine.diagnosticTechnician.email}
+                              </p>
+                            )}
+                            {selectedReservation.caseLine?.diagnosticTechnician?.phone && (
+                              <p className="text-sm text-blue-700 flex items-center gap-2">
+                                <span className="text-base">📞</span>
+                                {selectedReservation.caseLine.diagnosticTechnician.phone}
+                              </p>
+                            )}
                           </div>
                         </div>
-                        <div className="bg-gradient-to-br from-green-50 to-green-100/50 border-2 border-green-200 rounded-lg p-4 shadow-sm">
-                          <label className="text-xs font-bold text-green-700 uppercase tracking-wide flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            Repair Technician
-                          </label>
-                          <div className="mt-3 space-y-2">
-                            <p className="text-sm font-bold text-green-900">
-                              {selectedReservation.caseLine?.repairTechnician?.name || 'N/A'}
+
+                        {/* Repair Technician */}
+                        <div className="bg-gradient-to-br from-green-50 to-green-100/50 border-2 border-green-300 rounded-lg p-4 shadow-md">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="bg-green-500 text-white rounded-full p-2">
+                              <User className="h-4 w-4" />
+                            </div>
+                            <label className="text-xs font-bold text-green-700 uppercase tracking-wide">
+                              Repair Technician
+                            </label>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-base font-bold text-green-900">
+                              {selectedReservation.caseLine?.repairTechnician?.name || 'Not Assigned'}
                             </p>
-                            <p className="text-xs text-green-700 flex items-center gap-1">
-                              <span>📧</span>
-                              {selectedReservation.caseLine?.repairTechnician?.email || 'N/A'}
-                            </p>
-                            <p className="text-xs text-green-700 flex items-center gap-1">
-                              <span>📞</span>
-                              {selectedReservation.caseLine?.repairTechnician?.phone || 'N/A'}
-                            </p>
+                            {selectedReservation.caseLine?.repairTechnician?.email && (
+                              <p className="text-sm text-green-700 flex items-center gap-2">
+                                <span className="text-base">📧</span>
+                                {selectedReservation.caseLine.repairTechnician.email}
+                              </p>
+                            )}
+                            {selectedReservation.caseLine?.repairTechnician?.phone && (
+                              <p className="text-sm text-green-700 flex items-center gap-2">
+                                <span className="text-base">📞</span>
+                                {selectedReservation.caseLine.repairTechnician.phone}
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>
                     </div>
+
+                    {/* Picked Up By */}
+                    {selectedReservation.pickedUpByTech && (
+                      <div className="border-t-2 border-dashed border-emerald-200 pt-4">
+                        <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 border-2 border-amber-300 rounded-lg p-4 shadow-md">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="bg-amber-500 text-white rounded-full p-2">
+                              <User className="h-4 w-4" />
+                            </div>
+                            <label className="text-xs font-bold text-amber-700 uppercase tracking-wide">
+                              Component Picked Up By
+                            </label>
+                          </div>
+                          <div className="grid grid-cols-3 gap-3">
+                            <div>
+                              <p className="text-sm text-amber-600 uppercase text-xs font-semibold mb-1">Name</p>
+                              <p className="text-base font-bold text-amber-900">
+                                {selectedReservation.pickedUpByTech.name}
+                              </p>
+                            </div>
+                            {selectedReservation.pickedUpByTech.email && (
+                              <div>
+                                <p className="text-sm text-amber-600 uppercase text-xs font-semibold mb-1">Email</p>
+                                <p className="text-sm text-amber-800">
+                                  {selectedReservation.pickedUpByTech.email}
+                                </p>
+                              </div>
+                            )}
+                            {selectedReservation.pickedUpByTech.phone && (
+                              <div>
+                                <p className="text-sm text-amber-600 uppercase text-xs font-semibold mb-1">Phone</p>
+                                <p className="text-sm text-amber-800">
+                                  {selectedReservation.pickedUpByTech.phone}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
