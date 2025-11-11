@@ -417,8 +417,8 @@ const SuperAdvisor = () => {
       
       if (!vin) {
         toast({
-          title: 'Error',
-          description: 'Please enter VIN to search vehicle',
+          title: 'Invalid VIN!',
+          description: 'Please enter valid VIN to search vehicle',
           variant: 'destructive'
         });
         return;
@@ -530,8 +530,8 @@ const SuperAdvisor = () => {
     
     if (!phoneNumber) {
       toast({
-        title: 'Error',
-        description: 'Please enter phone number',
+        title: 'Invalid Phone',
+        description: 'Please enter valid phone number',
         variant: 'destructive'
       });
       return;
@@ -643,8 +643,8 @@ const SuperAdvisor = () => {
 
       // Hiển thị lỗi được định nghĩa sẵn ở FE (không lấy message từ BE)
       toast({
-        title: 'Error',
-        description: 'No Customer Found! You may register a new customer.',
+        title: 'No Customer Found!',
+        description: 'You may register a new customer.',
         variant: 'destructive'
       });
     } finally {
@@ -720,7 +720,7 @@ const SuperAdvisor = () => {
     // Validate phone number (10 digits)
     if (editCustomerForm.phone && !/^\d{10}$/.test(editCustomerForm.phone)) {
       toast({
-        title: 'Error',
+        title: 'Phone format invalid',
         description: 'Phone number must be exactly 10 digits',
         variant: 'destructive'
       });
@@ -801,7 +801,7 @@ const SuperAdvisor = () => {
   const handleCheckVehicleWarranty = async (vehicle: any) => {
     if (!vehicleOdometer) {
       toast({
-        title: 'Error',
+        title: 'Enter Odometer!',
         description: 'Please enter odometer reading',
         variant: 'destructive'
       });
@@ -867,8 +867,8 @@ const SuperAdvisor = () => {
   const handleRegisterNewVehicle = async () => {
     if (!newVehicleVin.trim()) {
       toast({
-        title: 'Error', 
-        description: 'Please enter VIN number',
+        title: 'Invalid VIN!', 
+        description: 'Please enter valid VIN number',
         variant: 'destructive'
       });
       return;
@@ -2682,23 +2682,6 @@ const SuperAdvisor = () => {
                         </div>
                       </div>
 
-                      {/* License Plate - Editable only after valid warranty check */}
-                      <div className="grid md:grid-cols-3 gap-2 items-center">
-                        <Label className="font-medium text-gray-700">License Plate:</Label>
-                        <div className="md:col-span-2">
-                          <Input
-                            value={warrantyStatus === 'valid' ? (vehicleSearchResult.licensePlate || '') : 'N/A'}
-                            onChange={(e) => setVehicleSearchResult(prev => prev ? ({
-                              ...prev,
-                              licensePlate: e.target.value
-                            }) : prev)}
-                            placeholder="Enter license plate number"
-                            disabled={warrantyStatus !== 'valid'}
-                            className={warrantyStatus === 'valid' ? "bg-white border-green-300 focus:border-green-500" : "bg-gray-100"}
-                          />
-                        </div>
-                      </div>
-
                       {/* Purchase Date - Editable only if vehicle has no owner */}
                       <div className="grid md:grid-cols-3 gap-2 items-center">
                         <Label className="font-medium text-gray-700">Purchase Date:</Label>
@@ -2941,6 +2924,23 @@ const SuperAdvisor = () => {
                               </div>
                             )}
                           </div>
+                        </div>
+                      </div>
+
+                      {/* License Plate - Editable only after valid warranty check */}
+                      <div className="grid md:grid-cols-3 gap-2 items-center">
+                        <Label className="font-medium text-gray-700">License Plate:</Label>
+                        <div className="md:col-span-2">
+                          <Input
+                            value={warrantyStatus === 'valid' ? (vehicleSearchResult.licensePlate || '') : 'N/A'}
+                            onChange={(e) => setVehicleSearchResult(prev => prev ? ({
+                              ...prev,
+                              licensePlate: e.target.value
+                            }) : prev)}
+                            placeholder="Enter license plate number"
+                            disabled={warrantyStatus !== 'valid'}
+                            className={warrantyStatus === 'valid' ? "bg-white border-green-300 focus:border-green-500" : "bg-gray-100"}
+                          />
                         </div>
                       </div>
 
