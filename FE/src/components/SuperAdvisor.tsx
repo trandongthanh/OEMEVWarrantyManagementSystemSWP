@@ -353,7 +353,6 @@ const SuperAdvisor = () => {
         // Don't clear existing records if API has no data
       }
     } catch (error) {
-      console.error('Error loading processing records:', error);
       // Keep existing records if API fails
       toast({
         title: 'Warning',
@@ -503,7 +502,6 @@ const SuperAdvisor = () => {
       }
 
     } catch (error) {
-      console.error("❌ Failed to search vehicle:", error);
       console.error("Error details:", {
         message: error.message,
         status: error.response?.status,
@@ -633,7 +631,6 @@ const SuperAdvisor = () => {
       }
 
     } catch (error: any) {
-      console.error('❌ Failed to search customer:', error);
       setFoundCustomer(null);
       setHasSearchedCustomer(true);
       
@@ -790,7 +787,6 @@ const SuperAdvisor = () => {
         setIsEditingCustomer(false);
       }
     } catch (error: any) {
-      console.error('Error updating customer:', error);
       toast({
         title: 'Error',
         description: error.response?.data?.message || 'Failed to update customer information',
@@ -857,7 +853,6 @@ const SuperAdvisor = () => {
 
       setIsCheckingVehicleWarranty(false);
     } catch (error) {
-      console.error('Warranty check error:', error);
       setIsCheckingVehicleWarranty(false);
       toast({
         title: 'Error',
@@ -901,7 +896,6 @@ const SuperAdvisor = () => {
         await handleSearchVehicleByVin(vinToSearch);
         // User will manually enter odometer and click "Check Warranty Policy"
       } catch (error) {
-        console.error('Auto search failed:', error);
       }
     }, 300);
   };
@@ -1016,7 +1010,6 @@ const SuperAdvisor = () => {
         throw new Error(result.message || 'Failed to send OTP');
       }
     } catch (error) {
-      console.error('Error sending OTP:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to send OTP. Please try again.',
@@ -1063,7 +1056,6 @@ const SuperAdvisor = () => {
         throw new Error(result.message || 'Invalid or expired OTP code');
       }
     } catch (error) {
-      console.error('Error verifying OTP:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to verify OTP. Please try again.',
@@ -1194,7 +1186,6 @@ const SuperAdvisor = () => {
         });
       }
     } catch (error) {
-      console.error('Error uploading images:', error);
       toast({
         title: 'Upload Failed',
         description: error instanceof Error ? error.message : 'Failed to upload images. Please try again.',
@@ -1524,7 +1515,6 @@ const SuperAdvisor = () => {
       setHasSearchedCustomer(false);
 
     } catch (error) {
-      console.error('❌ Error saving changes:', error);
       if (error.response) {
         console.error('Backend error:', error.response.data);
         const errorMessage = error.response.data.message || 'Server error';
@@ -1673,7 +1663,6 @@ const SuperAdvisor = () => {
                 try {
                   await handleSearchCustomerByPhone(phoneToSearch);
                 } catch (error) {
-                  console.error('❌ Auto-search failed:', error);
                 }
               }, 600);
             }
@@ -1698,7 +1687,6 @@ const SuperAdvisor = () => {
       setIsCheckingWarranty(false);
 
     } catch (error) {
-      console.error('❌ Failed to check warranty:', error);
       setIsCheckingWarranty(false);
       setWarrantyStatus('expired');
       
@@ -1829,7 +1817,6 @@ const SuperAdvisor = () => {
       }
 
     } catch (error) {
-      console.error('Error registering owner:', error);
       toast({
         title: 'Error',
         description: error.response?.data?.message || 'Failed to register owner. Please try again.',
@@ -1886,7 +1873,6 @@ const SuperAdvisor = () => {
             apiCustomerName = vehicleResult.data.vehicle.owner.fullName || 'Unknown Customer';
           }
         } catch (vehicleError) {
-          console.error('❌ Error fetching vehicle details:', vehicleError);
         }
         
         setEditRecord({
@@ -1915,7 +1901,6 @@ const SuperAdvisor = () => {
         });
       }
     } catch (error) {
-      console.error('Error fetching record details:', error);
       // Fallback to record data without visitorInfo
       setEditRecord({
         vinNumber: record.vinNumber,
@@ -2079,7 +2064,6 @@ const SuperAdvisor = () => {
 
       setIsLoadingCaselines(false);
     } catch (error) {
-      console.error('Error fetching caselines:', error);
       setIsLoadingCaselines(false);
       toast({
         title: 'Error',
@@ -2129,7 +2113,6 @@ const SuperAdvisor = () => {
         throw new Error('Failed to fetch record details');
       }
     } catch (error) {
-      console.error('Error fetching record details:', error);
       setIsLoadingRecordDetail(false);
       toast({
         title: 'Error',
@@ -2267,7 +2250,6 @@ const SuperAdvisor = () => {
       }, 1500);
 
     } catch (error) {
-      console.error('Error completing record:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to complete record',
@@ -2367,7 +2349,6 @@ const SuperAdvisor = () => {
       }
 
     } catch (error) {
-      console.error('Error processing caselines:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to process caselines',
