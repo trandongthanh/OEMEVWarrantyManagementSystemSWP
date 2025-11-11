@@ -3174,6 +3174,14 @@ const TechnicianDashboard = ({
                         </div>
                       </div>
                     )}
+                    {selectedCaseLine?.componentPrice !== undefined && selectedCaseLine?.quantity !== undefined && (
+                      <div className="space-y-2">
+                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Total Price</span>
+                        <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
+                          <span className="text-sm text-gray-800 font-semibold">{(selectedCaseLine.componentPrice * selectedCaseLine.quantity).toLocaleString('vi-VN')} VND</span>
+                        </div>
+                      </div>
+                    )}
                     {selectedCaseLine?.warrantyStatus && (
                       <div className="space-y-2">
                         <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Warranty Status</span>
