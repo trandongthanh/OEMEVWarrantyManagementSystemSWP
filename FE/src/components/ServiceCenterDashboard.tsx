@@ -4753,7 +4753,10 @@ const ServiceCenterDashboard = () => {
                               Loading available roles...
                             </div>
                           ) : availableRoles.length > 0 ? (
-                            availableRoles.map((role) => {
+                            // Exclude manager roles from the UI per UX request
+                            availableRoles
+                              .filter((role) => !String(role.roleName).toLowerCase().includes('manager'))
+                              .map((role) => {
                               // Map role names to display info
                               let icon = '👤';
                               let color = 'text-gray-600';
