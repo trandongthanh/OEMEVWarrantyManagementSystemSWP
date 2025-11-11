@@ -97,7 +97,12 @@ class StockTransferRequestRepository {
         {
           model: StockTransferRequestItem,
           as: "items",
-          attributes: ["id", "quantityRequested"],
+          attributes: [
+            "id",
+            "typeComponentId",
+            "quantityRequested",
+            "caselineId",
+          ],
           required: false,
           include: [
             {
@@ -182,7 +187,12 @@ class StockTransferRequestRepository {
         {
           model: StockTransferRequestItem,
           as: "items",
-          attributes: ["id", "quantityRequested"],
+          attributes: [
+            "id",
+            "typeComponentId",
+            "quantityRequested",
+            "caselineId",
+          ],
           required: false,
           include: [
             {
