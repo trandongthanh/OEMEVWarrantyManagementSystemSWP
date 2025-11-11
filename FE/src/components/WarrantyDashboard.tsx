@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useToast } from '@/hooks/use-toast';
 import {
 		LogOut,Wrench
 } from "lucide-react";
@@ -72,6 +73,7 @@ interface StockTransferRequestDetail extends StockTransferRequest {
 
 const WarrantyDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [stockTransferRequests, setStockTransferRequests] = useState<StockTransferRequest[]>([]);
   const [isLoadingTransfers, setIsLoadingTransfers] = useState<boolean>(false);
   const [page, setPage] = useState<number>(1);
@@ -84,6 +86,8 @@ const WarrantyDashboard: React.FC = () => {
   const [isRejectDialogOpen, setIsRejectDialogOpen] = useState<boolean>(false);
   const [rejectionReason, setRejectionReason] = useState<string>('');
   const [isRejecting, setIsRejecting] = useState<boolean>(false);
+  const [isApproveDialogOpen, setIsApproveDialogOpen] = useState<boolean>(false);
+  const [isApproving, setIsApproving] = useState<boolean>(false);
   const { user } = useAuth();
   
   useEffect(() => {
@@ -100,7 +104,11 @@ const WarrantyDashboard: React.FC = () => {
       
       if (!token) {
         console.error('❌ No authentication token found');
-        alert('Authentication token not found. Please login again.');
+        toast({
+          title: 'Authentication Required',
+          description: 'Please login again to continue.',
+          variant: 'destructive'
+        });
         navigate('/login');
         return;
       }
@@ -154,8 +162,11 @@ const WarrantyDashboard: React.FC = () => {
         setTotalPages(1);
       }
     } catch (error) {
-      console.error('💥 Error fetching stock transfer requests:', error);
-      alert(`Error: ${error instanceof Error ? error.message : 'Failed to load data'}`);
+      toast({
+        title: 'Error Loading Data',
+        description: error instanceof Error ? error.message : 'Failed to load stock transfer requests.',
+        variant: 'destructive'
+      });
       setStockTransferRequests([]);
       setTotalPages(1);
     } finally {
@@ -210,7 +221,6 @@ const WarrantyDashboard: React.FC = () => {
       console.warn(`⚠️ Unexpected caseline response structure:`, data);
       return null;
     } catch (error) {
-      console.error(`💥 Error fetching caseline ${caselineId}:`, error);
       return null;
     }
   };
@@ -273,8 +283,11 @@ const WarrantyDashboard: React.FC = () => {
         setSelectedRequest(null);
       }
     } catch (error) {
-      console.error('💥 Error fetching request detail:', error);
-      alert(`Error: ${error instanceof Error ? error.message : 'Failed to load detail'}`);
+      toast({
+        title: 'Error Loading Details',
+        description: error instanceof Error ? error.message : 'Failed to load request details.',
+        variant: 'destructive'
+      });
       setSelectedRequest(null);
     } finally {
       setIsLoadingDetail(false);
@@ -290,11 +303,64 @@ const WarrantyDashboard: React.FC = () => {
     setIsRejectDialogOpen(true);
   };
 
+  const handleApproveClick = () => {
+    setIsApproveDialogOpen(true);
+  };
+
+  const handleApproveSubmit = async () => {
+    if (!selectedRequest) return;
+    
+    setIsApproving(true);
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      const response = await fetch(
+        `${API_BASE_URL}/stock-transfer-requests/${selectedRequest.id}/approve`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        toast({
+          title: 'Request Approved! ✅',
+          description: 'The stock transfer request has been approved successfully.',
+        });
+        setIsApproveDialogOpen(false);
+        setIsDetailDialogOpen(false);
+        fetchStockTransferRequests();
+      } else {
+        toast({
+          title: 'Approval Failed',
+          description: data.message || 'Failed to approve request. Please try again.',
+          variant: 'destructive'
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'An error occurred while approving the request. Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
   const handleRejectSubmit = async () => {
     if (!selectedRequest) return;
     
     if (!rejectionReason.trim()) {
-      alert('Please enter a rejection reason');
+      toast({
+        title: 'Rejection Reason Required',
+        description: 'Please enter a reason for rejecting this request.',
+        variant: 'destructive'
+      });
       return;
     }
     
@@ -318,17 +384,27 @@ const WarrantyDashboard: React.FC = () => {
       const data = await response.json();
       
       if (response.ok) {
-        alert('Request rejected successfully!');
+        toast({
+          title: 'Request Rejected ❌',
+          description: 'The stock transfer request has been rejected.',
+        });
         setIsRejectDialogOpen(false);
         setIsDetailDialogOpen(false);
         setRejectionReason('');
         fetchStockTransferRequests();
       } else {
-        alert(data.message || 'Failed to reject request. Please try again.');
+        toast({
+          title: 'Rejection Failed',
+          description: data.message || 'Failed to reject request. Please try again.',
+          variant: 'destructive'
+        });
       }
     } catch (error) {
-      console.error('Error rejecting request:', error);
-      alert('Error rejecting request. Please try again.');
+      toast({
+        title: 'Error',
+        description: 'An error occurred while rejecting the request. Please try again.',
+        variant: 'destructive'
+      });
     } finally {
       setIsRejecting(false);
     }
@@ -778,37 +854,7 @@ const WarrantyDashboard: React.FC = () => {
                     ❌ Reject
                   </Button>
                   <Button
-                    onClick={async () => {
-                      if (!selectedRequest) return;
-                      if (!confirm('Are you sure you want to approve this request?')) return;
-                      
-                      try {
-                        const token = localStorage.getItem('ev_warranty_token');
-                        const response = await fetch(
-                          `${API_BASE_URL}/stock-transfer-requests/${selectedRequest.id}/approve`,
-                          {
-                            method: 'PATCH',
-                            headers: {
-                              'Authorization': `Bearer ${token}`,
-                              'Content-Type': 'application/json'
-                            }
-                          }
-                        );
-                        
-                        const data = await response.json();
-                        
-                        if (response.ok) {
-                          alert('Request approved successfully!');
-                          setIsDetailDialogOpen(false);
-                          fetchStockTransferRequests();
-                        } else {
-                          alert(data.message || 'Failed to approve request. Please try again.');
-                        }
-                      } catch (error) {
-                        console.error('Error approving request:', error);
-                        alert('Error approving request. Please try again.');
-                      }
-                    }}
+                    onClick={handleApproveClick}
                     className="bg-green-600 hover:bg-green-700"
                   >
                     ✓ Approve
@@ -894,6 +940,87 @@ const WarrantyDashboard: React.FC = () => {
                 className="bg-red-600 hover:bg-red-700"
               >
                 {isRejecting ? '🔄 Rejecting...' : '❌ Confirm Reject'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approve Confirmation Dialog */}
+      {isApproveDialogOpen && selectedRequest && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            {/* Dialog Header */}
+            <div className="bg-green-50 border-b border-green-200 px-6 py-4 flex items-center justify-between rounded-t-lg">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl">✅</span>
+                <div>
+                  <h2 className="text-xl font-bold text-green-900">Approve Request</h2>
+                  <p className="text-sm text-green-600 mt-0.5">Confirm approval of this stock transfer</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsApproveDialogOpen(false)}
+                className="text-green-400 hover:text-green-600 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Dialog Content */}
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-2">
+                  Request ID: <span className="font-mono font-semibold">#{selectedRequest.id.substring(0, 8)}...</span>
+                </p>
+                <p className="text-sm text-gray-600 mb-2">
+                  Requested by: <span className="font-semibold">{selectedRequest.requester?.name || 'Unknown'}</span>
+                </p>
+                <p className="text-sm text-gray-600">
+                  Warehouse: <span className="font-semibold">{selectedRequest.requestingWarehouse?.name || 'Unknown'}</span>
+                </p>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                <p className="text-sm text-blue-800 font-medium mb-2">
+                  📦 Items in this request:
+                </p>
+                {selectedRequest.items && selectedRequest.items.length > 0 ? (
+                  <ul className="text-sm text-blue-700 space-y-1">
+                    {selectedRequest.items.map((item, index) => (
+                      <li key={item.id}>
+                        {index + 1}. {item.caselineInfo?.typeComponent?.name || item.typeComponent?.name || 'Component'} 
+                        <span className="font-semibold"> x{item.quantityRequested}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-blue-700">No items found</p>
+                )}
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                <p className="text-sm text-yellow-800">
+                  ⚠️ Once approved, the stock transfer will be processed. This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            {/* Dialog Footer */}
+            <div className="bg-gray-50 border-t px-6 py-4 flex justify-end gap-3 rounded-b-lg">
+              <Button
+                variant="outline"
+                onClick={() => setIsApproveDialogOpen(false)}
+                disabled={isApproving}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleApproveSubmit}
+                disabled={isApproving}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {isApproving ? '🔄 Approving...' : '✓ Confirm Approve'}
               </Button>
             </div>
           </div>
