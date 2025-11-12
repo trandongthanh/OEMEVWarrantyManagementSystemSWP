@@ -11,7 +11,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useAuth } from "@/contexts/AuthContext";
 import { hasPermission } from "@/utils/permissions";
 import { toast } from "@/hooks/use-toast";
-import { API_BASE_URL } from "@/config/api";
 import {
   Car,
   User,
@@ -450,6 +449,7 @@ const getWorkloadWarningMessage = (workload: number, maxWorkload = 5): string =>
 
 
 const ServiceCenterDashboard = () => {
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   const [warrantyClaims, setWarrantyClaims] = useState<WarrantyClaim[]>([]);
   const [availableTechnicians, setAvailableTechnicians] = useState<Technician[]>([]);
   const [techFilterStatus, setTechFilterStatus] = useState<string>('AVAILABLE');
