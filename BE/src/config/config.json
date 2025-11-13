@@ -3,7 +3,7 @@
     "username": "root",
     "password": "T09112003t***",
     "database": "oem_ev_warranty_management_system_db",
-    "host": "35.220.198.160",
+    "host": "35.220.198.160.nip.io",
     "dialect": "mysql",
     "timezone": "+07:00",
     "define": {
@@ -14,6 +14,10 @@
         "require": true,
         "rejectUnauthorized": false
       }
+    },
+    "options": {
+      "encrypt": false,
+      "trustServerCertificate": true
     }
   },
   "test": {
