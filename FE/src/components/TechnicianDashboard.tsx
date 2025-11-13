@@ -164,6 +164,12 @@ interface AssignedCaseLine {
     userId: string;
     name: string;
   };
+  // Optional shorthand diagnostic tech object (used by processingCaseLines mapping)
+  diagnosticTech?: {
+    userId?: string;
+    name?: string;
+    fullName?: string;
+  };
   repairTechnician?: {
     userId: string;
     name: string;
@@ -282,6 +288,7 @@ interface CaseLine {
   // New fields from API response
   guaranteeCase?: {
     guaranteeCaseId: string;
+    caseNumber?: string;
     contentGuarantee: string;
     status: string;
     vehicleProcessingRecord?: {
@@ -306,6 +313,11 @@ interface CaseLine {
   diagnosticTechnician?: {
     userId: string;
     name: string;
+  };
+  diagnosticTech?: {
+    userId?: string;
+    name?: string;
+    fullName?: string;
   };
   repairTechnician?: {
     userId: string;
@@ -398,6 +410,8 @@ const TechnicianDashboard = ({
   const [recordsError, setRecordsError] = useState<string | null>(null);
   const [consecutiveRecordErrors, setConsecutiveRecordErrors] = useState<number>(0);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState<boolean>(true);
+  const [processingCaseLines, setProcessingCaseLines] = useState<CaseLine[]>([]);
+  const [isLoadingProcessing, setIsLoadingProcessing] = useState(false);
 
   // Processing Records View states
   const [selectedRecord, setSelectedRecord] = useState<ProcessingRecord | null>(null);
@@ -505,6 +519,7 @@ const TechnicianDashboard = ({
   const [selectedGuaranteeCase, setSelectedGuaranteeCase] = useState<GuaranteeCase | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>('processing-records');
+  const [activeProcessingStatus, setActiveProcessingStatus] = useState<'IN_DIAGNOSIS' | 'PROCESSING'>('IN_DIAGNOSIS');
   const [createdCaseLines, setCreatedCaseLines] = useState<CaseLineResponse[]>([]);
   // Work schedules state
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
@@ -710,6 +725,190 @@ const TechnicianDashboard = ({
       });
     } finally {
       setIsLoadingRecords(false);
+    }
+  }, []);
+
+  // Fetch case lines with PROCESSING status
+  const fetchProcessingCaseLines = useCallback(async () => {
+    try {
+      setIsLoadingProcessing(true);
+      const token = getAuthToken();
+      console.log('🔑 Token:', token ? 'Found' : 'Not found');
+      
+      if (!token) {
+        console.warn('⚠️ No token found, aborting fetch');
+        setIsLoadingProcessing(false);
+        return;
+      }
+
+      const url = `http://localhost:3000/api/v1/processing-records?status=PROCESSING`;
+      console.log('📡 Fetching from:', url);
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      console.log('📊 Response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('📦 Full API response:', data);
+
+      // Extract all case lines from all records and guarantee cases
+      const allCaseLines: any[] = [];
+      
+      if (data?.data?.records?.records) {
+        const records = data.data.records.records;
+        console.log('📦 Found', records.length, 'processing records');
+        
+        records.forEach((record: any) => {
+          console.log('🔍 Processing record:', record.vin);
+          
+          if (record.guaranteeCases && Array.isArray(record.guaranteeCases)) {
+            record.guaranteeCases.forEach((guaranteeCase: any) => {
+              console.log('  📋 Guarantee case:', guaranteeCase.guaranteeCaseId);
+              
+              if (guaranteeCase.caseLines && Array.isArray(guaranteeCase.caseLines)) {
+                guaranteeCase.caseLines.forEach((caseLine: any) => {
+                  // Map each case line to our UI format
+                  const mappedCaseLine = {
+                    id: caseLine.id,
+                    typeComponentId: caseLine.typeComponentId,
+                    correctionText: caseLine.correctionText,
+                    warrantyStatus: caseLine.warrantyStatus,
+                    status: caseLine.status,
+                    quantity: caseLine.quantity,
+                    rejectionReason: caseLine.rejectionReason,
+                    diagnosticTechId: caseLine.diagnosticTechId,
+                    repairTechId: caseLine.repairTechId,
+                    caseId: guaranteeCase.guaranteeCaseId,
+                    // Type component info
+                    typeComponent: caseLine.typeComponent ? {
+                      typeComponentId: caseLine.typeComponent.typeComponentId,
+                      name: caseLine.typeComponent.name,
+                      category: caseLine.typeComponent.category,
+                      sku: '',
+                      price: 0
+                    } : null,
+                    // Guarantee case info with case number
+                    guaranteeCase: {
+                      guaranteeCaseId: guaranteeCase.guaranteeCaseId,
+                      caseNumber: `GC-${guaranteeCase.guaranteeCaseId.substring(0, 8)}`,
+                      contentGuarantee: guaranteeCase.contentGuarantee,
+                      status: guaranteeCase.status,
+                      vehicleProcessingRecord: {
+                        vehicleProcessingRecordId: record.vehicleProcessingRecordId,
+                        vin: record.vin
+                      }
+                    },
+                    // Diagnostic tech info (from record's mainTechnician or case leadTech)
+                    diagnosticTech: record.mainTechnician ? {
+                      userId: record.mainTechnician.userId,
+                      name: record.mainTechnician.name
+                    } : undefined
+                  };
+                  
+                  allCaseLines.push(mappedCaseLine);
+                  console.log('    ✅ Added case line:', caseLine.id);
+                });
+              }
+            });
+          }
+        });
+      }
+
+      console.log('✅ Total case lines extracted:', allCaseLines.length);
+      console.log('✅ Mapped case lines:', allCaseLines);
+      setProcessingCaseLines(allCaseLines);
+      
+    } catch (error) {
+      console.error('❌ Error fetching processing case lines:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch processing case lines',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingProcessing(false);
+      console.log('✅ Fetch complete, loading:', false);
+    }
+  }, []);
+
+  // Fetch case line details by ID for Processing records
+  const fetchCaseLineDetails = useCallback(async (caseLineId: string) => {
+    try {
+      const token = getAuthToken();
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'No authentication token found',
+          variant: 'destructive'
+        });
+        return null;
+      }
+
+      const response = await fetch(`http://localhost:3000/api/v1/case-lines/${caseLineId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('📦 Case line details response:', data);
+
+      if (data?.data?.caseLine) {
+        const cl = data.data.caseLine;
+        // Map to the format expected by the modal
+        return {
+          id: cl.id,
+          correctionText: cl.correctionText,
+          typeComponentId: cl.typeComponentId,
+          quantity: cl.quantity,
+          warrantyStatus: cl.warrantyStatus,
+          status: cl.status,
+          rejectionReason: cl.rejectionReason,
+          updatedAt: cl.updatedAt,
+          componentName: cl.typeComponent?.name,
+          componentSku: cl.typeComponent?.sku,
+          componentPrice: cl.typeComponent?.price,
+          diagnosticTechnicianName: cl.diagnosticTechnician?.name,
+          repairTechnicianName: cl.repairTechnician?.name,
+          guaranteeCaseId: cl.guaranteeCase?.guaranteeCaseId,
+          guaranteeCase: cl.guaranteeCase ? {
+            guaranteeCaseId: cl.guaranteeCase.guaranteeCaseId,
+            contentGuarantee: cl.guaranteeCase.contentGuarantee,
+            status: cl.guaranteeCase.status,
+            vehicleProcessingRecord: cl.guaranteeCase.vehicleProcessingRecord
+          } : undefined,
+          typeComponent: cl.typeComponent,
+          diagnosticTechnician: cl.diagnosticTechnician,
+          repairTechnician: cl.repairTechnician,
+          reservations: cl.reservations || []
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('❌ Error fetching case line details:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch case line details',
+        variant: 'destructive'
+      });
+      return null;
     }
   }, []);
 
@@ -1487,6 +1686,15 @@ const TechnicianDashboard = ({
     }
   }, [activeTab, fetchAssignedTasks]);
 
+  // Fetch processing case lines when switching to PROCESSING status
+  useEffect(() => {
+    console.log('🔄 useEffect triggered:', { activeTab, activeProcessingStatus });
+    if (activeTab === 'processing-records' && activeProcessingStatus === 'PROCESSING') {
+      console.log('✅ Calling fetchProcessingCaseLines...');
+      fetchProcessingCaseLines();
+    }
+  }, [activeTab, activeProcessingStatus, fetchProcessingCaseLines]);
+
   // Fetch case lines when guarantee case is selected
   useEffect(() => {
     const loadCaseLines = async () => {
@@ -1804,14 +2012,137 @@ const TechnicianDashboard = ({
                   </div>
                 </div>
               )}
+
               <Card>
                 <CardHeader>
-                  <CardTitle>Processing Records</CardTitle>
+                  <CardTitle>
+                    {activeProcessingStatus === 'IN_DIAGNOSIS' ? 'In Diagnosis' : 'Processing'} Records
+                  </CardTitle>
                   <CardDescription>
-                    View and manage vehicle processing records in diagnosis
+                    {activeProcessingStatus === 'IN_DIAGNOSIS' 
+                      ? 'View and manage vehicle processing records in diagnosis'
+                      : 'View and manage vehicle processing records in repair'}
                   </CardDescription>
+                  
+                  {/* Status Filter Tabs */}
+                  <div className="flex gap-3 mt-4">
+                    <Button
+                      variant={activeProcessingStatus === 'IN_DIAGNOSIS' ? 'default' : 'outline'}
+                      onClick={() => setActiveProcessingStatus('IN_DIAGNOSIS')}
+                      className="flex items-center gap-2"
+                    >
+                      In Diagnosis ({(recordsByStatus.IN_DIAGNOSIS || []).length})
+                    </Button>
+                    <Button
+                      variant={activeProcessingStatus === 'PROCESSING' ? 'default' : 'outline'}
+                      onClick={() => setActiveProcessingStatus('PROCESSING')}
+                      className="flex items-center gap-2"
+                    >
+                      Processing ({processingCaseLines.length})
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent>
+                  {activeProcessingStatus === 'PROCESSING' ? (
+                    // Show Processing Case Lines table
+                    isLoadingProcessing ? (
+                      <div className="text-center py-8 text-slate-500">
+                        <RefreshCw className="h-8 w-8 mx-auto mb-2 text-slate-300 animate-spin" />
+                        <p>Loading processing case lines...</p>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Case Line ID</TableHead>
+                            <TableHead>Case Number</TableHead>
+                            <TableHead>Component</TableHead>
+                            <TableHead>Quantity</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Warranty Status</TableHead>
+                            <TableHead>Diagnostic Tech</TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {processingCaseLines.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={8} className="text-center py-8 text-slate-500">
+                                <AlertCircle className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+                                <p>No processing case lines found</p>
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            processingCaseLines.map((caseLine) => (
+                              <TableRow key={caseLine.id}>
+                                <TableCell className="font-mono text-xs">
+                                  {caseLine.id?.substring(0, 8)}...
+                                </TableCell>
+                                <TableCell className="font-medium">
+                                  {caseLine.guaranteeCase?.caseNumber || 'N/A'}
+                                </TableCell>
+                                <TableCell>
+                                  <div>
+                                    <p className="font-medium text-sm">
+                                      {caseLine.typeComponent?.name || 'N/A'}
+                                    </p>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className="font-semibold">
+                                    {caseLine.quantity || 0}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={getCaseLineBadgeVariant(caseLine.status)} className="text-xs font-semibold">
+                                    {getCaseLineStatusLabel(caseLine.status)}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge
+                                    variant={
+                                      caseLine.warrantyStatus === 'ELIGIBLE'
+                                        ? 'default'
+                                        : 'destructive'
+                                    }
+                                  >
+                                    {caseLine.warrantyStatus || 'N/A'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <div>
+                                    <p className="font-medium text-sm">
+                                      {caseLine.diagnosticTech?.name || '—'}
+                                    </p>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex gap-1">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={async () => {
+                                        // Fetch full case line details from API
+                                        const details = await fetchCaseLineDetails(caseLine.id);
+                                        if (details) {
+                                          setSelectedCaseLine(details as any);
+                                          setViewCaseLineModalOpen(true);
+                                        }
+                                      }}
+                                      title="View Case"
+                                    >
+                                      <Eye className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    )
+                  ) : (
+                    // Show IN_DIAGNOSIS records table (existing code)
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1826,15 +2157,18 @@ const TechnicianDashboard = ({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {((recordsByStatus.IN_DIAGNOSIS || []).length === 0) ? (
-                        <TableRow>
-                          <TableCell colSpan={8} className="text-center py-8 text-slate-500">
-                            <AlertCircle className="h-8 w-8 mx-auto mb-2 text-slate-300" />
-                            <p>No records found</p>
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        (recordsByStatus.IN_DIAGNOSIS || []).map((record) => (
+                      {(() => {
+                        const records = recordsByStatus.IN_DIAGNOSIS || [];
+                        
+                        return records.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center py-8 text-slate-500">
+                              <AlertCircle className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+                              <p>No records found</p>
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          records.map((record) => (
                           <TableRow key={record.recordId || (record.vin + record.checkInDate)}>
                             <TableCell className="font-mono text-sm">
                               <div>
@@ -1931,10 +2265,11 @@ const TechnicianDashboard = ({
                               </div>
                             </TableCell>
                           </TableRow>
-                        ))
-                      )}
+                        )))
+                      })()}
                     </TableBody>
                   </Table>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -3167,7 +3502,7 @@ const TechnicianDashboard = ({
                       <div className="space-y-2">
                         <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Total Price</span>
                         <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
-                          <span className="text-sm text-gray-800 font-semibold">{(selectedCaseLine.componentPrice * selectedCaseLine.quantity).toLocaleString('vi-VN')} VND</span>
+                          <span className="text-sm text-gray-800">{(selectedCaseLine.componentPrice * selectedCaseLine.quantity).toLocaleString('vi-VN')} VND</span>
                         </div>
                       </div>
                     )}
