@@ -1,5 +1,1 @@
-{
-  "buildCommand": "npm install --include=optional --legacy-peer-deps && npm run build",
-  "outputDirectory": "dist",
-  "installCommand": "npm install --include=optional --legacy-peer-deps"
-}
+{}
