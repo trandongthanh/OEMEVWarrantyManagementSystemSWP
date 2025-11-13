@@ -2112,22 +2112,17 @@ const TechnicianDashboard = ({
                   ) : (
                     <Table>
                       <TableHeader>
-                        <TableRow>
-                          <TableHead>Schedule ID</TableHead>
-                          <TableHead>Work Date</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Notes</TableHead>
-                          <TableHead>Technician Name</TableHead>
-                          <TableHead>Technician Email</TableHead>
-                          <TableHead>Technician ID</TableHead>
-                          <TableHead>Created At</TableHead>
-                          <TableHead>Updated At</TableHead>
-                        </TableRow>
-                      </TableHeader>
+                          <TableRow>
+                            <TableHead>Work Date</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Notes</TableHead>
+                            <TableHead>Technician Name</TableHead>
+                            <TableHead>Technician Email</TableHead>
+                          </TableRow>
+                        </TableHeader>
                       <TableBody>
                         {workSchedules.map((s) => (
                           <TableRow key={s.scheduleId}>
-                            <TableCell className="font-mono text-xs">{s.scheduleId}</TableCell>
                             <TableCell className="whitespace-nowrap">{s.workDate}</TableCell>
                             <TableCell>
                               <Badge variant={s.status === 'AVAILABLE' ? 'default' : 'destructive'} className="uppercase">
@@ -2139,27 +2134,6 @@ const TechnicianDashboard = ({
                               <div className="font-semibold">{s.technician?.name ?? '—'}</div>
                             </TableCell>
                             <TableCell className="text-sm">{s.technician?.email ?? '—'}</TableCell>
-                            <TableCell className="font-mono text-xs">{s.technicianId ?? s.technician_id ?? '—'}</TableCell>
-                            <TableCell className="text-xs">
-                              {s.createdAt ? (
-                                <div className="text-right">
-                                  <div className="whitespace-nowrap">{new Date(s.createdAt).toLocaleTimeString()}</div>
-                                  <div className="text-muted-foreground">{formatSafeDate(s.createdAt)}</div>
-                                </div>
-                              ) : (
-                                '—'
-                              )}
-                            </TableCell>
-                            <TableCell className="text-xs">
-                              {s.updatedAt ? (
-                                <div className="text-right">
-                                  <div className="whitespace-nowrap">{new Date(s.updatedAt).toLocaleTimeString()}</div>
-                                  <div className="text-muted-foreground">{formatSafeDate(s.updatedAt)}</div>
-                                </div>
-                              ) : (
-                                '—'
-                              )}
-                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
