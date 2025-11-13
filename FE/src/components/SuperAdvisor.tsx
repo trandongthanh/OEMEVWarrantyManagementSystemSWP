@@ -2272,16 +2272,7 @@ const SuperAdvisor = () => {
     await fetchRecordDetails(record.id);
   };
 
-  // Handle refresh record details
-  const handleRefreshRecordDetails = async () => {
-    if (viewRecordData?.id) {
-      await fetchRecordDetails(viewRecordData.id);
-      toast({
-        title: 'Refreshed',
-        description: 'Record details have been updated',
-      });
-    }
-  };
+  
 
   // Check if all caselines are completed
   const areAllCaselinesCompleted = () => {
@@ -4381,23 +4372,29 @@ const SuperAdvisor = () => {
                       {/* Guarantee Case Info */}
                       {caseline.contentGuarantee && (
                         <div className="bg-blue-50 border border-blue-200 rounded p-3">
-                          <Label className="text-xs text-blue-700 font-semibold">Related Case:</Label>
+                          <Label className="text-xs text-blue-700 font-semibold">Case:</Label>
                           <p className="text-sm text-blue-900 mt-1">{caseline.contentGuarantee}</p>
                         </div>
                       )}
 
-                      {/* Diagnosis Text */}
-                      {caseline.diagnosisText && (
+                      {/* Component Information */}
+                      {(caseline.typeComponent || caseline.typeComponentId) && (
                         <div>
-                          <Label className="text-xs text-gray-600 font-semibold">Diagnosis:</Label>
-                          <p className="text-sm mt-1 text-gray-800">{caseline.diagnosisText}</p>
+                          <Label>Component:</Label>
+                          <p className="text-sm mt-1 text-gray-800">
+                            {caseline.typeComponent?.name || 'Component'}
+                          </p>
+                          {caseline.typeComponentId && (
+                            <p className="text-xs font-mono text-gray-500 mt-1">ID: {caseline.typeComponentId}</p>
+                          )}
                         </div>
                       )}
+
 
                       {/* Correction Text */}
                       {caseline.correctionText && (
                         <div>
-                          <Label className="text-xs text-gray-600 font-semibold">Correction:</Label>
+                          <Label>Correction:</Label>
                           <p className="text-sm mt-1 text-gray-800">{caseline.correctionText}</p>
                         </div>
                       )}
@@ -4405,28 +4402,14 @@ const SuperAdvisor = () => {
                       {/* Quantity */}
                       {caseline.quantity && (
                         <div>
-                          <Label className="text-xs text-gray-600 font-semibold">Quantity:</Label>
+                          <Label>Quantity:</Label>
                           <p className="text-sm mt-1 text-gray-800">{caseline.quantity}</p>
                         </div>
                       )}
 
-                      {/* Rejection Reason */}
-                      {caseline.rejectionReason && (
-                        <div className="bg-red-50 border border-red-200 rounded p-3">
-                          <Label className="text-xs text-red-700 font-semibold">Rejection Reason:</Label>
-                          <p className="text-sm text-red-900 mt-1">{caseline.rejectionReason}</p>
-                        </div>
-                      )}
+                  
 
-                      {/* Technician Info */}
-                      <div className="flex gap-4 text-xs text-gray-500">
-                        {caseline.diagnosticTechId && (
-                          <span>Diagnostic Tech ID: {caseline.diagnosticTechId}</span>
-                        )}
-                        {caseline.repairTechId && (
-                          <span>Repair Tech ID: {caseline.repairTechId}</span>
-                        )}
-                      </div>
+                  
 
                       {/* Approve/Reject Buttons for PENDING_APPROVAL status */}
                       {caseline.status === 'PENDING_APPROVAL' && (
@@ -4506,25 +4489,7 @@ const SuperAdvisor = () => {
                 <FileText className="h-5 w-5" />
                 <span>Processing Record Details</span>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleRefreshRecordDetails}
-                disabled={isLoadingRecordDetail}
-                className="ml-4"
-              >
-                {isLoadingRecordDetail ? (
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
-                      <polyline points="23 4 23 10 17 10"></polyline>
-                      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                    </svg>
-                    Refresh
-                  </>
-                )}
-              </Button>
+          
             </DialogTitle>
             <DialogDescription>
               Complete information from processing record
@@ -4715,26 +4680,33 @@ const SuperAdvisor = () => {
 
                                       {/* Caseline Content */}
                                       <div className="space-y-2 text-xs">
-                                        {/* Diagnosis */}
-                                        {caseline.diagnosisText && (
-                                          <div>
-                                            <Label className="text-xs text-gray-600 font-semibold">Diagnosis:</Label>
-                                            <p className="text-sm mt-1 text-gray-800">{caseline.diagnosisText}</p>
-                                          </div>
-                                        )}
+                                       
 
                                         {/* Correction */}
                                         {caseline.correctionText && (
                                           <div>
-                                            <Label className="text-xs text-gray-600 font-semibold">Solution:</Label>
+                                            <Label >Solution:</Label>
                                             <p className="text-sm mt-1 text-gray-800">{caseline.correctionText}</p>
                                           </div>
+                                        )}
+
+                                        {/* Component Information */}
+                                        {(caseline.typeComponent || caseline.typeComponentId) && (
+                                         <div>
+                                            <Label >Component:</Label>
+                                            <p className="text-sm mt-1 text-gray-800">
+                                              {caseline.typeComponent?.name || 'Component ID: ' + caseline.typeComponentId}
+                                            </p>
+                                            {caseline.typeComponentId && (
+                                              <p className="text-xs font-mono text-gray-500 mt-1">{caseline.typeComponentId}</p>
+                                            )}
+                                         </div>
                                         )}
 
                                         {/* Quantity */}
                                         {caseline.quantity && (
                                           <div>
-                                            <Label className="text-xs text-gray-600 font-semibold">Quantity:</Label>
+                                            <Label>Quantity:</Label>
                                             <p className="text-sm mt-1 text-gray-800">{caseline.quantity}</p>
                                           </div>
                                         )}
@@ -4742,7 +4714,7 @@ const SuperAdvisor = () => {
                                         {/* Warranty Status */}
                                         {caseline.warrantyStatus && (
                                           <div>
-                                            <Label className="text-xs text-gray-600 font-semibold">Warranty Status:</Label>
+                                            <Label >Warranty Status:</Label>
                                             <Badge className={
                                               caseline.warrantyStatus === 'ELIGIBLE' 
                                                 ? 'bg-green-100 text-green-800 ml-2' 
@@ -4753,22 +4725,14 @@ const SuperAdvisor = () => {
                                           </div>
                                         )}
 
-                                        {/* Rejection Reason */}
-                                        {caseline.rejectionReason && (
-                                          <div className="bg-red-50 border border-red-200 rounded p-2 mt-2">
-                                            <Label className="text-xs text-red-700 font-semibold">Rejection Reason:</Label>
-                                            <p className="text-sm text-red-900 mt-1">{caseline.rejectionReason}</p>
-                                          </div>
-                                        )}
+                                 
 
                                         {/* Technician Info */}
                                         <div className="flex gap-4 text-xs text-gray-500 pt-2 border-t">
                                           {(viewRecordData.mainTechnician?.name || caseline.diagnosticTechId) && (
                                             <span>Diagnostic Tech: {viewRecordData.mainTechnician?.name || caseline.diagnosticTechId}</span>
                                           )}
-                                          {(caseline.repairTech?.name || caseline.repairTechId) && (
-                                            <span>Repair Tech: {caseline.repairTech?.name || caseline.repairTechId}</span>
-                                          )}
+                                         
                                         </div>
                                       </div>
                                     </div>
