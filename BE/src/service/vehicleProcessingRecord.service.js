@@ -99,24 +99,23 @@ class VehicleProcessingRecordService {
           Transaction.LOCK.SHARE
         );
 
-      if (!latestRecord) {
-        return;
-      }
-
-      const previousOdometer = Number(latestRecord.odometer);
       const currentOdometer = Number(odometer);
 
       if (Number.isNaN(currentOdometer)) {
         throw new BadRequestError("Odometer must be a valid number");
       }
 
-      if (
-        !Number.isNaN(previousOdometer) &&
-        currentOdometer <= previousOdometer
-      ) {
-        throw new ConflictError(
-          `New odometer (${currentOdometer}) must be greater than the last record odometer (${previousOdometer})`
-        );
+      if (latestRecord) {
+        const previousOdometer = Number(latestRecord.odometer);
+
+        if (
+          !Number.isNaN(previousOdometer) &&
+          currentOdometer <= previousOdometer
+        ) {
+          throw new ConflictError(
+            `New odometer (${currentOdometer}) must be greater than the last record odometer (${previousOdometer})`
+          );
+        }
       }
 
       if (existingRecord) {
