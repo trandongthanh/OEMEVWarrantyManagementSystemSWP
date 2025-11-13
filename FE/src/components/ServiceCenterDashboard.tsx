@@ -45,6 +45,12 @@ interface Technician {
   specialty?: string;
   experience?: number;
   rating?: number;
+  activeTaskCount?: number;
+  tasksAssignedToday?: number;
+  workSchedule?: Array<{
+    workDate: string;
+    status: string;
+  }>;
 }
 
 interface ComponentInfo {
@@ -461,15 +467,13 @@ const getWorkloadBadgeVariant = (workload: number | undefined, maxWorkload = 5) 
 };
 
 // Helper function to check if technician can be assigned (workload < maxWorkload)
-const canAssignTechnician = (technician: Technician, maxWorkload = 5): boolean => {
-  const workload = technician.workload || 0;
-  return workload < maxWorkload && technician.status === 'AVAILABLE';
-};
-
-// Helper function to get warning message based on workload
+  const canAssignTechnician = (technician: Technician, maxWorkload = 5): boolean => {
+    const tasksToday = technician.tasksAssignedToday || 0;
+    return tasksToday < maxWorkload && technician.status === 'AVAILABLE';
+  };// Helper function to get warning message based on workload
 const getWorkloadWarningMessage = (workload: number, maxWorkload = 5): string => {
-  if (workload >= maxWorkload) return `⚠️ Technician at maximum capacity (${workload}/${maxWorkload} tasks)`;
-  if (workload >= Math.max(1, maxWorkload - 1)) return "⚠️ Technician almost at capacity";
+  if (workload >= maxWorkload) return `⚠️ Technician at maximum daily capacity (${workload}/${maxWorkload} tasks today)`;
+  if (workload >= Math.max(1, maxWorkload - 1)) return "⚠️ Technician almost at daily capacity";
   return "";
 };
 
@@ -1432,18 +1436,27 @@ const ServiceCenterDashboard = () => {
       setTechnicianRecords(techRecords);
       setShowTechnicianRecordsModal(true);
 
-      // Fetch assigned caselines for this technician
+      // Fetch assigned caselines for this technician using correct endpoint
       const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
       if (token) {
         try {
-          const response = await axios.get(`${API_BASE_URL}/users/${technician.id}/assigned-caselines`, {
+          console.log('🔍 Fetching assigned caselines for technician:', technician.id);
+          // Use the correct endpoint: /case-lines?repairTechId=xxx
+          const response = await axios.get(`${API_BASE_URL}/case-lines`, {
+            params: { repairTechId: technician.id },
             headers: { Authorization: `Bearer ${token}` }
           });
-          console.log('📋 Technician assigned caselines:', response.data);
+          console.log('📋 Full API response:', response);
+          console.log('📋 Response data:', response.data);
+          
           const caseLines = response.data?.data?.caseLines || [];
+          console.log('📋 Parsed caselines:', caseLines);
+          console.log('📋 Caselines count:', caseLines.length);
+          
           setTechnicianCaseLines(caseLines);
         } catch (error) {
-          console.error('Failed to fetch technician caselines:', error);
+          console.error('❌ Failed to fetch technician caselines:', error);
+          console.error('❌ Error response:', error.response);
           setTechnicianCaseLines([]);
         }
       }
@@ -1624,13 +1637,13 @@ const ServiceCenterDashboard = () => {
         return;
       }
 
-      // ✅ Check if technician can be assigned (workload < maxWorkload)
+      // ✅ Check if technician can be assigned (tasksAssignedToday < maxWorkload)
       const technician = availableTechnicians.find(t => t.id === technicianId);
       if (technician && !canAssignTechnician(technician, maxWorkload)) {
-        const workload = technician.workload || 0;
+        const tasksToday = technician.tasksAssignedToday || 0;
         toast({
           title: 'Cannot Assign Technician',
-          description: `Cannot assign ${technician.name}. Technician has reached maximum capacity (${workload}/${maxWorkload} tasks). Please assign a different technician.`,
+          description: `Cannot assign ${technician.name}. Technician has reached maximum daily capacity (${tasksToday}/${maxWorkload} tasks today). Please assign a different technician.`,
           variant: 'destructive'
         });
         return;
@@ -1682,11 +1695,28 @@ const ServiceCenterDashboard = () => {
     } catch (error: any) {
       console.error('Error assigning technician to case line:', error);
       const errorMessage = error.response?.data?.message || 'Failed to assign technician. Please try again.';
-      toast({
-        title: 'Error',
-        description: errorMessage,
-        variant: 'destructive'
-      });
+      
+      // Check if technician is already assigned - show as info toast instead of error
+      if (errorMessage.toLowerCase().includes('already assigned')){
+        toast({
+          title: 'Technician Already Assigned',
+          description: 'This case line already has a technician assigned. Please refresh to see the latest status.',
+          variant: 'default'
+        });
+        
+        // Close modal and refresh data
+        setShowTechnicianSelectionModal(false);
+        setSelectedCaseLineForTechnician(null);
+        await fetchAllStatuses();
+        await refreshTechnicians(techFilterStatus === 'ALL' ? '' : techFilterStatus);
+      } else {
+        // Show error toast for other errors
+        toast({
+          title: 'Error',
+          description: errorMessage,
+          variant: 'destructive'
+        });
+      }
     }
   };
 
@@ -1705,11 +1735,44 @@ const ServiceCenterDashboard = () => {
         return;
       }
 
-      // Calculate shortage: only request what's missing
-      // If available is 12 and requested is 13, only request 1
-      const quantityToRequest = pendingStockRequest.availableQuantity !== undefined
-        ? Math.max(0, pendingStockRequest.quantity - pendingStockRequest.availableQuantity)
-        : pendingStockRequest.quantity;
+      // Find the selected warehouse to check its current stock
+      const selectedWarehouse = warehouses.find(w => w.warehouseId === warehouseId);
+      let availableInWarehouse = 0;
+      
+      if (selectedWarehouse?.stocks) {
+        // Find stock of this component type in the selected warehouse
+        const componentStock = selectedWarehouse.stocks.find(
+          stock => stock.typeComponentId === pendingStockRequest.typeComponentId
+        );
+        availableInWarehouse = componentStock?.quantityAvailable || 0;
+        
+        console.log('📦 Stock check in selected warehouse:', {
+          warehouseId,
+          warehouseName: selectedWarehouse.name,
+          typeComponentId: pendingStockRequest.typeComponentId,
+          requestedQuantity: pendingStockRequest.quantity,
+          availableInWarehouse,
+          shortage: Math.max(0, pendingStockRequest.quantity - availableInWarehouse)
+        });
+      }
+
+      // Calculate shortage: only request what's missing from the selected warehouse
+      // Example: Need 9 batteries, warehouse has 8 → request only 1
+      const quantityToRequest = Math.max(0, pendingStockRequest.quantity - availableInWarehouse);
+      
+      // If warehouse already has enough stock, don't create request
+      if (quantityToRequest <= 0) {
+        toast({
+          title: 'Stock Available',
+          description: `The selected warehouse already has sufficient stock (${availableInWarehouse} available). Please try allocating again.`,
+          variant: 'default'
+        });
+        setShowWarehouseSelectionModal(false);
+        setPendingStockRequest(null);
+        return;
+      }
+      
+      console.log(`✅ Creating request for ${quantityToRequest} units (need ${pendingStockRequest.quantity}, warehouse has ${availableInWarehouse})`);
       
       const requestBody = {
         items: [
@@ -1788,19 +1851,20 @@ const ServiceCenterDashboard = () => {
         setShowWarehouseSelectionModal(false);
         setPendingStockRequest(null);
 
-        // Refresh data from backend to get updated status - IMPORTANT: fetch records first
-        await fetchAllStatuses();
+        // Refresh data from backend to get updated caseline status (WAITING_FOR_PARTS)
+        console.log('🔄 Refreshing data after creating stock request...');
+        const updatedData = await fetchAllStatuses();
         await fetchWarehouses();
         // Refresh stock transfer requests list to include the newly created request
         await fetchStockTransferRequests();
         
-        // Refresh claim detail modal with updated data from backend
-        if (selectedClaimForDetail) {
-          const updatedClaims = Object.values(claimsByStatus).flat();
+        // Refresh claim detail modal with updated data from backend (includes updated caseline status)
+        if (selectedClaimForDetail && updatedData) {
+          const updatedClaims = Object.values(updatedData).flat();
           const updatedClaim = updatedClaims.find(c => c.recordId === selectedClaimForDetail.recordId);
           if (updatedClaim) {
             setSelectedClaimForDetail(updatedClaim);
-            console.log('✅ Refreshed claim detail modal with updated data');
+            console.log('✅ Refreshed claim detail modal - caselines should now show WAITING_FOR_PARTS status');
           }
         }
       }
@@ -1914,7 +1978,10 @@ const ServiceCenterDashboard = () => {
           experience: t.experience || t.yearsOfExperience || undefined,
           rating: t.rating || undefined,
           workload: workloadValue,
-          status: normalizedStatus || ''
+          status: normalizedStatus || '',
+          activeTaskCount: t.activeTaskCount,
+          tasksAssignedToday: t.tasksAssignedToday,
+          workSchedule: t.workSchedule || []
         } as Technician;
       });
       setAvailableTechnicians(mapped);
@@ -2183,32 +2250,49 @@ const ServiceCenterDashboard = () => {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Name</TableHead>
-                          <TableHead>Tasks</TableHead>
-                          <TableHead>Status</TableHead>
+                          <TableHead>Active Tasks</TableHead>
+                          <TableHead>Tasks Today</TableHead>
+                          <TableHead>Today's Status</TableHead>
                           <TableHead>Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {(techFilterStatus && techFilterStatus !== 'ALL' ? availableTechnicians.filter(t => t.status === techFilterStatus) : availableTechnicians).map(tech => (
-                          <TableRow key={tech.id}>
-                            <TableCell>{tech.name}</TableCell>
-                            <TableCell>{typeof tech.workload === 'number' ? tech.workload : '-'}</TableCell>
-                            <TableCell>
-                          <Badge variant={getTechBadgeVariant(tech.status)} className="text-xs">
-                                  {getDisplayStatus(tech.status)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => viewTechnicianRecords(tech)}
-                              >
-                                View
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {(techFilterStatus && techFilterStatus !== 'ALL' ? availableTechnicians.filter(t => t.status === techFilterStatus) : availableTechnicians).map(tech => {
+                          // Get today's work schedule status
+                          const today = new Date().toISOString().split('T')[0];
+                          const todaySchedule = tech.workSchedule?.find(ws => ws.workDate === today);
+                          const scheduleStatus = todaySchedule?.status || 'N/A';
+                          
+                          return (
+                            <TableRow key={tech.id}>
+                              <TableCell className="font-medium">{tech.name}</TableCell>
+                              <TableCell>
+                                <Badge variant="secondary" className="text-xs">
+                                  {tech.activeTaskCount ?? tech.workload ?? 0} active
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-sm text-muted-foreground">
+                                  {tech.tasksAssignedToday ?? 0} assigned
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={getTechBadgeVariant(scheduleStatus)} className="text-xs">
+                                  {getDisplayStatus(scheduleStatus)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => viewTechnicianRecords(tech)}
+                                >
+                                  View
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -2517,9 +2601,16 @@ const ServiceCenterDashboard = () => {
                                                   {/* Show Allocate button based on case line status: */}
                                                   {/* 1. PARTS_AVAILABLE - stock received from manufacturer (green button) */}
                                                   {/* 2. CUSTOMER_APPROVED - first allocation from warehouse (blue button) */}
+                                                  {/* DO NOT show allocate for WAITING_FOR_PARTS */}
                                                   {(() => {
                                                     const isPartsAvailable = line.status === 'PARTS_AVAILABLE';
                                                     const isCustomerApproved = line.status === 'CUSTOMER_APPROVED';
+                                                    const isWaitingForParts = line.status === 'WAITING_FOR_PARTS';
+                                                    
+                                                    // Don't show allocate button if waiting for parts
+                                                    if (isWaitingForParts) {
+                                                      return null;
+                                                    }
                                                     
                                                     // Show allocate for PARTS_AVAILABLE (after stock received)
                                                     if (isPartsAvailable && hasPermission(user, 'attach_parts')) {
@@ -2556,10 +2647,9 @@ const ServiceCenterDashboard = () => {
                                                     return null;
                                                   })()}
                                                   
-                                                  {/* Show "View Request" button if case line has active stock request (but not PARTS_AVAILABLE yet) */}
-                                                  {caseLineToRequestMap.has(line.id) && line.status !== 'PARTS_AVAILABLE' && (() => {
+                                                  {/* Show "View Request" button for WAITING_FOR_PARTS status or if has active stock request */}
+                                                  {(line.status === 'WAITING_FOR_PARTS' || (caseLineToRequestMap.has(line.id) && line.status !== 'PARTS_AVAILABLE')) && (() => {
                                                     const requestId = caseLineToRequestMap.get(line.id);
-                                                    const matchingRequest = stockTransferRequests.find(req => req.id === requestId);
                                                     
                                                     // Show "View Request" button for pending requests
                                                     return (
@@ -2722,8 +2812,8 @@ const ServiceCenterDashboard = () => {
                                 <div className="flex-1">
                                   <p className="font-semibold">{tech.name}</p>
                                   <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                                    {typeof tech.workload === 'number' && (
-                                      <Badge variant="outline" className="text-xs">Tasks: {tech.workload}</Badge>
+                                    {typeof tech.tasksAssignedToday === 'number' && (
+                                      <Badge variant="outline" className="text-xs">Tasks Today: {tech.tasksAssignedToday}</Badge>
                                     )}
                                     {tech.status && (
                                       <span className="text-xs">{getDisplayStatus(tech.status)}</span>
@@ -2898,7 +2988,7 @@ const ServiceCenterDashboard = () => {
                   {selectedCaseForAssignment && getRecommendedTechnicians().map((tech) => { 
                     const isAssigned = warrantyClaims.find(c => c.vin === selectedCaseForAssignment)?.assignedTechnicians.some(t => t.id === tech.id);
                     const canAssign = canAssignTechnician(tech, maxWorkload);
-                    const workloadWarning = !canAssign ? getWorkloadWarningMessage(tech.workload || 0, maxWorkload) : "";
+                    const workloadWarning = !canAssign ? getWorkloadWarningMessage(tech.tasksAssignedToday || 0, maxWorkload) : "";
                     
                     return (
                       <Card 
@@ -2915,9 +3005,9 @@ const ServiceCenterDashboard = () => {
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
                               <h5 className="font-medium">{tech.name}</h5>
-                              {typeof tech.workload === 'number' && (
-                                <Badge variant={getWorkloadBadgeVariant(tech.workload, maxWorkload)} className="text-xs">
-                                  Tasks: {tech.workload}
+                              {typeof tech.tasksAssignedToday === 'number' && (
+                                <Badge variant={getWorkloadBadgeVariant(tech.tasksAssignedToday, maxWorkload)} className="text-xs">
+                                  Tasks Today: {tech.tasksAssignedToday}
                                 </Badge>
                               )}
                             </div>
@@ -3494,44 +3584,80 @@ const ServiceCenterDashboard = () => {
                   </div>
                 ) : (
                   <div className="grid gap-3 max-h-[400px] overflow-y-auto">
-                    {warehouses.map((warehouse) => (
-                      <Card 
-                        key={warehouse.warehouseId} 
-                        className="p-4 cursor-pointer transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20 border-2 hover:border-blue-400"
-                        onClick={() => submitStockTransferRequest(warehouse.warehouseId)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <h5 className="font-semibold">{warehouse.name}</h5>
-                              <Badge 
-                                variant={warehouse.priority === 1 ? 'default' : warehouse.priority === 2 ? 'secondary' : 'outline'}
-                                className="text-xs"
-                              >
-                                Priority {warehouse.priority}
-                              </Badge>
+                    {warehouses.map((warehouse) => {
+                      // Calculate current stock for this component in this warehouse
+                      const componentStock = warehouse.stocks?.find(
+                        stock => stock.typeComponentId === pendingStockRequest?.typeComponentId
+                      );
+                      const availableQty = componentStock?.quantityAvailable || 0;
+                      const requestedQty = pendingStockRequest?.quantity || 0;
+                      const shortage = Math.max(0, requestedQty - availableQty);
+                      
+                      return (
+                        <Card 
+                          key={warehouse.warehouseId} 
+                          className="p-4 cursor-pointer transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20 border-2 hover:border-blue-400"
+                          onClick={() => submitStockTransferRequest(warehouse.warehouseId)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <h5 className="font-semibold">{warehouse.name}</h5>
+                                <Badge 
+                                  variant={warehouse.priority === 1 ? 'default' : warehouse.priority === 2 ? 'secondary' : 'outline'}
+                                  className="text-xs"
+                                >
+                                  Priority {warehouse.priority}
+                                </Badge>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <MapPin className="h-3 w-3" />
+                                <span>{warehouse.address}</span>
+                              </div>
+                              
+                              {/* Show current stock info */}
+                              {pendingStockRequest && (
+                                <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-muted-foreground">Current Stock:</span>
+                                    <span className={`font-semibold ${availableQty >= requestedQty ? 'text-green-600' : 'text-orange-600'}`}>
+                                      {availableQty} / {requestedQty} needed
+                                    </span>
+                                  </div>
+                                  {shortage > 0 && (
+                                    <div className="flex items-center justify-between text-xs mt-1">
+                                      <span className="text-muted-foreground">Will request:</span>
+                                      <span className="font-semibold text-blue-600">
+                                        {shortage} units from manufacturer
+                                      </span>
+                                    </div>
+                                  )}
+                                  {availableQty >= requestedQty && (
+                                    <p className="text-xs text-green-600 mt-1 font-medium">
+                                      ✓ Sufficient stock available
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                              
+                              <p className="text-xs text-muted-foreground mt-1 font-mono">
+                                ID: {warehouse.warehouseId}
+                              </p>
                             </div>
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                              <MapPin className="h-3 w-3" />
-                              <span>{warehouse.address}</span>
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-1 font-mono">
-                              ID: {warehouse.warehouseId}
-                            </p>
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                submitStockTransferRequest(warehouse.warehouseId);
+                              }}
+                            >
+                              Select
+                            </Button>
                           </div>
-                          <Button
-                            variant="default"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              submitStockTransferRequest(warehouse.warehouseId);
-                            }}
-                          >
-                            Select
-                          </Button>
-                        </div>
-                      </Card>
-                    ))}
+                        </Card>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -3611,7 +3737,7 @@ const ServiceCenterDashboard = () => {
                       .filter(tech => tech.status === 'AVAILABLE')
                       .map((tech) => {
                         const canAssign = canAssignTechnician(tech, maxWorkload);
-                        const workloadWarning = !canAssign ? getWorkloadWarningMessage(tech.workload || 0, maxWorkload) : "";
+                        const workloadWarning = !canAssign ? getWorkloadWarningMessage(tech.tasksAssignedToday || 0, maxWorkload) : "";
                         
                         return (
                           <Card 
@@ -3642,9 +3768,9 @@ const ServiceCenterDashboard = () => {
                                   <div>
                                     <h5 className="font-semibold">{tech.name}</h5>
                                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                      {typeof tech.workload === 'number' && (
-                                        <Badge variant={getWorkloadBadgeVariant(tech.workload, maxWorkload)} className="text-xs">
-                                          Active Tasks: {tech.workload}
+                                      {typeof tech.tasksAssignedToday === 'number' && (
+                                        <Badge variant={getWorkloadBadgeVariant(tech.tasksAssignedToday, maxWorkload)} className="text-xs">
+                                          Tasks Today: {tech.tasksAssignedToday}
                                         </Badge>
                                       )}
                                       <span className={tech.status === 'AVAILABLE' ? 'text-green-600' : 'text-gray-600'}>
