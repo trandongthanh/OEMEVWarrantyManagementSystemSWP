@@ -4762,8 +4762,8 @@ const SuperAdvisor = () => {
 
                                         {/* Technician Info */}
                                         <div className="flex gap-4 text-xs text-gray-500 pt-2 border-t">
-                                          {(caseline.diagnosticTech?.name || caseline.diagnosticTechId) && (
-                                            <span>Diagnostic Tech: {caseline.diagnosticTech?.name || caseline.diagnosticTechId}</span>
+                                          {(viewRecordData.mainTechnician?.name || caseline.diagnosticTechId) && (
+                                            <span>Diagnostic Tech: {viewRecordData.mainTechnician?.name || caseline.diagnosticTechId}</span>
                                           )}
                                           {(caseline.repairTech?.name || caseline.repairTechId) && (
                                             <span>Repair Tech: {caseline.repairTech?.name || caseline.repairTechId}</span>
