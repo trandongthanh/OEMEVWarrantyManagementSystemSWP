@@ -1,14 +1,5 @@
 {
-  "version": 2,
-  "buildCommand": "cd FE && npm install --include=optional --legacy-peer-deps && npm run build",
-  "outputDirectory": "FE/dist",
-  "installCommand": "cd FE && npm install --include=optional --legacy-peer-deps",
-  "framework": "vite",
-  "cleanUrls": true,
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ]
+  "buildCommand": "npm install --include=optional --legacy-peer-deps && npm run build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install --include=optional --legacy-peer-deps"
 }
