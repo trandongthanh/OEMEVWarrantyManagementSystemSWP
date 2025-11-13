@@ -59,7 +59,8 @@ const createProcessingRecord = async (recordData: {
 const fetchProcessingRecords = async () => {
   const token = localStorage.getItem("ev_warranty_token");
   
-  const response = await fetch(`${API_BASE_URL}/processing-records`, {
+  // Set limit to a large number to get all records (backend default is 10)
+  const response = await fetch(`${API_BASE_URL}/processing-records?limit=1000`, {
     method: 'GET',
     headers: {
       'Accept': 'application/json',
