@@ -153,6 +153,22 @@ interface TypeComponent {
   updated_at: string;
 }
 
+interface TypeComponent {
+  typeComponentId: string;
+  name: string;
+  sku: string;
+  category: string;
+}
+
+interface Stock {
+  stockId: string;
+  typeComponentId: string;
+  quantityInStock: number;
+  quantityReserved: number;
+  quantityAvailable: number;
+  typeComponent?: TypeComponent;
+}
+
 interface Warehouse {
   warehouseId: string;
   name: string;
@@ -164,6 +180,16 @@ interface Warehouse {
   updatedAt: string;
   service_center_id?: string | null;
   vehicle_company_id?: string | null;
+  serviceCenter?: {
+    serviceCenterId: string;
+    name: string;
+    address: string;
+  };
+  company?: {
+    vehicleCompanyId: string;
+    name: string;
+  };
+  stocks?: Stock[];
 }
 
 interface StockTransferRequest {
@@ -484,6 +510,7 @@ const ServiceCenterDashboard = () => {
     caseLineId: string;
     typeComponentId: string;
     quantity: number;
+    availableQuantity?: number;
   } | null>(null);
 
   // Track case lines with out of stock status
@@ -498,6 +525,7 @@ const ServiceCenterDashboard = () => {
   const [isLoadingWarehouses, setIsLoadingWarehouses] = useState(false);
   const [showWarehouseDetailModal, setShowWarehouseDetailModal] = useState(false);
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
 
   // Stock Transfer Request States
   const [showWarehouseSelectionModal, setShowWarehouseSelectionModal] = useState(false);
@@ -506,6 +534,7 @@ const ServiceCenterDashboard = () => {
     typeComponentId: string;
     quantity: number;
     guaranteeCaseId: string;
+    availableQuantity?: number;
   } | null>(null);
   const [caseLineToRequestMap, setCaseLineToRequestMap] = useState<Map<string, string>>(new Map()); // Map caselineId -> requestId
   const [stockTransferRequests, setStockTransferRequests] = useState<StockTransferRequest[]>([]);
@@ -706,7 +735,7 @@ const ServiceCenterDashboard = () => {
     setIsLoadingRoles(true);
     try {
       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-      const response = await axios.get('http://localhost:3000/api/v1/roles', {
+      const response = await axios.get(`${API_BASE_URL}/roles`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -1525,13 +1554,22 @@ const ServiceCenterDashboard = () => {
         const caseLine = allCaseLines.find(cl => cl.id === caseLineId);
         
         if (caseLine && caseLine.typeComponent) {
+          // Parse available quantity from error message
+          // Example: "Insufficient stock. Available: 12, Requested: 13"
+          let availableQuantity: number | undefined;
+          const availableMatch = errorMessage.match(/Available:\s*(\d+)/i);
+          if (availableMatch) {
+            availableQuantity = parseInt(availableMatch[1], 10);
+          }
+          
           // Open out of stock modal instead of confirm dialog
           setOutOfStockInfo({
             errorMessage,
             guaranteeCaseId,
             caseLineId,
             typeComponentId: caseLine.typeComponent.typeComponentId,
-            quantity: caseLine.quantity
+            quantity: caseLine.quantity,
+            availableQuantity
           });
           setShowOutOfStockModal(true);
         } else {
@@ -1557,14 +1595,16 @@ const ServiceCenterDashboard = () => {
     guaranteeCaseId: string, 
     caseLineId: string, 
     typeComponentId: string,
-    quantity: number
+    quantity: number,
+    availableQuantity?: number
   ) => {
     // Store the pending request data
     setPendingStockRequest({
       caseLineId,
       typeComponentId,
       quantity,
-      guaranteeCaseId
+      guaranteeCaseId,
+      availableQuantity
     });
     
     // Open warehouse selection modal
@@ -1665,10 +1705,16 @@ const ServiceCenterDashboard = () => {
         return;
       }
 
+      // Calculate shortage: only request what's missing
+      // If available is 12 and requested is 13, only request 1
+      const quantityToRequest = pendingStockRequest.availableQuantity !== undefined
+        ? Math.max(0, pendingStockRequest.quantity - pendingStockRequest.availableQuantity)
+        : pendingStockRequest.quantity;
+      
       const requestBody = {
         items: [
           {
-            quantityRequested: pendingStockRequest.quantity,
+            quantityRequested: quantityToRequest,
             typeComponentId: pendingStockRequest.typeComponentId,
             caselineId: pendingStockRequest.caseLineId
           }
@@ -3157,116 +3203,229 @@ const ServiceCenterDashboard = () => {
 
         {/* Warehouse Detail Modal */}
         <Dialog open={showWarehouseDetailModal} onOpenChange={setShowWarehouseDetailModal}>
-          <DialogContent className="max-w-3xl">
+          <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Package className="h-5 w-5 text-blue-600" />
-                Warehouse Details
+                <Package className="h-5 w-5 text-primary" />
+                Warehouse Inventory Details
               </DialogTitle>
               <DialogDescription>
-                Complete information about the warehouse
+                View warehouse information and stock inventory
               </DialogDescription>
             </DialogHeader>
 
             {selectedWarehouse && (
-              <div className="space-y-6 mt-4">
-                {/* Basic Information */}
-                <Card className="shadow-md border">
-                  <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-900/20 pb-3">
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <div className="p-2 bg-blue-100 dark:bg-blue-900/40 rounded-lg">
-                        <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                      </div>
-                      Basic Information
-                    </CardTitle>
+              <div className="space-y-6">
+                {/* Warehouse Information */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Warehouse Information</CardTitle>
                   </CardHeader>
-                  <CardContent className="pt-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-3">
-                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
-                          <label className="text-xs font-semibold text-muted-foreground uppercase">Warehouse ID</label>
-                          <p className="font-mono text-sm font-semibold mt-0.5">{selectedWarehouse.warehouseId}</p>
-                        </div>
-                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
-                          <label className="text-xs font-semibold text-muted-foreground uppercase">Name</label>
-                          <p className="text-sm font-medium mt-0.5">{selectedWarehouse.name}</p>
-                        </div>
-                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
-                          <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
-                            <MapPin className="h-3 w-3" />
-                            Address
-                          </label>
-                          <p className="text-sm font-medium mt-0.5">{selectedWarehouse.address}</p>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Warehouse Name</label>
+                        <p className="text-sm font-semibold">{selectedWarehouse.name}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Priority</label>
+                        <div className="mt-1">
+                          <Badge 
+                            variant={selectedWarehouse.priority === 1 ? 'default' : selectedWarehouse.priority === 2 ? 'secondary' : 'outline'}
+                          >
+                            Priority {selectedWarehouse.priority}
+                          </Badge>
                         </div>
                       </div>
-                      <div className="space-y-3">
-                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
-                          <label className="text-xs font-semibold text-muted-foreground uppercase">Priority</label>
-                          <div className="mt-1">
-                            <Badge 
-                              variant={selectedWarehouse.priority === 1 ? 'default' : selectedWarehouse.priority === 2 ? 'secondary' : 'outline'}
-                              className="text-xs"
-                            >
-                              Priority {selectedWarehouse.priority}
-                            </Badge>
-                          </div>
+                      <div className="col-span-2">
+                        <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          Address
+                        </label>
+                        <p className="text-sm">{selectedWarehouse.address}</p>
+                      </div>
+                      {selectedWarehouse.serviceCenter && (
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Service Center</label>
+                          <p className="text-sm font-medium">{selectedWarehouse.serviceCenter.name}</p>
+                          <p className="text-xs text-muted-foreground">{selectedWarehouse.serviceCenter.address}</p>
                         </div>
-                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
-                          <label className="text-xs font-semibold text-muted-foreground uppercase">Service Center ID</label>
-                          <p className="font-mono text-sm mt-0.5">{selectedWarehouse.serviceCenterId || selectedWarehouse.service_center_id || '-'}</p>
+                      )}
+                      {selectedWarehouse.company && (
+                        <div>
+                          <label className="text-sm font-medium text-muted-foreground">Company</label>
+                          <p className="text-sm font-medium">{selectedWarehouse.company.name}</p>
                         </div>
-                        <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
-                          <label className="text-xs font-semibold text-muted-foreground uppercase">Vehicle Company ID</label>
-                          <p className="font-mono text-sm mt-0.5">{selectedWarehouse.vehicleCompanyId || selectedWarehouse.vehicle_company_id || '-'}</p>
-                        </div>
+                      )}
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          Created At
+                        </label>
+                        <p className="text-sm">{new Date(selectedWarehouse.createdAt).toLocaleString('vi-VN')}</p>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">Updated At</label>
+                        <p className="text-sm">{new Date(selectedWarehouse.updatedAt).toLocaleString('vi-VN')}</p>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                {/* Timestamps */}
-                <Card className="shadow-md border">
-                  <CardHeader className="bg-gradient-to-r from-green-50 to-transparent dark:from-green-900/20 pb-3">
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <div className="p-2 bg-green-100 dark:bg-green-900/40 rounded-lg">
-                        <Clock className="h-4 w-4 text-green-600 dark:text-green-400" />
-                      </div>
-                      Timestamps
+                {/* Stock Inventory */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center justify-between">
+                      <span className="flex items-center gap-2">
+                        <Package className="h-4 w-4" />
+                        Stock Inventory
+                      </span>
+                      <Badge variant="outline">
+                        {selectedWarehouse.stocks?.length || 0} component types
+                      </Badge>
                     </CardTitle>
+                    <CardDescription>
+                      Available components and quantities in this warehouse
+                    </CardDescription>
                   </CardHeader>
-                  <CardContent className="pt-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
-                        <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
-                          <Calendar className="h-3 w-3" />
-                          Created At
-                        </label>
-                        <p className="text-sm font-medium mt-0.5">
-                          {new Date(selectedWarehouse.createdAt).toLocaleString('en-US', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </p>
+                  <CardContent>
+                    {selectedWarehouse.stocks && selectedWarehouse.stocks.length > 0 ? (
+                      <div className="space-y-4">
+                        {/* Category Filter */}
+                        <div className="flex flex-wrap gap-2">
+                          {(() => {
+                            const categories = Array.from(
+                              new Set(
+                                selectedWarehouse.stocks
+                                  ?.map(stock => stock.typeComponent?.category)
+                                  .filter(Boolean)
+                              )
+                            ).sort();
+                            
+                            return (
+                              <>
+                                <Button
+                                  key="ALL"
+                                  variant={selectedCategory === 'ALL' ? 'default' : 'outline'}
+                                  size="sm"
+                                  onClick={() => setSelectedCategory('ALL')}
+                                  className="border-dashed"
+                                >
+                                  All Categories ({selectedWarehouse.stocks?.length || 0})
+                                </Button>
+                                {categories.map((category) => {
+                                  const count = selectedWarehouse.stocks?.filter(
+                                    stock => stock.typeComponent?.category === category
+                                  ).length || 0;
+                                  return (
+                                    <Button
+                                      key={category}
+                                      variant={selectedCategory === category ? 'default' : 'outline'}
+                                      size="sm"
+                                      onClick={() => setSelectedCategory(category as string)}
+                                      className="border-dashed"
+                                    >
+                                      {category} ({count})
+                                    </Button>
+                                  );
+                                })}
+                              </>
+                            );
+                          })()}
+                        </div>
+
+                        {/* Stock Table */}
+                        <div className="rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>#</TableHead>
+                                <TableHead>Component Name</TableHead>
+                                <TableHead>SKU</TableHead>
+                                <TableHead>Category</TableHead>
+                                <TableHead className="text-right">In Stock</TableHead>
+                                <TableHead className="text-right">Reserved</TableHead>
+                                <TableHead className="text-right">Available</TableHead>
+                                <TableHead className="text-right">Status</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {(() => {
+                                const filteredStocks = selectedCategory === 'ALL'
+                                  ? selectedWarehouse.stocks
+                                  : selectedWarehouse.stocks?.filter(
+                                      stock => stock.typeComponent?.category === selectedCategory
+                                    );
+
+                                return filteredStocks && filteredStocks.length > 0 ? (
+                                  filteredStocks.map((stock, index) => (
+                                    <TableRow key={stock.stockId}>
+                                      <TableCell className="font-medium">
+                                        {index + 1}
+                                      </TableCell>
+                                      <TableCell>
+                                        <div>
+                                          <p className="font-medium text-sm">{stock.typeComponent?.name || 'N/A'}</p>
+                                          <p className="text-xs text-muted-foreground font-mono">
+                                            ID: {stock.typeComponentId.substring(0, 8)}...
+                                          </p>
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <code className="text-xs bg-muted px-2 py-1 rounded">
+                                          {stock.typeComponent?.sku || 'N/A'}
+                                        </code>
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge variant="outline" className="text-xs">
+                                          {stock.typeComponent?.category || 'N/A'}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <span className="font-medium">{stock.quantityInStock}</span>
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <Badge variant="secondary" className="text-xs">
+                                          {stock.quantityReserved}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <Badge 
+                                          variant={stock.quantityAvailable > 0 ? 'default' : 'destructive'}
+                                          className="text-xs font-semibold"
+                                        >
+                                          {stock.quantityAvailable}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        {stock.quantityAvailable === 0 ? (
+                                          <Badge variant="destructive" className="text-xs">Out of Stock</Badge>
+                                        ) : stock.quantityAvailable < 5 ? (
+                                          <Badge variant="outline" className="text-xs border-orange-500 text-orange-700">Low Stock</Badge>
+                                        ) : (
+                                          <Badge variant="outline" className="text-xs border-green-500 text-green-700">In Stock</Badge>
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))
+                                ) : (
+                                  <TableRow>
+                                    <TableCell colSpan={8} className="text-center text-muted-foreground">
+                                      No stocks found for this category
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })()}
+                            </TableBody>
+                          </Table>
+                        </div>
                       </div>
-                      <div className="p-2 bg-gray-50 dark:bg-gray-900/50 rounded-md">
-                        <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1 uppercase">
-                          <Calendar className="h-3 w-3" />
-                          Updated At
-                        </label>
-                        <p className="text-sm font-medium mt-0.5">
-                          {new Date(selectedWarehouse.updatedAt).toLocaleString('en-US', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </p>
+                    ) : (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Package className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                        <p>No stock information available</p>
                       </div>
-                    </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -4901,7 +5060,8 @@ const ServiceCenterDashboard = () => {
                           outOfStockInfo.guaranteeCaseId,
                           outOfStockInfo.caseLineId,
                           outOfStockInfo.typeComponentId,
-                          outOfStockInfo.quantity
+                          outOfStockInfo.quantity,
+                          outOfStockInfo.availableQuantity
                         );
                         setShowOutOfStockModal(false);
                         setOutOfStockInfo(null);
