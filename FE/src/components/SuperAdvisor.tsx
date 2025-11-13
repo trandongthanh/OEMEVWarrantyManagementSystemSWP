@@ -818,6 +818,49 @@ const SuperAdvisor = () => {
     try {
       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
       
+      // Validate odometer against latest completed processing record
+      try {
+        const recordsResponse = await axios.get(`${API_BASE_URL}/processing-records`, {
+          params: { vin: vehicle.vin },
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (recordsResponse.data && recordsResponse.data.status === 'success' && recordsResponse.data.data?.records?.records) {
+          // Find the latest completed record for this vehicle
+          const completedRecords = recordsResponse.data.data.records.records.filter(
+            (record: any) => record.status === 'COMPLETED' && record.vin === vehicle.vin
+          );
+
+          if (completedRecords.length > 0) {
+            // Sort by checkOutDate descending to get the latest
+            completedRecords.sort((a: any, b: any) => {
+              const dateA = new Date(a.checkOutDate || a.createdAt).getTime();
+              const dateB = new Date(b.checkOutDate || b.createdAt).getTime();
+              return dateB - dateA;
+            });
+
+            const latestCompletedRecord = completedRecords[0];
+            const lastOdometer = latestCompletedRecord.odometer;
+
+            if (parseInt(vehicleOdometer) <= lastOdometer) {
+              toast({
+                title: 'Invalid Odometer',
+                description: `Current odometer (${vehicleOdometer} km) must be greater than the last service odometer (${lastOdometer} km)`,
+                variant: 'destructive'
+              });
+              setIsCheckingVehicleWarranty(false);
+              return;
+            }
+          }
+        }
+      } catch (validationError) {
+        console.warn('Could not validate odometer against previous records:', validationError);
+        // Continue with warranty check even if validation fails
+      }
+      
       const response = await axios.post(
         `${API_BASE_URL}/vehicles/${vehicle.vin}/warranty/preview`,
         {
@@ -1561,6 +1604,48 @@ const SuperAdvisor = () => {
         });
         setIsCheckingWarranty(false);
         return;
+      }
+
+      // Validate odometer against latest completed processing record
+      try {
+        const recordsResponse = await axios.get(`${API_BASE_URL}/processing-records`, {
+          params: { vin: vehicleSearchResult.vin },
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (recordsResponse.data && recordsResponse.data.status === 'success' && recordsResponse.data.data?.records?.records) {
+          // Find the latest completed record for this vehicle
+          const completedRecords = recordsResponse.data.data.records.records.filter(
+            (record: any) => record.status === 'COMPLETED' && record.vin === vehicleSearchResult.vin
+          );
+
+          if (completedRecords.length > 0) {
+            completedRecords.sort((a: any, b: any) => {
+              const dateA = new Date(a.checkOutDate || a.createdAt).getTime();
+              const dateB = new Date(b.checkOutDate || b.createdAt).getTime();
+              return dateB - dateA;
+            });
+
+            const latestCompletedRecord = completedRecords[0];
+            const lastOdometer = latestCompletedRecord.odometer;
+
+            if (parseInt(odometer) <= lastOdometer) {
+              toast({
+                title: 'Invalid Odometer',
+                description: `Current odometer (${odometer} km) must be greater than the last service odometer (${lastOdometer} km)`,
+                variant: 'destructive'
+              });
+              setIsCheckingWarranty(false);
+              return;
+            }
+          }
+        }
+      } catch (validationError) {
+        console.warn('Could not validate odometer against previous records:', validationError);
+        // Continue with warranty check even if validation fails
       }
 
    
@@ -2619,23 +2704,6 @@ const SuperAdvisor = () => {
                         </div>
                       </div>
 
-                      {/* License Plate - Editable only after valid warranty check */}
-                      <div className="grid md:grid-cols-3 gap-2 items-center">
-                        <Label className="font-medium text-gray-700">License Plate:</Label>
-                        <div className="md:col-span-2">
-                          <Input
-                            value={warrantyStatus === 'valid' ? (vehicleSearchResult.licensePlate || '') : 'N/A'}
-                            onChange={(e) => setVehicleSearchResult(prev => prev ? ({
-                              ...prev,
-                              licensePlate: e.target.value
-                            }) : prev)}
-                            placeholder="Enter license plate number"
-                            disabled={warrantyStatus !== 'valid'}
-                            className={warrantyStatus === 'valid' ? "bg-white border-green-300 focus:border-green-500" : "bg-gray-100"}
-                          />
-                        </div>
-                      </div>
-
                       {/* Purchase Date - Editable only if vehicle has no owner */}
                       <div className="grid md:grid-cols-3 gap-2 items-center">
                         <Label className="font-medium text-gray-700">Purchase Date:</Label>
@@ -2878,6 +2946,23 @@ const SuperAdvisor = () => {
                               </div>
                             )}
                           </div>
+                        </div>
+                      </div>
+
+                      {/* License Plate - Editable only after valid warranty check */}
+                      <div className="grid md:grid-cols-3 gap-2 items-center">
+                        <Label className="font-medium text-gray-700">License Plate:</Label>
+                        <div className="md:col-span-2">
+                          <Input
+                            value={warrantyStatus === 'valid' ? (vehicleSearchResult.licensePlate || '') : 'N/A'}
+                            onChange={(e) => setVehicleSearchResult(prev => prev ? ({
+                              ...prev,
+                              licensePlate: e.target.value
+                            }) : prev)}
+                            placeholder="Enter license plate number"
+                            disabled={warrantyStatus !== 'valid'}
+                            className={warrantyStatus === 'valid' ? "bg-white border-green-300 focus:border-green-500" : "bg-gray-100"}
+                          />
                         </div>
                       </div>
 
