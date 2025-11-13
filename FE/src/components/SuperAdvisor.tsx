@@ -1035,20 +1035,71 @@ const SuperAdvisor = () => {
       return;
     }
 
+    const token = localStorage.getItem('ev_warranty_token');
+    const requestUrl = `${API_BASE_URL}/mail/otp/verify`;
+    
+    console.log('🔍 DEBUG OTP Verify Request:', {
+      url: requestUrl,
+      method: 'POST',
+      hasToken: !!token,
+      tokenPreview: token ? `${token.substring(0, 20)}...` : 'NULL',
+      email: warrantyRecordForm.customerEmail,
+      otpLength: otpCode.length
+    });
+
+    if (!token) {
+      toast({
+        title: 'Authentication Error',
+        description: 'No token found. Please login again.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     try {
-      const response = await fetch(`${API_BASE_URL}/mail/otp/verify`, {
+      const response = await fetch(requestUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           email: warrantyRecordForm.customerEmail,
           otp: otpCode
-        })
+        }),
+        redirect: 'manual' // Prevent auto-following redirects
       });
 
-      const result = await response.json();
+      console.log('🔍 DEBUG OTP Verify Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        url: response.url,
+        type: response.type,
+        redirected: response.redirected,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+
+      // Check for redirects (status 3xx)
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('Location');
+        console.error('❌ Server redirected OTP verify request:', {
+          status: response.status,
+          location,
+          reason: 'POST request was redirected, likely due to authentication middleware'
+        });
+        throw new Error(`Server redirect detected (${response.status}). This usually means authentication failed. Check your token.`);
+      }
+
+      const responseText = await response.text();
+      console.log('🔍 DEBUG Response body:', responseText);
+
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('❌ Failed to parse response as JSON:', responseText);
+        throw new Error(`Invalid response format. Got: ${responseText.substring(0, 100)}`);
+      }
 
       if (response.ok && result.status === 'success' && result.isValid) {
         setOtpVerified(true);
@@ -1060,6 +1111,7 @@ const SuperAdvisor = () => {
         throw new Error(result.message || 'Invalid or expired OTP code');
       }
     } catch (error) {
+      console.error('❌ OTP Verify Error:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to verify OTP. Please try again.',
