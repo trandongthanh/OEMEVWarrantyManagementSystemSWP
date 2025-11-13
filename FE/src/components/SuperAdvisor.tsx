@@ -4595,16 +4595,10 @@ const SuperAdvisor = () => {
                         <p className="font-mono text-sm">{viewRecordData.vehicle.vin}</p>
                       </div>
                       {viewRecordData.vehicle.model && (
-                        <>
-                          <div>
-                            <Label className="text-xs text-blue-700">Model</Label>
-                            <p className="text-sm font-semibold">{viewRecordData.vehicle.model.name}</p>
-                          </div>
-                          <div>
-                            <Label className="text-xs text-blue-700">Model ID</Label>
-                            <p className="text-xs font-mono">{viewRecordData.vehicle.model.vehicleModelId}</p>
-                          </div>
-                        </>
+                        <div>
+                          <Label className="text-xs text-blue-700">Model</Label>
+                          <p className="text-sm font-semibold">{viewRecordData.vehicle.model.name}</p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -4622,10 +4616,6 @@ const SuperAdvisor = () => {
                         <Label className="text-xs text-purple-700">Name</Label>
                         <p className="text-sm font-semibold">{viewRecordData.mainTechnician.name}</p>
                       </div>
-                      <div>
-                        <Label className="text-xs text-purple-700">User ID</Label>
-                        <p className="text-xs font-mono">{viewRecordData.mainTechnician.userId}</p>
-                      </div>
                     </div>
                   </div>
                 )}
@@ -4641,10 +4631,6 @@ const SuperAdvisor = () => {
                       <div>
                         <Label className="text-xs text-green-700">Name</Label>
                         <p className="text-sm font-semibold">{viewRecordData.createdByStaff.name}</p>
-                      </div>
-                      <div>
-                        <Label className="text-xs text-green-700">User ID</Label>
-                        <p className="text-xs font-mono">{viewRecordData.createdByStaff.userId}</p>
                       </div>
                     </div>
                   </div>
@@ -4774,13 +4760,13 @@ const SuperAdvisor = () => {
                                           </div>
                                         )}
 
-                                        {/* Technician IDs */}
+                                        {/* Technician Info */}
                                         <div className="flex gap-4 text-xs text-gray-500 pt-2 border-t">
-                                          {caseline.diagnosticTechId && (
-                                            <span>Diagnostic Tech: {caseline.diagnosticTechId}</span>
+                                          {(caseline.diagnosticTech?.name || caseline.diagnosticTechId) && (
+                                            <span>Diagnostic Tech: {caseline.diagnosticTech?.name || caseline.diagnosticTechId}</span>
                                           )}
-                                          {caseline.repairTechId && (
-                                            <span>Repair Tech: {caseline.repairTechId}</span>
+                                          {(caseline.repairTech?.name || caseline.repairTechId) && (
+                                            <span>Repair Tech: {caseline.repairTech?.name || caseline.repairTechId}</span>
                                           )}
                                         </div>
                                       </div>
