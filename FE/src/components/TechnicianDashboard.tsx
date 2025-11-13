@@ -37,7 +37,9 @@ import {
   Package,
   Users,
   Clock,
-  CheckCircle
+  CheckCircle,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 
 // Friendly labels and badge variants for case-line statuses (defined outside component for stability)
@@ -445,6 +447,14 @@ const TechnicianDashboard = ({
   const [viewReservationsModalOpen, setViewReservationsModalOpen] = useState(false);
   const [installingReservationId, setInstallingReservationId] = useState<string | null>(null);
   const [completingCaseLineId, setCompletingCaseLineId] = useState<string | null>(null);
+  
+  // Pagination state for reservations in assigned case line modal
+  const [reservationsPage, setReservationsPage] = useState(1);
+  const [reservationsPerPage] = useState(5);
+  
+  // Pagination state for View Reservations modal
+  const [viewReservationsPage, setViewReservationsPage] = useState(1);
+  const [viewReservationsPerPage] = useState(10);
 
   // Handle file upload
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -605,7 +615,7 @@ const TechnicianDashboard = ({
   const { user, logout } = useAuth();
 
   // API Functions
-  const API_BASE_URL = 'http://localhost:3000/api/v1';
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   // Helper function để lấy token
   const getAuthToken = () => {
@@ -978,7 +988,10 @@ const TechnicianDashboard = ({
           caseLineId: caseLineId,
           repairTechId: user.id,
           sortBy: 'createdAt',
-          sortOrder: 'DESC'
+          sortOrder: 'DESC',
+          page: 1,
+          limit: 20
+          
         }
       });
 
@@ -1008,6 +1021,7 @@ const TechnicianDashboard = ({
 
       if (response.data?.status === 'success' && response.data?.data?.caseLine) {
         setSelectedAssignedCaseLine(response.data.data.caseLine);
+        setReservationsPage(1); // Reset to page 1 when opening modal
         setViewAssignedCaseLineModalOpen(true);
       } else {
         toast({
@@ -1028,6 +1042,7 @@ const TechnicianDashboard = ({
 
   // View reservations modal
   const viewReservationsModal = useCallback(async (caseLineId: string) => {
+    setViewReservationsPage(1); // Reset to page 1
     await fetchReservations(caseLineId);
     setViewReservationsModalOpen(true);
   }, [fetchReservations]);
@@ -2078,10 +2093,7 @@ const TechnicianDashboard = ({
               </CardHeader>
               <CardContent>
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-muted-foreground">
-                    This tab shows your personal work schedules. Data is fetched from
-                    <code className="ml-2 font-mono">/work-schedules/my-schedule</code>.
-                  </div>
+                  <div className="text-sm text-muted-foreground">{/* Description removed per request */}</div>
                   <div className="flex items-center gap-2">
                     <Button size="sm" variant="outline" onClick={() => fetchMySchedules()}>
                       <RefreshCw className="mr-2 h-4 w-4" />
@@ -3160,12 +3172,7 @@ const TechnicianDashboard = ({
                         </div>
                       </div>
                     )}
-                    <div className="space-y-2">
-                      <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Component ID</span>
-                      <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
-                        <span className="text-sm font-mono text-gray-800 break-all">{selectedCaseLine?.componentId || 'N/A'}</span>
-                      </div>
-                    </div>
+                    {/* Component ID removed from Issue Diagnosis Details per UX request */}
                     {selectedCaseLine?.quantity !== undefined && (
                       <div className="space-y-2">
                         <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Quantity</span>
@@ -3179,6 +3186,14 @@ const TechnicianDashboard = ({
                         <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Unit Price</span>
                         <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
                           <span className="text-sm text-gray-800">{selectedCaseLine.componentPrice.toLocaleString('vi-VN')} VND</span>
+                        </div>
+                      </div>
+                    )}
+                    {selectedCaseLine?.componentPrice !== undefined && selectedCaseLine?.quantity !== undefined && (
+                      <div className="space-y-2">
+                        <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Total Price</span>
+                        <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-amber-100 shadow-sm">
+                          <span className="text-sm text-gray-800 font-semibold">{(selectedCaseLine.componentPrice * selectedCaseLine.quantity).toLocaleString('vi-VN')} VND</span>
                         </div>
                       </div>
                     )}
@@ -3434,7 +3449,6 @@ const TechnicianDashboard = ({
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-slate-600">Vehicle Model</p>
                     <p className="text-sm font-bold text-slate-900">{selectedRecord.vehicle.model.name}</p>
-                    <p className="text-xs text-slate-500">Model ID: {selectedRecord.vehicle.model.vehicleModelId}</p>
                   </div>
                   
                   <div className="space-y-1">
@@ -3447,9 +3461,6 @@ const TechnicianDashboard = ({
                     <p className="text-sm font-bold text-slate-900">
                       {selectedRecord.guaranteeCases?.[0]?.taskAssignments?.[0]?.assigner?.name || 'N/A'}
                     </p>
-                    <p className="text-xs text-slate-500">
-                      ID: {selectedRecord.guaranteeCases?.[0]?.taskAssignments?.[0]?.assigner?.userId || 'N/A'}
-                    </p>
                   </div>
                   
                   <div className="space-y-1">
@@ -3460,7 +3471,6 @@ const TechnicianDashboard = ({
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-slate-600">Created by Staff</p>
                     <p className="text-sm font-bold text-slate-900">{selectedRecord.createdByStaff.name}</p>
-                    <p className="text-xs text-slate-500">Staff ID: {selectedRecord.createdByStaff.userId}</p>
                   </div>
                 </div>
               </div>
@@ -3469,7 +3479,7 @@ const TechnicianDashboard = ({
               <div className="bg-white border border-slate-300 rounded-xl p-5">
                 <div className="flex items-center gap-2 mb-4">
                   <Users className="h-5 w-5 text-blue-600" />
-                  <h3 className="text-lg font-bold text-slate-800">Assigned Technicians</h3>
+                  <h3 className="text-lg font-bold text-slate-800">Diagnosis Technician</h3>
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
@@ -3478,7 +3488,7 @@ const TechnicianDashboard = ({
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-slate-900">{selectedRecord.mainTechnician?.name}</p>
-                      <p className="text-xs text-slate-500">Main Technician • ID: {selectedRecord.mainTechnician?.userId}</p>
+                      <p className="text-xs text-slate-500">Main Technician</p>
                     </div>
                   </div>
                 </div>
@@ -3551,11 +3561,9 @@ const TechnicianDashboard = ({
                                 </Badge>
                               </div>
                               <p className="text-sm text-slate-600">
-                                <span className="font-medium">Content:</span> {guaranteeCase.contentGuarantee}
+                                <span className="font-bold">Content:</span> {guaranteeCase.contentGuarantee}
                               </p>
-                              <p className="text-xs text-slate-400 mt-1 font-mono">
-                                ID: {guaranteeCase.guaranteeCaseId}
-                              </p>
+                              {/* Guarantee case id hidden from view per request */}
                             </div>
                           </div>
                         </div>
@@ -3570,9 +3578,7 @@ const TechnicianDashboard = ({
                                     <span className="flex items-center justify-center w-6 h-6 bg-blue-600 text-white text-xs font-bold rounded-full">
                                       {clIndex + 1}
                                     </span>
-                                    <span className="text-xs font-mono text-slate-500">
-                                      {caseLine.caseLineId}
-                                    </span>
+                                    {/* caseLine ID hidden from view per UX request */}
                                   </div>
                                   <Badge 
                                     variant={
@@ -4480,7 +4486,7 @@ const TechnicianDashboard = ({
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Users className="h-4 w-4" />
-                    Assigned Technicians
+                    Diagnosis Technician
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -4512,20 +4518,55 @@ const TechnicianDashboard = ({
               </Card>
 
               {/* Component Reservations */}
-              {selectedAssignedCaseLine.reservations && selectedAssignedCaseLine.reservations.length > 0 && (
+              {selectedAssignedCaseLine.reservations && selectedAssignedCaseLine.reservations.length > 0 && (() => {
+                // Calculate pagination
+                const totalReservations = selectedAssignedCaseLine.reservations.length;
+                const totalPages = Math.ceil(totalReservations / reservationsPerPage);
+                const startIndex = (reservationsPage - 1) * reservationsPerPage;
+                const endIndex = startIndex + reservationsPerPage;
+                const currentReservations = selectedAssignedCaseLine.reservations.slice(startIndex, endIndex);
+                
+                return (
                 <Card className="border-l-4 border-l-teal-500">
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Package className="h-4 w-4" />
-                      Component Reservations ({selectedAssignedCaseLine.reservations.length})
-                    </CardTitle>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Package className="h-4 w-4" />
+                        Component Reservations ({totalReservations})
+                      </CardTitle>
+                      {totalPages > 1 && (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setReservationsPage(prev => Math.max(1, prev - 1))}
+                            disabled={reservationsPage === 1}
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          <span className="text-sm text-muted-foreground">
+                            Page {reservationsPage} of {totalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setReservationsPage(prev => Math.min(totalPages, prev + 1))}
+                            disabled={reservationsPage === totalPages}
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      {selectedAssignedCaseLine.reservations.map((reservation, index) => (
+                      {currentReservations.map((reservation, index) => {
+                        const globalIndex = startIndex + index;
+                        return (
                         <div key={reservation.reservationId} className="p-3 bg-slate-50 dark:bg-slate-900/30 rounded border">
                           <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-semibold text-muted-foreground">Reservation #{index + 1}</span>
+                            <span className="text-xs font-semibold text-muted-foreground">Reservation #{globalIndex + 1}</span>
                             <Badge 
                               variant={
                                 reservation.status === 'RESERVED' ? 'outline' :
@@ -4567,11 +4608,42 @@ const TechnicianDashboard = ({
                             )}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
+                    
+                    {/* Pagination Footer */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                        <div className="text-sm text-muted-foreground">
+                          Showing {startIndex + 1}-{Math.min(endIndex, totalReservations)} of {totalReservations} reservations
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setReservationsPage(prev => Math.max(1, prev - 1))}
+                            disabled={reservationsPage === 1}
+                          >
+                            <ChevronLeft className="h-4 w-4 mr-1" />
+                            Previous
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setReservationsPage(prev => Math.min(totalPages, prev + 1))}
+                            disabled={reservationsPage === totalPages}
+                          >
+                            Next
+                            <ChevronRight className="h-4 w-4 ml-1" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
-              )}
+                );
+              })()}
             </div>
           ) : (
             <div className="text-center py-8 text-slate-500">
@@ -4617,7 +4689,14 @@ const TechnicianDashboard = ({
       <Dialog open={viewReservationsModalOpen} onOpenChange={setViewReservationsModalOpen}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Component Reservations</DialogTitle>
+            <DialogTitle className="flex items-center justify-between">
+              <span>Component Reservations</span>
+              {!isLoadingReservations && reservations.length > 0 && (
+                <span className="text-sm font-normal text-muted-foreground">
+                  {reservations.length} total reservation{reservations.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </DialogTitle>
             <DialogDescription>
               View component reservations for this case line
             </DialogDescription>
@@ -4633,110 +4712,153 @@ const TechnicianDashboard = ({
               <AlertCircle className="h-8 w-8 mx-auto mb-2" />
               <p>No reservations found</p>
             </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Reservation ID</TableHead>
-                  <TableHead>Component Serial</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Picked Up By</TableHead>
-                  <TableHead>Picked Up At</TableHead>
-                  <TableHead>Installed At</TableHead>
-                  <TableHead>Created At</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reservations.map((reservation) => (
-                  <TableRow key={reservation.reservationId}>
-                    <TableCell className="font-mono text-xs">
-                      {reservation.reservationId.substring(0, 8)}...
-                    </TableCell>
-                    <TableCell>
-                      <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
-                        {reservation.component?.serialNumber || 'N/A'}
-                      </code>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        className={`text-xs font-semibold ${
-                          reservation.status === 'RESERVED'
-                            ? 'bg-amber-100 text-amber-800 border-amber-400'
-                            : reservation.status === 'PICKED_UP'
-                            ? 'bg-blue-100 text-blue-800 border-blue-400'
-                            : reservation.status === 'INSTALLED'
-                            ? 'bg-green-100 text-green-800 border-green-400'
-                            : reservation.status === 'CANCELLED'
-                            ? 'bg-red-100 text-red-800 border-red-400'
-                            : reservation.status === 'RETURNED'
-                            ? 'bg-purple-100 text-purple-800 border-purple-400'
-                            : 'bg-gray-100 text-gray-800'
-                        }`}
-                        variant="outline"
-                      >
-                        {reservation.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        <p className="font-medium">
-                          {reservation.pickedUpByTech?.name || 'N/A'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {reservation.pickedUpByTech?.email || ''}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {reservation.pickedUpAt
-                        ? new Date(reservation.pickedUpAt).toLocaleString()
-                        : 'N/A'}
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {reservation.installedAt
-                        ? new Date(reservation.installedAt).toLocaleString()
-                        : 'N/A'}
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {new Date(reservation.createdAt).toLocaleString()}
-                    </TableCell>
-                    <TableCell>
-                      {reservation.status === 'PICKED_UP' && (
-                        <Button
-                          size="sm"
-                          onClick={() => handleInstallComponent(reservation.reservationId)}
-                          disabled={installingReservationId === reservation.reservationId}
-                          className="bg-green-600 hover:bg-green-700"
-                        >
-                          {installingReservationId === reservation.reservationId ? (
-                            <>
-                              <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-                              Installing...
-                            </>
-                          ) : (
-                            <>
-                              <Wrench className="h-3 w-3 mr-1" />
-                              Install
-                            </>
-                          )}
-                        </Button>
-                      )}
-                      {reservation.status === 'INSTALLED' && (
-                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Installed
-                        </Badge>
-                      )}
-                      {reservation.status === 'RESERVED' && (
-                        <span className="text-xs text-muted-foreground">Waiting for pickup</span>
-                      )}
-                    </TableCell>
+          ) : (() => {
+            // Calculate pagination
+            const totalReservations = reservations.length;
+            const totalPages = Math.ceil(totalReservations / viewReservationsPerPage);
+            const startIndex = (viewReservationsPage - 1) * viewReservationsPerPage;
+            const endIndex = startIndex + viewReservationsPerPage;
+            const currentReservations = reservations.slice(startIndex, endIndex);
+            
+            return (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Reservation ID</TableHead>
+                    <TableHead>Component Serial</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Picked Up By</TableHead>
+                    <TableHead>Picked Up At</TableHead>
+                    <TableHead>Installed At</TableHead>
+                    <TableHead>Created At</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+                </TableHeader>
+                <TableBody>
+                  {currentReservations.map((reservation) => (
+                    <TableRow key={reservation.reservationId}>
+                      <TableCell className="font-mono text-xs">
+                        {reservation.reservationId.substring(0, 8)}...
+                      </TableCell>
+                      <TableCell>
+                        <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
+                          {reservation.component?.serialNumber || 'N/A'}
+                        </code>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          className={`text-xs font-semibold ${
+                            reservation.status === 'RESERVED'
+                              ? 'bg-amber-100 text-amber-800 border-amber-400'
+                              : reservation.status === 'PICKED_UP'
+                              ? 'bg-blue-100 text-blue-800 border-blue-400'
+                              : reservation.status === 'INSTALLED'
+                              ? 'bg-green-100 text-green-800 border-green-400'
+                              : reservation.status === 'CANCELLED'
+                              ? 'bg-red-100 text-red-800 border-red-400'
+                              : reservation.status === 'RETURNED'
+                              ? 'bg-purple-100 text-purple-800 border-purple-400'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}
+                          variant="outline"
+                        >
+                          {reservation.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          <p className="font-medium">
+                            {reservation.pickedUpByTech?.name || 'N/A'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {reservation.pickedUpByTech?.email || ''}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {reservation.pickedUpAt
+                          ? new Date(reservation.pickedUpAt).toLocaleString()
+                          : 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {reservation.installedAt
+                          ? new Date(reservation.installedAt).toLocaleString()
+                          : 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {new Date(reservation.createdAt).toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        {reservation.status === 'PICKED_UP' && (
+                          <Button
+                            size="sm"
+                            onClick={() => handleInstallComponent(reservation.reservationId)}
+                            disabled={installingReservationId === reservation.reservationId}
+                            className="bg-green-600 hover:bg-green-700"
+                          >
+                            {installingReservationId === reservation.reservationId ? (
+                              <>
+                                <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                                Installing...
+                              </>
+                            ) : (
+                              <>
+                                <Wrench className="h-3 w-3 mr-1" />
+                                Install
+                              </>
+                            )}
+                          </Button>
+                        )}
+                        {reservation.status === 'INSTALLED' && (
+                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-300">
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Installed
+                          </Badge>
+                        )}
+                        {reservation.status === 'RESERVED' && (
+                          <span className="text-xs text-muted-foreground">Waiting for pickup</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {startIndex + 1}-{Math.min(endIndex, totalReservations)} of {totalReservations} reservations
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewReservationsPage(prev => Math.max(1, prev - 1))}
+                      disabled={viewReservationsPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Button>
+                    <span className="text-sm text-muted-foreground px-2">
+                      Page {viewReservationsPage} of {totalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setViewReservationsPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={viewReservationsPage === totalPages}
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

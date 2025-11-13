@@ -30,10 +30,11 @@ import {
   AlertCircle,
   FileText,
   Building2,
-  Tag
+  Tag,
+  Search
 } from "lucide-react";
 
-const API_BASE_URL = 'http://localhost:3000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 interface TypeComponent {
   typeComponentId: string;
@@ -264,6 +265,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
   const [reservations, setReservations] = useState<ComponentReservation[]>([]);
   const [filteredReservations, setFilteredReservations] = useState<ComponentReservation[]>([]);
   const [selectedReservationStatus, setSelectedReservationStatus] = useState<string>('ALL');
+  const [technicianSearchQuery, setTechnicianSearchQuery] = useState<string>('');
   const [isLoadingReservations, setIsLoadingReservations] = useState(false);
   const [showReservationDetailModal, setShowReservationDetailModal] = useState(false);
   const [selectedReservation, setSelectedReservation] = useState<ComponentReservation | null>(null);
@@ -352,14 +354,26 @@ const PartsCoordinatorDashboard: React.FC = () => {
     }
   }, [selectedStatus, stockTransferRequests]);
 
-  // Filter reservations by status
+  // Filter reservations by status and technician name
   useEffect(() => {
-    if (selectedReservationStatus === 'ALL') {
-      setFilteredReservations(reservations);
-    } else {
-      setFilteredReservations(reservations.filter(r => r.status === selectedReservationStatus));
+    let filtered = reservations;
+    
+    // Filter by status
+    if (selectedReservationStatus !== 'ALL') {
+      filtered = filtered.filter(r => r.status === selectedReservationStatus);
     }
-  }, [selectedReservationStatus, reservations]);
+    
+    // Filter by technician name - only search repair technician
+    if (technicianSearchQuery.trim()) {
+      const query = technicianSearchQuery.toLowerCase().trim();
+      filtered = filtered.filter(r => {
+        const repairTech = r.caseLine?.repairTechnician?.name?.toLowerCase() || '';
+        return repairTech.includes(query);
+      });
+    }
+    
+    setFilteredReservations(filtered);
+  }, [selectedReservationStatus, reservations, technicianSearchQuery]);
 
   // Fetch warehouses
   const fetchWarehouses = async () => {
@@ -1193,6 +1207,20 @@ const PartsCoordinatorDashboard: React.FC = () => {
                         </Button>
                       );
                     })}
+                  </div>
+
+                  {/* Technician Search */}
+                  <div className="mb-4">
+                    <div className="relative max-w-sm">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="text"
+                        placeholder="Search by technician name..."
+                        value={technicianSearchQuery}
+                        onChange={(e) => setTechnicianSearchQuery(e.target.value)}
+                        className="pl-9"
+                      />
+                    </div>
                   </div>
 
                   {/* Pickup Button */}

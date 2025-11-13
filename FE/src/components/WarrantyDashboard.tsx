@@ -11,7 +11,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 
 //base URL for API
-const API_BASE_URL = 'http://localhost:3000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 interface StockTransferRequest {
   id: string; // UUID from API
@@ -70,6 +70,11 @@ interface StockTransferRequestDetail extends StockTransferRequest {
     caselineInfo?: CaselineInfo; // Thông tin caseline
   }>;
 }
+
+// Helper function to format numbers with thousand separators
+const formatNumberWithCommas = (num: number): string => {
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
 
 const WarrantyDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -775,7 +780,7 @@ const WarrantyDashboard: React.FC = () => {
                               {item.caselineInfo.typeComponent.price && (
                                 <div>
                                   <span className="text-xs text-gray-600">Price:</span>
-                                  <p className="font-medium text-green-600">${item.caselineInfo.typeComponent.price.toFixed(2)}</p>
+                                  <p className="font-medium text-green-600">{formatNumberWithCommas(item.caselineInfo.typeComponent.price)} VND</p>
                                 </div>
                               )}
                               
@@ -819,10 +824,10 @@ const WarrantyDashboard: React.FC = () => {
                             <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200">
                               <span className="text-sm text-gray-600 font-medium">💰 Total Price:</span>
                               <p className="font-bold text-green-600 text-2xl mt-1">
-                                ${(item.caselineInfo.typeComponent.price * item.quantityRequested).toFixed(2)}
+                                {formatNumberWithCommas(item.caselineInfo.typeComponent.price * item.quantityRequested)} VND
                               </p>
                               <p className="text-xs text-gray-500 mt-1">
-                                ({item.quantityRequested} × ${item.caselineInfo.typeComponent.price.toFixed(2)})
+                                ({item.quantityRequested} × {formatNumberWithCommas(item.caselineInfo.typeComponent.price)}) VND
                               </p>
                             </div>
                           )}

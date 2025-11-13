@@ -11,7 +11,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useAuth } from "@/contexts/AuthContext";
 import { hasPermission } from "@/utils/permissions";
 import { toast } from "@/hooks/use-toast";
-import { API_BASE_URL } from "@/config/api";
 import {
   Car,
   User,
@@ -450,6 +449,7 @@ const getWorkloadWarningMessage = (workload: number, maxWorkload = 5): string =>
 
 
 const ServiceCenterDashboard = () => {
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
   const [warrantyClaims, setWarrantyClaims] = useState<WarrantyClaim[]>([]);
   const [availableTechnicians, setAvailableTechnicians] = useState<Technician[]>([]);
   const [techFilterStatus, setTechFilterStatus] = useState<string>('AVAILABLE');
@@ -4753,7 +4753,10 @@ const ServiceCenterDashboard = () => {
                               Loading available roles...
                             </div>
                           ) : availableRoles.length > 0 ? (
-                            availableRoles.map((role) => {
+                            // Exclude manager roles from the UI per UX request
+                            availableRoles
+                              .filter((role) => !String(role.roleName).toLowerCase().includes('manager'))
+                              .map((role) => {
                               // Map role names to display info
                               let icon = '👤';
                               let color = 'text-gray-600';
