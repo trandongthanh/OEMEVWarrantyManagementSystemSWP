@@ -92,25 +92,31 @@ class VehicleProcessingRecordService {
           Transaction.LOCK.SHARE
         );
 
-      const recordsBefore = this.#vehicleProcessingRecordRepository.findAll({
-        serviceCenterId,
-        limit,
-        offset,
-        status: "COMPLETED",
-        userId,
-        roleName,
-      });
+      const latestRecord =
+        await this.#vehicleProcessingRecordRepository.findLatestRecordByVin(
+          { vin },
+          t,
+          Transaction.LOCK.SHARE
+        );
 
-      const recordBefore = recordsBefore[0];
+      if (!latestRecord) {
+        return;
+      }
 
-      if (recordBefore) {
-        const odometerBefore = recordBefore.odometer || 0;
+      const previousOdometer = Number(latestRecord.odometer);
+      const currentOdometer = Number(odometer);
 
-        if (odometer < odometerBefore) {
-          throw new BadRequestError(
-            `Odometer reading ${odometer} is less than the previous recorded value of ${odometerBefore}. Please provide a valid odometer reading.`
-          );
-        }
+      if (Number.isNaN(currentOdometer)) {
+        throw new BadRequestError("Odometer must be a valid number");
+      }
+
+      if (
+        !Number.isNaN(previousOdometer) &&
+        currentOdometer <= previousOdometer
+      ) {
+        throw new ConflictError(
+          `New odometer (${currentOdometer}) must be greater than the last record odometer (${previousOdometer})`
+        );
       }
 
       if (existingRecord) {

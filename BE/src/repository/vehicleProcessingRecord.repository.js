@@ -416,6 +416,23 @@ class VehicleProcessingRecordRepository {
     };
   };
 
+  findLatestRecordByVin = async ({ vin }, transaction = null, lock = null) => {
+    const record = await VehicleProcessingRecord.findOne({
+      where: { vin },
+      attributes: [
+        "vehicleProcessingRecordId",
+        "odometer",
+        "checkInDate",
+        "status",
+      ],
+      order: [["checkInDate", "DESC"]],
+      transaction,
+      lock,
+    });
+
+    return record ? record.toJSON() : null;
+  };
+
   updateStatus = async (
     { vehicleProcessingRecordId, status },
     transaction = null

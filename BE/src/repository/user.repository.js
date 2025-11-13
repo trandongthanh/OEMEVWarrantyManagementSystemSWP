@@ -34,6 +34,8 @@ class UserRepository {
 
   async getAllTechnicians({ status, serviceCenterId }) {
     const today = dayjs().format("YYYY-MM-DD");
+    const startOfToday = dayjs().startOf("day").format("YYYY-MM-DD HH:mm:ss");
+    const endOfToday = dayjs().endOf("day").format("YYYY-MM-DD HH:mm:ss");
 
     const whereCondition = {
       workDate: today,
@@ -59,6 +61,17 @@ class UserRepository {
             `(SELECT COUNT(*) FROM \`task_assignment\` AS \`tasks_sub\` WHERE \`tasks_sub\`.\`technician_id\` = \`User\`.\`user_id\` AND \`tasks_sub\`.\`is_active\` = TRUE)`
           ),
           "activeTaskCount",
+        ],
+        [
+          db.sequelize.literal(
+            `(
+              SELECT COUNT(*)
+              FROM \`task_assignment\` AS \`tasks_today\`
+              WHERE \`tasks_today\`.\`technician_id\` = \`User\`.\`user_id\`
+                AND \`tasks_today\`.\`assigned_at\` BETWEEN '${startOfToday}' AND '${endOfToday}'
+            )`
+          ),
+          "tasksAssignedToday",
         ],
       ],
 
