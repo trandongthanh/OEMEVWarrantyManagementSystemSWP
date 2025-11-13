@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "buildCommand": "cd FE && npm ci --legacy-peer-deps && npm run build",
+  "outputDirectory": "FE/dist",
+  "installCommand": "cd FE && npm ci --legacy-peer-deps",
+  "framework": "vite",
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
