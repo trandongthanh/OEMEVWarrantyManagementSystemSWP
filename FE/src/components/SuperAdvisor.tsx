@@ -2160,8 +2160,8 @@ const SuperAdvisor = () => {
         return;
       }
 
-      // Fetch record details with caselines
-      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
+      // Step 1: Fetch record details to get caseline IDs
+      const recordResponse = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -2169,20 +2169,20 @@ const SuperAdvisor = () => {
         }
       });
 
-      const result = await response.json();
+      const recordResult = await recordResponse.json();
 
-      if (result.status === 'success' && result.data?.record) {
-        const recordData = result.data.record;
+      if (recordResult.status === 'success' && recordResult.data?.record) {
+        const recordData = recordResult.data.record;
         
-        const allCaselines: any[] = [];
+        const caselineIds: { id: string, guaranteeCaseId: string, contentGuarantee: string }[] = [];
 
-        // Extract caselines from all guarantee cases
+        // Extract caseline IDs from all guarantee cases
         if (recordData.guaranteeCases && Array.isArray(recordData.guaranteeCases)) {
           recordData.guaranteeCases.forEach((guaranteeCase: any) => {
             if (guaranteeCase.caseLines && Array.isArray(guaranteeCase.caseLines)) {
               guaranteeCase.caseLines.forEach((caseline: any) => {
-                allCaselines.push({
-                  ...caseline,
+                caselineIds.push({
+                  id: caseline.id,
                   guaranteeCaseId: guaranteeCase.guaranteeCaseId,
                   contentGuarantee: guaranteeCase.contentGuarantee
                 });
@@ -2191,13 +2191,70 @@ const SuperAdvisor = () => {
           });
         }
 
-        setCaselines(allCaselines);
-
-        if (allCaselines.length === 0) {
+        if (caselineIds.length === 0) {
           toast({
             title: 'No Caselines',
             description: 'This record has no caselines yet. Technician needs to create them.',
             variant: 'default'
+          });
+          setIsLoadingCaselines(false);
+          return;
+        }
+
+        // Step 2: Fetch detailed info for each caseline
+        const detailedCaselines: any[] = [];
+        
+        for (const caselineInfo of caselineIds) {
+          try {
+            const caselineResponse = await fetch(`${API_BASE_URL}/case-lines/${caselineInfo.id}`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            });
+
+            const caselineResult = await caselineResponse.json();
+
+            if (caselineResult.status === 'success' && caselineResult.data?.caseLine) {
+              const caseLine = caselineResult.data.caseLine;
+              
+              // Transform to display format
+              detailedCaselines.push({
+                id: caseLine.id,
+                correctionText: caseLine.correctionText,
+                typeComponentId: caseLine.typeComponentId,
+                quantity: caseLine.quantity,
+                warrantyStatus: caseLine.warrantyStatus,
+                status: caseLine.status,
+                rejectionReason: caseLine.rejectionReason,
+                updatedAt: caseLine.updatedAt,
+                // Component info
+                typeComponent: caseLine.typeComponent ? {
+                  name: caseLine.typeComponent.name,
+                  sku: caseLine.typeComponent.sku,
+                  price: caseLine.typeComponent.price
+                } : null,
+                // Technician info
+                diagnosticTechnician: caseLine.diagnosticTechnician,
+                repairTechnician: caseLine.repairTechnician,
+                // Guarantee case info from parent
+                guaranteeCaseId: caselineInfo.guaranteeCaseId,
+                contentGuarantee: caselineInfo.contentGuarantee
+              });
+            }
+          } catch (error) {
+            console.error(`Failed to fetch caseline ${caselineInfo.id}:`, error);
+          }
+        }
+
+        setCaselines(detailedCaselines);
+
+        if (detailedCaselines.length === 0) {
+          toast({
+            title: 'Error',
+            description: 'Failed to load caseline details',
+            variant: 'destructive'
           });
         }
       } else {
@@ -2395,6 +2452,17 @@ const SuperAdvisor = () => {
 
   // Toggle caseline selection for approval
   const handleToggleApprove = (caselineId: string) => {
+    // Check if caseline is eligible
+    const caseline = caselines.find(c => c.id === caselineId);
+    if (caseline && caseline.warrantyStatus !== 'ELIGIBLE') {
+      toast({
+        title: 'Cannot Approve',
+        description: 'This caseline is not eligible for warranty approval',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setSelectedCaselineIds(prev => {
       // Remove from rejected if exists
       const newRejected = prev.rejected.filter(id => id !== caselineId);
@@ -2414,6 +2482,17 @@ const SuperAdvisor = () => {
 
   // Toggle caseline selection for rejection
   const handleToggleReject = (caselineId: string) => {
+    // Check if caseline is eligible
+    const caseline = caselines.find(c => c.id === caselineId);
+    if (caseline && caseline.warrantyStatus !== 'ELIGIBLE') {
+      toast({
+        title: 'Cannot Reject',
+        description: 'This caseline is not eligible for warranty approval/rejection',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setSelectedCaselineIds(prev => {
       // Remove from approved if exists
       const newApproved = prev.approved.filter(id => id !== caselineId);
@@ -2442,6 +2521,26 @@ const SuperAdvisor = () => {
       return;
     }
 
+    // Filter out any INELIGIBLE caselines (safety check)
+    const eligibleApproved = selectedCaselineIds.approved.filter(id => {
+      const caseline = caselines.find(c => c.id === id);
+      return caseline?.warrantyStatus === 'ELIGIBLE';
+    });
+
+    const eligibleRejected = selectedCaselineIds.rejected.filter(id => {
+      const caseline = caselines.find(c => c.id === id);
+      return caseline?.warrantyStatus === 'ELIGIBLE';
+    });
+
+    if (eligibleApproved.length === 0 && eligibleRejected.length === 0) {
+      toast({
+        title: 'No Eligible Caselines',
+        description: 'No eligible caselines selected for processing',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setIsProcessingCaselines(true);
 
     try {
@@ -2457,8 +2556,8 @@ const SuperAdvisor = () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          approvedCaseLineIds: selectedCaselineIds.approved.map(id => ({ id })),
-          rejectedCaseLineIds: selectedCaselineIds.rejected.map(id => ({ id }))
+          approvedCaseLineIds: eligibleApproved.map(id => ({ id })),
+          rejectedCaseLineIds: eligibleRejected.map(id => ({ id }))
         })
       });
 
@@ -2470,7 +2569,7 @@ const SuperAdvisor = () => {
 
       toast({
         title: 'Success',
-        description: `Processed ${selectedCaselineIds.approved.length} approved and ${selectedCaselineIds.rejected.length} rejected caselines`,
+        description: `Processed ${eligibleApproved.length} approved and ${eligibleRejected.length} rejected caselines`,
       });
 
       // Reset selections
@@ -4309,23 +4408,7 @@ const SuperAdvisor = () => {
               </div>
             ) : (
               <>
-                {caselines.filter(c => c.status === 'PENDING_APPROVAL').length > 0 && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                    <div className="flex items-start gap-3">
-                      <div className="bg-yellow-100 rounded-full p-2">
-                        <Clock className="h-5 w-5 text-yellow-700" />
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-yellow-900 mb-1">
-                          {caselines.filter(c => c.status === 'PENDING_APPROVAL').length} Caseline{caselines.filter(c => c.status === 'PENDING_APPROVAL').length > 1 ? 's' : ''} Awaiting Your Decision
-                        </h4>
-                        <p className="text-sm text-yellow-800">
-                          Review and approve or reject the caselines below. Click the buttons on each caseline, then submit your decisions.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+               
               <div className="space-y-4">
                 {caselines.map((caseline, index) => {
                   const isApproved = selectedCaselineIds.approved.includes(caseline.id);
@@ -4346,17 +4429,23 @@ const SuperAdvisor = () => {
                         <Badge variant="outline" className="text-sm">
                           Caseline #{index + 1}
                         </Badge>
-                        <Badge className={
-                          caseline.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
-                          caseline.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
-                          caseline.status === 'PENDING_APPROVAL' ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' :
-                          caseline.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
-                          caseline.status === 'REJECTED_BY_TECH' ? 'bg-red-100 text-red-800' :
-                          caseline.status === 'REJECTED_BY_CUSTOMER' ? 'bg-orange-100 text-orange-800' :
-                          'bg-gray-100 text-gray-800'
-                        }>
-                          {caseline.status === 'PENDING_APPROVAL' ? '⏳ PENDING APPROVAL' : caseline.status || 'N/A'}
-                        </Badge>
+                        
+                        {/* Status Badge - hide PENDING_APPROVAL if INELIGIBLE */}
+                        {!(caseline.status === 'PENDING_APPROVAL' && caseline.warrantyStatus !== 'ELIGIBLE') && (
+                          <Badge className={
+                            caseline.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
+                            caseline.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
+                            caseline.status === 'PENDING_APPROVAL' ? 'bg-yellow-100 text-yellow-800 border border-yellow-300' :
+                            caseline.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                            caseline.status === 'REJECTED_BY_TECH' ? 'bg-red-100 text-red-800' :
+                            caseline.status === 'REJECTED_BY_CUSTOMER' ? 'bg-orange-100 text-orange-800' :
+                            'bg-gray-100 text-gray-800'
+                          }>
+                            {caseline.status === 'PENDING_APPROVAL' ? '⏳ PENDING APPROVAL' : caseline.status || 'N/A'}
+                          </Badge>
+                        )}
+                        
+                        {/* Warranty Status Badge */}
                         {caseline.warrantyStatus && (
                           <Badge className={
                             caseline.warrantyStatus === 'ELIGIBLE' ? 'bg-green-100 text-green-800' :
@@ -4391,22 +4480,59 @@ const SuperAdvisor = () => {
                       
                       {/* Component Information */}
                       {(caseline.typeComponent || caseline.typeComponentId) && (
-                        <div>
-                          <Label>Component:</Label>
-                          <p className="text-sm mt-1 text-gray-800">
+                        <div className="bg-purple-50 border border-purple-200 rounded p-3">
+                          <Label className="text-xs text-purple-700 font-semibold">Component:</Label>
+                          <p className="text-sm mt-1 text-purple-900 font-medium">
                             {caseline.typeComponent?.name || 'Component'}
                           </p>
-                          {caseline.typeComponentId && (
+                          {caseline.typeComponent?.sku && (
+                            <p className="text-xs font-mono text-purple-600 mt-1">SKU: {caseline.typeComponent.sku}</p>
+                          )}
+                          {caseline.typeComponent?.price && (
+                            <p className="text-xs text-green-700 font-semibold mt-1">
+                              Price: {caseline.typeComponent.price.toLocaleString()} VND
+                            </p>
+                          )}
+                          {caseline.typeComponentId && !caseline.typeComponent && (
                             <p className="text-xs font-mono text-gray-500 mt-1">ID: {caseline.typeComponentId}</p>
                           )}
                         </div>
                       )}
 
                       {/* Quantity */}
-                      {caseline.quantity && (
+                      {caseline.quantity != null && (
                         <div>
                           <Label>Quantity:</Label>
-                          <p className="text-sm mt-1 text-gray-800">{caseline.quantity}</p>
+                          <p className="text-sm mt-1 text-gray-800 font-medium">{caseline.quantity}</p>
+                          {caseline.typeComponent?.price && caseline.quantity > 0 && (
+                            <p className="text-xs text-green-600 mt-1">
+                              Total: {(caseline.typeComponent.price * caseline.quantity).toLocaleString()} VND
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Diagnostic Technician */}
+                      {caseline.diagnosticTechnician?.name && (
+                        <div>
+                          <Label>Diagnostic Technician:</Label>
+                          <p className="text-sm mt-1 text-gray-800">{caseline.diagnosticTechnician.name}</p>
+                        </div>
+                      )}
+
+                      {/* Repair Technician */}
+                      {caseline.repairTechnician?.name && (
+                        <div>
+                          <Label>Repair Technician:</Label>
+                          <p className="text-sm mt-1 text-gray-800">{caseline.repairTechnician.name}</p>
+                        </div>
+                      )}
+
+                      {/* Rejection Reason */}
+                      {caseline.rejectionReason && (
+                        <div className="bg-red-50 border border-red-200 rounded p-3">
+                          <Label className="text-xs text-red-700 font-semibold">Rejection Reason:</Label>
+                          <p className="text-sm text-red-900 mt-1">{caseline.rejectionReason}</p>
                         </div>
                       )}
 
@@ -4415,7 +4541,7 @@ const SuperAdvisor = () => {
                   
 
                       {/* Approve/Reject Buttons for PENDING_APPROVAL status */}
-                      {caseline.status === 'PENDING_APPROVAL' && (
+                      {caseline.status === 'PENDING_APPROVAL' && caseline.warrantyStatus === 'ELIGIBLE' && (
                         <div className="mt-4 pt-4 border-t border-gray-200">
                           <div className="flex gap-2">
                             <Button
