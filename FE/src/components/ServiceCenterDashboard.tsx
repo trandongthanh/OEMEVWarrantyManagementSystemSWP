@@ -3886,15 +3886,29 @@ const ServiceCenterDashboard = () => {
                       </div>
                     </div>
                     
-                    <div className="pt-2">
-                      <div className="p-3 bg-green-50/80 dark:bg-green-900/10 rounded border-l-2 border-green-400">
-                        <div className="flex items-center gap-1 mb-1">
-                          <CheckCircle className="h-4 w-4 text-green-600" />
-                          <span className="font-semibold text-sm text-green-700 dark:text-green-400">Solution</span>
+                    {selectedCaseLineDetail.correctionText && (
+                      <div className="pt-2">
+                        <div className="p-3 bg-green-50/80 dark:bg-green-900/10 rounded border-l-2 border-green-400">
+                          <div className="flex items-center gap-1 mb-1">
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <span className="font-semibold text-sm text-green-700 dark:text-green-400">Solution</span>
+                          </div>
+                          <p className="text-sm text-gray-700 dark:text-gray-300">{selectedCaseLineDetail.correctionText}</p>
                         </div>
-                        <p className="text-sm text-gray-700 dark:text-gray-300">{selectedCaseLineDetail.correctionText}</p>
                       </div>
-                    </div>
+                    )}
+
+                    {selectedCaseLineDetail.rejectionReason && (
+                      <div className="pt-2">
+                        <div className="p-3 bg-red-50/80 dark:bg-red-900/10 rounded border-l-2 border-red-400">
+                          <div className="flex items-center gap-1 mb-1">
+                            <AlertCircle className="h-4 w-4 text-red-600" />
+                            <span className="font-semibold text-sm text-red-700 dark:text-red-400">Rejection Reason</span>
+                          </div>
+                          <p className="text-sm text-gray-700 dark:text-gray-300">{selectedCaseLineDetail.rejectionReason}</p>
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
