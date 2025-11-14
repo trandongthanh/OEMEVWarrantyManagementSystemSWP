@@ -299,6 +299,37 @@ class OemVehicleModelService {
       });
     });
   };
+
+  updateWarrantyComponent = async ({ warrantyComponentId, updateData }) => {
+    const updatedRecord =
+      await this.#warrantyComponentRepository.updateWarrantyComponent({
+        warrantyComponentId,
+        updateData,
+      });
+
+    if (!updatedRecord) {
+      throw new NotFoundError(
+        `Warranty component with ID ${warrantyComponentId} not found`
+      );
+    }
+
+    return updatedRecord;
+  };
+
+  getWarrantyComponentsForModel = async ({ vehicleModelId }) => {
+    await this.#ensureVehicleModelExists(vehicleModelId);
+    const warrantyComponents =
+      await this.#warrantyComponentRepository.findByVehicleModelId(
+        vehicleModelId
+      );
+    return warrantyComponents;
+  };
+
+  getAllModelsWithWarranty = async () => {
+    const models =
+      await this.#oemVehicleModelRepository.findAllWithWarrantyComponents();
+    return models;
+  };
 }
 
 export default OemVehicleModelService;
