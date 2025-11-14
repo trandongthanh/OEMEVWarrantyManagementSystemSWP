@@ -616,6 +616,8 @@ class VehicleProcessingRecordService {
       return;
     }
 
+    let hasEligibleCaseLine = false;
+
     for (const guaranteeCase of guaranteeCases) {
       if (guaranteeCase.status !== "IN_DIAGNOSIS") {
         throw new BadRequestError(
@@ -644,7 +646,17 @@ class VehicleProcessingRecordService {
             }. Must be one of: ${validStatuses.join(", ")}`
           );
         }
+
+        if (caseLine.status === "DRAFT") {
+          hasEligibleCaseLine = true;
+        }
       }
+    }
+
+    if (!hasEligibleCaseLine) {
+      throw new ConflictError(
+        "Cannot request customer approval because all case lines were rejected or marked ineligible."
+      );
     }
   };
 
