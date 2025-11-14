@@ -8,6 +8,7 @@ export interface CaseLineRequest {
   componentId?: string | null;
   quantity: number;
   warrantyStatus: 'ELIGIBLE' | 'INELIGIBLE';
+  rejectionReason?: string;
   evidenceImageUrls?: string[]; // Cloudinary image URLs
 }
 
@@ -91,13 +92,21 @@ export const caseLineService = {
           const warrantyStatus = cl.warrantyStatus;
           const evidenceImageUrls = cl.evidenceImageUrls || [];
 
-          return {
+          // Build base payload
+          const caselinePayload: Record<string, any> = {
             correctionText,
             typeComponentId,
             quantity,
             warrantyStatus,
             evidenceImageUrls,
           };
+
+          // Only include rejectionReason if it has a value (not empty string)
+          if (cl.rejectionReason && cl.rejectionReason.trim()) {
+            caselinePayload.rejectionReason = cl.rejectionReason;
+          }
+
+          return caselinePayload;
         })
       };
 
