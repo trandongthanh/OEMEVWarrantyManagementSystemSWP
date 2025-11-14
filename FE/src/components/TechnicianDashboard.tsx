@@ -733,16 +733,13 @@ const TechnicianDashboard = ({
     try {
       setIsLoadingProcessing(true);
       const token = getAuthToken();
-      console.log('🔑 Token:', token ? 'Found' : 'Not found');
       
       if (!token) {
-        console.warn('⚠️ No token found, aborting fetch');
         setIsLoadingProcessing(false);
         return;
       }
 
       const url = `http://localhost:3000/api/v1/processing-records?status=PROCESSING`;
-      console.log('📡 Fetching from:', url);
 
       const response = await fetch(url, {
         method: 'GET',
@@ -752,28 +749,22 @@ const TechnicianDashboard = ({
         }
       });
 
-      console.log('📊 Response status:', response.status);
-
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
-      console.log('📦 Full API response:', data);
 
       // Extract all case lines from all records and guarantee cases
       const allCaseLines: any[] = [];
       
       if (data?.data?.records?.records) {
         const records = data.data.records.records;
-        console.log('📦 Found', records.length, 'processing records');
         
         records.forEach((record: any) => {
-          console.log('🔍 Processing record:', record.vin);
           
           if (record.guaranteeCases && Array.isArray(record.guaranteeCases)) {
             record.guaranteeCases.forEach((guaranteeCase: any) => {
-              console.log('  📋 Guarantee case:', guaranteeCase.guaranteeCaseId);
               
               if (guaranteeCase.caseLines && Array.isArray(guaranteeCase.caseLines)) {
                 guaranteeCase.caseLines.forEach((caseLine: any) => {
@@ -816,7 +807,6 @@ const TechnicianDashboard = ({
                   };
                   
                   allCaseLines.push(mappedCaseLine);
-                  console.log('    ✅ Added case line:', caseLine.id);
                 });
               }
             });
@@ -824,8 +814,6 @@ const TechnicianDashboard = ({
         });
       }
 
-      console.log('✅ Total case lines extracted:', allCaseLines.length);
-      console.log('✅ Mapped case lines:', allCaseLines);
       setProcessingCaseLines(allCaseLines);
       
     } catch (error) {
@@ -837,7 +825,6 @@ const TechnicianDashboard = ({
       });
     } finally {
       setIsLoadingProcessing(false);
-      console.log('✅ Fetch complete, loading:', false);
     }
   }, []);
 
@@ -867,7 +854,6 @@ const TechnicianDashboard = ({
       }
 
       const data = await response.json();
-      console.log('📦 Case line details response:', data);
 
       if (data?.data?.caseLine) {
         const cl = data.data.caseLine;
@@ -1688,9 +1674,7 @@ const TechnicianDashboard = ({
 
   // Fetch processing case lines when switching to PROCESSING status
   useEffect(() => {
-    console.log('🔄 useEffect triggered:', { activeTab, activeProcessingStatus });
     if (activeTab === 'processing-records' && activeProcessingStatus === 'PROCESSING') {
-      console.log('✅ Calling fetchProcessingCaseLines...');
       fetchProcessingCaseLines();
     }
   }, [activeTab, activeProcessingStatus, fetchProcessingCaseLines]);
