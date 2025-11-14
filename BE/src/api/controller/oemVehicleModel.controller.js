@@ -47,5 +47,44 @@ class OemVehicleModelController {
       data: result,
     });
   };
+
+  updateWarrantyComponent = async (req, res, next) => {
+    const { warrantyComponentId } = req.params;
+    const updateData = req.body;
+
+    const updatedRecord =
+      await this.#oemVehicleModelService.updateWarrantyComponent({
+        warrantyComponentId,
+        updateData,
+      });
+
+    res.status(200).json({
+      status: "success",
+      data: updatedRecord,
+    });
+  };
+
+  getWarrantyComponentsForModel = async (req, res, next) => {
+    const { vehicleModelId } = req.params;
+
+    const warrantyComponents =
+      await this.#oemVehicleModelService.getWarrantyComponentsForModel({
+        vehicleModelId,
+      });
+
+    res.status(200).json({
+      status: "success",
+      data: warrantyComponents,
+    });
+  };
+
+  getAllModelsWithWarranty = async (req, res, next) => {
+    const models = await this.#oemVehicleModelService.getAllModelsWithWarranty();
+
+    res.status(200).json({
+      status: "success",
+      data: models,
+    });
+  };
 }
 export default OemVehicleModelController;
