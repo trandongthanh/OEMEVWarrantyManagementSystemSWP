@@ -3816,35 +3816,6 @@ const TechnicianDashboard = ({
               <X className="h-4 w-4 mr-2" />
               Close
             </Button>
-            <Button 
-              variant="default" 
-              onClick={() => {
-                if (selectedCaseLine) {
-                  console.log('Selected case line for update:', selectedCaseLine);
-                  console.log('Guarantee Case ID:', selectedCaseLine.guaranteeCaseId);
-                  console.log('Case Line ID:', selectedCaseLine.id);
-                  
-                  // Pre-fill form with current case line data
-                  const formData = {
-                    correctionText: selectedCaseLine.correctionText || '',
-                    typeComponentId: selectedCaseLine.typeComponentId || selectedCaseLine.typeComponent?.typeComponentId || '',
-                    quantity: selectedCaseLine.quantity || 0,
-                    warrantyStatus: selectedCaseLine.warrantyStatus || 'ELIGIBLE',
-                    rejectionReason: selectedCaseLine.rejectionReason || ''
-                  };
-                  console.log('Form data:', formData);
-                  
-                  setUpdateCaseLineForm(formData);
-                  setUpdateCaseLineModalOpen(true);
-                } else {
-                  console.error('No selected case line');
-                }
-              }}
-              className="px-8 bg-blue-600 hover:bg-blue-700 font-semibold"
-            >
-              <Settings className="h-4 w-4 mr-2" />
-              Update
-            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -4869,9 +4840,6 @@ const TechnicianDashboard = ({
               {/* Select Guarantee Case */}
               <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-6 border border-slate-200">
                 <div className="flex items-center gap-2 mb-5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500 shadow-sm">
-                    <span className="text-white font-bold text-sm">1</span>
-                  </div>
                   <h4 className="font-semibold text-lg text-gray-800">Select Guarantee Case</h4>
                 </div>
                 <div className="space-y-3">
@@ -4912,11 +4880,6 @@ const TechnicianDashboard = ({
                                 <div className="text-xs font-mono text-gray-500 mb-2">
                                   {gc.guaranteeCaseId}
                                 </div>
-                                {gc.contentGuarantee && (
-                                  <div className="text-sm text-gray-700 mb-2">
-                                    {gc.contentGuarantee}
-                                  </div>
-                                )}
                                 <Badge variant={gc.status === 'ACTIVE' ? 'default' : 'secondary'} className="text-xs">
                                   {gc.status || 'N/A'}
                                 </Badge>
