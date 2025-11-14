@@ -431,7 +431,8 @@ const TechnicianDashboard = ({
     correctionText: '',
     componentId: null,
     quantity: 0,
-    warrantyStatus: 'ELIGIBLE'
+    warrantyStatus: 'ELIGIBLE',
+    rejectionReason: ''
   });
 
   // Issue Diagnosis tab form (old modal with different fields)
@@ -469,6 +470,19 @@ const TechnicianDashboard = ({
   // Pagination state for View Reservations modal
   const [viewReservationsPage, setViewReservationsPage] = useState(1);
   const [viewReservationsPerPage] = useState(10);
+
+  // Update Case Line modal state
+  const [updateCaseLineModalOpen, setUpdateCaseLineModalOpen] = useState(false);
+  const [selectCaseLineModalOpen, setSelectCaseLineModalOpen] = useState(false);
+  const [isUpdatingCaseLine, setIsUpdatingCaseLine] = useState(false);
+  const [updateComponentSearchQuery, setUpdateComponentSearchQuery] = useState('');
+  const [updateCaseLineForm, setUpdateCaseLineForm] = useState({
+    correctionText: '',
+    typeComponentId: '',
+    quantity: 0,
+    warrantyStatus: 'ELIGIBLE',
+    rejectionReason: ''
+  });
 
   // Handle file upload
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -895,6 +909,95 @@ const TechnicianDashboard = ({
         variant: 'destructive'
       });
       return null;
+    }
+  }, []);
+
+  // Update case line function
+  const updateCaseLine = useCallback(async (guaranteeCaseId: string, caseLineId: string, data: {
+    correctionText: string;
+    typeComponentId: string;
+    quantity: number;
+    warrantyStatus: string;
+    rejectionReason: string;
+  }) => {
+    try {
+      console.log('updateCaseLine called with:', { guaranteeCaseId, caseLineId, data });
+      setIsUpdatingCaseLine(true);
+      const token = getAuthToken();
+      if (!token) {
+        console.error('No token found');
+        toast({
+          title: 'Error',
+          description: 'No authentication token found',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      console.log('Calling API PATCH /guarantee-cases/' + guaranteeCaseId + '/case-lines/' + caseLineId);
+      
+      // Build sanitized payload - only include rejectionReason if it has a value
+      const payload: Record<string, any> = {
+        correctionText: data.correctionText,
+        typeComponentId: data.typeComponentId,
+        quantity: data.quantity,
+        warrantyStatus: data.warrantyStatus,
+      };
+      
+      // Only include rejectionReason if it's not empty
+      if (data.rejectionReason && data.rejectionReason.trim()) {
+        payload.rejectionReason = data.rejectionReason;
+      }
+      
+      console.log('Sanitized payload:', payload);
+      
+      const response = await apiService.patch(
+        `/guarantee-cases/${guaranteeCaseId}/case-lines/${caseLineId}`,
+        payload
+      );
+
+      console.log('API response:', response);
+
+      if (response?.data) {
+        console.log('Update successful');
+        toast({
+          title: 'Success',
+          description: 'Case line updated successfully',
+        });
+        
+        // Refresh data
+        await fetchCaseLineDetails(caseLineId);
+        setUpdateCaseLineModalOpen(false);
+        
+        return response.data;
+      } else {
+        console.warn('Unexpected response:', response);
+      }
+    } catch (error) {
+      console.error('Error updating case line:', error);
+      
+      // Log detailed error information
+      if (error instanceof Error) {
+        const axiosError = error as any;
+        if (axiosError.response) {
+          console.error('API Error Response:', axiosError.response.data);
+          console.error('API Error Status:', axiosError.response.status);
+          
+          toast({
+            title: 'Error',
+            description: axiosError.response.data?.message || 'Failed to update case line',
+            variant: 'destructive'
+          });
+        } else {
+          toast({
+            title: 'Error',
+            description: 'Failed to update case line',
+            variant: 'destructive'
+          });
+        }
+      }
+    } finally {
+      setIsUpdatingCaseLine(false);
     }
   }, []);
 
@@ -1485,6 +1588,16 @@ const TechnicianDashboard = ({
       toast({
         title: "Validation Error",
         description: "Please enter a quantity greater than 0 for the selected component",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate rejection reason when warranty status is INELIGIBLE
+    if (caseLineForm.warrantyStatus === 'INELIGIBLE' && !caseLineForm.rejectionReason?.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please provide a rejection reason when warranty status is Ineligible",
         variant: "destructive"
       });
       return;
@@ -3638,6 +3751,35 @@ const TechnicianDashboard = ({
               <X className="h-4 w-4 mr-2" />
               Close
             </Button>
+            <Button 
+              variant="default" 
+              onClick={() => {
+                if (selectedCaseLine) {
+                  console.log('Selected case line for update:', selectedCaseLine);
+                  console.log('Guarantee Case ID:', selectedCaseLine.guaranteeCaseId);
+                  console.log('Case Line ID:', selectedCaseLine.id);
+                  
+                  // Pre-fill form with current case line data
+                  const formData = {
+                    correctionText: selectedCaseLine.correctionText || '',
+                    typeComponentId: selectedCaseLine.typeComponentId || selectedCaseLine.typeComponent?.typeComponentId || '',
+                    quantity: selectedCaseLine.quantity || 0,
+                    warrantyStatus: selectedCaseLine.warrantyStatus || 'ELIGIBLE',
+                    rejectionReason: selectedCaseLine.rejectionReason || ''
+                  };
+                  console.log('Form data:', formData);
+                  
+                  setUpdateCaseLineForm(formData);
+                  setUpdateCaseLineModalOpen(true);
+                } else {
+                  console.error('No selected case line');
+                }
+              }}
+              className="px-8 bg-blue-600 hover:bg-blue-700 font-semibold"
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              Update
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -4016,42 +4158,514 @@ const TechnicianDashboard = ({
               );
               
               return (
-                <Button
-                  className="bg-blue-600 hover:bg-blue-700"
-                  onClick={async () => {
-                    // derive candidate id (recordId or fallback to id field)
-                    const rec = selectedRecord as unknown as Record<string, unknown>;
-                    const candidateId = (rec['recordId'] as string) || (rec['vehicleProcessingRecordId'] as string) || (rec['processing_record_id'] as string) || (rec['id'] as string) || '';
-                    if (!candidateId) {
-                      toast({ title: 'Missing Record ID', description: 'Cannot complete record: ID not found', variant: 'destructive' });
-                      return;
-                    }
-                    if (!allGuaranteeCasesHaveCaseLines) {
-                      const missingCount = guaranteeCasesWithoutCaseLines.length;
-                      const missingCases = guaranteeCasesWithoutCaseLines.map((gc, idx) => 
-                        `Guarantee Case #${guaranteeCases.indexOf(gc) + 1}: ${gc.contentGuarantee.substring(0, 30)}...`
-                      ).join('\n');
+                <>
+                  <Button 
+                    variant="default" 
+                    onClick={() => {
+                      // Check if there are any case lines
+                      const availableCaseLines = createdCaseLines.filter(cl => 
+                        guaranteeCases.some(gc => gc.guaranteeCaseId === cl.guaranteeCaseId)
+                      );
                       
-                      toast({ 
-                        title: 'Cannot Complete Record', 
-                        description: `All guarantee cases must have at least one case line. Missing case lines for ${missingCount} guarantee case(s):\n\n${missingCases}`, 
-                        variant: 'destructive' 
-                      });
-                      return;
-                    }
-                    try {
-                      await completeProcessingRecord(candidateId);
-                    } catch (err) {
-                      // error already handled in helper
-                    }
-                  }}
-                  disabled={isCompleting || !allGuaranteeCasesHaveCaseLines}
-                  title={!allGuaranteeCasesHaveCaseLines ? `All guarantee cases must have at least one case line (${guaranteeCasesWithoutCaseLines.length} missing)` : ''}
-                >
-                  {isCompleting ? 'Completing...' : 'Complete Diagnosis'}
-                </Button>
+                      if (availableCaseLines.length === 0) {
+                        toast({
+                          title: 'No Case Lines',
+                          description: 'Please create a case line first before updating.',
+                          variant: 'destructive'
+                        });
+                        return;
+                      }
+                      
+                      // Open case line selection modal
+                      setSelectCaseLineModalOpen(true);
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    <Settings className="h-4 w-4 mr-2" />
+                    Update
+                  </Button>
+                  <Button
+                    className="bg-blue-600 hover:bg-blue-700"
+                    onClick={async () => {
+                      // derive candidate id (recordId or fallback to id field)
+                      const rec = selectedRecord as unknown as Record<string, unknown>;
+                      const candidateId = (rec['recordId'] as string) || (rec['vehicleProcessingRecordId'] as string) || (rec['processing_record_id'] as string) || (rec['id'] as string) || '';
+                      if (!candidateId) {
+                        toast({ title: 'Missing Record ID', description: 'Cannot complete record: ID not found', variant: 'destructive' });
+                        return;
+                      }
+                      if (!allGuaranteeCasesHaveCaseLines) {
+                        const missingCount = guaranteeCasesWithoutCaseLines.length;
+                        const missingCases = guaranteeCasesWithoutCaseLines.map((gc, idx) => 
+                          `Guarantee Case #${guaranteeCases.indexOf(gc) + 1}: ${gc.contentGuarantee.substring(0, 30)}...`
+                        ).join('\n');
+                        
+                        toast({ 
+                          title: 'Cannot Complete Record', 
+                          description: `All guarantee cases must have at least one case line. Missing case lines for ${missingCount} guarantee case(s):\n\n${missingCases}`, 
+                          variant: 'destructive' 
+                        });
+                        return;
+                      }
+                      try {
+                        await completeProcessingRecord(candidateId);
+                      } catch (err) {
+                        // error already handled in helper
+                      }
+                    }}
+                    disabled={isCompleting || !allGuaranteeCasesHaveCaseLines}
+                    title={!allGuaranteeCasesHaveCaseLines ? `All guarantee cases must have at least one case line (${guaranteeCasesWithoutCaseLines.length} missing)` : ''}
+                  >
+                    {isCompleting ? 'Completing...' : 'Complete Diagnosis'}
+                  </Button>
+                </>
               );
             })()}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Select Case Line Modal */}
+      <Dialog open={selectCaseLineModalOpen} onOpenChange={setSelectCaseLineModalOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold">Select Case Line to Update</DialogTitle>
+            <DialogDescription>
+              Choose a case line from the list below to update its information
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-4">
+            {selectedRecord && selectedRecord.guaranteeCases && selectedRecord.guaranteeCases.map((guaranteeCase, gcIndex) => {
+              const caseLinesForThisCase = createdCaseLines.filter(cl => 
+                cl.guaranteeCaseId === guaranteeCase.guaranteeCaseId
+              );
+
+              if (caseLinesForThisCase.length === 0) return null;
+
+              return (
+                <div key={guaranteeCase.guaranteeCaseId} className="border rounded-lg p-4 bg-slate-50">
+                  <h4 className="font-semibold text-sm mb-3 text-slate-700">
+                    Guarantee Case #{gcIndex + 1}: {guaranteeCase.contentGuarantee?.substring(0, 50)}...
+                  </h4>
+                  <div className="space-y-2">
+                    {caseLinesForThisCase.map((caseLine) => (
+                      <div 
+                        key={caseLine.caseLineId}
+                        className="bg-white border rounded-lg p-3 hover:border-blue-500 hover:shadow-md transition-all cursor-pointer"
+                        onClick={async () => {
+                          console.log('Selected case line:', caseLine);
+                          
+                          // Fetch full case line details
+                          const details = await fetchCaseLineDetails(caseLine.caseLineId);
+                          if (details) {
+                            setSelectedCaseLine(details as any);
+                            
+                            // Pre-fill form - get typeComponentId from multiple possible sources
+                            const typeComponentId = details.typeComponentId 
+                              || details.typeComponent?.typeComponentId 
+                              || caseLine.componentId 
+                              || '';
+                            
+                            console.log('Type Component ID:', typeComponentId);
+                            
+                            const formData = {
+                              correctionText: details.correctionText || '',
+                              typeComponentId: typeComponentId,
+                              quantity: details.quantity || 0,
+                              warrantyStatus: details.warrantyStatus || 'ELIGIBLE',
+                              rejectionReason: details.rejectionReason || ''
+                            };
+                            
+                            console.log('Form data to be filled:', formData);
+                            
+                            // Set component name for display only if typeComponentId exists
+                            if (typeComponentId) {
+                              setUpdateComponentSearchQuery(details.componentName || details.typeComponent?.name || '');
+                            } else {
+                              // Clear component search if no component assigned
+                              setUpdateComponentSearchQuery('');
+                            }
+                            
+                            setUpdateCaseLineForm(formData);
+                            
+                            // Load compatible components for this record
+                            if (selectedRecord?.recordId) {
+                              await fetchCompatibleComponents(selectedRecord.recordId, '');
+                            }
+                            
+                            setSelectCaseLineModalOpen(false);
+                            setUpdateCaseLineModalOpen(true);
+                          }
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <p className="font-mono text-xs text-slate-600 mb-1">
+                              ID: {caseLine.caseLineId?.substring(0, 12)}...
+                            </p>
+                            <p className="text-sm font-medium text-slate-900">
+                              Component: {caseLine.componentId || 'N/A'}
+                            </p>
+                            <p className="text-xs text-slate-600 mt-1">
+                              Correction: {caseLine.correctionText?.substring(0, 60)}...
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <Badge variant={caseLine.status === 'SUBMITTED' ? 'default' : 'secondary'}>
+                              {caseLine.status}
+                            </Badge>
+                            <Badge variant={caseLine.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}>
+                              {caseLine.warrantyStatus}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => setSelectCaseLineModalOpen(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Update Case Line Modal */}
+      <Dialog open={updateCaseLineModalOpen} onOpenChange={setUpdateCaseLineModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold">Update Case Line</DialogTitle>
+            <DialogDescription>
+              Update case line information for {selectedCaseLine?.id?.substring(0, 8)}...
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Read-only Information Section */}
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <h4 className="font-semibold text-blue-900 mb-3">Case Line Information</h4>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-blue-700 font-medium">Case Line ID:</span>
+                  <p className="font-mono text-gray-800 mt-1">{selectedCaseLine?.id}</p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Status:</span>
+                  <p className="mt-1">
+                    <Badge variant={getCaseLineBadgeVariant(selectedCaseLine?.status || '')}>
+                      {getCaseLineStatusLabel(selectedCaseLine?.status || '')}
+                    </Badge>
+                  </p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Component:</span>
+                  <p className="text-gray-800 mt-1">{selectedCaseLine?.componentName || selectedCaseLine?.typeComponent?.name || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Component SKU:</span>
+                  <p className="font-mono text-gray-800 mt-1">{selectedCaseLine?.componentSku || selectedCaseLine?.typeComponent?.sku || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Diagnostic Tech:</span>
+                  <p className="text-gray-800 mt-1">{selectedCaseLine?.diagnosticTechnicianName || selectedCaseLine?.diagnosticTechnician?.name || 'N/A'}</p>
+                </div>
+                <div>
+                  <span className="text-blue-700 font-medium">Updated At:</span>
+                  <p className="text-gray-800 mt-1">
+                    {selectedCaseLine?.updatedAt ? new Date(selectedCaseLine.updatedAt).toLocaleString('vi-VN') : 'N/A'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Editable Fields Section */}
+            <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-6 border border-slate-200">
+              <div className="flex items-center gap-2 mb-5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-500 shadow-sm">
+                  <Settings className="h-4 w-4 text-white" />
+                </div>
+                <h4 className="font-semibold text-lg text-gray-800">Editable Fields</h4>
+              </div>
+              
+              <div className="space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="correctionText" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-gray-600" />
+                    Correction Text <span className="text-red-500">*</span>
+                  </Label>
+                  <Textarea
+                    id="correctionText"
+                    value={updateCaseLineForm.correctionText}
+                    onChange={(e) => setUpdateCaseLineForm(prev => ({ ...prev, correctionText: e.target.value }))}
+                    placeholder="Enter correction text..."
+                    rows={4}
+                    className="resize-none min-h-28 border-2 focus:border-green-400 focus:ring-green-200 transition-colors"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Component Selector */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="componentSelect" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                        <Package className="h-4 w-4 text-gray-600" />
+                        Replacement Component <span className="text-red-500">*</span>
+                      </Label>
+                      {updateCaseLineForm.typeComponentId && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 font-semibold"
+                          onClick={() => {
+                            setUpdateCaseLineForm(prev => ({ ...prev, typeComponentId: '', quantity: 0 }));
+                            setUpdateComponentSearchQuery('');
+                          }}
+                        >
+                          <X className="h-3 w-3 mr-1" />
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Selected Component Display */}
+                    {updateCaseLineForm.typeComponentId && (
+                      <div className="bg-gradient-to-br from-green-50 to-emerald-50 border-2 border-green-300 rounded-xl p-4 mb-2 shadow-sm">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500 shadow-md flex-shrink-0">
+                            <CheckCircle className="h-5 w-5 text-white" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-green-600 uppercase tracking-wide">Component Selected</p>
+                            <p className="text-sm font-bold text-green-900 mt-1 break-words">{updateComponentSearchQuery || 'Component'}</p>
+                            {/* Show full component ID */}
+                            <div className="mt-3 bg-white/60 rounded-lg px-3 py-2 border border-green-200">
+                              <p className="text-xs text-gray-600 font-semibold mb-0.5">Component ID</p>
+                              <p className="text-xs text-gray-800 font-mono break-all">{updateCaseLineForm.typeComponentId}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <Select
+                      disabled={isLoadingComponents || !!updateCaseLineForm.typeComponentId}
+                      value={updateCaseLineForm.typeComponentId || "none"}
+                      onValueChange={(value) => {
+                        if (value === "none" || value === "") {
+                          setUpdateCaseLineForm(prev => ({ ...prev, typeComponentId: '', quantity: 0 }));
+                          setUpdateComponentSearchQuery('');
+                        } else {
+                          const selectedComponent = compatibleComponents.find(c => c.typeComponentId === value);
+                          if (selectedComponent) {
+                            setUpdateCaseLineForm(prev => ({ 
+                              ...prev, 
+                              typeComponentId: selectedComponent.typeComponentId,
+                              quantity: prev.quantity && prev.quantity > 0 ? prev.quantity : 1
+                            }));
+                            setUpdateComponentSearchQuery(selectedComponent.name);
+                          }
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full border-2 focus:border-green-400 focus:ring-green-200 transition-colors h-11">
+                        <SelectValue placeholder={
+                          isLoadingComponents 
+                            ? "Loading components..." 
+                            : compatibleComponents.length === 0
+                            ? "No components available"
+                            : "Choose a replacement component..."
+                        }>
+                          {updateComponentSearchQuery || (updateCaseLineForm.typeComponentId
+                            ? (compatibleComponents.find(c => c.typeComponentId === updateCaseLineForm.typeComponentId)?.name)
+                            : undefined)}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="max-h-[300px]">
+                        {isLoadingComponents ? (
+                          <div className="px-3 py-4 text-center text-sm text-gray-500">
+                            <RefreshCw className="h-4 w-4 animate-spin mx-auto mb-2" />
+                            Loading components...
+                          </div>
+                        ) : compatibleComponents.length === 0 ? (
+                          <div className="px-3 py-4 text-center text-sm text-gray-500">
+                            No compatible components found
+                          </div>
+                        ) : (
+                          <>
+                            <SelectItem value="none" className="text-gray-500 italic">
+                              -- None (Optional) --
+                            </SelectItem>
+                            {compatibleComponents.map((component) => (
+                              <SelectItem 
+                                key={component.typeComponentId} 
+                                value={component.typeComponentId}
+                                className="cursor-pointer hover:bg-blue-50 transition-colors py-3 my-1"
+                              >
+                                <span className="sr-only">{component.name}</span>
+                                <div className="flex items-center justify-between gap-3 py-1">
+                                  <div className="flex-1">
+                                    <span className="font-semibold text-gray-800 block">{component.name}</span>
+                                    {component.availableQuantity !== undefined && (
+                                      <span className="text-xs text-gray-500 mt-0.5 block">
+                                        Available: {component.availableQuantity} units
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </SelectItem>
+                            ))}
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="quantity" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <Gauge className="h-4 w-4 text-gray-600" />
+                      Quantity <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="quantity"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={updateCaseLineForm.quantity === 0 ? '' : updateCaseLineForm.quantity}
+                      onChange={(e) => {
+                        if (!updateCaseLineForm.typeComponentId) return;
+                        const val = e.target.value;
+                        if (val === '' || /^\d+$/.test(val)) {
+                          const parsed = val === '' ? '' : parseInt(val, 10);
+                          setUpdateCaseLineForm(prev => ({ 
+                            ...prev, 
+                            quantity: parsed === '' ? 0 : parsed 
+                          }));
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const val = e.target.value;
+                        if (val === '') {
+                          setUpdateCaseLineForm(prev => ({ ...prev, quantity: 0 }));
+                        }
+                      }}
+                      disabled={!updateCaseLineForm.typeComponentId}
+                      placeholder="0"
+                      className="border-2 focus:border-green-400 focus:ring-green-200 transition-colors h-11 text-lg font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    {!updateCaseLineForm.typeComponentId && (
+                      <p className="text-xs text-gray-500 mt-1">Select a component first</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Warranty Status - Full Width */}
+                <div className="space-y-2">
+                  <Label htmlFor="warrantyStatus" className="text-sm font-semibold text-gray-700">
+                    Warranty Status <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={updateCaseLineForm.warrantyStatus}
+                    onValueChange={(value: 'ELIGIBLE' | 'INELIGIBLE') => {
+                      setUpdateCaseLineForm(prev => ({ ...prev, warrantyStatus: value }));
+                      // Clear rejection reason if changing to ELIGIBLE
+                      if (value === 'ELIGIBLE') {
+                        setUpdateCaseLineForm(prev => ({ ...prev, rejectionReason: '' }));
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="border-2 focus:border-green-400">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ELIGIBLE">Eligible</SelectItem>
+                      <SelectItem value="INELIGIBLE">Ineligible</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Rejection Reason - only show if INELIGIBLE */}
+                {updateCaseLineForm.warrantyStatus === 'INELIGIBLE' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="rejectionReason" className="text-sm font-semibold text-gray-700">
+                      Rejection Reason <span className="text-red-500">*</span>
+                    </Label>
+                    <Textarea
+                      id="rejectionReason"
+                      value={updateCaseLineForm.rejectionReason}
+                      onChange={(e) => setUpdateCaseLineForm(prev => ({ ...prev, rejectionReason: e.target.value }))}
+                      placeholder="Enter reason for warranty ineligibility..."
+                      rows={3}
+                      className="resize-none border-2 focus:border-red-400"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => setUpdateCaseLineModalOpen(false)}
+              disabled={isUpdatingCaseLine}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                console.log('Update button clicked');
+                console.log('selectedCaseLine:', selectedCaseLine);
+                console.log('updateCaseLineForm:', updateCaseLineForm);
+                
+                // Validation: Check if rejection reason is required
+                if (updateCaseLineForm.warrantyStatus === 'INELIGIBLE' && !updateCaseLineForm.rejectionReason?.trim()) {
+                  toast({
+                    title: "Validation Error",
+                    description: "Please provide a rejection reason when warranty status is Ineligible",
+                    variant: "destructive"
+                  });
+                  return;
+                }
+                
+                if (selectedCaseLine?.guaranteeCaseId && selectedCaseLine?.id) {
+                  console.log('Calling updateCaseLine...');
+                  await updateCaseLine(
+                    selectedCaseLine.guaranteeCaseId,
+                    selectedCaseLine.id,
+                    updateCaseLineForm
+                  );
+                } else {
+                  console.error('Missing guaranteeCaseId or id:', {
+                    guaranteeCaseId: selectedCaseLine?.guaranteeCaseId,
+                    id: selectedCaseLine?.id
+                  });
+                }
+              }}
+              disabled={isUpdatingCaseLine}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isUpdatingCaseLine ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                <>
+                  <Settings className="h-4 w-4 mr-2" />
+                  Update
+                </>
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -4279,9 +4893,6 @@ const TechnicianDashboard = ({
 
                   <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl p-6 border border-slate-200">
                     <div className="flex items-center gap-2 mb-5">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-500 shadow-sm">
-                        <span className="text-white font-bold text-sm">2</span>
-                      </div>
                       <h4 className="font-semibold text-lg text-gray-800">Case Line Details</h4>
                     </div>
 
@@ -4298,11 +4909,9 @@ const TechnicianDashboard = ({
                           placeholder="Describe the solution and corrective actions taken to resolve the issue..."
                           className="min-h-28 border-2 focus:border-green-400 focus:ring-green-200 transition-colors"
                         />
-                        
                       </div>
-                    </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label htmlFor="componentSelect" className="text-sm font-semibold text-gray-700 flex items-center gap-2">
@@ -4336,18 +4945,6 @@ const TechnicianDashboard = ({
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-semibold text-green-600 uppercase tracking-wide">Component Selected</p>
                             <p className="text-sm font-bold text-green-900 mt-1 break-words">{componentSearchQuery || 'Selected'}</p>
-                            {/* Show warranty status line below the name */}
-                            <div className="mt-3 flex items-center gap-2">
-                              {caseLineForm.warrantyStatus === 'ELIGIBLE' ? (
-                                <Badge className="bg-green-500 text-white border-0 text-xs font-semibold px-3 py-1">
-                                  ✓ Under Warranty
-                                </Badge>
-                              ) : (
-                                <Badge className="bg-red-500 text-white border-0 text-xs font-semibold px-3 py-1">
-                                  ✗ Not Covered
-                                </Badge>
-                              )}
-                            </div>
                             {/* Show full component ID */}
                             <div className="mt-3 bg-white/60 rounded-lg px-3 py-2 border border-green-200">
                               <p className="text-xs text-gray-600 font-semibold mb-0.5">Component ID</p>
@@ -4370,13 +4967,11 @@ const TechnicianDashboard = ({
                           // Find selected component
                           const selectedComponent = compatibleComponents.find(c => c.typeComponentId === value);
                           if (selectedComponent) {
-                            const warrantyStatus = selectedComponent.isUnderWarranty ? 'ELIGIBLE' : 'INELIGIBLE';
                             // default quantity to 1 when a component is selected
                             setCaseLineForm(prev => ({ 
                               ...prev, 
                               componentId: selectedComponent.typeComponentId,
-                              quantity: prev.quantity && prev.quantity > 0 ? prev.quantity : 1,
-                              warrantyStatus: warrantyStatus
+                              quantity: prev.quantity && prev.quantity > 0 ? prev.quantity : 1
                             }));
                             setComponentSearchQuery(selectedComponent.name);
                             // component selection changed
@@ -4442,17 +5037,6 @@ const TechnicianDashboard = ({
                                       </span>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-2 flex-shrink-0">
-                                    {component.isUnderWarranty ? (
-                                      <Badge className="bg-green-500 text-white border-0 text-xs font-semibold">
-                                        ✓ Warranty
-                                      </Badge>
-                                    ) : (
-                                      <Badge className="bg-red-500 text-white border-0 text-xs font-semibold">
-                                        ✗ No Warranty
-                                      </Badge>
-                                    )}
-                                  </div>
                                 </div>
                               </SelectItem>
                             ))}
@@ -4497,11 +5081,52 @@ const TechnicianDashboard = ({
                       className="border-2 focus:border-green-400 focus:ring-green-200 transition-colors h-11 text-lg font-semibold [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                   </div>
-                    </div>
-                  </div>
+                </div>
 
-                  <div className="flex justify-end items-center gap-3 pt-6 mt-6 border-t-2">
-                    <div className="flex gap-3">
+                {/* Warranty Status - Full Width */}
+                <div className="space-y-2">
+                  <Label htmlFor="warrantyStatusFull" className="text-sm font-semibold text-gray-700">
+                    Warranty Status <span className="text-red-500">*</span>
+                  </Label>
+                  <Select
+                    value={caseLineForm.warrantyStatus}
+                    onValueChange={(value: 'ELIGIBLE' | 'INELIGIBLE') => {
+                      setCaseLineForm(prev => ({ ...prev, warrantyStatus: value }));
+                      // Clear rejection reason if changing to ELIGIBLE
+                      if (value === 'ELIGIBLE') {
+                        setCaseLineForm(prev => ({ ...prev, rejectionReason: '' }));
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="border-2 focus:border-green-400">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ELIGIBLE">Eligible</SelectItem>
+                      <SelectItem value="INELIGIBLE">Ineligible</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Rejection Reason - Full Width, conditional */}
+                {caseLineForm.warrantyStatus === 'INELIGIBLE' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="rejectionReasonFull" className="text-sm font-semibold text-gray-700">
+                      Rejection Reason <span className="text-red-500">*</span>
+                    </Label>
+                    <Textarea
+                      id="rejectionReasonFull"
+                      value={caseLineForm.rejectionReason}
+                      onChange={(e) => setCaseLineForm(prev => ({ ...prev, rejectionReason: e.target.value }))}
+                      placeholder="Enter reason for warranty ineligibility..."
+                      rows={3}
+                      className="resize-none border-2 focus:border-red-400"
+                    />
+                  </div>
+                )}
+
+                <div className="flex justify-end items-center gap-3 pt-6 mt-6 border-t-2">
+                  <div className="flex gap-3">
                       <Button 
                         variant="outline" 
                         onClick={() => {
@@ -4542,6 +5167,8 @@ const TechnicianDashboard = ({
                       </Button>
                     </div>
                   </div>
+                </div>
+              </div>
                 </>
               )}
             </div>
