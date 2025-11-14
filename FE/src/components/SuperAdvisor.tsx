@@ -4377,6 +4377,17 @@ const SuperAdvisor = () => {
                         </div>
                       )}
 
+
+
+                      {/* Correction Text */}
+                      {caseline.correctionText && (
+                        <div>
+                          <Label>Correction:</Label>
+                          <p className="text-sm mt-1 text-gray-800">{caseline.correctionText}</p>
+                        </div>
+                      )}
+
+                      
                       {/* Component Information */}
                       {(caseline.typeComponent || caseline.typeComponentId) && (
                         <div>
@@ -4387,15 +4398,6 @@ const SuperAdvisor = () => {
                           {caseline.typeComponentId && (
                             <p className="text-xs font-mono text-gray-500 mt-1">ID: {caseline.typeComponentId}</p>
                           )}
-                        </div>
-                      )}
-
-
-                      {/* Correction Text */}
-                      {caseline.correctionText && (
-                        <div>
-                          <Label>Correction:</Label>
-                          <p className="text-sm mt-1 text-gray-800">{caseline.correctionText}</p>
                         </div>
                       )}
 
@@ -4480,7 +4482,7 @@ const SuperAdvisor = () => {
         </DialogContent>
       </Dialog>
 
-      {/* View Record Details Dialog */}
+      {/*    Details Dialog */}
       <Dialog open={showViewRecordDialog} onOpenChange={setShowViewRecordDialog}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
