@@ -2812,8 +2812,8 @@ const ServiceCenterDashboard = () => {
                                 <div className="flex-1">
                                   <p className="font-semibold">{tech.name}</p>
                                   <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                                    {typeof tech.tasksAssignedToday === 'number' && (
-                                      <Badge variant="outline" className="text-xs">Tasks Today: {tech.tasksAssignedToday}</Badge>
+                                    {typeof tech.workload === 'number' && (
+                                      <Badge variant="outline" className="text-xs">Tasks: {tech.workload}</Badge>
                                     )}
                                     {tech.status && (
                                       <span className="text-xs">{getDisplayStatus(tech.status)}</span>
