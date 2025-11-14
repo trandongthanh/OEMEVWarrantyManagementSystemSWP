@@ -3,6 +3,60 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosR
 // Base API configuration
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
+// Function to handle auth expiration (shared between instances)
+const handleAuthExpiration = (status: number) => {
+  console.error(`${status === 401 ? 'Unauthorized' : 'Forbidden'}: Token expired or invalid`);
+  
+  // Only handle auth expiration if we have a token (prevents redirect loop on login page)
+  const hasToken = localStorage.getItem('ev_warranty_token');
+  if (hasToken) {
+    // Clear all auth related data
+    localStorage.removeItem('ev_warranty_token');
+    localStorage.removeItem('ev_warranty_user');
+    localStorage.removeItem('ev_warranty_role');
+    
+    // Show toast notification if available
+    try {
+      const event = new CustomEvent('auth:expired', {
+        detail: { message: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' }
+      });
+      window.dispatchEvent(event);
+    } catch (_) {
+      // ignore if custom event not supported
+    }
+    
+    // Redirect to login after a short delay (only if not already on login page)
+    const currentPath = window.location.pathname;
+    if (currentPath !== '/login' && currentPath !== '/') {
+      setTimeout(() => {
+        try {
+          const redirectParam = `?redirect=${encodeURIComponent(currentPath)}`;
+          window.location.href = `/login${redirectParam}`;
+        } catch (_) {
+          // Fallback to simple login redirect
+          window.location.href = '/login';
+        }
+      }, 500);
+    }
+  }
+};
+
+// Add global axios interceptor for all axios instances (including direct imports)
+axios.interceptors.response.use(
+  (response: AxiosResponse) => response,
+  (err: unknown) => {
+    if (axios.isAxiosError(err)) {
+      const error = err as AxiosError<unknown>;
+      const status = error.response?.status;
+      
+      if (status === 401 || status === 403) {
+        handleAuthExpiration(status);
+      }
+    }
+    return Promise.reject(err);
+  }
+);
+
 // Create axios instance
 const api: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
@@ -73,16 +127,8 @@ api.interceptors.response.use(
 
       switch (status) {
         case 401:
-          console.error('Unauthorized: Token expired or invalid');
-          localStorage.removeItem('ev_warranty_token');
-          try {
-            window.location.href = '/login';
-          } catch (_) {
-            // ignore in non-browser environments
-          }
-          break;
         case 403:
-          console.error('Forbidden: Insufficient permissions');
+          // Already handled by global interceptor
           break;
         case 404:
           console.error('Resource not found');
