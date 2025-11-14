@@ -976,7 +976,39 @@ const TechnicianDashboard = ({
         // Refresh data and update selectedCaseLine to reflect changes in UI
         const updatedCaseLine = await fetchCaseLineDetails(caseLineId);
         if (updatedCaseLine) {
-          setSelectedCaseLine(updatedCaseLine);
+          // Map the detailed case line to CaseLine format for selectedCaseLine
+          const mappedCaseLine: CaseLine = {
+            id: updatedCaseLine.id,
+            caseId: updatedCaseLine.guaranteeCaseId || '',
+            guaranteeCaseId: updatedCaseLine.guaranteeCaseId,
+            damageLevel: 'medium',
+            repairPossibility: 'repairable',
+            warrantyDecision: updatedCaseLine.warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
+            technicianNotes: updatedCaseLine.correctionText,
+            photos: (updatedCaseLine as any).evidenceImageUrls || [],
+            evidenceImageUrls: (updatedCaseLine as any).evidenceImageUrls || [],
+            createdDate: formatSafeDate(updatedCaseLine.updatedAt),
+            status: updatedCaseLine.status ?? 'submitted',
+            diagnosisText: '',
+            correctionText: updatedCaseLine.correctionText,
+            componentId: updatedCaseLine.typeComponentId,
+            componentName: updatedCaseLine.componentName,
+            componentSku: updatedCaseLine.componentSku,
+            componentPrice: updatedCaseLine.componentPrice,
+            quantity: updatedCaseLine.quantity,
+            warrantyStatus: updatedCaseLine.warrantyStatus,
+            diagnosticTechId: undefined,
+            diagnosticTechnicianName: updatedCaseLine.diagnosticTechnicianName,
+            repairTechnicianName: updatedCaseLine.repairTechnicianName,
+            rejectionReason: updatedCaseLine.rejectionReason,
+            updatedAt: updatedCaseLine.updatedAt,
+            guaranteeCase: updatedCaseLine.guaranteeCase,
+            typeComponent: updatedCaseLine.typeComponent,
+            diagnosticTechnician: updatedCaseLine.diagnosticTechnician,
+            repairTechnician: updatedCaseLine.repairTechnician,
+            reservations: updatedCaseLine.reservations || []
+          };
+          setSelectedCaseLine(mappedCaseLine);
         }
         setUpdateCaseLineModalOpen(false);
         
