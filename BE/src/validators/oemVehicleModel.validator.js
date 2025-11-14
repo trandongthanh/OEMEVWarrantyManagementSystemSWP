@@ -1,3 +1,5 @@
+import Joi from "joi";
+
 export const createVehicleModelSchema = Joi.object({
   vehicleModelName: Joi.string().trim().required(),
   yearOfLaunch: Joi.date().iso().required(),
@@ -35,3 +37,9 @@ export const createVehicleModelSchema = Joi.object({
     .min(1)
     .required(),
 });
+
+export const updateWarrantyComponentSchema = Joi.object({
+  quantity: Joi.number().integer().min(1).optional(),
+  durationMonth: Joi.number().integer().min(0).optional(),
+  mileageLimit: Joi.number().integer().min(0).optional(),
+}).min(1); // At least one field must be present for an update

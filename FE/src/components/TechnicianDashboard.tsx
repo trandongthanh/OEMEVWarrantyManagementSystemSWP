@@ -1372,6 +1372,71 @@ const TechnicianDashboard = ({
     }
   }, []);
 
+  // Install all picked up components
+  const handleInstallAllComponents = useCallback(async () => {
+    const pickedUpReservations = reservations.filter(r => r.status === 'PICKED_UP');
+    
+    if (pickedUpReservations.length === 0) {
+      toast({
+        title: 'No Components',
+        description: 'No picked up components to install',
+        variant: 'default'
+      });
+      return;
+    }
+
+    try {
+      setInstallingReservationId('all');
+      
+      const installPromises = pickedUpReservations.map(reservation =>
+        apiService.patch<{ 
+          status: string; 
+          data: { component: ComponentReservation } 
+        }>(`/reservations/${reservation.reservationId}/installComponent`)
+      );
+
+      const results = await Promise.allSettled(installPromises);
+      
+      const successCount = results.filter(r => r.status === 'fulfilled').length;
+      const failCount = results.filter(r => r.status === 'rejected').length;
+
+      if (successCount > 0) {
+        toast({
+          title: 'Success',
+          description: `Installed ${successCount} component${successCount !== 1 ? 's' : ''} successfully${failCount > 0 ? `, ${failCount} failed` : ''}`,
+        });
+
+        // Update all successfully installed reservations
+        const now = new Date().toISOString();
+        setReservations(prev => 
+          prev.map(r => {
+            const wasPickedUp = r.status === 'PICKED_UP';
+            const resultIndex = pickedUpReservations.findIndex(p => p.reservationId === r.reservationId);
+            if (wasPickedUp && resultIndex !== -1 && results[resultIndex].status === 'fulfilled') {
+              return { ...r, status: 'INSTALLED', installedAt: now };
+            }
+            return r;
+          })
+        );
+      } else {
+        toast({
+          title: 'Error',
+          description: 'Failed to install all components',
+          variant: 'destructive'
+        });
+      }
+    } catch (error) {
+      console.error('❌ Failed to install all components:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to install all components',
+        variant: 'destructive'
+      });
+    } finally {
+      setInstallingReservationId(null);
+    }
+  }, [reservations]);
+
   // Complete repair for case line
   const handleCompleteRepair = useCallback(async (caseLineId: string) => {
     try {
@@ -5572,13 +5637,37 @@ const TechnicianDashboard = ({
       <Dialog open={viewReservationsModalOpen} onOpenChange={setViewReservationsModalOpen}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
+            <DialogTitle className="flex items-center justify-between w-full">
               <span>Component Reservations</span>
-              {!isLoadingReservations && reservations.length > 0 && (
-                <span className="text-sm font-normal text-muted-foreground">
-                  {reservations.length} total reservation{reservations.length !== 1 ? 's' : ''}
-                </span>
-              )}
+              <div className="flex items-center gap-3">
+                {!isLoadingReservations && reservations.length > 0 && (
+                  <>
+                    <span className="text-sm font-normal text-muted-foreground">
+                      {reservations.length} total reservation{reservations.length !== 1 ? 's' : ''}
+                    </span>
+                    {reservations.some(r => r.status === 'PICKED_UP') && (
+                      <Button
+                        size="sm"
+                        onClick={handleInstallAllComponents}
+                        disabled={installingReservationId === 'all'}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        {installingReservationId === 'all' ? (
+                          <>
+                            <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                            Installing...
+                          </>
+                        ) : (
+                          <>
+                            <Wrench className="h-3 w-3 mr-1" />
+                            Install All
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
             </DialogTitle>
             <DialogDescription>
               View component reservations for this case line
