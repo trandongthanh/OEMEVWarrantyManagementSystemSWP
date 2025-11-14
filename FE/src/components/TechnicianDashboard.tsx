@@ -936,13 +936,21 @@ const TechnicianDashboard = ({
 
       console.log('Calling API PATCH /guarantee-cases/' + guaranteeCaseId + '/case-lines/' + caseLineId);
       
-      // Build sanitized payload - only include rejectionReason if it has a value
+      // Build sanitized payload - only include fields with valid values
       const payload: Record<string, any> = {
         correctionText: data.correctionText,
-        typeComponentId: data.typeComponentId,
-        quantity: data.quantity,
         warrantyStatus: data.warrantyStatus,
       };
+      
+      // Only include typeComponentId if it has a value (not empty string)
+      if (data.typeComponentId && data.typeComponentId.trim()) {
+        payload.typeComponentId = data.typeComponentId;
+        payload.quantity = data.quantity;
+      } else {
+        // If no component, set to null and quantity to 0
+        payload.typeComponentId = null;
+        payload.quantity = 0;
+      }
       
       // Only include rejectionReason if it's not empty
       if (data.rejectionReason && data.rejectionReason.trim()) {
@@ -965,8 +973,11 @@ const TechnicianDashboard = ({
           description: 'Case line updated successfully',
         });
         
-        // Refresh data
-        await fetchCaseLineDetails(caseLineId);
+        // Refresh data and update selectedCaseLine to reflect changes in UI
+        const updatedCaseLine = await fetchCaseLineDetails(caseLineId);
+        if (updatedCaseLine) {
+          setSelectedCaseLine(updatedCaseLine);
+        }
         setUpdateCaseLineModalOpen(false);
         
         return response.data;
