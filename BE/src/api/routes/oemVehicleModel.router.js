@@ -73,7 +73,7 @@ const router = express.Router();
 router.get(
   "/",
   authentication,
-  authorizationByRole(["emv_admin"]),
+  authorizationByRole(["emv_staff"]),
   async (req, res, next) => {
     const oemVehicleModelController = req.container.resolve(
       "oemVehicleModelController"
@@ -98,7 +98,7 @@ router.get(
  *           type: string
  *           format: uuid
  *         description: ID of the vehicle model
- *     requestBody: 
+ *     requestBody:
  *       required: true
  *       content:
  *         application/json:
@@ -222,7 +222,7 @@ router.get(
 router.post(
   "/:vehicleModelId/warranty-components",
   authentication,
-  authorizationByRole(["emv_admin"]),
+  authorizationByRole(["emv_staff"]),
   validate(createWarrantyComponentsParamsSchema, "params"),
   validate(createWarrantyComponentsSchema, "body"),
   async (req, res, next) => {
@@ -321,7 +321,7 @@ router.post(
 router.patch(
   "/:vehicleModelId/warranty-components/:warrantyComponentId",
   authentication,
-  authorizationByRole(["emv_admin"]),
+  authorizationByRole(["emv_staff"]),
   validate(createWarrantyComponentsParamsSchema, "params"),
   validate(updateWarrantyComponentSchema, "body"),
   async (req, res, next) => {
@@ -400,7 +400,7 @@ router.patch(
 router.get(
   "/:vehicleModelId/warranty-components",
   authentication,
-  authorizationByRole(["emv_admin"]),
+  authorizationByRole(["emv_staff"]),
   validate(createWarrantyComponentsParamsSchema, "params"),
   async (req, res, next) => {
     const oemVehicleModelController = req.container.resolve(
