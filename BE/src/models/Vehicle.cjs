@@ -18,7 +18,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.DATE,
         validate: {
           notEmpty: {
-            msg: "vin cannot be empty",
+            msg: "dateOfManufacture cannot be empty",
           },
         },
         field: "date_of_manufacture",
@@ -28,7 +28,7 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.STRING,
         validate: {
           notEmpty: {
-            msg: "vin cannot be empty",
+            msg: "placeOfManufacture cannot be empty",
           },
         },
         allowNull: false,

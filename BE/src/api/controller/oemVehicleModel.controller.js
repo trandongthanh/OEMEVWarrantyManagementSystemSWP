@@ -1,42 +1,46 @@
 class OemVehicleModelController {
   #oemVehicleModelService;
+
   constructor({ oemVehicleModelService }) {
     this.#oemVehicleModelService = oemVehicleModelService;
   }
 
-  createVehicleModel = async (req, res) => {
-    const {
-      vehicleModelName,
-      yearOfLaunch,
-      placeOfManufacture,
-      generalWarrantyDuration,
-      generalWarrantyMileage,
-      components,
-    } = req.body;
-
-    const { companyId } = req;
-
-    const result = await this.#oemVehicleModelService.createVehicleModel({
-      vehicleModelName,
-      yearOfLaunch,
-      placeOfManufacture,
-      generalWarrantyDuration,
-      generalWarrantyMileage,
-      components,
-      companyId,
-    });
-
+  createVehicleModel = async (req, res, next) => {
+    const vehicleModelData = req.body;
+    const newVehicleModel =
+      await this.#oemVehicleModelService.createVehicleModel(vehicleModelData);
     res.status(201).json({
       status: "success",
-      data: result,
+      data: newVehicleModel,
     });
   };
 
-  createWarrantyComponentsForModel = async (req, res) => {
+  getAllModelsWithWarranty = async (req, res, next) => {
+    const models =
+      await this.#oemVehicleModelService.getAllModelsWithWarranty();
+    res.status(200).json({
+      status: "success",
+      data: models,
+    });
+  };
+
+  getWarrantyComponentsForModel = async (req, res, next) => {
+    const { vehicleModelId } = req.params;
+    const components =
+      await this.#oemVehicleModelService.getWarrantyComponentsForModel({
+        vehicleModelId,
+      });
+    res.status(200).json({
+      status: "success",
+      data: components,
+    });
+  };
+
+  createWarrantyComponentsForModel = async (req, res, next) => {
     const { vehicleModelId } = req.params;
     const { typeComponentWarrantyList } = req.body;
 
-    const result =
+    const newComponents =
       await this.#oemVehicleModelService.createWarrantyComponentsForModel({
         vehicleModelId,
         typeComponentWarrantyList,
@@ -44,47 +48,26 @@ class OemVehicleModelController {
 
     res.status(201).json({
       status: "success",
-      data: result,
+      data: newComponents,
     });
   };
 
   updateWarrantyComponent = async (req, res, next) => {
-    const { warrantyComponentId } = req.params;
+    const { vehicleModelId, warrantyComponentId } = req.params;
     const updateData = req.body;
 
-    const updatedRecord =
+    const updatedComponent =
       await this.#oemVehicleModelService.updateWarrantyComponent({
+        vehicleModelId,
         warrantyComponentId,
         updateData,
       });
 
     res.status(200).json({
       status: "success",
-      data: updatedRecord,
-    });
-  };
-
-  getWarrantyComponentsForModel = async (req, res, next) => {
-    const { vehicleModelId } = req.params;
-
-    const warrantyComponents =
-      await this.#oemVehicleModelService.getWarrantyComponentsForModel({
-        vehicleModelId,
-      });
-
-    res.status(200).json({
-      status: "success",
-      data: warrantyComponents,
-    });
-  };
-
-  getAllModelsWithWarranty = async (req, res, next) => {
-    const models = await this.#oemVehicleModelService.getAllModelsWithWarranty();
-
-    res.status(200).json({
-      status: "success",
-      data: models,
+      data: updatedComponent,
     });
   };
 }
+
 export default OemVehicleModelController;
