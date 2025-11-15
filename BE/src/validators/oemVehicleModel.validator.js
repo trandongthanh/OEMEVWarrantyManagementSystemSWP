@@ -42,4 +42,9 @@ export const updateWarrantyComponentSchema = Joi.object({
   quantity: Joi.number().integer().min(1).optional(),
   durationMonth: Joi.number().integer().min(0).optional(),
   mileageLimit: Joi.number().integer().min(0).optional(),
-}).min(1); // At least one field must be present for an update
+}).min(1);
+
+export const updateWarrantyComponentParamsSchema = Joi.object({
+  vehicleModelId: Joi.string().uuid().required(),
+  warrantyComponentId: Joi.string().uuid().required(),
+});

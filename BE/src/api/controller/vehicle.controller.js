@@ -6,6 +6,15 @@ class VehicleController {
     this.#vehicleProcessingRecordService = vehicleProcessingRecordService;
   }
 
+  createVehicle = async (req, res, next) => {
+    const vehicleData = req.body;
+    const newVehicle = await this.#vehicleService.createVehicle(vehicleData);
+    res.status(201).json({
+      status: "success",
+      data: newVehicle,
+    });
+  };
+
   getVehicle = async (req, res, next) => {
     const { vin } = req.params;
 

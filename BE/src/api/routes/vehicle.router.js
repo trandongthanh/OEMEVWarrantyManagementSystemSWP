@@ -15,8 +15,82 @@ import {
   findVehicleByVinWithWarrantyPreviewParamsSchema,
   findVehicleByVinWithWarrantyQuerySchema,
 } from "../../validators/findVehicleByVinWithWarranty.validator.js";
+import createVehicleSchema from "../../validators/createVehicle.validator.js";
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /vehicles:
+ *   post:
+ *     summary: Create a new vehicle
+ *     tags: [Vehicle]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - vin
+ *               - dateOfManufacture
+ *               - placeOfManufacture
+ *               - vehicleModelId
+ *             properties:
+ *               vin:
+ *                 type: string
+ *                 description: Vehicle Identification Number (must be 17 characters)
+ *                 example: "VIN12345678901234"
+ *               dateOfManufacture:
+ *                 type: string
+ *                 format: date
+ *                 description: Date of manufacture (ISO date format)
+ *                 example: "2023-01-01T00:00:00.000Z"
+ *               placeOfManufacture:
+ *                 type: string
+ *                 description: Place of manufacture
+ *                 example: "Hanoi, Vietnam"
+ *               vehicleModelId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the vehicle model
+ *                 example: "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+ *     responses:
+ *       201:
+ *         description: Vehicle created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *       400:
+ *         description: Bad request - validation error
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: Vehicle model not found
+ *       409:
+ *         description: Conflict - Vehicle with this VIN already exists
+ */
+router.post(
+  "/",
+  authentication,
+  authorizationByRole(["emv_staff"]),
+  validate(createVehicleSchema, "body"),
+  async (req, res, next) => {
+    const vehicleController = req.container.resolve("vehicleController");
+    await vehicleController.createVehicle(req, res, next);
+  }
+);
 
 /**
  * @swagger

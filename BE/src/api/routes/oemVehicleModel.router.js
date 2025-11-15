@@ -7,9 +7,102 @@ import {
 import createWarrantyComponentsSchema, {
   createWarrantyComponentsParamsSchema,
 } from "../../validators/warrantyComponent.validator.js";
-import { updateWarrantyComponentSchema } from "../../validators/oemVehicleModel.validator.js";
+import {
+  updateWarrantyComponentSchema,
+  updateWarrantyComponentParamsSchema,
+} from "../../validators/oemVehicleModel.validator.js";
+import createOemVehicleModelSchema from "../../validators/createOemVehicleModel.validator.js";
 
 const router = express.Router();
+
+/**
+ * @swagger
+ * /oem-vehicle-models:
+ *   post:
+ *     summary: Create a new vehicle model
+ *     tags: [OEM Vehicle Model]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - vehicleModelName
+ *               - yearOfLaunch
+ *               - placeOfManufacture
+ *               - generalWarrantyDuration
+ *               - generalWarrantyMileage
+ *               - companyId
+ *             properties:
+ *               vehicleModelName:
+ *                 type: string
+ *                 description: Name of the vehicle model
+ *                 example: "Model X"
+ *               yearOfLaunch:
+ *                 type: string
+ *                 format: date
+ *                 description: Year the model was launched (ISO date format)
+ *                 example: "2023-01-01T00:00:00.000Z"
+ *               placeOfManufacture:
+ *                 type: string
+ *                 description: Place where the model is manufactured
+ *                 example: "Fremont, CA"
+ *               generalWarrantyDuration:
+ *                 type: integer
+ *                 description: General warranty duration in months
+ *                 example: 36
+ *               generalWarrantyMileage:
+ *                 type: integer
+ *                 description: General warranty mileage limit
+ *                 example: 50000
+ *               companyId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID of the vehicle company
+ *                 example: "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+ *     responses:
+ *       201:
+ *         description: Vehicle model created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     vehicleModelId:
+ *                       type: string
+ *                       format: uuid
+ *                     vehicleModelName:
+ *                       type: string
+ *       400:
+ *         description: Bad request - validation error
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       409:
+ *         description: Conflict - Vehicle model name already exists
+ */
+router.post(
+  "/",
+  authentication,
+  authorizationByRole(["emv_staff"]),
+  validate(createOemVehicleModelSchema, "body"),
+  async (req, res, next) => {
+    const oemVehicleModelController = req.container.resolve(
+      "oemVehicleModelController"
+    );
+    await oemVehicleModelController.createVehicleModel(req, res, next);
+  }
+);
 
 /**
  * @swagger
@@ -322,7 +415,7 @@ router.patch(
   "/:vehicleModelId/warranty-components/:warrantyComponentId",
   authentication,
   authorizationByRole(["emv_staff"]),
-  validate(createWarrantyComponentsParamsSchema, "params"),
+  validate(updateWarrantyComponentParamsSchema, "params"),
   validate(updateWarrantyComponentSchema, "body"),
   async (req, res, next) => {
     const oemVehicleModelController = req.container.resolve(
