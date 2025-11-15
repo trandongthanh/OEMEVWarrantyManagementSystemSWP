@@ -571,7 +571,9 @@ class CaseLineService {
 
       if (missingIds.length > 0) {
         throw new ConflictError(
-          "All pending caselines for this record must be approved or rejected"
+          `All pending caselines for this record must be approved or rejected. Missing IDs: ${missingIds.join(
+            ", "
+          )}`
         );
       }
 
@@ -726,13 +728,25 @@ class CaseLineService {
           }
         }
 
-        if (warrantyStatus === "INELIGIBLE" && !rejectionReason) {
+        const [processedCaseline] = this.#assignInitialCaseLineStatuses(
+          typeComponentsMap,
+          [
+            {
+              typeComponentId,
+              warrantyStatus,
+            },
+          ]
+        );
+
+        const initialStatus = processedCaseline?.status || "DRAFT";
+
+        if (initialStatus === "REJECTED_BY_TECH" && !rejectionReason) {
           throw new ConflictError(
-            `Technician must provide a rejection reason if caseline with typeComponentId ${caseline.typeComponentId} is marked as REJECTED_BY_TECH`
+            `Technician must provide a rejection reason if caseline with typeComponentId ${
+              typeComponentId || caseline.typeComponentId
+            } is marked as REJECTED_BY_TECH`
           );
         }
-
-        const initialStatus = "DRAFT";
 
         const normalizedEvidenceImageUrls =
           typeof evidenceImageUrls === "undefined"

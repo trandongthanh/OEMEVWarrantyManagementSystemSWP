@@ -59,6 +59,7 @@ import RoleController from "./src/api/controller/role.controller.js";
 import RoleService from "./src/service/role.service.js";
 import RoleRepository from "./src/repository/role.repository.js";
 import OemVehicleModelRepository from "./src/repository/oemVehicleModel.repository.js";
+import WarrantyComponentRepository from "./src/repository/warrantyComponent.repository.js";
 
 const container = createContainer();
 
@@ -212,6 +213,9 @@ export function setupContainer({ io, notificationNamespace }) {
     }),
     roleRepository: asClass(RoleRepository, { lifetime: Lifetime.SCOPED }),
     oemVehicleModelRepository: asClass(OemVehicleModelRepository, {
+      lifetime: Lifetime.SCOPED,
+    }),
+    warrantyComponentRepository: asClass(WarrantyComponentRepository, {
       lifetime: Lifetime.SCOPED,
     }),
   });
