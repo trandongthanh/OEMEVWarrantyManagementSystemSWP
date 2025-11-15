@@ -8,7 +8,7 @@ class TokenService {
     const payload = { userId, roleName, serviceCenterId, companyId };
 
     return jwt.sign(payload, SECRET_KEY, {
-      expiresIn: "10m",
+      expiresIn: "5h",
     });
   }
 
