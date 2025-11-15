@@ -551,10 +551,22 @@ class CaseLineService {
       }
 
       const pendingSet = new Set(pendingApprovalIds);
-      const providedSet = new Set(arrayIds);
+
+      const pendingApproveIds = arrayApproveIds.filter((id) =>
+        pendingSet.has(id)
+      );
+
+      const pendingRejectIds = arrayRejectIds.filter((id) =>
+        pendingSet.has(id)
+      );
+
+      const providedPendingSet = new Set([
+        ...pendingApproveIds,
+        ...pendingRejectIds,
+      ]);
 
       const missingIds = pendingApprovalIds.filter(
-        (pendingId) => !providedSet.has(pendingId)
+        (pendingId) => !providedPendingSet.has(pendingId)
       );
 
       if (missingIds.length > 0) {
@@ -563,15 +575,11 @@ class CaseLineService {
         );
       }
 
-      const exceptionIds = arrayIds.filter((id) => !pendingSet.has(id));
+      const pendingCaselines = caselines.filter((caseline) =>
+        pendingSet.has(caseline.id)
+      );
 
-      if (exceptionIds.length > 0) {
-        throw new ConflictError(
-          "Some caselines are not part of this record or not pending approval"
-        );
-      }
-
-      for (const caseline of caselines) {
+      for (const caseline of pendingCaselines) {
         if (caseline.status !== "PENDING_APPROVAL") {
           throw new ConflictError(
             `Caseline with ID ${caseline.id} is not in PENDING_APPROVAL status`
@@ -587,20 +595,20 @@ class CaseLineService {
 
       const [updatedApprovedCaseLines, updatedRejectedCaseLines] =
         await Promise.all([
-          arrayApproveIds.length > 0
+          pendingApproveIds.length > 0
             ? this.#caselineRepository.bulkUpdateStatusByIds(
                 {
-                  caseLineIds: arrayApproveIds,
+                  caseLineIds: pendingApproveIds,
                   status: "CUSTOMER_APPROVED",
                 },
                 transaction
               )
             : null,
 
-          arrayRejectIds.length > 0
+          pendingRejectIds.length > 0
             ? this.#caselineRepository.bulkUpdateStatusByIds(
                 {
-                  caseLineIds: arrayRejectIds,
+                  caseLineIds: pendingRejectIds,
                   status: "REJECTED_BY_CUSTOMER",
                 },
                 transaction
