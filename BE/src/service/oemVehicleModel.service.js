@@ -21,6 +21,7 @@ class OemVehicleModelService {
       await this.#oemVehicleModelRepository.findByVehicleModelName(
         vehicleModelData.vehicleModelName
       );
+
     if (existingModel) {
       throw new ConflictError(
         `Vehicle model with name '${vehicleModelData.vehicleModelName}' already exists.`

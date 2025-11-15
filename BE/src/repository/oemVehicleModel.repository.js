@@ -29,15 +29,12 @@ class OemVehicleModelRepository {
     const records = await VehicleModel.findAll({
       include: [
         {
-          model: WarrantyComponent,
-          as: "warrantyComponents",
-          include: [
-            {
-              model: TypeComponent,
-              as: "typeComponent",
-              attributes: ["name", "sku", "price", "category"],
-            },
-          ],
+          model: TypeComponent,
+          as: "typeComponents",
+          through: {
+            attributes: ["durationMonth", "mileageLimit"],
+          },
+          attributes: ["name", "sku", "price", "category"],
         },
       ],
       transaction,
