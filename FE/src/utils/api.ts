@@ -3,6 +3,32 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosR
 // Base API configuration
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
+// JWT token decoder (simple, without heavy library)
+const decodeJWT = (token: string): { exp?: number } | null => {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => 
+      '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+    ).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
+  }
+};
+
+// Check if token is expired
+const isTokenExpired = (token: string | null): boolean => {
+  if (!token) return true;
+  
+  const decoded = decodeJWT(token);
+  if (!decoded || !decoded.exp) return true;
+  
+  // Check if token expired (with 30 second buffer)
+  const currentTime = Math.floor(Date.now() / 1000);
+  return decoded.exp < (currentTime + 10); // 10 second buffer for testing
+};
+
 // Function to handle auth expiration (shared between instances)
 const handleAuthExpiration = (status: number) => {
   console.error(`${status === 401 ? 'Unauthorized' : 'Forbidden'}: Token expired or invalid`);
@@ -25,21 +51,69 @@ const handleAuthExpiration = (status: number) => {
       // ignore if custom event not supported
     }
     
-    // Redirect to login after a short delay (only if not already on login page)
+    // Redirect to login immediately (only if not already on login page)
     const currentPath = window.location.pathname;
-    if (currentPath !== '/login' && currentPath !== '/') {
+    if (currentPath !== '/login') {
+      // Clear first, then redirect immediately
+      console.log('🔄 Redirecting to login due to token expiration...');
       setTimeout(() => {
-        try {
-          const redirectParam = `?redirect=${encodeURIComponent(currentPath)}`;
-          window.location.href = `/login${redirectParam}`;
-        } catch (_) {
-          // Fallback to simple login redirect
-          window.location.href = '/login';
-        }
-      }, 500);
+        const redirectParam = currentPath !== '/' ? `?redirect=${encodeURIComponent(currentPath)}` : '';
+        window.location.href = `/login${redirectParam}`;
+      }, 300);
     }
   }
 };
+
+// Auto check token expiration on visibility change and periodically
+let tokenCheckInterval: number | null = null;
+
+const startTokenExpirationCheck = () => {
+  // Check immediately
+  const checkToken = () => {
+    const token = localStorage.getItem('ev_warranty_token');
+    const currentPath = window.location.pathname;
+    
+    // Only check if not on login page
+    if (currentPath !== '/login') {
+      if (token && isTokenExpired(token)) {
+        console.log('⏰ Token expired - auto logout');
+        handleAuthExpiration(401);
+        if (tokenCheckInterval) {
+          clearInterval(tokenCheckInterval);
+          tokenCheckInterval = null;
+        }
+      } else if (!token) {
+        // No token and not on login page - redirect to login
+        console.log('🚫 No token found - redirecting to login');
+        window.location.href = '/login';
+        if (tokenCheckInterval) {
+          clearInterval(tokenCheckInterval);
+          tokenCheckInterval = null;
+        }
+      }
+    }
+  };
+
+  // Check every 1 minute
+  if (!tokenCheckInterval) {
+    tokenCheckInterval = window.setInterval(checkToken, 10000); // Check every 10 seconds for faster detection
+  }
+  
+  // Check when page becomes visible again
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      checkToken();
+    }
+  });
+  
+  // Initial check
+  checkToken();
+};
+
+// Start token check when module loads
+if (typeof window !== 'undefined') {
+  startTokenExpirationCheck();
+}
 
 // Add global axios interceptor for all axios instances (including direct imports)
 axios.interceptors.response.use(
