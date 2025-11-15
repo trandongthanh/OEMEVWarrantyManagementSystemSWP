@@ -4,6 +4,32 @@ import db from "../models/index.cjs";
 const { TypeComponent, VehicleModel, Warehouse } = db;
 
 class TypeComponentRepository {
+  findBySkus = async (skus, transaction = null) => {
+    if (!skus || skus.length === 0) {
+      return [];
+    }
+
+    const records = await TypeComponent.findAll({
+      where: {
+        sku: {
+          [Op.in]: skus,
+        },
+      },
+      transaction: transaction,
+    });
+
+    return records.map((record) => record.toJSON());
+  }
+
+  bulkCreate = async (records, transaction = null) => {
+    const created = await TypeComponent.bulkCreate(records, {
+      transaction: transaction,
+      returning: true,
+    });
+
+    return created.map((record) => record.toJSON());
+  }
+
   findByPk = async (typeComponentId, transaction = null) => {
     return await TypeComponent.findByPk(typeComponentId, {
       attributes: ["name"],

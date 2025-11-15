@@ -3,12 +3,26 @@ import db from "../models/index.cjs";
 const { VehicleModel, WarrantyComponent, TypeComponent } = db;
 
 class OemVehicleModelRepository {
-  createVehicleModel = async (vehicleModelData, transaction = null) => {
+  create = async (vehicleModelData, transaction = null) => {
     const record = await VehicleModel.create(vehicleModelData, {
-      transaction: transaction,
+      transaction,
     });
-
     return record.toJSON();
+  };
+
+  findByPk = async (vehicleModelId, transaction = null) => {
+    const record = await VehicleModel.findByPk(vehicleModelId, {
+      transaction,
+    });
+    return record ? record.toJSON() : null;
+  };
+
+  findByVehicleModelName = async (vehicleModelName, transaction = null) => {
+    const record = await VehicleModel.findOne({
+      where: { vehicleModelName },
+      transaction,
+    });
+    return record ? record.toJSON() : null;
   };
 
   findAllWithWarrantyComponents = async (transaction = null) => {

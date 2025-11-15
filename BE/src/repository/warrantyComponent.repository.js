@@ -3,6 +3,37 @@ import db from "../models/index.cjs";
 const { WarrantyComponent, TypeComponent } = db;
 
 class WarrantyComponentRepository {
+  findByPk = async (id, transaction = null) => {
+    const record = await WarrantyComponent.findByPk(id, { transaction });
+    return record ? record.toJSON() : null;
+  };
+
+  update = async (id, data, transaction = null) => {
+    const [affectedRows] = await WarrantyComponent.update(data, {
+      where: { id },
+      transaction,
+    });
+
+    if (affectedRows === 0) {
+      return null;
+    }
+
+    return this.findByPk(id, transaction);
+  };
+
+  bulkCreate = async (records, transaction = null) => {
+     if (!records || records.length === 0) {
+      return [];
+    }
+
+    const created = await WarrantyComponent.bulkCreate(records, {
+      transaction,
+      returning: true,
+    });
+
+    return created.map((record) => record.toJSON());
+  }
+
   createWarrantyComponent = async ({
     vehicleModelId,
     typeComponentId,

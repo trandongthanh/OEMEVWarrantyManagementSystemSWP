@@ -11,13 +11,35 @@ import { Transaction } from "sequelize";
 class VehicleService {
   #vehicleRepository;
   #customerService;
+  #oemVehicleModelRepository;
   #componentRepository;
 
-  constructor({ vehicleRepository, customerService, componentRepository }) {
+  constructor({ vehicleRepository, customerService, oemVehicleModelRepository, componentRepository }) {
     this.#vehicleRepository = vehicleRepository;
     this.#customerService = customerService;
+    this.#oemVehicleModelRepository = oemVehicleModelRepository;
     this.#componentRepository = componentRepository;
   }
+
+  createVehicle = async (vehicleData) => {
+    const { vin, vehicleModelId } = vehicleData;
+
+    const existingVehicle = await this.#vehicleRepository.findByVin(vin);
+    if (existingVehicle) {
+      throw new ConflictError(`Vehicle with VIN '${vin}' already exists.`);
+    }
+
+    const vehicleModel = await this.#oemVehicleModelRepository.findByPk(
+      vehicleModelId
+    );
+    if (!vehicleModel) {
+      throw new NotFoundError(
+        `Vehicle model with ID '${vehicleModelId}' not found.`
+      );
+    }
+
+    return this.#vehicleRepository.create(vehicleData);
+  };
 
   getVehicleProfile = async ({ vin, companyId }, option = null) => {
     if (!vin) {

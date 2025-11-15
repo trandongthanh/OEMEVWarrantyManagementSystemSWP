@@ -2,6 +2,16 @@ import db from "../models/index.cjs";
 const { Vehicle, Customer, VehicleModel, VehicleCompany, TypeComponent } = db;
 
 class VehicleRepository {
+  create = async (vehicleData, transaction = null) => {
+    const newVehicle = await Vehicle.create(vehicleData, { transaction });
+    return newVehicle.toJSON();
+  };
+
+  findByVin = async (vin, transaction = null) => {
+    const vehicle = await Vehicle.findByPk(vin, { transaction });
+    return vehicle ? vehicle.toJSON() : null;
+  };
+
   findByVinAndCompany = async (
     { vin, companyId },
     option = null,
