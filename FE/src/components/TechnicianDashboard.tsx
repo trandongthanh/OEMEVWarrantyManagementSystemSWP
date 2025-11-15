@@ -3734,8 +3734,8 @@ const TechnicianDashboard = ({
 
             {/* Technician Information removed per request */}
 
-            {/* Rejection Reason (if any) */}
-            {selectedCaseLine?.rejectionReason && (
+            {/* Rejection Reason (only show when warranty status is INELIGIBLE) */}
+            {selectedCaseLine?.warrantyStatus === 'INELIGIBLE' && selectedCaseLine?.rejectionReason && (
               <div className="bg-gradient-to-br from-red-50 to-pink-50 p-6 rounded-xl border-2 border-red-300 shadow-sm">
                 <div className="flex items-center gap-3 mb-5">
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 to-pink-500 shadow-md">
