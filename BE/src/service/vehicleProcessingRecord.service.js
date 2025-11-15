@@ -652,12 +652,6 @@ class VehicleProcessingRecordService {
         }
       }
     }
-
-    if (!hasEligibleCaseLine) {
-      throw new ConflictError(
-        "Cannot request customer approval because all case lines were rejected or marked ineligible."
-      );
-    }
   };
 
   #updateStatusesForApproval = async ({
