@@ -561,11 +561,6 @@ const ServiceCenterDashboard = () => {
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [showImageModal, setShowImageModal] = useState(false);
 
-  // Cancel stock request states
-  const [showCancelRequestModal, setShowCancelRequestModal] = useState(false);
-  const [cancelRequestId, setCancelRequestId] = useState<string | null>(null);
-  const [cancellationReason, setCancellationReason] = useState('');
-
   // Workload config states
   const [maxWorkload, setMaxWorkload] = useState<number>(5); // default 5
   const [isLoadingWorkloadConfig, setIsLoadingWorkloadConfig] = useState(false);
@@ -1871,77 +1866,6 @@ const ServiceCenterDashboard = () => {
     } catch (error: any) {
       console.error('Error requesting from manufacturer:', error);
       const errorMessage = error.response?.data?.message || 'Failed to send request to manufacturer. Please try again.';
-      toast({
-        title: 'Error',
-        description: errorMessage,
-        variant: 'destructive'
-      });
-    }
-  };
-
-  // Cancel stock transfer request
-  const handleCancelStockRequest = async () => {
-    if (!cancelRequestId || !cancellationReason.trim()) {
-      toast({
-        title: 'Validation Error',
-        description: 'Please provide a cancellation reason',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    try {
-      const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
-      if (!token) {
-        toast({
-          title: 'Authentication Required',
-          description: 'Please login again.',
-          variant: 'destructive'
-        });
-        return;
-      }
-
-      const response = await axios.patch(
-        `${API_BASE_URL}/stock-transfer-requests/${cancelRequestId}/cancel`,
-        { cancellationReason: cancellationReason.trim() },
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        }
-      );
-
-      if (response.status === 200 || response.status === 201) {
-        toast({
-          title: 'Success',
-          description: 'Stock transfer request cancelled successfully!'
-        });
-        
-        // Close modal and reset
-        setShowCancelRequestModal(false);
-        setCancelRequestId(null);
-        setCancellationReason('');
-        
-        // Close detail modal if open
-        setShowStockRequestDetailModal(false);
-        setSelectedStockRequest(null);
-        
-        // Refresh data
-        const updatedData = await fetchAllStatuses();
-        await fetchStockTransferRequests();
-        
-        // Update detail modal if open
-        if (selectedClaimForDetail && updatedData) {
-          const updatedClaims = Object.values(updatedData).flat();
-          const updatedClaim = updatedClaims.find(c => c.vin === selectedClaimForDetail.vin);
-          if (updatedClaim) {
-            setSelectedClaimForDetail(updatedClaim);
-          }
-        }
-      }
-    } catch (error: any) {
-      console.error('Error cancelling stock request:', error);
-      const errorMessage = error.response?.data?.message || 'Failed to cancel request. Please try again.';
       toast({
         title: 'Error',
         description: errorMessage,
@@ -4260,7 +4184,8 @@ const ServiceCenterDashboard = () => {
             </DialogHeader>
 
             {selectedStockRequest && (
-              <div className="space-y-6 mt-4">
+              <div>
+                <div className="space-y-6 mt-4">
                 {/* Request Information */}
                 <Card className="shadow-md border">
                   <CardHeader className="bg-gradient-to-r from-blue-50 to-transparent dark:from-blue-900/20 pb-3">
@@ -4506,8 +4431,8 @@ const ServiceCenterDashboard = () => {
                               )}
                             </div>
                           </div>
-                          );
-                        })}
+                        );
+                      })}
                       </div>
                     </CardContent>
                   </Card>
@@ -4621,96 +4546,26 @@ const ServiceCenterDashboard = () => {
                             )}
                           </div>
                         );
-                        })}
+                      })}
                       </div>
                     </CardContent>
                   </Card>
                 )}
               </div>
-            )}
 
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              {/* Show Cancel button if request is not in terminal state */}
-              {selectedStockRequest && 
-               selectedStockRequest.status !== 'CANCELLED' && 
-               selectedStockRequest.status !== 'REJECTED' && 
-               selectedStockRequest.status !== 'RECEIVED' && 
-               hasPermission(user, 'attach_parts') && (
+              <div className="flex justify-end gap-2 pt-4 border-t">
                 <Button 
-                  variant="destructive"
+                  variant="outline" 
                   onClick={() => {
-                    setCancelRequestId(selectedStockRequest.id);
-                    setShowCancelRequestModal(true);
+                    setShowStockRequestDetailModal(false);
+                    setSelectedStockRequest(null);
                   }}
                 >
-                  <XCircle className="h-4 w-4 mr-2" />
-                  Cancel Request
+                  Close
                 </Button>
-              )}
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setShowStockRequestDetailModal(false);
-                  setSelectedStockRequest(null);
-                }}
-              >
-                Close
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Cancel Request Modal */}
-        <Dialog open={showCancelRequestModal} onOpenChange={setShowCancelRequestModal}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-red-600">
-                <XCircle className="h-5 w-5" />
-                Cancel Stock Transfer Request
-              </DialogTitle>
-              <DialogDescription>
-                Please provide a reason for cancelling this request. This action cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4 mt-4">
-              <div>
-                <label className="text-sm font-semibold mb-2 block">
-                  Cancellation Reason <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  value={cancellationReason}
-                  onChange={(e) => setCancellationReason(e.target.value)}
-                  placeholder="Enter the reason for cancelling this request..."
-                  className="w-full min-h-[100px] p-3 border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-red-500"
-                  maxLength={500}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {cancellationReason.length}/500 characters
-                </p>
               </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setShowCancelRequestModal(false);
-                  setCancelRequestId(null);
-                  setCancellationReason('');
-                }}
-              >
-                Keep Request
-              </Button>
-              <Button 
-                variant="destructive"
-                onClick={handleCancelStockRequest}
-                disabled={!cancellationReason.trim()}
-              >
-                <XCircle className="h-4 w-4 mr-2" />
-                Confirm Cancellation
-              </Button>
-            </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
 
