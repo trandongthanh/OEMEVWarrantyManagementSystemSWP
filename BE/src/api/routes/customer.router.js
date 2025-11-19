@@ -5,6 +5,7 @@ import {
   authentication,
   authorizationByRole,
   validate,
+  ensureOtpVerified,
 } from "../middleware/index.js";
 
 const router = express.Router();
@@ -197,6 +198,7 @@ router.patch(
   "/:id",
   authentication,
   authorizationByRole(["service_center_staff", "service_center_manager"]),
+  ensureOtpVerified,
   validate(updateCustomerSchema, "body"),
   async (req, res, next) => {
     const customerController = req.container.resolve("customerController");
