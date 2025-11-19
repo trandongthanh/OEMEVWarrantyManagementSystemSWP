@@ -86,6 +86,27 @@ class InventoryController {
 
     const { adjustmentType, reason, note, warehouseId } = req.body;
 
+    if (!warehouseId) {
+      return res.status(400).json({
+        status: "error",
+        message: "Warehouse ID is required",
+      });
+    }
+
+    if (adjustmentType !== "IN") {
+      return res.status(400).json({
+        status: "error",
+        message: "Excel upload only supports adjustment type 'IN'",
+      });
+    }
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({
+        status: "error",
+        message: "Reason is required",
+      });
+    }
+
     const fileBuffer = req.file.buffer;
 
     const result = await this.#inventoryService.uploadInventoryFromExcel({

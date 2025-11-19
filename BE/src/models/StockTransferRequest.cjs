@@ -108,6 +108,11 @@ module.exports = (sequelize, DataTypes) => {
       as: "items",
     });
 
+    StockTransferRequest.hasMany(models.Component, {
+      foreignKey: "request_id",
+      as: "components",
+    });
+
     StockTransferRequest.hasMany(models.StockReservation, {
       foreignKey: "request_id",
       as: "stockReservations",
