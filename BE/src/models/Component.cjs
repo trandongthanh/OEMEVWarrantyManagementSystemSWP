@@ -48,10 +48,10 @@ module.exports = (sequelize, DataTypes) => {
         field: "current_holder_id",
       },
 
-      requestId: {
+      stockTransferRequestItemId: {
         type: DataTypes.UUID,
         allowNull: true,
-        field: "request_id",
+        field: "stock_transfer_request_item_id",
       },
 
       vehicleVin: {
@@ -98,9 +98,9 @@ module.exports = (sequelize, DataTypes) => {
       as: "reservations",
     });
 
-    Component.belongsTo(models.StockTransferRequest, {
-      foreignKey: "request_id",
-      as: "stockTransferRequest",
+    Component.belongsTo(models.StockTransferRequestItem, {
+      foreignKey: "stock_transfer_request_item_id",
+      as: "stockTransferRequestItem",
     });
   };
 

@@ -90,6 +90,12 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       field: "cancelled_at",
     },
+
+    estimatedDeliveryDate: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      field: "estimated_delivery_date",
+    },
   });
 
   StockTransferRequest.associate = function (models) {
@@ -106,11 +112,6 @@ module.exports = (sequelize, DataTypes) => {
     StockTransferRequest.hasMany(models.StockTransferRequestItem, {
       foreignKey: "request_id",
       as: "items",
-    });
-
-    StockTransferRequest.hasMany(models.Component, {
-      foreignKey: "request_id",
-      as: "components",
     });
 
     StockTransferRequest.hasMany(models.StockReservation, {
