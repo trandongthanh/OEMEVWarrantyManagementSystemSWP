@@ -753,7 +753,7 @@ const TechnicianDashboard = ({
         return;
       }
 
-      const url = `http://localhost:3000/api/v1/processing-records?status=PROCESSING`;
+      const url = `https://dongthanhswp.space/api/v1/processing-records?status=PROCESSING`;
 
       const response = await fetch(url, {
         method: 'GET',
@@ -855,7 +855,7 @@ const TechnicianDashboard = ({
         return null;
       }
 
-      const response = await fetch(`http://localhost:3000/api/v1/case-lines/${caseLineId}`, {
+      const response = await fetch(`https://dongthanhswp.space/api/v1/case-lines/${caseLineId}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -1227,7 +1227,7 @@ const TechnicianDashboard = ({
     try {
       setIsCompleting(true);
       const nowIso = new Date().toISOString();
-      // apiService is an axios wrapper with baseURL = http://localhost:3000/api/v1
+      // apiService is an axios wrapper with baseURL = https://dongthanhswp.space/api/v1
       const resp = await apiService.patch(`/processing-records/${recordId}/complete-diagnosis`, {
         checkOutDate: nowIso
       });
