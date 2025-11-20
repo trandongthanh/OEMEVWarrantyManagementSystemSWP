@@ -13,20 +13,17 @@ const ACTIVE_CASELINE_STATUSES = [
 
 class OemVehicleModelService {
   #oemVehicleModelRepository;
-  #vehicleModelRepository;
   #warrantyComponentRepository;
   #typeComponentRepository;
   #caselineRepository;
 
   constructor({
     oemVehicleModelRepository,
-    vehicleModelRepository,
     warrantyComponentRepository,
     typeComponentRepository,
     caselineRepository,
   }) {
     this.#oemVehicleModelRepository = oemVehicleModelRepository;
-    this.#vehicleModelRepository = vehicleModelRepository;
     this.#warrantyComponentRepository = warrantyComponentRepository;
     this.#typeComponentRepository = typeComponentRepository;
     this.#caselineRepository = caselineRepository;
@@ -190,7 +187,7 @@ class OemVehicleModelService {
   };
 
   async #ensureVehicleModelExists(vehicleModelId, transaction) {
-    const vehicleModel = await this.#vehicleModelRepository.findByPk(
+    const vehicleModel = await this.#oemVehicleModelRepository.findByPk(
       vehicleModelId,
       transaction
     );
