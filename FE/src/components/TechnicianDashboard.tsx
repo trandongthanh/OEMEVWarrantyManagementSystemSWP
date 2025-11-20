@@ -400,6 +400,7 @@ const TechnicianDashboard = ({
   const [recordsByStatus, setRecordsByStatus] = useState<ProcessingRecordsByStatus>({
     CHECKED_IN: [],
     IN_DIAGNOSIS: [],
+    WAITING_CUSTOMER_APPROVAL: [],
     WAITING_FOR_PARTS: [],
     IN_REPAIR: [],
     COMPLETED: [],
@@ -533,7 +534,7 @@ const TechnicianDashboard = ({
   const [selectedGuaranteeCase, setSelectedGuaranteeCase] = useState<GuaranteeCase | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>('processing-records');
-  const [activeProcessingStatus, setActiveProcessingStatus] = useState<'IN_DIAGNOSIS' | 'PROCESSING'>('IN_DIAGNOSIS');
+  const [activeProcessingStatus, setActiveProcessingStatus] = useState<'IN_DIAGNOSIS' | 'WAITING_CUSTOMER_APPROVAL' | 'PROCESSING'>('IN_DIAGNOSIS');
   const [createdCaseLines, setCreatedCaseLines] = useState<CaseLineResponse[]>([]);
   // Work schedules state
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
@@ -1044,6 +1045,61 @@ const TechnicianDashboard = ({
     }
   }, []);
 
+  // Fetch processing records with WAITING_CUSTOMER_APPROVAL status
+  const fetchWaitingCustomerApprovalRecords = useCallback(async () => {
+    try {
+      setIsLoadingRecords(true);
+      const { records: waitingRecords, total } = await processingRecordsService.getProcessingRecordsByStatus({ status: 'WAITING_CUSTOMER_APPROVAL' });
+
+      // Normalize record id field
+      const normalized: ProcessingRecord[] = (waitingRecords || []).map((r: unknown) => {
+        const rr = r as Record<string, unknown>;
+        const getStr = (key: string) => {
+          const v = rr[key];
+          if (typeof v === 'string') return v;
+          if (v == null) return '';
+          try { return String(v); } catch { return ''; }
+        };
+
+        const recordIdValue = getStr('id') || getStr('vehicleProcessingRecordId') || getStr('processing_record_id') || getStr('recordId') || '';
+        const merged = Object.assign({}, rr, { recordId: recordIdValue });
+        return merged as unknown as ProcessingRecord;
+      });
+
+      setRecordsByStatus(prev => ({
+        ...prev,
+        WAITING_CUSTOMER_APPROVAL: normalized
+      }));
+
+      // reset consecutive error counter on success
+      try {
+        setConsecutiveRecordErrors(0);
+        setAutoRefreshEnabled(true);
+      } catch (e) {
+        // ignore
+      }
+    } catch (error) {
+      console.warn('Warning: failed to fetch waiting customer approval records:', error instanceof Error ? error.message : error);
+      const errMsg = error instanceof Error ? error.message : "Failed to fetch records";
+      setRecordsError(errMsg);
+      setConsecutiveRecordErrors(prev => {
+        const next = prev + 1;
+        const threshold = 3;
+        if (next >= threshold) {
+          setAutoRefreshEnabled(false);
+          toast({
+            title: "Auto-refresh paused",
+            description: `Auto-refresh paused after ${next} consecutive failures. Click Retry to fetch now.`,
+            variant: "destructive"
+          });
+        }
+        return next;
+      });
+    } finally {
+      setIsLoadingRecords(false);
+    }
+  }, []);
+
   // Fetch processing records with IN_DIAGNOSIS status
   const fetchProcessingRecords = useCallback(async () => {
     try {
@@ -1194,6 +1250,7 @@ const TechnicianDashboard = ({
     switch (status) {
       case 'CHECKED_IN': return 'secondary';
       case 'IN_DIAGNOSIS': return 'default';
+      case 'WAITING_CUSTOMER_APPROVAL': return 'outline';
       case 'WAITING_FOR_PARTS': return 'outline';
       case 'IN_REPAIR': return 'default';
       case 'COMPLETED': return 'default';
@@ -1207,6 +1264,7 @@ const TechnicianDashboard = ({
     const labels: Record<string, string> = {
       'CHECKED_IN': 'Checked In',
       'IN_DIAGNOSIS': 'In Diagnosis',
+      'WAITING_CUSTOMER_APPROVAL': 'Waiting Customer Approval',
       'WAITING_FOR_PARTS': 'Waiting For Parts',
       'IN_REPAIR': 'In Repair',
       'COMPLETED': 'Completed',
@@ -1900,6 +1958,13 @@ const TechnicianDashboard = ({
     }
   }, [activeTab, activeProcessingStatus, fetchProcessingCaseLines]);
 
+  // Fetch waiting customer approval records when switching to WAITING_CUSTOMER_APPROVAL tab
+  useEffect(() => {
+    if (activeTab === 'processing-records' && activeProcessingStatus === 'WAITING_CUSTOMER_APPROVAL') {
+      fetchWaitingCustomerApprovalRecords();
+    }
+  }, [activeTab, activeProcessingStatus, fetchWaitingCustomerApprovalRecords]);
+
   // Fetch case lines when guarantee case is selected
   useEffect(() => {
     const loadCaseLines = async () => {
@@ -2221,12 +2286,14 @@ const TechnicianDashboard = ({
               <Card>
                 <CardHeader>
                   <CardTitle>
-                    {activeProcessingStatus === 'IN_DIAGNOSIS' ? 'In Diagnosis' : 'Processing'} Records
+                    {activeProcessingStatus === 'IN_DIAGNOSIS' ? 'In Diagnosis' : (activeProcessingStatus === 'WAITING_CUSTOMER_APPROVAL' ? 'Waiting Customer Approval' : 'Processing')} Records
                   </CardTitle>
                   <CardDescription>
                     {activeProcessingStatus === 'IN_DIAGNOSIS' 
                       ? 'View and manage vehicle processing records in diagnosis'
-                      : 'View and manage vehicle processing records in repair'}
+                      : (activeProcessingStatus === 'WAITING_CUSTOMER_APPROVAL'
+                        ? 'View records waiting for customer approval'
+                        : 'View and manage vehicle processing records in repair')}
                   </CardDescription>
                   
                   {/* Status Filter Tabs */}
@@ -2237,6 +2304,13 @@ const TechnicianDashboard = ({
                       className="flex items-center gap-2"
                     >
                       In Diagnosis ({(recordsByStatus.IN_DIAGNOSIS || []).length})
+                    </Button>
+                    <Button
+                      variant={activeProcessingStatus === 'WAITING_CUSTOMER_APPROVAL' ? 'default' : 'outline'}
+                      onClick={() => setActiveProcessingStatus('WAITING_CUSTOMER_APPROVAL')}
+                      className="flex items-center gap-2"
+                    >
+                      Waiting Customer Approval ({(recordsByStatus.WAITING_CUSTOMER_APPROVAL || []).length})
                     </Button>
                     <Button
                       variant={activeProcessingStatus === 'PROCESSING' ? 'default' : 'outline'}
@@ -2357,13 +2431,15 @@ const TechnicianDashboard = ({
                         <TableHead>Check-in Date</TableHead>
                         <TableHead>Main Technician</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Cases</TableHead>
+                        <TableHead>Caselines</TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {(() => {
-                        const records = recordsByStatus.IN_DIAGNOSIS || [];
+                        const records = activeProcessingStatus === 'WAITING_CUSTOMER_APPROVAL'
+                          ? (recordsByStatus.WAITING_CUSTOMER_APPROVAL || [])
+                          : (recordsByStatus.IN_DIAGNOSIS || []);
                         
                         return records.length === 0 ? (
                           <TableRow>
@@ -2426,47 +2502,49 @@ const TechnicianDashboard = ({
                                 >
                                   <Eye className="h-3 w-3" />
                                 </Button>
-                                <Button 
-                                  variant="default" 
-                                  size="sm"
-                                  className="bg-green-600 hover:bg-green-700 flex items-center justify-center"
-                                  onClick={async () => {
-                                    // Open Create Issue Diagnosis modal for selected record
+                                {activeProcessingStatus !== 'WAITING_CUSTOMER_APPROVAL' && (
+                                  <Button 
+                                    variant="default" 
+                                    size="sm"
+                                    className="bg-green-600 hover:bg-green-700 flex items-center justify-center"
+                                    onClick={async () => {
+                                      // Open Create Issue Diagnosis modal for selected record
 
-                                    try {
-                                      // Try to pick a usable id from common fields so component search can run when possible.
-                                      const recMap = record as unknown as Record<string, unknown>;
-                                      const candidateId = record.recordId
-                                        || (typeof recMap['vehicleProcessingRecordId'] === 'string' ? recMap['vehicleProcessingRecordId'] as string : (recMap['vehicleProcessingRecordId'] ?? ''))
-                                        || (typeof recMap['processing_record_id'] === 'string' ? recMap['processing_record_id'] as string : (recMap['processing_record_id'] ?? ''))
-                                        || (typeof recMap['id'] === 'string' ? recMap['id'] as string : (recMap['id'] ?? ''))
-                                        || '';
+                                      try {
+                                        // Try to pick a usable id from common fields so component search can run when possible.
+                                        const recMap = record as unknown as Record<string, unknown>;
+                                        const candidateId = record.recordId
+                                          || (typeof recMap['vehicleProcessingRecordId'] === 'string' ? recMap['vehicleProcessingRecordId'] as string : (recMap['vehicleProcessingRecordId'] ?? ''))
+                                          || (typeof recMap['processing_record_id'] === 'string' ? recMap['processing_record_id'] as string : (recMap['processing_record_id'] ?? ''))
+                                          || (typeof recMap['id'] === 'string' ? recMap['id'] as string : (recMap['id'] ?? ''))
+                                          || '';
 
-                                      setSelectedRecord(record);
-                                      setSelectedGuaranteeCaseForCaseLine(null); // Reset guarantee case selection
-                                      setCreateIssueDiagnosisModalOpen(true);
+                                        setSelectedRecord(record);
+                                        setSelectedGuaranteeCaseForCaseLine(null); // Reset guarantee case selection
+                                        setCreateIssueDiagnosisModalOpen(true);
 
-                                      if (candidateId) {
-                                        // Load all compatible components (no search query needed)
-                                        fetchCompatibleComponents(candidateId.toString(), '').catch(error => {
-                                          console.error('❌ Failed to fetch components:', error);
+                                        if (candidateId) {
+                                          // Load all compatible components (no search query needed)
+                                          fetchCompatibleComponents(candidateId.toString(), '').catch(error => {
+                                            console.error('❌ Failed to fetch components:', error);
+                                          });
+                                        } else {
+                                          console.warn('⚠️ No candidate recordId found on record, component list will be empty');
+                                        }
+                                      } catch (error) {
+                                        console.error('❌ Error in create diagnosis handler:', error);
+                                        toast({
+                                          title: "Error",
+                                          description: "Unexpected error while opening Create Issue Diagnosis modal.",
+                                          variant: "destructive"
                                         });
-                                      } else {
-                                        console.warn('⚠️ No candidate recordId found on record, component list will be empty');
                                       }
-                                    } catch (error) {
-                                      console.error('❌ Error in create diagnosis handler:', error);
-                                      toast({
-                                        title: "Error",
-                                        description: "Unexpected error while opening Create Issue Diagnosis modal.",
-                                        variant: "destructive"
-                                      });
-                                    }
-                                  }}
-                                  title="Create Issue Diagnosis"
-                                >
-                                  <Plus className="h-3 w-3" />
-                                </Button>
+                                    }}
+                                    title="Create Issue Diagnosis"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                  </Button>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -4224,7 +4302,7 @@ const TechnicianDashboard = ({
           <div className="flex justify-end gap-3 pt-6 border-t">
             <Button variant="outline" onClick={() => setViewCaseModalOpen(false)}>Close</Button>
 
-            {selectedRecord && (selectedRecord.status !== 'COMPLETED') && (() => {
+            {selectedRecord && selectedRecord.status !== 'COMPLETED' && selectedRecord.status !== 'WAITING_CUSTOMER_APPROVAL' && (() => {
               // Check if ALL guarantee cases have at least one case line
               const guaranteeCases = selectedRecord.guaranteeCases || [];
               const allGuaranteeCasesHaveCaseLines = guaranteeCases.length > 0 && guaranteeCases.every(gc => 
