@@ -9,22 +9,16 @@ module.exports = (sequelize, DataTypes) => {
         field: "reservation_id",
       },
 
-      requestId: {
-        type: DataTypes.UUID,
-        allowNull: false,
-        field: "request_id",
-      },
-
       stockId: {
         type: DataTypes.UUID,
         allowNull: false,
         field: "stock_id",
       },
 
-      typeComponentId: {
+      requestItemId: {
         type: DataTypes.UUID,
         allowNull: false,
-        field: "type_component_id",
+        field: "request_item_id",
       },
 
       quantityReserved: {
@@ -45,19 +39,14 @@ module.exports = (sequelize, DataTypes) => {
   );
 
   StockReservation.associate = function (models) {
-    StockReservation.belongsTo(models.StockTransferRequest, {
-      foreignKey: "request_id",
-      as: "request",
-    });
-
     StockReservation.belongsTo(models.Stock, {
       foreignKey: "stock_id",
       as: "stock",
     });
 
-    StockReservation.belongsTo(models.TypeComponent, {
-      foreignKey: "type_component_id",
-      as: "typeComponent",
+    StockReservation.belongsTo(models.StockTransferRequestItem, {
+      foreignKey: "request_item_id",
+      as: "requestItem",
     });
   };
 
