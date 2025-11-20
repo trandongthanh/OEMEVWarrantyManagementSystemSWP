@@ -753,7 +753,7 @@ const TechnicianDashboard = ({
         return;
       }
 
-      const url = `http://localhost:3000/api/v1/processing-records?status=PROCESSING`;
+      const url = `https://dongthanhswp.space/api/v1/processing-records?status=PROCESSING`;
 
       const response = await fetch(url, {
         method: 'GET',
@@ -855,7 +855,7 @@ const TechnicianDashboard = ({
         return null;
       }
 
-      const response = await fetch(`http://localhost:3000/api/v1/case-lines/${caseLineId}`, {
+      const response = await fetch(`https://dongthanhswp.space/api/v1/case-lines/${caseLineId}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -936,13 +936,21 @@ const TechnicianDashboard = ({
 
       console.log('Calling API PATCH /guarantee-cases/' + guaranteeCaseId + '/case-lines/' + caseLineId);
       
-      // Build sanitized payload - only include rejectionReason if it has a value
+      // Build sanitized payload - only include fields with valid values
       const payload: Record<string, any> = {
         correctionText: data.correctionText,
-        typeComponentId: data.typeComponentId,
-        quantity: data.quantity,
         warrantyStatus: data.warrantyStatus,
       };
+      
+      // Only include typeComponentId if it has a value (not empty string)
+      if (data.typeComponentId && data.typeComponentId.trim()) {
+        payload.typeComponentId = data.typeComponentId;
+        payload.quantity = data.quantity;
+      } else {
+        // If no component, set to null and quantity to 0
+        payload.typeComponentId = null;
+        payload.quantity = 0;
+      }
       
       // Only include rejectionReason if it's not empty
       if (data.rejectionReason && data.rejectionReason.trim()) {
@@ -965,8 +973,43 @@ const TechnicianDashboard = ({
           description: 'Case line updated successfully',
         });
         
-        // Refresh data
-        await fetchCaseLineDetails(caseLineId);
+        // Refresh data and update selectedCaseLine to reflect changes in UI
+        const updatedCaseLine = await fetchCaseLineDetails(caseLineId);
+        if (updatedCaseLine) {
+          // Map the detailed case line to CaseLine format for selectedCaseLine
+          const mappedCaseLine: CaseLine = {
+            id: updatedCaseLine.id,
+            caseId: updatedCaseLine.guaranteeCaseId || '',
+            guaranteeCaseId: updatedCaseLine.guaranteeCaseId,
+            damageLevel: 'medium',
+            repairPossibility: 'repairable',
+            warrantyDecision: updatedCaseLine.warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
+            technicianNotes: updatedCaseLine.correctionText,
+            photos: (updatedCaseLine as any).evidenceImageUrls || [],
+            evidenceImageUrls: (updatedCaseLine as any).evidenceImageUrls || [],
+            createdDate: formatSafeDate(updatedCaseLine.updatedAt),
+            status: updatedCaseLine.status ?? 'submitted',
+            diagnosisText: '',
+            correctionText: updatedCaseLine.correctionText,
+            componentId: updatedCaseLine.typeComponentId,
+            componentName: updatedCaseLine.componentName,
+            componentSku: updatedCaseLine.componentSku,
+            componentPrice: updatedCaseLine.componentPrice,
+            quantity: updatedCaseLine.quantity,
+            warrantyStatus: updatedCaseLine.warrantyStatus,
+            diagnosticTechId: undefined,
+            diagnosticTechnicianName: updatedCaseLine.diagnosticTechnicianName,
+            repairTechnicianName: updatedCaseLine.repairTechnicianName,
+            rejectionReason: updatedCaseLine.rejectionReason,
+            updatedAt: updatedCaseLine.updatedAt,
+            guaranteeCase: updatedCaseLine.guaranteeCase,
+            typeComponent: updatedCaseLine.typeComponent,
+            diagnosticTechnician: updatedCaseLine.diagnosticTechnician,
+            repairTechnician: updatedCaseLine.repairTechnician,
+            reservations: updatedCaseLine.reservations || []
+          };
+          setSelectedCaseLine(mappedCaseLine);
+        }
         setUpdateCaseLineModalOpen(false);
         
         return response.data;
@@ -1184,7 +1227,7 @@ const TechnicianDashboard = ({
     try {
       setIsCompleting(true);
       const nowIso = new Date().toISOString();
-      // apiService is an axios wrapper with baseURL = http://localhost:3000/api/v1
+      // apiService is an axios wrapper with baseURL = https://dongthanhswp.space/api/v1
       const resp = await apiService.patch(`/processing-records/${recordId}/complete-diagnosis`, {
         checkOutDate: nowIso
       });
@@ -3691,8 +3734,8 @@ const TechnicianDashboard = ({
 
             {/* Technician Information removed per request */}
 
-            {/* Rejection Reason (if any) */}
-            {selectedCaseLine?.rejectionReason && (
+            {/* Rejection Reason (only show when warranty status is INELIGIBLE) */}
+            {selectedCaseLine?.warrantyStatus === 'INELIGIBLE' && selectedCaseLine?.rejectionReason && (
               <div className="bg-gradient-to-br from-red-50 to-pink-50 p-6 rounded-xl border-2 border-red-300 shadow-sm">
                 <div className="flex items-center gap-3 mb-5">
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-red-500 to-pink-500 shadow-md">

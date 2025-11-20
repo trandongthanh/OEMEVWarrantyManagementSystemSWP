@@ -140,7 +140,11 @@ class CustomerService {
         throw new BadRequestError("Failed to update customer info.");
       }
 
-      return updatedCustomer;
+      return {
+        updatedCustomer,
+        changedFields,
+        previousCustomer: existingCustomer,
+      };
     });
 
     return rawResult;

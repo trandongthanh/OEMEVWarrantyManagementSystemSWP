@@ -91,7 +91,7 @@ class CustomerRepository {
         id: id,
       },
 
-      attributes: ["id", "phone", "email"],
+      attributes: ["id", "phone", "email", "fullName", "address"],
 
       transaction: transaction,
       lock: lock,

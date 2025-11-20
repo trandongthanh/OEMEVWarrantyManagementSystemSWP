@@ -824,11 +824,13 @@ class StockTransferRequestService {
       if (!acc[reservation.typeComponentId]) {
         acc[reservation.typeComponentId] = [];
       }
+
       acc[reservation.typeComponentId].push(reservation);
       return acc;
     }, {});
 
     const stockIds = reservations.map((r) => r.stockId);
+
     const stocks = await this.#warehouseRepository.findStocksByIds(
       { stockIds },
       transaction,
@@ -838,6 +840,7 @@ class StockTransferRequestService {
     const stocksMap = new Map(stocks.map((s) => [s.stockId, s]));
 
     const allComponentIds = [];
+
     for (const item of requestItems) {
       const reservationsQueue = reservationsByType[item.typeComponentId];
 
@@ -848,6 +851,7 @@ class StockTransferRequestService {
       }
 
       let remaining = item.quantityRequested;
+
       const reservationsForItem = [];
 
       while (remaining > 0 && reservationsQueue.length > 0) {

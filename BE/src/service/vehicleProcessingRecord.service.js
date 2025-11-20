@@ -562,7 +562,19 @@ class VehicleProcessingRecordService {
 
       const guaranteeCases = vehicleProcessingRecord?.guaranteeCases || [];
 
-      this.#validateDiagnosisState(guaranteeCases);
+      const hasPendingDraftCaseLine =
+        this.#validateDiagnosisState(guaranteeCases);
+
+      if (!hasPendingDraftCaseLine) {
+        return await this.#autoCancelRecordDueToRejectedCaseLines({
+          vehicleProcessingRecordId,
+          guaranteeCases,
+          serviceCenterId,
+          roleName,
+          userId,
+          transaction,
+        });
+      }
 
       const { updatedGuaranteeCases, updatedCaseLines } =
         await this.#updateStatusesForApproval({
@@ -613,10 +625,10 @@ class VehicleProcessingRecordService {
 
   #validateDiagnosisState = (guaranteeCases) => {
     if (!guaranteeCases || guaranteeCases.length === 0) {
-      return;
+      return false;
     }
 
-    let hasEligibleCaseLine = false;
+    let hasPendingDraftCaseLine = false;
 
     for (const guaranteeCase of guaranteeCases) {
       if (guaranteeCase.status !== "IN_DIAGNOSIS") {
@@ -639,6 +651,7 @@ class VehicleProcessingRecordService {
           "REJECTED_BY_OUT_OF_WARRANTY",
           "REJECTED_BY_TECH",
         ];
+
         if (!validStatuses.includes(caseLine.status)) {
           throw new BadRequestError(
             `Case line ${caseLine.id} has invalid status ${
@@ -648,16 +661,12 @@ class VehicleProcessingRecordService {
         }
 
         if (caseLine.status === "DRAFT") {
-          hasEligibleCaseLine = true;
+          hasPendingDraftCaseLine = true;
         }
       }
     }
 
-    if (!hasEligibleCaseLine) {
-      throw new ConflictError(
-        "Cannot request customer approval because all case lines were rejected or marked ineligible."
-      );
-    }
+    return hasPendingDraftCaseLine;
   };
 
   #updateStatusesForApproval = async ({
@@ -707,6 +716,68 @@ class VehicleProcessingRecordService {
         : [];
 
     return { updatedGuaranteeCases, updatedCaseLines };
+  };
+
+  #autoCancelRecordDueToRejectedCaseLines = async ({
+    vehicleProcessingRecordId,
+    guaranteeCases,
+    serviceCenterId,
+    roleName,
+    userId,
+    transaction,
+  }) => {
+    const guaranteeCaseIds = guaranteeCases.map((gc) => gc.guaranteeCaseId);
+
+    const updatedGuaranteeCases = [];
+    for (const guaranteeCase of guaranteeCases) {
+      const updatedCase = await this.#guaranteeCaseRepository.updateStatus(
+        {
+          guaranteeCaseId: guaranteeCase.guaranteeCaseId,
+          status: "DIAGNOSED",
+        },
+        transaction
+      );
+      updatedGuaranteeCases.push(updatedCase);
+    }
+
+    if (guaranteeCaseIds.length > 0) {
+      await this.#taskAssignmentRepository.completeDiagnosisTasksByGuaranteeCaseIds(
+        {
+          guaranteeCaseIds,
+        },
+        transaction
+      );
+    }
+
+    const cancelledRecord =
+      await this.#vehicleProcessingRecordRepository.completeRecord(
+        {
+          vehicleProcessingRecordId,
+          status: "CANCELLED",
+          checkOutDate: dayjs(),
+        },
+        transaction
+      );
+
+    if (!cancelledRecord) {
+      throw new ConflictError(
+        "Failed to cancel vehicle processing record with only rejected caselines"
+      );
+    }
+
+    const record = await this.#sendCompletionNotification({
+      vehicleProcessingRecordId,
+      serviceCenterId,
+      roleName,
+      userId,
+      transaction,
+    });
+
+    return {
+      record,
+      updatedGuaranteeCases,
+      updatedCaseLines: [],
+    };
   };
 
   #sendCompletionNotification = async ({

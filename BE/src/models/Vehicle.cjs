@@ -42,11 +42,7 @@ module.exports = (sequelize, DataTypes) => {
 
       licensePlate: {
         type: DataTypes.STRING,
-        validate: {
-          notEmpty: {
-            msg: "licensePlate cannot be empty",
-          },
-        },
+        unique: true,
         field: "license_plate",
       },
 

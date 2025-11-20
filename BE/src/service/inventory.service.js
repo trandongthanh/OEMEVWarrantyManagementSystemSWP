@@ -1,5 +1,9 @@
 import * as XLSX from "xlsx";
-import { BadRequestError, NotFoundError } from "../error/index.js";
+import {
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+} from "../error/index.js";
 import db from "../models/index.cjs";
 
 class InventoryService {

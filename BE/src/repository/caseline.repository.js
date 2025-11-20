@@ -9,6 +9,7 @@ const {
   ComponentReservation,
   Component,
   VehicleProcessingRecord,
+  Vehicle,
   ServiceCenter,
 } = db;
 
@@ -472,6 +473,52 @@ class CaseLineRepository {
     });
 
     return caseLines.map((cl) => cl.id ?? cl.toJSON().id);
+  };
+
+  countActiveCaseLinesByVehicleModelAndTypeComponent = async (
+    { vehicleModelId, typeComponentId, activeStatuses },
+    transaction = null,
+    lock = null
+  ) => {
+    if (!vehicleModelId || !typeComponentId || !activeStatuses?.length) {
+      return 0;
+    }
+
+    const count = await CaseLine.count({
+      where: {
+        typeComponentId,
+        status: {
+          [Op.in]: activeStatuses,
+        },
+      },
+      include: [
+        {
+          model: GuaranteeCase,
+          as: "guaranteeCase",
+          required: true,
+          include: [
+            {
+              model: VehicleProcessingRecord,
+              as: "vehicleProcessingRecord",
+              required: true,
+              include: [
+                {
+                  model: Vehicle,
+                  as: "vehicle",
+                  attributes: [],
+                  required: true,
+                  where: { vehicleModelId },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      transaction,
+      lock,
+    });
+
+    return count;
   };
 }
 
