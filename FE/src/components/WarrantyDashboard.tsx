@@ -30,6 +30,11 @@ interface StockTransferRequest {
     name: string;
     serviceCenterId?: string;
   };
+  approver?: {
+    userId: string;
+    name: string;
+    serviceCenterId?: string;
+  };
   requestingWarehouse?: {
     warehouseId: string;
     name: string;
@@ -237,9 +242,9 @@ const WarrantyDashboard: React.FC = () => {
     // Validation
     if (!newVehicleModel.vehicleModelName.trim() || !newVehicleModel.yearOfLaunch || 
         !newVehicleModel.placeOfManufacture.trim() || !newVehicleModel.generalWarrantyDuration || 
-        !newVehicleModel.generalWarrantyMileage || !newVehicleModel.companyId.trim()) {
+        !newVehicleModel.generalWarrantyMileage) {
       toast({
-        title: 'Validation Error',
+        title: 'Field Required!',
         description: 'Please fill in all required fields.',
         variant: 'destructive'
       });
@@ -250,17 +255,19 @@ const WarrantyDashboard: React.FC = () => {
     try {
       const token = localStorage.getItem('ev_warranty_token');
       
-      const payload = {
+      const payload: any = {
         vehicleModelName: newVehicleModel.vehicleModelName.trim(),
         yearOfLaunch: new Date(newVehicleModel.yearOfLaunch).toISOString(),
         placeOfManufacture: newVehicleModel.placeOfManufacture.trim(),
         generalWarrantyDuration: parseInt(newVehicleModel.generalWarrantyDuration),
-        generalWarrantyMileage: parseInt(newVehicleModel.generalWarrantyMileage),
-        companyId: newVehicleModel.companyId.trim()
+        generalWarrantyMileage: parseInt(newVehicleModel.generalWarrantyMileage)
       };
-
-      console.log('Adding new vehicle model:', payload);
       
+      // Only add companyId if provided
+      if (newVehicleModel.companyId.trim()) {
+        payload.companyId = newVehicleModel.companyId.trim();
+      }
+
       const response = await axios.post(
         `${API_BASE_URL}/oem-vehicle-models`,
         payload,
@@ -317,17 +324,11 @@ const WarrantyDashboard: React.FC = () => {
     // Validation - different requirements for reusing vs creating new
     const isReusingComponent = selectedCopyComponent.trim() !== '';
     
-    console.log('Validation check:', {
-      isReusingComponent,
-      selectedCopyComponent,
-      newComponent
-    });
-    
     if (isReusingComponent) {
       // Trường hợp 1: Copy component - chỉ cần selectedCopyComponent và 3 field không disable
       if (!selectedCopyComponent || !newComponent.durationMonth || !newComponent.mileageLimit || !newComponent.quantity) {
         toast({
-          title: 'Validation Error',
+          title: 'Field Required!',
           description: 'Please select a component to copy and fill in warranty duration, mileage limit, and quantity.',
           variant: 'destructive'
         });
@@ -338,7 +339,7 @@ const WarrantyDashboard: React.FC = () => {
       if (!newComponent.sku.trim() || !newComponent.name.trim() || !newComponent.price || 
           !newComponent.durationMonth || !newComponent.mileageLimit || !newComponent.quantity) {
         toast({
-          title: 'Validation Error',
+          title: 'Field Required!',
           description: 'Please fill in all required fields (SKU, Name, Price, Warranty Duration, Mileage, Quantity).',
           variant: 'destructive'
         });
@@ -393,13 +394,6 @@ const WarrantyDashboard: React.FC = () => {
           mileageLimit: parseInt(newComponent.mileageLimit),
           quantity: parseInt(newComponent.quantity)
         };
-        
-        console.log('Copying component:', {
-          selectedCopyComponent,
-          sourceComponentName: sourceComponent.name,
-          extractedTypeComponentId: componentId,
-          sendingToAPI: componentData
-        });
       } else {
         // Trường hợp 2: Tạo mới - gửi tất cả fields (KHÔNG có typeComponentId)
         componentData = {
@@ -418,8 +412,6 @@ const WarrantyDashboard: React.FC = () => {
         typeComponentWarrantyList: [componentData]
       };
 
-      console.log('Creating warranty component:', payload);
-      
       const response = await axios.post(
         `${API_BASE_URL}/oem-vehicle-models/${selectedModel.vehicleModelId}/warranty-components`,
         payload,
@@ -461,10 +453,8 @@ const WarrantyDashboard: React.FC = () => {
     } catch (error) {
       console.error('Error creating component:', error);
       toast({
-        title: 'Error',
-        description: axios.isAxiosError(error) && error.response?.data?.message
-          ? error.response.data.message
-          : 'An error occurred while creating the component.',
+        title: 'Invalid vehicle information!',
+        description: "Please enter valid information for the new component.",
         variant: 'destructive'
       });
     } finally {
@@ -672,7 +662,7 @@ const WarrantyDashboard: React.FC = () => {
       }
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Something Went Wrong!',
         description: 'An error occurred while approving the request. Please try again.',
         variant: 'destructive'
       });
@@ -727,7 +717,7 @@ const WarrantyDashboard: React.FC = () => {
       }
     } catch (error) {
       toast({
-        title: 'Error',
+        title: 'Rejection Failed',
         description: 'An error occurred while rejecting the request. Please try again.',
         variant: 'destructive'
       });
@@ -962,7 +952,7 @@ const WarrantyDashboard: React.FC = () => {
                       {request.approvedByUserId ? (
                         <div className="flex items-center gap-2">
                           <span className="text-green-600">✓</span>
-                          User #{request.approvedByUserId.substring(0, 8)}
+                          {request.approver?.name || `User #${request.approvedByUserId.substring(0, 8)}`}
                         </div>
                       ) : (
                         <span className="text-gray-400 italic">Not approved</span>
@@ -1299,7 +1289,7 @@ const WarrantyDashboard: React.FC = () => {
                     <div>
                       <span className="text-xs text-gray-500">Approved By:</span>
                       {selectedRequest.approvedByUserId ? (
-                        <p className="font-medium text-green-600">✓ User #{selectedRequest.approvedByUserId.substring(0, 8)}...</p>
+                        <p className="font-medium text-green-600">✓ {selectedRequest.approver?.name || `User #${selectedRequest.approvedByUserId.substring(0, 8)}...`}</p>
                       ) : (
                         <p className="text-sm text-gray-400 italic">Pending approval</p>
                       )}
@@ -1680,19 +1670,7 @@ const WarrantyDashboard: React.FC = () => {
                     if (model && componentIndex >= 0) {
                       const foundComponent = model.typeComponents?.[componentIndex];
                       
-                      console.log('Found component:', foundComponent);
-                      console.log('All component properties:', Object.keys(foundComponent || {}));
-                      console.log('Component ID check:', {
-                        id: foundComponent?.id,
-                        typeComponentId: foundComponent?.typeComponentId,
-                        componentId: foundComponent?.componentId
-                      });
-                      
                       if (foundComponent) {
-                        console.log('=== Copying component data ===');
-                        console.log('Source component:', foundComponent);
-                        console.log('Will use selectedCopyComponent for API:', selectedValue);
-                        
                         // Pre-fill form with component data (typeComponentId stays empty, we'll use selectedCopyComponent)
                         const newData = {
                           typeComponentId: '', // Keep empty, will use selectedCopyComponent when submitting
@@ -1705,8 +1683,7 @@ const WarrantyDashboard: React.FC = () => {
                           mileageLimit: foundComponent.WarrantyComponent?.mileageLimit?.toString() || '',
                           quantity: '1'
                         };
-                        
-                        console.log('Pre-filled form data:', newData);
+
                         setNewComponent(newData);
                         
                         toast({
@@ -2022,7 +1999,7 @@ const WarrantyDashboard: React.FC = () => {
               {/* Company ID */}
               <div>
                 <label className="text-sm font-semibold text-gray-900 mb-2 block">
-                  Company ID <span className="text-red-500">*</span>
+                  Company ID
                 </label>
                 <input
                   type="text"
