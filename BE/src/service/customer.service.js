@@ -142,7 +142,6 @@ class CustomerService {
 
       return {
         updatedCustomer,
-        changedFields,
         previousCustomer: existingCustomer,
       };
     });
