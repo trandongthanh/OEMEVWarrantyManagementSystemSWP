@@ -807,11 +807,18 @@ const SuperAdvisor = () => {
         return;
       }
 
-      // IMPORTANT: Always include email in request body for OTP verification middleware
-      // Backend middleware ensureOtpVerified needs email to check Redis verification status
-      if (!updateData.email) {
-        updateData.email = editCustomerForm.email.trim();
-      }
+      // IMPORTANT: Backend middleware ensureOtpVerified checks for verificationEmail field
+      // This field is required to verify OTP was validated before update
+      // Must use lowercase to match how backend stores in Redis
+      const verificationEmail = editCustomerForm.email.trim().toLowerCase();
+      updateData.verificationEmail = verificationEmail;
+
+      console.log('🔍 Update customer request:', {
+        customerId: foundCustomer.id,
+        verificationEmail,
+        updateData,
+        otpVerified: otpVerifiedForCustomer
+      });
 
       const response = await axios.patch(
         `${API_BASE_URL}/customers/${foundCustomer.id}`,
@@ -1230,9 +1237,22 @@ const SuperAdvisor = () => {
       return;
     }
 
+    // Backend validator requires VIN field - get from customer's first vehicle
+    const customerVin = foundCustomer?.vehicles?.[0]?.vin;
+    if (!customerVin) {
+      toast({
+        title: 'Error',
+        description: 'Customer must have at least one registered vehicle to update information',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setIsSendingOtpForCustomer(true);
 
     try {
+      const verificationEmail = editCustomerForm.email.trim().toLowerCase();
+
       const response = await fetch(`${API_BASE_URL}/mail/otp/send`, {
         method: 'POST',
         headers: {
@@ -1240,7 +1260,8 @@ const SuperAdvisor = () => {
           'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
         },
         body: JSON.stringify({
-          email: editCustomerForm.email
+          email: verificationEmail,
+          vin: customerVin
         })
       });
 
@@ -1296,10 +1317,13 @@ const SuperAdvisor = () => {
     }
 
     try {
+      const verificationEmail = editCustomerForm.email.trim().toLowerCase();
+
+
       const response = await axios.post(
         `${API_BASE_URL}/mail/otp/verify`,
         {
-          email: editCustomerForm.email,
+          email: verificationEmail,
           otp: otpCodeForCustomer
         },
         {
