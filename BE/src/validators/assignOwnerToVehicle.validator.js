@@ -19,7 +19,7 @@ export const assignOwnerToVehicleBodySchema = Joi.object({
 
   dateOfManufacture: Joi.date().max(dayjs()).required(),
 
-  licensePlate: Joi.string().max(20).required(),
+  licensePlate: Joi.string().max(20).optional(),
 
   purchaseDate: Joi.date().max(dayjs()).required(),
 }).xor("customer", "customerId");

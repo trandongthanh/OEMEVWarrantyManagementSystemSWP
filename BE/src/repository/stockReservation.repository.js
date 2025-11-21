@@ -1,7 +1,14 @@
 import { Op } from "sequelize";
 import db from "../models/index.cjs";
 
-const { StockReservation, Stock, TypeComponent } = db;
+const {
+  StockReservation,
+  Stock,
+  StockTransferRequestItem,
+  StockTransferRequest,
+  TypeComponent,
+  Warehouse,
+} = db;
 
 class StockReservationRepository {
   bulkCreate = async ({ reservations }, transaction = null) => {
@@ -12,37 +19,168 @@ class StockReservationRepository {
     return newReservations.map((r) => r.toJSON());
   };
 
-  findByRequestId = async ({ requestId }, transaction = null, lock = null) => {
+  findByRequestId = async (
+    { requestId, statuses = ["RESERVED"] },
+    transaction = null,
+    lock = null
+  ) => {
+    let normalizedStatuses = statuses;
+
+    if (!normalizedStatuses) {
+      normalizedStatuses = ["RESERVED"];
+    }
+
+    if (
+      typeof normalizedStatuses === "string" &&
+      normalizedStatuses.toUpperCase() === "ALL"
+    ) {
+      normalizedStatuses = null;
+    } else if (typeof normalizedStatuses === "string") {
+      normalizedStatuses = normalizedStatuses
+        .split(",")
+        .map((status) => status.trim())
+        .filter(Boolean);
+    }
+
+    const reservationWhere = {};
+
+    if (normalizedStatuses && normalizedStatuses.length > 0) {
+      reservationWhere.status =
+        normalizedStatuses.length === 1
+          ? normalizedStatuses[0]
+          : { [Op.in]: normalizedStatuses };
+    }
+
     const reservations = await StockReservation.findAll({
-      where: { requestId, status: "RESERVED" },
+      where: reservationWhere,
       include: [
         {
           model: Stock,
           as: "stock",
           include: [
             {
-              model: db.Warehouse,
+              model: Warehouse,
               as: "warehouse",
             },
           ],
         },
         {
-          model: TypeComponent,
-          as: "typeComponent",
+          model: StockTransferRequestItem,
+          as: "requestItem",
+          where: { requestId },
+          required: true,
+          attributes: ["id", "typeComponentId", "quantityRequested"],
+          include: [
+            {
+              model: TypeComponent,
+              as: "component",
+              attributes: ["typeComponentId", "name", "sku"],
+              required: false,
+            },
+          ],
         },
       ],
       transaction,
       lock,
     });
 
-    return reservations.map((r) => r.toJSON());
+    return reservations.map((r) => {
+      const data = r.toJSON();
+      data.typeComponentId = data.requestItem?.typeComponentId ?? null;
+      return data;
+    });
   };
 
-  updateStatusToShipped = async ({ reservationIds }, transaction = null) => {
+  findByIdWithDetails = async (
+    { reservationId },
+    transaction = null,
+    lock = null
+  ) => {
+    const reservation = await StockReservation.findOne({
+      where: { reservationId },
+      include: [
+        {
+          model: Stock,
+          as: "stock",
+          include: [
+            {
+              model: Warehouse,
+              as: "warehouse",
+            },
+          ],
+        },
+        {
+          model: StockTransferRequestItem,
+          as: "requestItem",
+          attributes: [
+            "id",
+            "requestId",
+            "typeComponentId",
+            "quantityRequested",
+          ],
+          include: [
+            {
+              model: TypeComponent,
+              as: "component",
+              attributes: ["typeComponentId", "name", "sku"],
+            },
+            {
+              model: StockTransferRequest,
+              as: "request",
+              attributes: ["id", "status"],
+            },
+          ],
+        },
+      ],
+      transaction,
+      lock,
+    });
+
+    return reservation ? reservation.toJSON() : null;
+  };
+
+  countReservedByRequestId = async (
+    { requestId },
+    transaction = null,
+    lock = null
+  ) => {
+    const count = await StockReservation.count({
+      where: { status: "RESERVED" },
+      include: [
+        {
+          model: StockTransferRequestItem,
+          as: "requestItem",
+          where: { requestId },
+          required: true,
+        },
+      ],
+      transaction,
+      lock,
+      distinct: true,
+      col: "StockReservation.reservationId",
+    });
+
+    return count;
+  };
+
+  markReservationsAsShipped = async (
+    { reservationIds },
+    transaction = null
+  ) => {
+    if (!reservationIds || reservationIds.length === 0) {
+      return 0;
+    }
+
     const [affectedRows] = await StockReservation.update(
-      { status: "SHIPPED" },
       {
-        where: { reservationId: reservationIds },
+        status: "SHIPPED",
+      },
+      {
+        where: {
+          reservationId: {
+            [Op.in]: reservationIds,
+          },
+        },
         transaction,
       }
     );

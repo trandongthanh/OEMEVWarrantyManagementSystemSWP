@@ -26,7 +26,7 @@ export interface ProcessingRecord {
   vin: string;
   checkInDate: string;
   odometer: number;
-  status: 'CHECKED_IN' | 'IN_DIAGNOSIS' | 'WAITING_FOR_PARTS' | 'IN_REPAIR' | 'COMPLETED' | 'PAID' | 'CANCELLED';
+  status: 'CHECKED_IN' | 'IN_DIAGNOSIS' | 'WAITING_CUSTOMER_APPROVAL' | 'WAITING_FOR_PARTS' | 'IN_REPAIR' | 'COMPLETED' | 'PAID' | 'CANCELLED';
   visitorInfo?: {
     email: string;
     phone: string;
@@ -84,6 +84,7 @@ export interface ProcessingRecordsResponse {
 export interface ProcessingRecordsByStatus {
   CHECKED_IN: ProcessingRecord[];
   IN_DIAGNOSIS: ProcessingRecord[];
+  WAITING_CUSTOMER_APPROVAL: ProcessingRecord[];
   WAITING_FOR_PARTS: ProcessingRecord[];
   IN_REPAIR: ProcessingRecord[];
   COMPLETED: ProcessingRecord[];

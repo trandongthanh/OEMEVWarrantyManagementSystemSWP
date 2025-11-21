@@ -5,16 +5,28 @@ const { Component, TypeComponent } = db;
 
 class ComponentRepository {
   findAll = async (
-    { whereCondition, limit },
+    { whereCondition, limit, offset = 0, includeTypeComponent = false },
     transaction = null,
     lock = null
   ) => {
-    const components = await Component.findAll({
+    const queryOptions = {
       where: whereCondition,
       limit,
+      offset,
       transaction,
       lock,
-    });
+    };
+
+    if (includeTypeComponent) {
+      queryOptions.include = [
+        {
+          model: TypeComponent,
+          as: "typeComponent",
+        },
+      ];
+    }
+
+    const components = await Component.findAll(queryOptions);
 
     if (!components || components.length === 0) {
       return [];
@@ -46,8 +58,34 @@ class ComponentRepository {
     return components.map((component) => component.toJSON());
   };
 
+  findComponentsByIds = async (
+    { componentIds },
+    transaction = null,
+    lock = null
+  ) => {
+    if (!componentIds || componentIds.length === 0) {
+      return [];
+    }
+
+    const components = await Component.findAll({
+      where: {
+        componentId: {
+          [Op.in]: componentIds,
+        },
+      },
+      transaction,
+      lock,
+    });
+
+    if (!components || components.length === 0) {
+      return [];
+    }
+
+    return components.map((component) => component.toJSON());
+  };
+
   bulkUpdateStatus = async (
-    { componentIds, status, requestId, warehouseId },
+    { componentIds, status, stockTransferRequestItemId, warehouseId },
     transaction = null
   ) => {
     const updateData = {};
@@ -56,8 +94,8 @@ class ComponentRepository {
       updateData.status = status;
     }
 
-    if (requestId !== undefined) {
-      updateData.requestId = requestId;
+    if (stockTransferRequestItemId !== undefined) {
+      updateData.stockTransferRequestItemId = stockTransferRequestItemId;
     }
 
     if (warehouseId !== undefined) {
@@ -231,13 +269,13 @@ class ComponentRepository {
     return updatedComponent ? updatedComponent.toJSON() : null;
   };
 
-  findComponentsByStockTransferRequestId = async (
-    { requestId },
+  findComponentsByStockTransferRequestItemId = async (
+    { stockTransferRequestItemId },
     transaction = null,
     lock = null
   ) => {
     const components = await Component.findAll({
-      where: { stockTransferRequestId: requestId },
+      where: { stockTransferRequestItemId: stockTransferRequestItemId },
 
       transaction: transaction,
       lock: lock,
@@ -274,24 +312,6 @@ class ComponentRepository {
     });
 
     return component ? component.toJSON() : null;
-  };
-
-  findComponentsByRequestId = async (
-    { requestId },
-    transaction = null,
-    lock = null
-  ) => {
-    const components = await Component.findAll({
-      where: { requestId: requestId },
-      transaction: transaction,
-      lock: lock,
-    });
-
-    if (!components || components.length === 0) {
-      return [];
-    }
-
-    return components.map((component) => component.toJSON());
   };
 }
 

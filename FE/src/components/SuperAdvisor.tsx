@@ -45,7 +45,7 @@ const createProcessingRecord = async (recordData: {
   
   const result = await response.json();
   
-  console.log('📥 createProcessingRecord API result:', result);
+ 
   
   // Check for API errors
   if (!response.ok || result.status === 'error') {
@@ -230,6 +230,13 @@ const SuperAdvisor = () => {
   const [otpVerified, setOtpVerified] = useState(false);
   const [otpCountdown, setOtpCountdown] = useState(0);
 
+  // OTP states for customer update
+  const [otpCodeForCustomer, setOtpCodeForCustomer] = useState('');
+  const [isSendingOtpForCustomer, setIsSendingOtpForCustomer] = useState(false);
+  const [otpSentForCustomer, setOtpSentForCustomer] = useState(false);
+  const [otpVerifiedForCustomer, setOtpVerifiedForCustomer] = useState(false);
+  const [otpCountdownForCustomer, setOtpCountdownForCustomer] = useState(0);
+
   // Visitor same as customer checkbox state
   const [visitorSameAsCustomer, setVisitorSameAsCustomer] = useState(false);
 
@@ -385,6 +392,24 @@ const SuperAdvisor = () => {
       });
     }
   }, [otpCountdown, otpSent, toast]);
+
+  // OTP countdown timer for customer update
+  useEffect(() => {
+    if (otpCountdownForCustomer > 0) {
+      const timer = setTimeout(() => {
+        setOtpCountdownForCustomer(prev => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (otpCountdownForCustomer === 0 && otpSentForCustomer) {
+      setOtpSentForCustomer(false);
+      setOtpCodeForCustomer('');
+      toast({
+        title: 'OTP Expired',
+        description: 'Please request a new OTP code',
+        variant: 'default'
+      });
+    }
+  }, [otpCountdownForCustomer, otpSentForCustomer, toast]);
 
   // Auto-update Owner Information when foundCustomer changes (after update in "Find Customer by Phone" mode)
   useEffect(() => {
@@ -711,6 +736,11 @@ const SuperAdvisor = () => {
       email: '',
       address: ''
     });
+    // Reset OTP states
+    setOtpCodeForCustomer('');
+    setOtpSentForCustomer(false);
+    setOtpVerifiedForCustomer(false);
+    setOtpCountdownForCustomer(0);
   };
 
   const handleUpdateCustomer = async () => {
@@ -728,6 +758,18 @@ const SuperAdvisor = () => {
       toast({
         title: 'Phone format is invalid!',
         description: 'Phone number must be exactly 10 digits',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    
+
+    // MUST verify OTP before updating customer
+    if (!otpVerifiedForCustomer) {
+      toast({
+        title: 'OTP Verification Required',
+        description: 'Please click "Send OTP to Email" button below and verify the OTP code before saving changes.',
         variant: 'destructive'
       });
       return;
@@ -765,6 +807,19 @@ const SuperAdvisor = () => {
         return;
       }
 
+      // IMPORTANT: Backend middleware ensureOtpVerified checks for verificationEmail field
+      // This field is required to verify OTP was validated before update
+      // Must use lowercase to match how backend stores in Redis
+      const verificationEmail = editCustomerForm.email.trim().toLowerCase();
+      updateData.verificationEmail = verificationEmail;
+
+      console.log('🔍 Update customer request:', {
+        customerId: foundCustomer.id,
+        verificationEmail,
+        updateData,
+        otpVerified: otpVerifiedForCustomer
+      });
+
       const response = await axios.patch(
         `${API_BASE_URL}/customers/${foundCustomer.id}`,
         updateData,
@@ -790,6 +845,12 @@ const SuperAdvisor = () => {
         });
 
         setIsEditingCustomer(false);
+        
+        // Reset OTP states
+        setOtpCodeForCustomer('');
+        setOtpSentForCustomer(false);
+        setOtpVerifiedForCustomer(false);
+        setOtpCountdownForCustomer(0);
       }
     } catch (error: any) {
       toast({
@@ -1082,15 +1143,7 @@ const SuperAdvisor = () => {
     const token = localStorage.getItem('ev_warranty_token');
     const requestUrl = `${API_BASE_URL}/mail/otp/verify`;
     
-    console.log('🔍 DEBUG OTP Verify Request:', {
-      url: requestUrl,
-      method: 'POST',
-      hasToken: !!token,
-      tokenPreview: token ? `${token.substring(0, 20)}...` : 'NULL',
-      email: warrantyRecordForm.customerEmail,
-      otpLength: otpCode.length
-    });
-
+   
     if (!token) {
       toast({
         title: 'Authentication Error',
@@ -1114,15 +1167,7 @@ const SuperAdvisor = () => {
         redirect: 'manual' // Prevent auto-following redirects
       });
 
-      console.log('🔍 DEBUG OTP Verify Response:', {
-        status: response.status,
-        statusText: response.statusText,
-        url: response.url,
-        type: response.type,
-        redirected: response.redirected,
-        headers: Object.fromEntries(response.headers.entries())
-      });
-
+    
       // Check for redirects (status 3xx)
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('Location');
@@ -1135,7 +1180,7 @@ const SuperAdvisor = () => {
       }
 
       const responseText = await response.text();
-      console.log('🔍 DEBUG Response body:', responseText);
+    
 
       let result;
       try {
@@ -1159,6 +1204,149 @@ const SuperAdvisor = () => {
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to verify OTP. Please try again.',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Handle send OTP for customer update
+  const handleSendOtpForCustomer = async () => {
+    // Check if any field has been changed
+    const hasChanges = 
+      editCustomerForm.fullName.trim() !== foundCustomer.fullName ||
+      editCustomerForm.phone.trim() !== foundCustomer.phone ||
+      editCustomerForm.email.trim() !== foundCustomer.email ||
+      editCustomerForm.address.trim() !== foundCustomer.address;
+
+    if (!hasChanges) {
+      toast({
+        title: 'No Changes Detected',
+        description: 'Please modify at least one field before sending OTP',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!editCustomerForm.email || !emailRegex.test(editCustomerForm.email)) {
+      toast({
+        title: 'Error',
+        description: 'Please enter a valid email address first',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Backend validator requires VIN field - get from customer's first vehicle
+    const customerVin = foundCustomer?.vehicles?.[0]?.vin;
+    if (!customerVin) {
+      toast({
+        title: 'Error',
+        description: 'Customer must have at least one registered vehicle to update information',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsSendingOtpForCustomer(true);
+
+    try {
+      const verificationEmail = editCustomerForm.email.trim().toLowerCase();
+
+      const response = await fetch(`${API_BASE_URL}/mail/otp/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
+        },
+        body: JSON.stringify({
+          email: verificationEmail,
+          vin: customerVin
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server error response:', errorText);
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        setOtpSentForCustomer(true);
+        setOtpCountdownForCustomer(300); // 5 minutes
+        toast({
+          title: 'OTP Sent',
+          description: `OTP code has been sent to ${editCustomerForm.email}. Please check your email inbox.`,
+        });
+      } else {
+        throw new Error(result.message || 'Failed to send OTP');
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to send OTP. Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsSendingOtpForCustomer(false);
+    }
+  };
+
+  // Handle verify OTP for customer update
+  const handleVerifyOtpForCustomer = async () => {
+    if (!otpCodeForCustomer || otpCodeForCustomer.length !== 6) {
+      toast({
+        title: 'OTP Invalid!',
+        description: 'Please enter a valid 6-digit OTP code',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const token = localStorage.getItem('ev_warranty_token');
+    
+    if (!token) {
+      toast({
+        title: 'Authentication Error',
+        description: 'No token found. Please login again.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      const verificationEmail = editCustomerForm.email.trim().toLowerCase();
+
+
+      const response = await axios.post(
+        `${API_BASE_URL}/mail/otp/verify`,
+        {
+          email: verificationEmail,
+          otp: otpCodeForCustomer
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (response.data && response.data.status === 'success' && response.data.isValid) {
+        setOtpVerifiedForCustomer(true);
+        toast({
+          title: 'Success',
+          description: 'OTP verified successfully. You can now update customer information.',
+        });
+      } else {
+        throw new Error(response.data?.message || 'Invalid or expired OTP code');
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || error.message || 'Failed to verify OTP. Please try again.',
         variant: 'destructive'
       });
     }
@@ -1459,14 +1647,7 @@ const SuperAdvisor = () => {
       return;
     }
 
-    if (!vehicleSearchResult.licensePlate?.trim()) {
-      toast({
-        title: 'Validation Error',
-        description: 'Please enter license plate number',
-        variant: 'destructive'
-      });
-      return;
-    }
+
 
     try {
       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
@@ -1496,10 +1677,12 @@ const SuperAdvisor = () => {
         // Register vehicle using PATCH /vehicles/{VIN} with customerId only
         const requestBody = {
           dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-          licensePlate: vehicleSearchResult.licensePlate.trim(),
+          licensePlate: vehicleSearchResult.licensePlate?.trim() || 'N/A',
           purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString(),
-          customerId: foundCustomer.id
+          customerId: String(foundCustomer.id) // Ensure customerId is string
         };
+
+       
 
         const response = await axios.patch(`${API_BASE_URL}/vehicles/${vehicleSearchResult.vin}`, requestBody, {
           headers: {
@@ -1557,7 +1740,7 @@ const SuperAdvisor = () => {
         // Prepare request body
         const requestBody: any = {
           dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-          licensePlate: vehicleSearchResult.licensePlate.trim(),
+          licensePlate: vehicleSearchResult.licensePlate?.trim() || 'N/A',
           purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString()
         };
 
@@ -1617,7 +1800,16 @@ const SuperAdvisor = () => {
     } catch (error) {
       if (error.response) {
         console.error('Backend error:', error.response.data);
-        const errorMessage = error.response.data.message || 'Server error';
+        
+        // Extract detailed error message
+        let errorMessage = error.response.data.message || 'Server error';
+        
+        // If there are validation errors, show them
+        if (error.response.data.errors && Array.isArray(error.response.data.errors)) {
+          const validationErrors = error.response.data.errors.map(err => err.message || err).join('; ');
+          errorMessage = validationErrors || errorMessage;
+        }
+        
         toast({
           title: 'Error',
           description: `Failed to save changes: ${errorMessage}`,
@@ -1834,7 +2026,7 @@ const SuperAdvisor = () => {
       
       toast({
         title: 'Warranty Check Failed',
-        description: error.response?.data?.message || 'Unable to verify warranty status. Please try again.',
+        description: "Purchase date must be earlier than today's date. Please verify the vehicle's purchase date.",
         variant: 'destructive'
       });
     }
@@ -1919,7 +2111,7 @@ const SuperAdvisor = () => {
       // Prepare request body - only send ownerId and vehicle info
       const requestBody = {
         ownerId: customerData.id,  // Use existing customer ID
-        licensePlate: vehicleSearchResult.licensePlate || '',
+        licensePlate: vehicleSearchResult.licensePlate || 'N/A',
         purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString(),
         dateOfManufacture: vehicleSearchResult.dateOfManufacture,
         placeOfManufacture: vehicleSearchResult.placeOfManufacture || ''
@@ -2847,7 +3039,7 @@ const SuperAdvisor = () => {
                         </div>
                       </div>
 
-                      {/* Purchase Date - Editable only if vehicle has no owner */}
+                      {/* Purchase Date - Editable only if vehicle has no owner and warranty not checked */}
                       <div className="grid md:grid-cols-3 gap-2 items-center">
                         <Label className="font-medium text-gray-700">Purchase Date:</Label>
                         <div className="md:col-span-2">
@@ -2858,13 +3050,13 @@ const SuperAdvisor = () => {
                               ...prev,
                               purchaseDate: e.target.value ? new Date(e.target.value).toISOString() : ''
                             }) : prev)}
-                            disabled={!!vehicleSearchResult.owner}
-                            className={vehicleSearchResult.owner ? "bg-gray-100" : "bg-white border-green-300 focus:border-green-500"}
+                            disabled={!!vehicleSearchResult.owner || warrantyStatus !== null}
+                            className={(vehicleSearchResult.owner || warrantyStatus !== null) ? "bg-gray-100" : "bg-white border-green-300 focus:border-green-500"}
                           />
                         </div>
                       </div>
 
-                      {/* Odometer - Editable */}
+                      {/* Odometer - Editable only if warranty not checked */}
                       <div className="grid md:grid-cols-3 gap-2 items-center">
                         <Label className="font-medium text-gray-700">Odometer (km):</Label>
                         <div className="md:col-span-2">
@@ -2873,7 +3065,8 @@ const SuperAdvisor = () => {
                             value={odometer}
                             onChange={(e) => setOdometer(e.target.value)}
                             placeholder="Enter current odometer reading"
-                            className="bg-white border-green-300 focus:border-green-500"
+                            disabled={warrantyStatus !== null}
+                            className={warrantyStatus !== null ? "bg-gray-100" : "bg-white border-green-300 focus:border-green-500"}
                           />
                         </div>
                       </div>
@@ -3345,7 +3538,7 @@ const SuperAdvisor = () => {
                           <Button
                             onClick={handleUpdateCustomer}
                             size="sm"
-                            disabled={isUpdatingCustomer}
+                            disabled={isUpdatingCustomer || !otpVerifiedForCustomer}
                             className="bg-green-600 hover:bg-green-700"
                           >
                             <Save className="h-4 w-4 mr-2" />
@@ -3422,6 +3615,71 @@ const SuperAdvisor = () => {
                           />
                         </div>
                       </div>
+
+                      {/* OTP Verification Section - Only show when editing */}
+                      {isEditingCustomer && (
+                        <div className="border-t pt-4 mt-4">
+
+                          {/* Send OTP */}
+                          <div className="space-y-3">
+                            <div className="flex gap-2">
+                              <Button
+                                onClick={handleSendOtpForCustomer}
+                                disabled={
+                                  isSendingOtpForCustomer || 
+                                  otpSentForCustomer || 
+                                  !editCustomerForm.email ||
+                                  // Disable if no changes detected
+                                  (editCustomerForm.fullName.trim() === foundCustomer.fullName &&
+                                   editCustomerForm.phone.trim() === foundCustomer.phone &&
+                                   editCustomerForm.email.trim() === foundCustomer.email &&
+                                   editCustomerForm.address.trim() === foundCustomer.address)
+                                }
+                                className="bg-blue-600 hover:bg-blue-700"
+                                size="sm"
+                              >
+                                {isSendingOtpForCustomer ? 'Sending...' : otpSentForCustomer ? `OTP Sent (${Math.floor(otpCountdownForCustomer / 60)}:${(otpCountdownForCustomer % 60).toString().padStart(2, '0')})` : 'Send OTP to Email'}
+                              </Button>
+                              {otpVerifiedForCustomer && (
+                                <Badge className="bg-green-600 text-white">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Verified
+                                </Badge>
+                              )}
+                            </div>
+
+                            {/* OTP Input */}
+                            {otpSentForCustomer && !otpVerifiedForCustomer && (
+                              <div className="space-y-2">
+                                <Label className="text-sm font-medium">Enter OTP Code:</Label>
+                                <div className="flex gap-2">
+                                  <Input
+                                    type="text"
+                                    placeholder="Enter 6-digit OTP"
+                                    value={otpCodeForCustomer}
+                                    onChange={(e) => {
+                                      const value = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
+                                      setOtpCodeForCustomer(value);
+                                    }}
+                                    maxLength={6}
+                                    className="font-mono text-center text-lg tracking-widest"
+                                  />
+                                  <Button
+                                    onClick={handleVerifyOtpForCustomer}
+                                    disabled={otpCodeForCustomer.length !== 6}
+                                    className="bg-green-600 hover:bg-green-700"
+                                  >
+                                    Verify
+                                  </Button>
+                                </div>
+                                <p className="text-xs text-gray-500">
+                                  Time remaining: {Math.floor(otpCountdownForCustomer / 60)}:{(otpCountdownForCustomer % 60).toString().padStart(2, '0')}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 

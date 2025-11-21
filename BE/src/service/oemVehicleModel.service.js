@@ -13,20 +13,17 @@ const ACTIVE_CASELINE_STATUSES = [
 
 class OemVehicleModelService {
   #oemVehicleModelRepository;
-  #vehicleModelRepository;
   #warrantyComponentRepository;
   #typeComponentRepository;
   #caselineRepository;
 
   constructor({
     oemVehicleModelRepository,
-    vehicleModelRepository,
     warrantyComponentRepository,
     typeComponentRepository,
     caselineRepository,
   }) {
     this.#oemVehicleModelRepository = oemVehicleModelRepository;
-    this.#vehicleModelRepository = vehicleModelRepository;
     this.#warrantyComponentRepository = warrantyComponentRepository;
     this.#typeComponentRepository = typeComponentRepository;
     this.#caselineRepository = caselineRepository;
@@ -42,16 +39,18 @@ class OemVehicleModelService {
     companyId,
   }) => {
     return db.sequelize.transaction(async (transaction) => {
+      const vehicleModelPayload = {
+        vehicleModelName,
+        yearOfLaunch,
+        placeOfManufacture,
+        generalWarrantyDuration,
+        generalWarrantyMileage,
+        vehicleCompanyId: companyId,
+      };
+
       const vehicleModel =
         await this.#oemVehicleModelRepository.createVehicleModel(
-          {
-            vehicleModelName,
-            yearOfLaunch,
-            placeOfManufacture,
-            generalWarrantyDuration,
-            generalWarrantyMileage,
-            companyId,
-          },
+          vehicleModelPayload,
           transaction
         );
 
@@ -155,7 +154,7 @@ class OemVehicleModelService {
           resolvedTypeComponentId = component.typeComponentId;
         } else {
           const { sku } = component.newTypeComponent;
-          const resolvedTypeComponent = typeComponentBySku.get(sku);
+          const resolvedTypeComponent = typeComponentsBySku.get(sku);
 
           if (!resolvedTypeComponent) {
             throw new NotFoundError(
@@ -189,8 +188,8 @@ class OemVehicleModelService {
     });
   };
 
-  async #ensureVehicleModelExists(vehicleModelId, transaction) {
-    const vehicleModel = await this.#vehicleModelRepository.findByPk(
+  #ensureVehicleModelExists = async (vehicleModelId, transaction) => {
+    const vehicleModel = await this.#oemVehicleModelRepository.findByPk(
       vehicleModelId,
       transaction
     );
@@ -201,9 +200,9 @@ class OemVehicleModelService {
       );
     }
     return vehicleModel;
-  }
+  };
 
-  async #createNewTypeComponents(newTypeComponentsData, transaction) {
+  #createNewTypeComponents = async (newTypeComponentsData, transaction) => {
     if (newTypeComponentsData.length === 0) {
       return [];
     }
@@ -227,13 +226,13 @@ class OemVehicleModelService {
       newTypeComponentsData,
       transaction
     );
-  }
+  };
 
-  #buildWarrantyComponentsPayload(
+  #buildWarrantyComponentsPayload = (
     vehicleModelId,
     typeComponentWarrantyList,
     createdTypeComponents
-  ) {
+  ) => {
     const createdTypeComponentMap = new Map(
       createdTypeComponents.map((c) => [c.sku, c])
     );
@@ -263,7 +262,7 @@ class OemVehicleModelService {
         mileageLimit: item.mileageLimit,
       };
     });
-  }
+  };
 
   createWarrantyComponentsForModel = async ({
     vehicleModelId,
@@ -365,6 +364,55 @@ class OemVehicleModelService {
       warrantyComponentId,
       updateData,
     });
+  };
+
+  getAllModelsWithWarranty = async ({ limit, page }) => {
+    const parsePositiveInt = (value, defaultValue) => {
+      if (value === undefined || value === null) {
+        return defaultValue;
+      }
+
+      const parsed = parseInt(value, 10);
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        return defaultValue;
+      }
+
+      return parsed;
+    };
+
+    const limitNumber = parsePositiveInt(limit, 10);
+    const pageNumber = parsePositiveInt(page, 1);
+    const offset = (pageNumber - 1) * limitNumber;
+
+    return this.#oemVehicleModelRepository.getAllModelsWithWarranty({
+      limit: limitNumber,
+      offset,
+    });
+  };
+
+  getWarrantyComponentsForModel = async ({ vehicleModelId }) => {
+    const rawResult = await db.sequelize.transaction(async (transaction) => {
+      const vehicleModel = await this.#ensureVehicleModelExists(
+        vehicleModelId,
+        transaction
+      );
+
+      if (!vehicleModel) {
+        throw new NotFoundError(
+          `Vehicle model with ID ${vehicleModelId} not found`
+        );
+      }
+
+      const warrantyComponents =
+        await this.#warrantyComponentRepository.findByVehicleModelId(
+          vehicleModelId,
+          transaction
+        );
+
+      return warrantyComponents;
+    });
+
+    return rawResult;
   };
 }
 

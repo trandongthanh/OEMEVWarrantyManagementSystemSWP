@@ -8,10 +8,10 @@ import createWarrantyComponentsSchema, {
   createWarrantyComponentsParamsSchema,
 } from "../../validators/warrantyComponent.validator.js";
 import {
+  createVehicleModelSchema,
   updateWarrantyComponentSchema,
   updateWarrantyComponentParamsSchema,
 } from "../../validators/oemVehicleModel.validator.js";
-import createOemVehicleModelSchema from "../../validators/createOemVehicleModel.validator.js";
 
 const router = express.Router();
 
@@ -95,7 +95,7 @@ router.post(
   "/",
   authentication,
   authorizationByRole(["emv_staff"]),
-  validate(createOemVehicleModelSchema, "body"),
+  validate(createVehicleModelSchema, "body"),
   async (req, res, next) => {
     const oemVehicleModelController = req.container.resolve(
       "oemVehicleModelController"

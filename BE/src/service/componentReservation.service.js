@@ -73,6 +73,7 @@ class ComponentReservationService {
     }
 
     const newQuantityInStock = stockItem.quantityInStock - 1;
+
     const newQuantityReserved = stockItem.quantityReserved - 1;
 
     await this.#warehouseRepository.updateStockItem(

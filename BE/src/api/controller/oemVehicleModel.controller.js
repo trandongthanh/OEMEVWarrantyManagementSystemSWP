@@ -16,8 +16,12 @@ class OemVehicleModelController {
   };
 
   getAllModelsWithWarranty = async (req, res, next) => {
-    const models =
-      await this.#oemVehicleModelService.getAllModelsWithWarranty();
+    const { limit, page } = req.query;
+
+    const models = await this.#oemVehicleModelService.getAllModelsWithWarranty({
+      limit,
+      page,
+    });
     res.status(200).json({
       status: "success",
       data: models,

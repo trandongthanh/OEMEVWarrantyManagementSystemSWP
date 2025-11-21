@@ -75,6 +75,29 @@ class StockTransferRequestController {
     });
   };
 
+  listReservations = async (req, res, next) => {
+    const { id } = req.params;
+    const { roleName, serviceCenterId } = req.user;
+    const { companyId } = req;
+    const { status } = req.query;
+
+    const reservations =
+      await this.#stockTransferRequestService.listReservationsByRequestId({
+        requestId: id,
+        roleName,
+        serviceCenterId,
+        companyId,
+        status,
+      });
+
+    res.status(200).json({
+      status: "success",
+      data: {
+        reservations,
+      },
+    });
+  };
+
   approveStockTransferRequest = async (req, res, next) => {
     const { id } = req.params;
 
@@ -105,11 +128,13 @@ class StockTransferRequestController {
 
     const { companyId } = req;
 
-    const { estimatedDeliveryDate } = req.body;
+    const { reservationId, componentIds, estimatedDeliveryDate } = req.body;
 
     const shippedStockTransferRequest =
       await this.#stockTransferRequestService.shipStockTransferRequest({
         requestId: id,
+        reservationId,
+        componentIds,
         roleName,
         serviceCenterId,
         estimatedDeliveryDate,
@@ -119,7 +144,7 @@ class StockTransferRequestController {
     res.status(200).json({
       status: "success",
       data: {
-        stockTransferRequest: shippedStockTransferRequest,
+        shipment: shippedStockTransferRequest,
       },
     });
   };

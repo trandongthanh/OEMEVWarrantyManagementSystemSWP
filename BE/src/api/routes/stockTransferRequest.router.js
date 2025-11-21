@@ -120,6 +120,9 @@ const router = express.Router();
  *                               requestId:
  *                                 type: string
  *                                 format: uuid
+ *                               requestItemId:
+ *                                 type: string
+ *                                 format: uuid
  *                               typeComponentId:
  *                                 type: string
  *                                 format: uuid
@@ -143,6 +146,7 @@ router.post(
   validate(stockTransferRequestSchema),
 
   async (req, res, next) => {
+    -requestItemId;
     const stockTransferRequestController = req.container.resolve(
       "stockTransferRequestController"
     );
@@ -471,11 +475,109 @@ router.patch(
 
 /**
  * @swagger
+ * /stock-transfer-requests/{id}/reservations:
+ *   get:
+ *     summary: Danh sách reservation theo yêu cầu chuyển kho
+ *     description: Trả về các reservation (mặc định trạng thái RESERVED) để Parts Coordinator lựa chọn component và thực hiện ship từng phần.
+ *     tags: [StockTransferRequest]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: ID của yêu cầu chuyển kho
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         schema:
+ *           type: string
+ *           description: Trạng thái cần lọc (ví dụ RESERVED, SHIPPED hoặc ALL)
+ *     responses:
+ *       200:
+ *         description: Lấy danh sách reservation thành công
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "success"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     reservations:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           reservationId:
+ *                             type: string
+ *                             format: uuid
+ *                           requestItemId:
+ *                             type: string
+ *                             format: uuid
+ *                           status:
+ *                             type: string
+ *                             example: "RESERVED"
+ *                           quantityReserved:
+ *                             type: integer
+ *                           stockId:
+ *                             type: string
+ *                           warehouse:
+ *                             type: object
+ *                             nullable: true
+ *                             properties:
+ *                               warehouseId:
+ *                                 type: string
+ *                               name:
+ *                                 type: string
+ *                           typeComponent:
+ *                             type: object
+ *                             nullable: true
+ *                             properties:
+ *                               typeComponentId:
+ *                                 type: string
+ *                               name:
+ *                                 type: string
+ *                               sku:
+ *                                 type: string
+ *                           typeComponentId:
+ *                             type: string
+ *                           quantityRequested:
+ *                             type: integer
+ *       404:
+ *         description: Không tìm thấy yêu cầu
+ *       403:
+ *         description: Không có quyền truy cập
+ */
+router.get(
+  "/:id/reservations",
+  authentication,
+  authorizationByRole(["parts_coordinator_company"]),
+  attachCompanyContext,
+  async (req, res, next) => {
+    const stockTransferRequestController = req.container.resolve(
+      "stockTransferRequestController"
+    );
+
+    await stockTransferRequestController.listReservations(req, res, next);
+  }
+);
+
+/**
+ * @swagger
  * /stock-transfer-requests/{id}/ship:
  *   patch:
  *     summary: Gửi hàng (Parts Coordinator - Company)
  *     description: |-
- *       Parts Coordinator của hãng xác nhận gửi hàng. Hệ thống sẽ collect components từ kho, cập nhật trạng thái component sang `IN_TRANSIT` và trừ tồn kho.
+ *       Parts Coordinator của hãng xác nhận gửi hàng theo từng reservation (từng dòng reserve). Server sẽ kiểm tra số lượng component được chọn,
+ *       đảm bảo đúng kho, đúng loại rồi cập nhật component sang `IN_TRANSIT`, trừ tồn kho. Khi tất cả reservation được gửi xong, trạng thái request
+ *       sẽ chuyển sang `SHIPPED` và phát sự kiện socket.
  *       Sau khi xử lý, server phát sự kiện socket `stock_transfer_request_shipped`
  *       tới các phòng `service_center_staff_{serviceCenterId}`, `service_center_manager_{serviceCenterId}` và `parts_coordinator_service_center_{serviceCenterId}`.
  *     tags: [StockTransferRequest]
@@ -497,8 +599,23 @@ router.patch(
  *           schema:
  *             type: object
  *             required:
- *               - estimatedDeliveryDate
+ *               - reservationId
+ *               - componentIds
  *             properties:
+ *               reservationId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: ID của reservation cần gửi hàng
+ *               componentIds:
+ *                 type: array
+ *                 description: Danh sách component sẽ gửi cho reservation này
+ *                 items:
+ *                   type: string
+ *                   format: uuid
+ *               estimatedDeliveryDate:
+ *                 type: string
+ *                 format: date
+ *                 description: Ngày dự kiến giao hàng (chỉ cần khi ship reservation cuối cùng)
  *               estimatedDeliveryDate:
  *                 type: string
  *                 format: date
@@ -518,38 +635,21 @@ router.patch(
  *                 data:
  *                   type: object
  *                   properties:
- *                     stockTransferRequest:
+ *                     shipment:
  *                       type: object
  *                       properties:
+ *                         shippedReservation:
+ *                           type: object
+ *                           description: Reservation đã được ship kèm các componentIds
+ *                         shippedComponentsCount:
+ *                           type: integer
+ *                           example: 2
+ *                         requestFullyShipped:
+ *                           type: boolean
+ *                           description: true nếu tất cả reservation của request đã được ship
  *                         updatedRequest:
  *                           type: object
- *                           properties:
- *                             id:
- *                               type: string
- *                               format: uuid
- *                             status:
- *                               type: string
- *                               example: "SHIPPED"
- *                             shippedAt:
- *                               type: string
- *                               format: date-time
- *                             estimatedDeliveryDate:
- *                               type: string
- *                               format: date
- *                         componentCollections:
- *                           type: array
- *                           description: Danh sách components đã được collect theo loại (dùng làm log phân bổ)
- *                           items:
- *                             type: object
- *                             properties:
- *                               typeComponentId:
- *                                 type: string
- *                                 format: uuid
- *                               componentIds:
- *                                 type: array
- *                                 items:
- *                                   type: string
- *                                   format: uuid
+ *                           description: Chỉ xuất hiện khi request chuyển sang trạng thái SHIPPED
  *       404:
  *         description: Không tìm thấy request
  *       409:

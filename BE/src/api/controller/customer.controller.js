@@ -29,14 +29,14 @@ class CustomerController {
 
   updateCustomerInfo = async (req, res, next) => {
     const { id } = req.params;
-    const customerData = req.body;
+    const { verificationEmail, ...customerData } = req.body;
 
-    const updatedCustomer = await this.customerService.updateCustomerInfo(
+    const updateResult = await this.customerService.updateCustomerInfo(
       id,
       customerData
     );
 
-    if (!updatedCustomer) {
+    if (!updateResult?.updatedCustomer) {
       return res.status(404).json({
         status: "fail",
         message: "Customer not found",
@@ -46,7 +46,8 @@ class CustomerController {
     res.status(200).json({
       status: "success",
       data: {
-        customer: updatedCustomer,
+        customer: updateResult.updatedCustomer,
+        changedFields: updateResult.changedFields,
       },
     });
   };

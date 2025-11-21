@@ -206,31 +206,31 @@ class StockTransferRequestRepository {
               as: "component",
               attributes: ["name", "typeComponentId", "sku"],
             },
-          ],
-        },
-        {
-          model: Component,
-          as: "components",
-          attributes: [
-            "componentId",
-            "serialNumber",
-            "status",
-            "typeComponentId",
-            "warehouseId",
-          ],
-          include: [
-            {
-              model: db.TypeComponent,
-              as: "typeComponent",
-              attributes: ["name", "sku", "category"],
+            { 
+              model: Component,
+              as: "components", 
+              attributes: [
+                "componentId",
+                "serialNumber",
+                "status",
+                "typeComponentId",
+                "warehouseId",
+              ],
+              required: false,
+              include: [
+                {
+                  model: db.TypeComponent,
+                  as: "typeComponent",
+                  attributes: ["name", "sku", "category"],
+                },
+                {
+                  model: Warehouse,
+                  as: "warehouse",
+                  attributes: ["warehouseId", "name"],
+                },
+              ],
             },
-            {
-              model: Warehouse,
-              as: "warehouse",
-              attributes: ["warehouseId", "name"],
-            },
           ],
-          required: false,
         },
       ],
 
