@@ -156,7 +156,7 @@ class StockReservationRepository {
       transaction,
       lock,
       distinct: true,
-      col: "reservationId",
+      col: "reservation_id",
     });
 
     return count;
