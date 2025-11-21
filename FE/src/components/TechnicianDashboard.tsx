@@ -1885,7 +1885,13 @@ const TechnicianDashboard = ({
   useEffect(() => {
     const initializeData = async () => {
       if (user) {
-        await fetchProcessingRecords();
+        // Fetch all processing records data on mount
+        await Promise.all([
+          fetchProcessingRecords(), // IN_DIAGNOSIS
+          fetchWaitingCustomerApprovalRecords(), // WAITING_CUSTOMER_APPROVAL
+          fetchProcessingCaseLines(), // PROCESSING case lines
+          fetchAssignedTasks(), // Assigned tasks
+        ]);
         // Do not fetch global /components on init to avoid 404 noisy logs when backend
         // doesn't expose that endpoint. Components are fetched when needed (e.g. when
         // opening Create Issue Diagnosis modal via fetchCompatibleComponents).
@@ -1900,7 +1906,7 @@ const TechnicianDashboard = ({
     };
 
     initializeData();
-  }, [user, fetchProcessingRecords, fetchComponents]);
+  }, [user, fetchProcessingRecords, fetchWaitingCustomerApprovalRecords, fetchProcessingCaseLines, fetchAssignedTasks, fetchComponents]);
 
   // Fetch technician's own schedules
   const fetchMySchedules = useCallback(async () => {
