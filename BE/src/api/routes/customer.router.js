@@ -107,7 +107,7 @@ router.get("/", async (req, res, next) => {
  * /customers/{id}:
  *   patch:
  *     summary: Update customer information
- *     description: Update customer details by customer ID. Only service center staff and managers can update customer information.
+ *     description: Update customer details by customer ID. Only service center staff and managers can update customer information. Yêu cầu xác thực OTP qua email trước khi gửi yêu cầu (gửi OTP qua /mail/otp/send, xác thực tại /mail/otp/verify và truyền verificationEmail tương ứng).
  *     tags: [Customer]
  *     security:
  *       - BearerAuth: []
@@ -139,6 +139,11 @@ router.get("/", async (req, res, next) => {
  *                 type: string
  *                 format: email
  *                 description: Customer email address
+ *                 example: "customer@example.com"
+ *               verificationEmail:
+ *                 type: string
+ *                 format: email
+ *                 description: Email đã được gửi & xác thực OTP thông qua các endpoint /mail/otp/send và /mail/otp/verify trước khi cập nhật
  *                 example: "customer@example.com"
  *               address:
  *                 type: string
@@ -198,8 +203,8 @@ router.patch(
   "/:id",
   authentication,
   authorizationByRole(["service_center_staff", "service_center_manager"]),
-  ensureOtpVerified,
   validate(updateCustomerSchema, "body"),
+  ensureOtpVerified,
   async (req, res, next) => {
     const customerController = req.container.resolve("customerController");
 
