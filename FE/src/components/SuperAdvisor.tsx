@@ -1675,12 +1675,15 @@ const SuperAdvisor = () => {
       // Case 2: Registering vehicle with existing customer (found via phone search)
       if (foundCustomer && foundCustomer.id) {
         // Register vehicle using PATCH /vehicles/{VIN} with customerId only
-        const requestBody = {
+        const requestBody: any = {
           dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-          licensePlate: vehicleSearchResult.licensePlate?.trim() || 'N/A',
           purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString(),
           customerId: String(foundCustomer.id) // Ensure customerId is string
         };
+
+        if (vehicleSearchResult.licensePlate?.trim()) {
+          requestBody.licensePlate = vehicleSearchResult.licensePlate.trim();
+        }
 
        
 
@@ -1740,9 +1743,13 @@ const SuperAdvisor = () => {
         // Prepare request body
         const requestBody: any = {
           dateOfManufacture: vehicleSearchResult.dateOfManufacture,
-          licensePlate: vehicleSearchResult.licensePlate?.trim() || 'N/A',
           purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString()
         };
+        
+        // Only include licensePlate if it's provided
+        if (vehicleSearchResult.licensePlate?.trim()) {
+          requestBody.licensePlate = vehicleSearchResult.licensePlate.trim();
+        }
 
         // Use customerId if customer exists, otherwise include customer object for new customer
         if (customerIdToUse) {
@@ -2109,13 +2116,17 @@ const SuperAdvisor = () => {
       }
 
       // Prepare request body - only send ownerId and vehicle info
-      const requestBody = {
+      const requestBody: any = {
         ownerId: customerData.id,  // Use existing customer ID
-        licensePlate: vehicleSearchResult.licensePlate || 'N/A',
         purchaseDate: vehicleSearchResult.purchaseDate || new Date().toISOString(),
         dateOfManufacture: vehicleSearchResult.dateOfManufacture,
         placeOfManufacture: vehicleSearchResult.placeOfManufacture || ''
       };
+      
+      // Only include licensePlate if it's provided
+      if (vehicleSearchResult.licensePlate?.trim()) {
+        requestBody.licensePlate = vehicleSearchResult.licensePlate.trim();
+      }
 
       // Register owner to vehicle
       const response = await axios.patch(`${API_BASE_URL}/vehicle/${vehicleSearchResult.vin}/update-owner`, requestBody, {
