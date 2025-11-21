@@ -97,7 +97,7 @@ class StockReservationRepository {
     lock = null
   ) => {
     const reservation = await StockReservation.findOne({
-      where: { reservationId },
+      where: { reservationId: reservationId },
       include: [
         {
           model: Stock,
@@ -157,7 +157,7 @@ class StockReservationRepository {
       transaction,
       lock,
       distinct: true,
-      col: "StockReservation.reservationId",
+      col: "reservationId",
     });
 
     return count;

@@ -36,7 +36,7 @@ class OemVehicleModelRepository {
           through: {
             attributes: ["durationMonth", "mileageLimit"],
           },
-          attributes: ["name", "sku", "price", "category"],
+          attributes: ["name", "sku", "price", "category", "makeBrand"],
         },
       ],
       transaction,
@@ -53,7 +53,7 @@ class OemVehicleModelRepository {
           through: {
             attributes: ["durationMonth", "mileageLimit"],
           },
-          attributes: ["name", "sku", "price", "category"],
+          attributes: ["name", "sku", "price", "category", "makeBrand"],
         },
       ],
       limit,
