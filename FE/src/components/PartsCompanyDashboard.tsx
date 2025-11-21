@@ -120,6 +120,12 @@ const PartsCompanyDashboard: React.FC = () => {
   const [showReservationsModal, setShowReservationsModal] = useState<boolean>(false);
   const [isLoadingReservations, setIsLoadingReservations] = useState<boolean>(false);
   const [selectedRequestForShip, setSelectedRequestForShip] = useState<StockTransferRequest | null>(null);
+  const [matchedComponentsList, setMatchedComponentsList] = useState<any[]>([]);
+  const [showComponentsListModal, setShowComponentsListModal] = useState<boolean>(false);
+  const [isLoadingComponentsList, setIsLoadingComponentsList] = useState<boolean>(false);
+  const [selectedTypeComponentName, setSelectedTypeComponentName] = useState<string>('');
+  const [selectedComponentIdsByReservation, setSelectedComponentIdsByReservation] = useState<Record<string, string[]>>({});
+  const [currentReservationId, setCurrentReservationId] = useState<string | null>(null);
 
   // Fetch all stock transfer requests
   const fetchStockTransferRequests = async () => {
@@ -243,6 +249,50 @@ const PartsCompanyDashboard: React.FC = () => {
     }
   };
 
+  // Fetch all components matching typeComponentId from external API
+  const handleSelectComponent = async (typeComponentId: string, typeComponentName: string, warehouseId: string, reservationId: string) => {
+    setIsLoadingComponentsList(true);
+    setCurrentReservationId(reservationId);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    
+    try {
+      // Call internal API with query parameters
+      const response = await axios.get(`${API_BASE_URL}/components`, {
+        params: {
+          warehouseId: warehouseId,
+          typeComponentId: typeComponentId,
+          limit: 100,
+          page: 1
+        },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const components = response.data?.data?.components || [];
+      
+      if (components.length > 0) {
+        console.log('🔍 Found components:', components);
+        setMatchedComponentsList(components);
+        setSelectedTypeComponentName(typeComponentName);
+        setShowComponentsListModal(true);
+      } else {
+        toast({
+          title: 'Component không tìm thấy',
+          description: `Không tìm thấy component với Type Component ID: ${typeComponentId}`,
+          variant: 'destructive'
+        });
+      }
+    } catch (error: any) {
+      console.error('Failed to fetch components:', error);
+      toast({
+        title: 'Lỗi khi tải component',
+        description: error?.message || 'Không thể tải thông tin component',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingComponentsList(false);
+    }
+  };
+
   // Filter requests by status
   useEffect(() => {
     if (selectedStatus === 'ALL') {
@@ -303,17 +353,44 @@ const PartsCompanyDashboard: React.FC = () => {
       return;
     }
     try {
-      const response = await axios.patch(
-        `${API_BASE_URL}/stock-transfer-requests/${requestId}/ship`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` }
+      // Ship each reservation separately
+      const shipPromises = reservations.map(async (reservation) => {
+        const reservationId = reservation.reservationId;
+        const componentIds = selectedComponentIdsByReservation[reservationId] || [];
+        
+        // Skip if no components selected for this reservation
+        if (componentIds.length === 0) {
+          return null;
         }
-      );
-      console.log('✅ Request shipped successfully:', response.data);
+        
+        // Set estimated delivery date to 3 weeks from now
+        const estimatedDeliveryDate = new Date();
+        estimatedDeliveryDate.setDate(estimatedDeliveryDate.getDate() + 21);
+        const formattedDate = estimatedDeliveryDate.toISOString().split('T')[0];
+        
+        return axios.patch(
+          `${API_BASE_URL}/stock-transfer-requests/${requestId}/ship`,
+          {
+            reservationId: reservationId,
+            componentIds: componentIds,
+            estimatedDeliveryDate: formattedDate
+          },
+          {
+            headers: { Authorization: `Bearer ${token}` }
+          }
+        );
+      });
       
-      // Close modal
+      // Wait for all ship requests to complete
+      const results = await Promise.all(shipPromises);
+      const successfulShips = results.filter(r => r !== null);
+      
+      console.log(`✅ Successfully shipped ${successfulShips.length} reservations`);
+      
+      // Close modals and reset state
       setShowReservationsModal(false);
+      setSelectedComponentIdsByReservation({});
+      localStorage.removeItem('selectedComponentsByReservation');
       
       // Refresh the list
       await fetchStockTransferRequests();
@@ -325,7 +402,7 @@ const PartsCompanyDashboard: React.FC = () => {
       
       toast({
         title: 'Đã gửi hàng',
-        description: 'Yêu cầu vận chuyển đã được đánh dấu là shipped.',
+        description: `Đã ship thành công ${successfulShips.length} reservation(s).`,
         variant: 'default'
       });
     } catch (error: any) {
@@ -339,6 +416,17 @@ const PartsCompanyDashboard: React.FC = () => {
     } finally {
       setShippingRequestId(null);
     }
+  };
+
+  // Handle selecting component for shipping
+  const handleSelectComponentForShip = (componentId: string) => {
+    if (!currentReservationId) return;
+    
+    // Add component ID to the specific reservation's list
+    setSelectedComponentIdsByReservation(prev => ({
+      ...prev,
+      [currentReservationId]: [...(prev[currentReservationId] || []), componentId]
+    }));
   };
 
   const handleLogout = () => {
@@ -918,9 +1006,30 @@ const PartsCompanyDashboard: React.FC = () => {
                         {/* Component Information */}
                         <div className="space-y-4">
                           <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border-l-4 border-blue-500">
-                            <div className="flex items-center gap-2 mb-2">
-                              <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                              <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wider">Component</label>
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wider">Component</label>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 bg-white dark:bg-blue-900 hover:bg-blue-100 dark:hover:bg-blue-800 border-blue-300"
+                                onClick={() => handleSelectComponent(
+                                  reservation.typeComponentId, 
+                                  reservation.typeComponent?.name || 'Unknown',
+                                  reservation.warehouse?.warehouseId || '',
+                                  reservation.reservationId
+                                )}
+                                disabled={isLoadingComponentsList}
+                              >
+                                {isLoadingComponentsList ? (
+                                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                ) : (
+                                  <Package className="h-3 w-3 mr-1" />
+                                )}
+                                Select
+                              </Button>
                             </div>
                             <p className="text-base font-bold text-blue-900 dark:text-blue-100">{reservation.typeComponent?.name || '---'}</p>
                             {reservation.typeComponent?.sku && (
@@ -937,6 +1046,9 @@ const PartsCompanyDashboard: React.FC = () => {
                               <label className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase tracking-wider">Warehouse</label>
                             </div>
                             <p className="text-base font-bold text-green-900 dark:text-green-100">{reservation.warehouse?.name || '---'}</p>
+                            {reservation.warehouse?.address && (
+                              <p className="text-sm text-green-800 dark:text-green-200 mt-2">{reservation.warehouse.address}</p>
+                            )}
                             {reservation.warehouse?.warehouseId && (
                               <p className="font-mono text-xs text-green-700 dark:text-green-300 mt-1">ID: {reservation.warehouse.warehouseId}</p>
                             )}
@@ -965,10 +1077,6 @@ const PartsCompanyDashboard: React.FC = () => {
                             <div className="border-t pt-3">
                               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Request Item ID</label>
                               <p className="font-mono text-sm mt-1 text-foreground">{reservation.requestItemId || '---'}</p>
-                            </div>
-                            <div className="border-t pt-3">
-                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type Component ID</label>
-                              <p className="font-mono text-sm mt-1 text-foreground">{reservation.typeComponentId || '---'}</p>
                             </div>
                           </div>
                         </div>
@@ -1082,6 +1190,159 @@ const PartsCompanyDashboard: React.FC = () => {
               </div>
             ) : (
               <p className="text-center text-muted-foreground py-6">No case line details available</p>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Component Detail Modal */}
+        {/* Components List Modal */}
+        <Dialog open={showComponentsListModal} onOpenChange={setShowComponentsListModal}>
+          <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+                <Package className="h-6 w-6 text-primary" />
+                Components List - {selectedTypeComponentName}
+              </DialogTitle>
+              <DialogDescription>
+                All available components for this type
+              </DialogDescription>
+            </DialogHeader>
+
+            {isLoadingComponentsList ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                <span className="ml-3 text-lg text-muted-foreground">Loading components...</span>
+              </div>
+            ) : matchedComponentsList.length > 0 ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-4 p-6 bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-blue-950 dark:via-purple-950 dark:to-pink-950 rounded-xl border-2 border-blue-300 dark:border-blue-700 shadow-lg">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Found <span className="font-bold text-blue-600 dark:text-blue-400">{matchedComponentsList.length}</span> available components
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-blue-400 dark:bg-blue-600 rounded-lg blur opacity-25"></div>
+                      <div className="relative px-6 py-3 bg-white dark:bg-gray-900 rounded-lg border-2 border-blue-400 dark:border-blue-600 shadow-md">
+                        <div className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-1 text-center">Selected</div>
+                        <div className="text-3xl font-black text-blue-600 dark:text-blue-400 text-center tabular-nums">
+                          {currentReservationId ? (selectedComponentIdsByReservation[currentReservationId]?.length || 0) : 0}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="text-3xl font-bold text-gray-400 dark:text-gray-600">/</div>
+                    
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-green-400 dark:bg-green-600 rounded-lg blur opacity-25"></div>
+                      <div className="relative px-6 py-3 bg-white dark:bg-gray-900 rounded-lg border-2 border-green-400 dark:border-green-600 shadow-md">
+                        <div className="text-xs font-bold text-green-600 dark:text-green-400 uppercase tracking-wider mb-1 text-center">Required</div>
+                        <div className="text-3xl font-black text-green-600 dark:text-green-400 text-center tabular-nums">
+                          {reservations.find(r => r.reservationId === currentReservationId)?.quantityRequested || 0}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="grid gap-4">
+                  {matchedComponentsList.map((component, index) => (
+                    <Card key={component.serialNumber || index} className="border-2 hover:shadow-lg transition-shadow">
+                      <CardContent className="pt-6">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Name</label>
+                              <p className="text-base font-bold mt-1">{component.typeComponent?.name || component.name || '---'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Serial Number</label>
+                              <p className="font-mono text-sm mt-1">{component.serialNumber || '---'}</p>
+                            </div>
+                            {(component.typeComponent?.sku || component.sku) && (
+                              <div className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/50 rounded border border-blue-200">
+                                <Tag className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                                <span className="font-mono text-xs font-semibold">{component.typeComponent?.sku || component.sku}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Category</label>
+                              <p className="text-sm mt-1">{component.typeComponent?.category || component.category || '---'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
+                              <div className="mt-1">
+                                <Badge variant={component.status === 'IN_WAREHOUSE' ? 'default' : 'secondary'}>
+                                  {component.status || 'N/A'}
+                                </Badge>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Make Brand</label>
+                              <p className="text-sm mt-1">{component.typeComponent?.makeBrand || component.makeBrand || '---'}</p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Component ID</label>
+                              <p className="font-mono text-xs mt-1">{component.componentId || '---'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Created At</label>
+                              <p className="text-sm mt-1">{component.createdAt ? formatDate(component.createdAt) : '---'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Price</label>
+                              <p className="text-base font-bold text-green-600 dark:text-green-400 mt-1">
+                                {(component.typeComponent?.price || component.price) ? `${(component.typeComponent?.price || component.price).toLocaleString()} VND` : '---'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end mt-4 pt-4 border-t">
+                          {currentReservationId && selectedComponentIdsByReservation[currentReservationId]?.includes(component.componentId) ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="bg-green-50 dark:bg-green-950 border-green-500 text-green-700 dark:text-green-400 cursor-default"
+                              disabled
+                            >
+                              <CheckCircle className="mr-2 h-4 w-4" />
+                              Selected
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="default"
+                              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectComponentForShip(component.componentId);
+                              }}
+                            >
+                              <CheckCircle className="mr-2 h-4 w-4" />
+                              Select This Component
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <Package className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                <p className="text-base text-muted-foreground">No components found</p>
+              </div>
             )}
           </DialogContent>
         </Dialog>
