@@ -2029,13 +2029,35 @@ const SuperAdvisor = () => {
 
     } catch (error) {
       setIsCheckingWarranty(false);
-      setWarrantyStatus('expired');
       
-      toast({
-        title: 'Warranty Check Failed',
-        description: "Purchase date must be earlier than today's date. Please verify the vehicle's purchase date.",
-        variant: 'destructive'
-      });
+      // Check if error is related to purchase date
+      const errorMessage = axios.isAxiosError(error) && error.response?.data?.message 
+        ? error.response.data.message 
+        : '';
+      
+      const isPurchaseDateError = errorMessage.includes('purchase') || 
+                                  errorMessage.includes('Purchase') ||
+                                  errorMessage.includes('earlier than today');
+      
+      if (isPurchaseDateError) {
+        // Don't set warranty status to expired, allow user to fix purchase date
+        setWarrantyStatus(null);
+        
+        toast({
+          title: '⚠️ Invalid Purchase Date',
+          description: 'The purchase date must be before today or must be after Date of Manufacture. Please correct the purchase date and check the warranty again.',
+          variant: 'destructive'
+        });
+      } else {
+        // Other errors - set as expired
+        setWarrantyStatus('expired');
+        
+        toast({
+          title: 'Warranty Check Failed',
+          description: errorMessage || 'Failed to check warranty. Please try again.',
+          variant: 'destructive'
+        });
+      }
     }
   };
 
@@ -3061,8 +3083,8 @@ const SuperAdvisor = () => {
                               ...prev,
                               purchaseDate: e.target.value ? new Date(e.target.value).toISOString() : ''
                             }) : prev)}
-                            disabled={!!vehicleSearchResult.owner || warrantyStatus !== null}
-                            className={(vehicleSearchResult.owner || warrantyStatus !== null) ? "bg-gray-100" : "bg-white border-green-300 focus:border-green-500"}
+                            disabled={!!vehicleSearchResult.owner || warrantyStatus === 'valid'}
+                            className={(vehicleSearchResult.owner || warrantyStatus === 'valid') ? "bg-gray-100" : "bg-white border-green-300 focus:border-green-500"}
                           />
                         </div>
                       </div>
