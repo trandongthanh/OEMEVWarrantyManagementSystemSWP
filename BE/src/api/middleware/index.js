@@ -169,9 +169,18 @@ export const validate =
   };
 
 export const ensureOtpVerified = async (req, res, next) => {
-  const emailValue = req.body?.approverEmail || req.body?.visitorInfo?.email;
+  const candidateEmails = [
+    req.body?.approverEmail,
+    req.body?.visitorInfo?.email,
+    req.body?.verificationEmail,
+    req.body?.email,
+  ];
 
-  if (typeof emailValue !== "string" || emailValue.trim() === "") {
+  const emailValue = candidateEmails.find(
+    (value) => typeof value === "string" && value.trim() !== ""
+  );
+
+  if (!emailValue) {
     throw new BadRequestError("OTP verification requires an email");
   }
 
