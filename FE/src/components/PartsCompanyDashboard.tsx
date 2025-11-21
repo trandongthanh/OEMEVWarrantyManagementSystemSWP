@@ -207,8 +207,8 @@ const PartsCompanyDashboard: React.FC = () => {
     } catch (error) {
       console.error('Failed to fetch case line detail:', error);
       toast({
-        title: 'Lỗi khi tải Case Line',
-        description: 'Không thể tải chi tiết Case Line. Kiểm tra console để biết thêm thông tin.',
+        title: 'Error Loading Case Line',
+        description: 'Failed to load Case Line details. Check console for more information.',
         variant: 'destructive'
       });
     } finally {
@@ -243,7 +243,7 @@ const PartsCompanyDashboard: React.FC = () => {
       setComponentsList(components);
     } catch (error: any) {
       console.error('Failed to fetch components:', error);
-      toast({ title: 'Lỗi khi tải components', description: error?.message || 'Không thể tải components', variant: 'destructive' });
+      toast({ title: 'Error Loading Components', description: error?.message || 'Failed to load components', variant: 'destructive' });
     } finally {
       setIsLoadingComponents(false);
     }
@@ -276,16 +276,16 @@ const PartsCompanyDashboard: React.FC = () => {
         setShowComponentsListModal(true);
       } else {
         toast({
-          title: 'Component không tìm thấy',
-          description: `Không tìm thấy component với Type Component ID: ${typeComponentId}`,
+          title: 'Component Not Found',
+          description: `No components found with Type Component ID: ${typeComponentId}`,
           variant: 'destructive'
         });
       }
     } catch (error: any) {
       console.error('Failed to fetch components:', error);
       toast({
-        title: 'Lỗi khi tải component',
-        description: error?.message || 'Không thể tải thông tin component',
+        title: 'Error Loading Component',
+        description: error?.message || 'Failed to load component information',
         variant: 'destructive'
       });
     } finally {
@@ -324,8 +324,8 @@ const PartsCompanyDashboard: React.FC = () => {
     } catch (error: any) {
       console.error('Failed to fetch reservations:', error);
       toast({
-        title: 'Lỗi khi tải reservations',
-        description: error?.message || 'Không thể tải reservations',
+        title: 'Error Loading Reservations',
+        description: error?.message || 'Failed to load reservations',
         variant: 'destructive'
       });
       return [];
@@ -399,17 +399,11 @@ const PartsCompanyDashboard: React.FC = () => {
       if (showDetailModal && selectedStockRequest?.id === requestId) {
         await fetchStockTransferRequestDetail(requestId);
       }
-      
-      toast({
-        title: 'Đã gửi hàng',
-        description: `Đã ship thành công ${successfulShips.length} reservation(s).`,
-        variant: 'default'
-      });
     } catch (error: any) {
       console.error('Failed to ship request:', error);
       const errorMessage = error.response?.data?.message || 'Failed to ship request';
       toast({
-        title: 'Lỗi khi gửi hàng',
+        title: 'Shipping Error',
         description: errorMessage,
         variant: 'destructive'
       });
@@ -724,29 +718,7 @@ const PartsCompanyDashboard: React.FC = () => {
         <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
           <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="flex items-center justify-between">
-                <span>Stock Transfer Request Details</span>
-                {selectedStockRequest && selectedStockRequest.status === 'APPROVED' && (
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={() => handleShipRequest(selectedStockRequest)}
-                    disabled={shippingRequestId === selectedStockRequest.id}
-                  >
-                    {shippingRequestId === selectedStockRequest.id ? (
-                      <>
-                        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                        Shipping...
-                      </>
-                    ) : (
-                      <>
-                        <Truck className="mr-1 h-4 w-4" />
-                        Ship Request
-                      </>
-                    )}
-                  </Button>
-                )}
-              </DialogTitle>
+              <DialogTitle>Stock Transfer Request Details</DialogTitle>
               <DialogDescription>
                 Detailed information about the stock transfer request
               </DialogDescription>
@@ -1085,11 +1057,7 @@ const PartsCompanyDashboard: React.FC = () => {
                   </Card>
                 ))}
                 
-                <div className="flex items-center justify-between gap-4 pt-6 border-t bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-4 rounded-lg -mx-6 -mb-6 mt-6">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <CheckCircle className="h-4 w-4" />
-                    <span>{reservations.length} reservation{reservations.length > 1 ? 's' : ''} ready to ship</span>
-                  </div>
+                <div className="flex items-center justify-end gap-4 pt-6 border-t bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-4 rounded-lg -mx-6 -mb-6 mt-6">
                   <div className="flex items-center gap-3">
                     <Button
                       variant="outline"
