@@ -236,6 +236,10 @@ const PartsCompanyDashboard: React.FC = () => {
     const bearer = token || FALLBACK_BEARER_TOKEN;
     try {
       const response = await axios.get(EXTERNAL_COMPONENTS_API, {
+        params: {
+          limit: 50,
+          page: 1
+        },
         headers: { Authorization: `Bearer ${bearer}` }
       });
       const components = response.data?.data?.components || [];
@@ -346,6 +350,23 @@ const PartsCompanyDashboard: React.FC = () => {
     if (!selectedRequestForShip) return;
     
     const requestId = selectedRequestForShip.id;
+    
+    // Check if all reservations have components selected
+    const reservationsWithoutComponents = reservations.filter(reservation => {
+      const componentIds = selectedComponentIdsByReservation[reservation.reservationId] || [];
+      const required = reservation.quantityRequested || 0;
+      return componentIds.length !== required;
+    });
+    
+    if (reservationsWithoutComponents.length > 0) {
+      toast({
+        title: 'Components Not Selected',
+        description: `Please select all required components for ${reservationsWithoutComponents.length} reservation(s) before shipping.`,
+        variant: 'destructive'
+      });
+      return;
+    }
+    
     setShippingRequestId(requestId);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
@@ -416,11 +437,37 @@ const PartsCompanyDashboard: React.FC = () => {
   const handleSelectComponentForShip = (componentId: string) => {
     if (!currentReservationId) return;
     
-    // Add component ID to the specific reservation's list
-    setSelectedComponentIdsByReservation(prev => ({
-      ...prev,
-      [currentReservationId]: [...(prev[currentReservationId] || []), componentId]
-    }));
+    const currentReservation = reservations.find(r => r.reservationId === currentReservationId);
+    const maxQuantity = currentReservation?.quantityRequested || 0;
+    
+    setSelectedComponentIdsByReservation(prev => {
+      const currentSelected = prev[currentReservationId] || [];
+      const isAlreadySelected = currentSelected.includes(componentId);
+      
+      // If already selected, deselect (toggle off)
+      if (isAlreadySelected) {
+        return {
+          ...prev,
+          [currentReservationId]: currentSelected.filter(id => id !== componentId)
+        };
+      }
+      
+      // If not selected, check if we can add more
+      if (currentSelected.length >= maxQuantity) {
+        toast({
+          title: 'Maximum Reached',
+          description: `You can only select up to ${maxQuantity} component(s) for this reservation.`,
+          variant: 'destructive'
+        });
+        return prev;
+      }
+      
+      // Add component to selection
+      return {
+        ...prev,
+        [currentReservationId]: [...currentSelected, componentId]
+      };
+    });
   };
 
   const handleLogout = () => {
@@ -1280,8 +1327,11 @@ const PartsCompanyDashboard: React.FC = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              className="bg-green-50 dark:bg-green-950 border-green-500 text-green-700 dark:text-green-400 cursor-default"
-                              disabled
+                              className="bg-green-50 dark:bg-green-950 border-green-500 text-green-700 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectComponentForShip(component.componentId);
+                              }}
                             >
                               <CheckCircle className="mr-2 h-4 w-4" />
                               Selected
