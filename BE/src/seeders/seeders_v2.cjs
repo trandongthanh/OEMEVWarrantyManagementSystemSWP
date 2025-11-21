@@ -3,6 +3,8 @@
 const { sequelize } = require("../models/index.cjs");
 const bcrypt = require("bcrypt");
 
+const OEM_COMPANY_BASE_QUANTITY = 100;
+
 const TYPE_COMPONENTS_DATA = [
   {
     sku: "BAT-HV-42KWH-VFE34",
@@ -98,18 +100,18 @@ const STOCK_PLAN = [
     address: "Khu công nghệ cao Hòa Lạc, Hà Nội",
     priority: 1,
     items: [
-      { sku: "BAT-HV-42KWH-VFE34", quantity: 18 },
-      { sku: "BAT-HV-92KWH-VF8", quantity: 12 },
-      { sku: "MOT-ELC-130KW", quantity: 16 },
-      { sku: "INV-PWR-400V", quantity: 20 },
-      { sku: "CHG-OBC-11KW", quantity: 20 },
-      { sku: "HVAC-AUTO-2ZONE", quantity: 15 },
-      { sku: "ADAS-CAM-360", quantity: 25 },
-      { sku: "DISPLAY-15IN", quantity: 22 },
-      { sku: "BRAKE-PAD-CERAMIC", quantity: 60 },
-      { sku: "SUSP-AIR-ADAPTIVE", quantity: 10 },
-      { sku: "FILTER-CABIN-HEPA", quantity: 80 },
-      { sku: "BODY-WINDSHIELD-HEAT", quantity: 30 },
+      { sku: "BAT-HV-42KWH-VFE34", quantity: OEM_COMPANY_BASE_QUANTITY },
+      { sku: "BAT-HV-92KWH-VF8", quantity: OEM_COMPANY_BASE_QUANTITY },
+      { sku: "MOT-ELC-130KW", quantity: OEM_COMPANY_BASE_QUANTITY },
+      { sku: "INV-PWR-400V", quantity: OEM_COMPANY_BASE_QUANTITY },
+      { sku: "CHG-OBC-11KW", quantity: OEM_COMPANY_BASE_QUANTITY },
+      { sku: "HVAC-AUTO-2ZONE", quantity: OEM_COMPANY_BASE_QUANTITY },
+      { sku: "ADAS-CAM-360", quantity: OEM_COMPANY_BASE_QUANTITY },
+      { sku: "DISPLAY-15IN", quantity: OEM_COMPANY_BASE_QUANTITY },
+      { sku: "BRAKE-PAD-CERAMIC", quantity: OEM_COMPANY_BASE_QUANTITY },
+      { sku: "SUSP-AIR-ADAPTIVE", quantity: OEM_COMPANY_BASE_QUANTITY },
+      { sku: "FILTER-CABIN-HEPA", quantity: OEM_COMPANY_BASE_QUANTITY },
+      { sku: "BODY-WINDSHIELD-HEAT", quantity: OEM_COMPANY_BASE_QUANTITY },
     ],
   },
   {
@@ -400,6 +402,99 @@ const VEHICLE_DATA = [
 
 function createSerialNumber({ sku, warehouseCode, index }) {
   return `${sku}-${warehouseCode}-${String(index).padStart(4, "0")}`;
+}
+
+async function ensureManufacturerInventory({
+  manufacturerWarehouses,
+  typeComponents,
+  Component,
+  Stock,
+  transaction,
+}) {
+  let addedComponents = 0;
+
+  for (const warehouse of manufacturerWarehouses) {
+    for (const [sku, typeComponent] of Object.entries(typeComponents)) {
+      const typeComponentId = typeComponent?.typeComponentId;
+
+      if (!typeComponentId) {
+        continue;
+      }
+
+      const currentCount = await Component.count({
+        where: {
+          warehouseId: warehouse.warehouseId,
+          typeComponentId,
+          status: "IN_WAREHOUSE",
+        },
+        transaction,
+      });
+
+      if (currentCount >= OEM_COMPANY_BASE_QUANTITY) {
+        const [stock] = await Stock.findOrCreate({
+          where: {
+            warehouseId: warehouse.warehouseId,
+            typeComponentId,
+          },
+          defaults: {
+            warehouseId: warehouse.warehouseId,
+            typeComponentId,
+            quantityInStock: currentCount,
+            quantityReserved: 0,
+          },
+          transaction,
+        });
+
+        await stock.update({ quantityInStock: currentCount }, { transaction });
+
+        continue;
+      }
+
+      const missingCount = OEM_COMPANY_BASE_QUANTITY - currentCount;
+
+      for (let offset = 1; offset <= missingCount; offset += 1) {
+        const serialNumber = createSerialNumber({
+          sku,
+          warehouseCode: warehouse.code,
+          index: currentCount + offset,
+        });
+
+        await Component.findOrCreate({
+          where: { serialNumber },
+          defaults: {
+            typeComponentId,
+            serialNumber,
+            warehouseId: warehouse.warehouseId,
+            status: "IN_WAREHOUSE",
+          },
+          transaction,
+        });
+
+        addedComponents += 1;
+      }
+
+      const [stock] = await Stock.findOrCreate({
+        where: {
+          warehouseId: warehouse.warehouseId,
+          typeComponentId,
+        },
+        defaults: {
+          warehouseId: warehouse.warehouseId,
+          typeComponentId,
+          quantityInStock: OEM_COMPANY_BASE_QUANTITY,
+          quantityReserved: 0,
+        },
+        transaction,
+      });
+
+      await stock.update(
+        { quantityInStock: OEM_COMPANY_BASE_QUANTITY },
+        { transaction }
+      );
+    }
+  }
+
+  return addedComponents;
 }
 
 async function seedDatabase() {
@@ -804,6 +899,20 @@ async function seedDatabase() {
         createdComponentsInWarehouses += item.quantity;
       }
     }
+
+    const manufacturerWarehouses = Object.values(warehouses).filter(
+      (warehouse) => !warehouse.serviceCenterId
+    );
+
+    const additionalManufacturerComponents = await ensureManufacturerInventory({
+      manufacturerWarehouses,
+      typeComponents,
+      Component,
+      Stock,
+      transaction,
+    });
+
+    createdComponentsInWarehouses += additionalManufacturerComponents;
 
     let installedComponents = 0;
 

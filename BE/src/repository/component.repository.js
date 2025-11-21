@@ -4,6 +4,14 @@ import db from "../models/index.cjs";
 const { Component, TypeComponent } = db;
 
 class ComponentRepository {
+  createComponent = async (componentData, transaction = null) => {
+    const component = await Component.create(componentData, {
+      transaction,
+    });
+
+    return component ? component.toJSON() : null;
+  };
+
   findAll = async (
     { whereCondition, limit, offset = 0, includeTypeComponent = false },
     transaction = null,
