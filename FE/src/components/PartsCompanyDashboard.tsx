@@ -23,6 +23,9 @@ import {
 } from "lucide-react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const EXTERNAL_COMPONENTS_API = 'https://dongthanhswp.space/api/v1/components';
+// Fallback token provided by user when no auth token available locally
+const FALLBACK_BEARER_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI4N2YxOGQ1MS1lMjdjLTQxMWMtOGZmYi0xM2FmZDk1NGE1ZDUiLCJyb2xlTmFtZSI6InBhcnRzX2Nvb3JkaW5hdG9yX2NvbXBhbnkiLCJzZXJ2aWNlQ2VudGVySWQiOm51bGwsImNvbXBhbnlJZCI6IjQ2NWQ3NWU1LTJlYTYtNDc4Ny05NTBhLTE0YzBjMzVmZTVkYSIsImlhdCI6MTc2MzcwMTc0MywiZXhwIjoxNzYzNzE5NzQzfQ.2hGuLramgfynoPfQSNLY8cZp3U0dPHOXjF-YoETMEWI';
 
 interface StockTransferRequest {
   id: string;
@@ -102,6 +105,7 @@ const PartsCompanyDashboard: React.FC = () => {
   const [stockTransferRequests, setStockTransferRequests] = useState<StockTransferRequest[]>([]);
   const [filteredRequests, setFilteredRequests] = useState<StockTransferRequest[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
+  const [selectedTab, setSelectedTab] = useState<'REQUESTS' | 'COMPONENTS'>('REQUESTS');
   const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
   const [isLoadingRequests, setIsLoadingRequests] = useState<boolean>(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
@@ -110,6 +114,8 @@ const PartsCompanyDashboard: React.FC = () => {
   const [selectedCaseLine, setSelectedCaseLine] = useState<any | null>(null);
   const [isLoadingCaseLine, setIsLoadingCaseLine] = useState<boolean>(false);
   const [showCaseLineModal, setShowCaseLineModal] = useState<boolean>(false);
+  const [componentsList, setComponentsList] = useState<any[]>([]);
+  const [isLoadingComponents, setIsLoadingComponents] = useState<boolean>(false);
 
   // Fetch all stock transfer requests
   const fetchStockTransferRequests = async () => {
@@ -204,6 +210,34 @@ const PartsCompanyDashboard: React.FC = () => {
   useEffect(() => {
     fetchStockTransferRequests();
   }, []);
+
+  // Fetch components when Components tab selected
+  useEffect(() => {
+    if (selectedTab === 'COMPONENTS') {
+      fetchComponents();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTab]);
+
+  // Fetch external components list
+  const fetchComponents = async () => {
+    setIsLoadingComponents(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    const bearer = token || FALLBACK_BEARER_TOKEN;
+    try {
+      const response = await axios.get(EXTERNAL_COMPONENTS_API, {
+        headers: { Authorization: `Bearer ${bearer}` }
+      });
+      const components = response.data?.data?.components || [];
+      console.log('🔩 Fetched external components:', components);
+      setComponentsList(components);
+    } catch (error: any) {
+      console.error('Failed to fetch components:', error);
+      toast({ title: 'Lỗi khi tải components', description: error?.message || 'Không thể tải components', variant: 'destructive' });
+    } finally {
+      setIsLoadingComponents(false);
+    }
+  };
 
   // Filter requests by status
   useEffect(() => {
@@ -335,33 +369,94 @@ const PartsCompanyDashboard: React.FC = () => {
         <div className="container mx-auto px-6 py-6">
           <Card className="shadow-elegant">
             <CardHeader>
-              <CardTitle>Stock Transfer Requests</CardTitle>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant={selectedTab === 'REQUESTS' ? 'default' : 'ghost'} onClick={() => setSelectedTab('REQUESTS')}>Requests</Button>
+                  <Button size="sm" variant={selectedTab === 'COMPONENTS' ? 'default' : 'ghost'} onClick={() => setSelectedTab('COMPONENTS')}>Components</Button>
+                </div>
+              </div>
+              <CardTitle>{selectedTab === 'REQUESTS' ? 'Stock Transfer Requests' : 'Components'}</CardTitle>
               <CardDescription>
-                Manage stock transfer requests from service centers
+                {selectedTab === 'REQUESTS'
+                  ? 'Manage stock transfer requests from service centers'
+                  : 'List of components from the parts company API'
+                }
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Status Filter */}
-              <div className="mb-4 flex items-center gap-2 flex-wrap">
-                {['ALL', 'PENDING_APPROVAL', 'APPROVED', 'SHIPPED', 'RECEIVED', 'REJECTED', 'CANCELLED'].map((status) => {
-                  const count = status === 'ALL' 
-                    ? stockTransferRequests.length 
-                    : stockTransferRequests.filter(req => req.status === status).length;
-                  return (
-                    <Button
-                      key={status}
-                      variant={status === selectedStatus ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setSelectedStatus(status)}
-                      className="border-dashed"
-                    >
-                      {status === 'ALL' ? 'All' : status.replace(/_/g, ' ')} ({count})
-                    </Button>
-                  );
-                })}
-              </div>
+              {/* Status Filter - only show for Requests tab */}
+              {selectedTab === 'REQUESTS' && (
+                <div className="mb-4 flex items-center gap-2 flex-wrap">
+                  {['ALL', 'PENDING_APPROVAL', 'APPROVED', 'SHIPPED', 'RECEIVED', 'REJECTED', 'CANCELLED'].map((status) => {
+                    const count = status === 'ALL' 
+                      ? stockTransferRequests.length 
+                      : stockTransferRequests.filter(req => req.status === status).length;
+                    return (
+                      <Button
+                        key={status}
+                        variant={status === selectedStatus ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setSelectedStatus(status)}
+                        className="border-dashed"
+                      >
+                        {status === 'ALL' ? 'All' : status.replace(/_/g, ' ')} ({count})
+                      </Button>
+                    );
+                  })}
+                </div>
+              )}
 
-              {isLoadingRequests ? (
+              {selectedTab === 'COMPONENTS' ? (
+                isLoadingComponents ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <span className="ml-3 text-muted-foreground">Loading components...</span>
+                  </div>
+                ) : componentsList.length === 0 ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="text-center">
+                      <Package className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold text-foreground mb-2">No Components</h3>
+                      <p className="text-sm text-muted-foreground">No components returned from external API.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Serial Number</TableHead>
+                          <TableHead>SKU</TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Warehouse</TableHead>
+                          <TableHead>Vehicle VIN</TableHead>
+                          <TableHead>Installed At</TableHead>
+                          <TableHead>Price</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {componentsList.filter(c => c.status === 'IN_WAREHOUSE').map((c) => (
+                          <TableRow key={c.componentId}>
+                            <TableCell className="font-mono text-xs">{c.serialNumber || c.componentId}</TableCell>
+                            <TableCell>{c.typeComponent?.sku || c.type_component_id || '-'}</TableCell>
+                            <TableCell>{c.typeComponent?.name || '-'}</TableCell>
+                            <TableCell>{c.typeComponent?.category || '-'}</TableCell>
+                            <TableCell>
+                              <Badge variant={getStatusBadgeVariant(c.status)}>{c.status}</Badge>
+                            </TableCell>
+                            <TableCell className="text-sm">{c.warehouseId || c.warehouse_id || '-'}</TableCell>
+                            <TableCell className="text-sm">{c.vehicleVin || c.vehicle_vin || '-'}</TableCell>
+                            <TableCell className="text-sm">{c.installedAt ? formatDate(c.installedAt) : '-'}</TableCell>
+                            <TableCell className="text-sm">{c.typeComponent?.price ? `${c.typeComponent.price}` : '-'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )
+              ) : isLoadingRequests ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   <span className="ml-3 text-muted-foreground">Loading requests...</span>
@@ -688,17 +783,8 @@ const PartsCompanyDashboard: React.FC = () => {
                                 </div>
                                 {item.caselineId && (
                                   <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200">
-                                    <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase flex items-center justify-between">
-                                      <span>Case Line ID</span>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() => fetchCaseLineDetail(item.caselineId!)}
-                                        disabled={isLoadingCaseLine}
-                                        className="h-6 px-2"
-                                      >
-                                        <Eye className="h-3 w-3" />
-                                      </Button>
+                                    <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase">
+                                      Case Line ID
                                     </label>
                                     <p className="font-mono text-xs text-blue-900 dark:text-blue-100 mt-1">
                                       {item.caselineId}
