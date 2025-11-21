@@ -116,6 +116,10 @@ const PartsCompanyDashboard: React.FC = () => {
   const [showCaseLineModal, setShowCaseLineModal] = useState<boolean>(false);
   const [componentsList, setComponentsList] = useState<any[]>([]);
   const [isLoadingComponents, setIsLoadingComponents] = useState<boolean>(false);
+  const [reservations, setReservations] = useState<any[]>([]);
+  const [showReservationsModal, setShowReservationsModal] = useState<boolean>(false);
+  const [isLoadingReservations, setIsLoadingReservations] = useState<boolean>(false);
+  const [selectedRequestForShip, setSelectedRequestForShip] = useState<StockTransferRequest | null>(null);
 
   // Fetch all stock transfer requests
   const fetchStockTransferRequests = async () => {
@@ -248,8 +252,50 @@ const PartsCompanyDashboard: React.FC = () => {
     }
   }, [selectedStatus, stockTransferRequests]);
 
-  // Ship stock transfer request
-  const handleShipRequest = async (requestId: string) => {
+  // Fetch reservations for a stock transfer request
+  const fetchReservations = async (requestId: string) => {
+    setIsLoadingReservations(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingReservations(false);
+      return;
+    }
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/stock-transfer-requests/${requestId}/reservations`,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+      const reservationsData = response.data?.data?.reservations || [];
+      console.log('📦 Fetched reservations:', reservationsData);
+      setReservations(reservationsData);
+      return reservationsData;
+    } catch (error: any) {
+      console.error('Failed to fetch reservations:', error);
+      toast({
+        title: 'Lỗi khi tải reservations',
+        description: error?.message || 'Không thể tải reservations',
+        variant: 'destructive'
+      });
+      return [];
+    } finally {
+      setIsLoadingReservations(false);
+    }
+  };
+
+  // Show reservations before shipping
+  const handleShipRequest = async (request: StockTransferRequest) => {
+    setSelectedRequestForShip(request);
+    await fetchReservations(request.id);
+    setShowReservationsModal(true);
+  };
+
+  // Confirm and execute ship action
+  const confirmShipRequest = async () => {
+    if (!selectedRequestForShip) return;
+    
+    const requestId = selectedRequestForShip.id;
     setShippingRequestId(requestId);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
@@ -266,10 +312,13 @@ const PartsCompanyDashboard: React.FC = () => {
       );
       console.log('✅ Request shipped successfully:', response.data);
       
+      // Close modal
+      setShowReservationsModal(false);
+      
       // Refresh the list
       await fetchStockTransferRequests();
       
-      // If modal is open, refresh the detail
+      // If detail modal is open, refresh the detail
       if (showDetailModal && selectedStockRequest?.id === requestId) {
         await fetchStockTransferRequestDetail(requestId);
       }
@@ -555,7 +604,7 @@ const PartsCompanyDashboard: React.FC = () => {
                                 <Button
                                   size="sm"
                                   variant="default"
-                                  onClick={() => handleShipRequest(request.id)}
+                                  onClick={() => handleShipRequest(request)}
                                   disabled={shippingRequestId === request.id}
                                 >
                                   {shippingRequestId === request.id ? (
@@ -593,7 +642,7 @@ const PartsCompanyDashboard: React.FC = () => {
                   <Button
                     size="sm"
                     variant="default"
-                    onClick={() => handleShipRequest(selectedStockRequest.id)}
+                    onClick={() => handleShipRequest(selectedStockRequest)}
                     disabled={shippingRequestId === selectedStockRequest.id}
                   >
                     {shippingRequestId === selectedStockRequest.id ? (
@@ -819,6 +868,149 @@ const PartsCompanyDashboard: React.FC = () => {
               </div>
             ) : (
               <p className="text-center text-muted-foreground py-8">No details available</p>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Reservations Modal */}
+        <Dialog open={showReservationsModal} onOpenChange={setShowReservationsModal}>
+          <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+                <Package className="h-6 w-6 text-primary" />
+                Reservations for Ship Request
+              </DialogTitle>
+              <DialogDescription className="text-base">
+                Review reservations before shipping request <span className="font-mono font-semibold">#{selectedRequestForShip?.id.substring(0, 8)}</span>
+              </DialogDescription>
+            </DialogHeader>
+
+            {isLoadingReservations ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                <span className="ml-3 text-lg text-muted-foreground">Loading reservations...</span>
+              </div>
+            ) : reservations.length === 0 ? (
+              <div className="text-center py-12">
+                <Package className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                <p className="text-base text-muted-foreground">No reservations found</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {reservations.map((reservation, index) => (
+                  <Card key={reservation.reservationId || index} className="border-2 shadow-lg hover:shadow-xl transition-shadow">
+                    <CardHeader className="pb-3 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950 dark:to-purple-950">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Tag className="h-4 w-4 text-primary" />
+                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Reservation ID</span>
+                          </div>
+                          <p className="font-mono text-sm font-medium">{reservation.reservationId || '---'}</p>
+                        </div>
+                        <Badge variant={getStatusBadgeVariant(reservation.status)} className="text-sm px-3 py-1">
+                          {reservation.status || 'N/A'}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Component Information */}
+                        <div className="space-y-4">
+                          <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border-l-4 border-blue-500">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                              <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wider">Component</label>
+                            </div>
+                            <p className="text-base font-bold text-blue-900 dark:text-blue-100">{reservation.typeComponent?.name || '---'}</p>
+                            {reservation.typeComponent?.sku && (
+                              <div className="mt-2 inline-flex items-center gap-1 px-2 py-1 bg-white dark:bg-blue-900/50 rounded border border-blue-200">
+                                <span className="text-xs font-medium text-blue-700 dark:text-blue-300">SKU:</span>
+                                <span className="font-mono text-xs font-semibold text-blue-900 dark:text-blue-100">{reservation.typeComponent.sku}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="p-4 bg-green-50 dark:bg-green-950/30 rounded-lg border-l-4 border-green-500">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Warehouse className="h-4 w-4 text-green-600 dark:text-green-400" />
+                              <label className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase tracking-wider">Warehouse</label>
+                            </div>
+                            <p className="text-base font-bold text-green-900 dark:text-green-100">{reservation.warehouse?.name || '---'}</p>
+                            {reservation.warehouse?.warehouseId && (
+                              <p className="font-mono text-xs text-green-700 dark:text-green-300 mt-1">ID: {reservation.warehouse.warehouseId}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Quantity Information */}
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-center border-2 border-blue-200 dark:border-blue-800">
+                              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase mb-2">Requested</p>
+                              <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{reservation.quantityRequested || 0}</p>
+                            </div>
+                            <div className="p-4 bg-green-50 dark:bg-green-950/30 rounded-lg text-center border-2 border-green-200 dark:border-green-800">
+                              <p className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase mb-2">Reserved</p>
+                              <p className="text-3xl font-bold text-green-600 dark:text-green-400">{reservation.quantityReserved || 0}</p>
+                            </div>
+                          </div>
+
+                          {/* Technical IDs */}
+                          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg space-y-3 border border-gray-200 dark:border-gray-800">
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Stock ID</label>
+                              <p className="font-mono text-sm mt-1 text-foreground">{reservation.stockId || '---'}</p>
+                            </div>
+                            <div className="border-t pt-3">
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Request Item ID</label>
+                              <p className="font-mono text-sm mt-1 text-foreground">{reservation.requestItemId || '---'}</p>
+                            </div>
+                            <div className="border-t pt-3">
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type Component ID</label>
+                              <p className="font-mono text-sm mt-1 text-foreground">{reservation.typeComponentId || '---'}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                
+                <div className="flex items-center justify-between gap-4 pt-6 border-t bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-4 rounded-lg -mx-6 -mb-6 mt-6">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <CheckCircle className="h-4 w-4" />
+                    <span>{reservations.length} reservation{reservations.length > 1 ? 's' : ''} ready to ship</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowReservationsModal(false)}
+                      className="px-6"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="default"
+                      onClick={confirmShipRequest}
+                      disabled={shippingRequestId === selectedRequestForShip?.id}
+                      className="px-6 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                    >
+                      {shippingRequestId === selectedRequestForShip?.id ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Shipping...
+                        </>
+                      ) : (
+                        <>
+                          <Truck className="mr-2 h-4 w-4" />
+                          Confirm Ship
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
             )}
           </DialogContent>
         </Dialog>
