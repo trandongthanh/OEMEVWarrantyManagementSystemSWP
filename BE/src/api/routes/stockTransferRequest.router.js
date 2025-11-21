@@ -146,7 +146,6 @@ router.post(
   validate(stockTransferRequestSchema),
 
   async (req, res, next) => {
-    -requestItemId;
     const stockTransferRequestController = req.container.resolve(
       "stockTransferRequestController"
     );
