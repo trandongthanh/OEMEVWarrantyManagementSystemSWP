@@ -60,6 +60,8 @@ import RoleService from "./src/service/role.service.js";
 import RoleRepository from "./src/repository/role.repository.js";
 import OemVehicleModelRepository from "./src/repository/oemVehicleModel.repository.js";
 import WarrantyComponentRepository from "./src/repository/warrantyComponent.repository.js";
+import ComponentController from "./src/api/controller/component.controller.js";
+import ComponentService from "./src/service/component.service.js";
 
 const container = createContainer();
 
@@ -113,6 +115,9 @@ export function setupContainer({ io, notificationNamespace }) {
     oemVehicleModelController: asClass(OemVehicleModelController, {
       lifetime: Lifetime.SCOPED,
     }),
+    componentController: asClass(ComponentController, {
+      lifetime: Lifetime.SCOPED,
+    }),
 
     // Services
     authService: asClass(AuthService, { lifetime: Lifetime.SCOPED }),
@@ -150,6 +155,7 @@ export function setupContainer({ io, notificationNamespace }) {
     oemVehicleModelService: asClass(OemVehicleModelService, {
       lifetime: Lifetime.SCOPED,
     }),
+    componentService: asClass(ComponentService, { lifetime: Lifetime.SCOPED }),
 
     // Repositories
     userRepository: asClass(UserRepository, { lifetime: Lifetime.SCOPED }),
@@ -216,6 +222,9 @@ export function setupContainer({ io, notificationNamespace }) {
       lifetime: Lifetime.SCOPED,
     }),
     warrantyComponentRepository: asClass(WarrantyComponentRepository, {
+      lifetime: Lifetime.SCOPED,
+    }),
+    componentRepository: asClass(ComponentRepository, {
       lifetime: Lifetime.SCOPED,
     }),
   });
