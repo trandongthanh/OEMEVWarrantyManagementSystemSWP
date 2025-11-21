@@ -301,6 +301,8 @@ const PartsCompanyDashboard: React.FC = () => {
       );
       
       if (response.data.status === 'success') {
+        console.log('✅ Component created:', response.data.data.component);
+        
         toast({
           title: 'Success',
           description: `Component created successfully with serial number: ${response.data.data.component.serialNumber}`,
@@ -313,14 +315,40 @@ const PartsCompanyDashboard: React.FC = () => {
         setSelectedTypeComponentForCreate(null);
         
         // Refresh warehouses to update stock
+        console.log('🔄 Refreshing warehouses...');
         await fetchWarehouses();
         
-        // Find and update selected warehouse
-        const updatedWarehouse = warehouses.find(w => w.warehouseId === selectedWarehouse.warehouseId);
-        if (updatedWarehouse) {
-          setSelectedWarehouse(updatedWarehouse);
-          fetchTypeComponentsFromWarehouse();
-        }
+        // Wait a bit for state to update, then find updated warehouse
+        setTimeout(() => {
+          console.log('🔍 Finding updated warehouse...');
+          // Re-fetch to get the absolute latest data
+          axios.get(
+            'https://dongthanhswp.space/api/v1/warehouses',
+            {
+              headers: {
+                Authorization: `Bearer ${token || FALLBACK_BEARER_TOKEN}`
+              }
+            }
+          ).then(res => {
+            if (res.data.status === 'success') {
+              const updatedWarehouses = res.data.data.warehouses || [];
+              const updatedWarehouse = updatedWarehouses.find(
+                (w: any) => w.warehouseId === selectedWarehouse.warehouseId
+              );
+              
+              if (updatedWarehouse) {
+                console.log('✅ Updated warehouse found, refreshing components');
+                setWarehouses(updatedWarehouses);
+                setSelectedWarehouse(updatedWarehouse);
+                // fetchTypeComponentsFromWarehouse will be called by useEffect
+              } else {
+                console.log('⚠️ Warehouse not found in updated data');
+              }
+            }
+          }).catch(err => {
+            console.error('Error re-fetching warehouses:', err);
+          });
+        }, 500);
       }
     } catch (error: any) {
       console.error('Error creating component:', error);
