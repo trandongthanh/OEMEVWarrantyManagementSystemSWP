@@ -203,7 +203,16 @@ const PartsCompanyDashboard: React.FC = () => {
 
   // Fetch type components from selected warehouse stocks
   const fetchTypeComponentsFromWarehouse = () => {
-    if (!selectedWarehouse || !selectedWarehouse.stocks) {
+    console.log('🔍 fetchTypeComponentsFromWarehouse called', selectedWarehouse);
+    
+    if (!selectedWarehouse) {
+      console.log('❌ No selectedWarehouse');
+      setTypeComponents([]);
+      return;
+    }
+
+    if (!selectedWarehouse.stocks) {
+      console.log('❌ No stocks in warehouse');
       setTypeComponents([]);
       return;
     }
@@ -211,6 +220,8 @@ const PartsCompanyDashboard: React.FC = () => {
     setIsLoadingTypeComponents(true);
     
     try {
+      console.log('📦 Processing stocks:', selectedWarehouse.stocks.length);
+      
       // Extract type components from warehouse stocks
       const components = selectedWarehouse.stocks
         .filter((stock: any) => stock.typeComponent)
@@ -230,17 +241,19 @@ const PartsCompanyDashboard: React.FC = () => {
           stockId: stock.stockId
         }));
       
+      console.log('✅ Processed components:', components.length);
       setTypeComponents(components);
       setTypeComponentsTotalItems(components.length);
       setTypeComponentsTotalPages(1);
       setTypeComponentsPage(1);
     } catch (error: any) {
-      console.error('Error processing type components:', error);
+      console.error('❌ Error processing type components:', error);
       toast({
         title: 'Error',
-        description: 'Failed to load type components from warehouse',
+        description: error.message || 'Failed to load type components from warehouse',
         variant: 'destructive'
       });
+      setTypeComponents([]);
     } finally {
       setIsLoadingTypeComponents(false);
     }
@@ -323,6 +336,7 @@ const PartsCompanyDashboard: React.FC = () => {
 
   // Fetch warehouses
   const fetchWarehouses = async () => {
+    console.log('🏢 Fetching warehouses...');
     setIsLoadingWarehouses(true);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     
@@ -336,12 +350,15 @@ const PartsCompanyDashboard: React.FC = () => {
         }
       );
       
+      console.log('📦 Warehouses response:', response.data);
+      
       if (response.data.status === 'success') {
         const warehousesData = response.data.data.warehouses || [];
+        console.log('✅ Warehouses loaded:', warehousesData.length);
         setWarehouses(warehousesData);
       }
     } catch (error: any) {
-      console.error('Error fetching warehouses:', error);
+      console.error('❌ Error fetching warehouses:', error);
       toast({
         title: 'Error',
         description: error.response?.data?.message || 'Failed to fetch warehouses',
@@ -1721,11 +1738,10 @@ const PartsCompanyDashboard: React.FC = () => {
                     key={warehouse.warehouseId} 
                     className="border hover:border-blue-400 transition-all cursor-pointer hover:shadow-md"
                     onClick={() => {
+                      console.log('🖱️ Warehouse clicked:', warehouse.name);
                       setSelectedWarehouse(warehouse);
                       setShowWarehouseSelectionModal(false);
                       setShowTypeComponentsModal(true);
-                      // Load type components from this warehouse
-                      setTimeout(() => fetchTypeComponentsFromWarehouse(), 100);
                     }}
                   >
                     <CardContent className="p-4">
