@@ -27,6 +27,13 @@ module.exports = (sequelize, DataTypes) => {
     {
       tableName: "component_history",
       timestamps: false,
+      indexes: [
+        {
+          unique: true,
+          name: "comp_hist_item_comp_unique",
+          fields: ["component_id", "stock_transfer_request_item_id"],
+        },
+      ],
     }
   );
 

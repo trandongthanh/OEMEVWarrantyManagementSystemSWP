@@ -31,13 +31,17 @@ class OemVehicleModelService {
 
   createVehicleModel = async ({
     vehicleModelName,
-    yearOfLaunch,
-    placeOfManufacture,
-    generalWarrantyDuration,
-    generalWarrantyMileage,
-    components,
+    typeComponentWarrantyList,
+    // components,
     companyId,
   }) => {
+    const {
+      yearOfLaunch,
+      placeOfManufacture,
+      generalWarrantyDuration,
+      generalWarrantyMileage,
+    } = typeComponentWarrantyList;
+
     return db.sequelize.transaction(async (transaction) => {
       const vehicleModelPayload = {
         vehicleModelName,
@@ -54,136 +58,138 @@ class OemVehicleModelService {
           transaction
         );
 
-      const existingComponents = components.filter(
-        (component) => !!component.typeComponentId
-      );
+      // // Start: Component processing logic (commented out as per user request)
+      // const existingComponents = components.filter(
+      //   (component) => !!component.typeComponentId
+      // );
 
-      const newComponents = components.filter(
-        (component) => component.newTypeComponent
-      );
+      // const newComponents = components.filter(
+      //   (component) => component.newTypeComponent
+      // );
 
-      const existingTypeComponentIds = existingComponents.map(
-        (component) => component.typeComponentId
-      );
+      // const existingTypeComponentIds = existingComponents.map(
+      //   (component) => component.typeComponentId
+      // );
 
-      let existingTypeComponents = [];
-      if (existingTypeComponentIds.length > 0) {
-        existingTypeComponents = await this.#typeComponentRepository.findByIds(
-          existingTypeComponentIds,
-          transaction
-        );
+      // let existingTypeComponents = [];
+      // if (existingTypeComponentIds.length > 0) {
+      //   existingTypeComponents = await this.#typeComponentRepository.findByIds(
+      //     existingTypeComponentIds,
+      //     transaction
+      //   );
 
-        const existingIds = new Set(
-          existingTypeComponents.map((item) => item.typeComponentId)
-        );
+      //   const existingIds = new Set(
+      //     existingTypeComponents.map((item) => item.typeComponentId)
+      //   );
 
-        const missingIds = existingTypeComponentIds.filter(
-          (id) => !existingIds.has(id)
-        );
+      //   const missingIds = existingTypeComponentIds.filter(
+      //     (id) => !existingIds.has(id)
+      //   );
 
-        if (missingIds.length > 0) {
-          throw new NotFoundError(
-            `Type component is not existing: ${missingIds.join(", ")}`
-          );
-        }
-      }
+      //   if (missingIds.length > 0) {
+      //     throw new NotFoundError(
+      //       `Type component is not existing: ${missingIds.join(", ")}`
+      //     );
+      //   }
+      // }
 
-      const newTypeComponentBySku = new Map();
-      for (const component of newComponents) {
-        const { newTypeComponent } = component;
-        const { sku, name, price, category } = newTypeComponent;
+      // const newTypeComponentBySku = new Map();
+      // for (const component of newComponents) {
+      //   const { newTypeComponent } = component;
+      //   const { sku, name, price, category } = newTypeComponent;
 
-        newTypeComponentBySku.set(sku, {
-          name,
-          price,
-          sku,
-          category,
-        });
-      }
+      //   newTypeComponentBySku.set(sku, {
+      //     name,
+      //     price,
+      //     sku,
+      //     category,
+      //   });
+      // }
 
-      const skus = Array.from(newTypeComponentBySku.keys());
+      // const skus = Array.from(newTypeComponentBySku.keys());
 
-      const existingTypeComponentsBySku = new Map();
+      // const existingTypeComponentsBySku = new Map();
 
-      if (skus.length > 0) {
-        const typeComponentsBySku =
-          await this.#typeComponentRepository.findBySkus(skus, transaction);
+      // if (skus.length > 0) {
+      //   const typeComponentsBySku =
+      //     await this.#typeComponentRepository.findBySkus(skus, transaction);
 
-        typeComponentsBySku.forEach((item) => {
-          existingTypeComponentsBySku.set(item.sku, item);
-        });
-      }
+      //   typeComponentsBySku.forEach((item) => {
+      //     existingTypeComponentsBySku.set(item.sku, item);
+      //   });
+      // }
 
-      const typeComponentsToCreate = [];
+      // const typeComponentsToCreate = [];
 
-      for (const [sku, info] of newTypeComponentBySku.entries()) {
-        if (!existingTypeComponentsBySku.has(sku)) {
-          typeComponentsToCreate.push(info);
-        }
-      }
+      // for (const [sku, info] of newTypeComponentBySku.entries()) {
+      //   if (!existingTypeComponentsBySku.has(sku)) {
+      //     typeComponentsToCreate.push(info);
+      //   }
+      // }
 
-      let createdTypeComponents = [];
-      if (typeComponentsToCreate.length > 0) {
-        createdTypeComponents =
-          await this.#typeComponentRepository.bulkCreateTypeComponents(
-            typeComponentsToCreate,
-            transaction
-          );
-      }
+      // let createdTypeComponents = [];
+      // if (typeComponentsToCreate.length > 0) {
+      //   createdTypeComponents =
+      //     await this.#typeComponentRepository.bulkCreateTypeComponents(
+      //       typeComponentsToCreate,
+      //       transaction
+      //     );
+      // }
 
-      const typeComponentsBySku = new Map(existingTypeComponentsBySku);
+      // const typeComponentsBySku = new Map(existingTypeComponentsBySku);
 
-      createdTypeComponents.forEach((item) => {
-        typeComponentsBySku.set(item.sku, item);
-      });
+      // createdTypeComponents.forEach((item) => {
+      //   typeComponentsBySku.set(item.sku, item);
+      // });
 
-      const allTypeComponentsMap = new Map();
+      // const allTypeComponentsMap = new Map();
 
-      existingTypeComponents.forEach((item) => {
-        allTypeComponentsMap.set(item.typeComponentId, item);
-      });
+      // existingTypeComponents.forEach((item) => {
+      //   allTypeComponentsMap.set(item.typeComponentId, item);
+      // });
 
-      typeComponentsBySku.forEach((item) => {
-        allTypeComponentsMap.set(item.typeComponentId, item);
-      });
+      // typeComponentsBySku.forEach((item) => {
+      //   allTypeComponentsMap.set(item.typeComponentId, item);
+      // });
 
-      const warrantyComponentsPayload = components.map((component) => {
-        let resolvedTypeComponentId;
+      // const warrantyComponentsPayload = components.map((component) => {
+      //   let resolvedTypeComponentId;
 
-        if (component.typeComponentId) {
-          resolvedTypeComponentId = component.typeComponentId;
-        } else {
-          const { sku } = component.newTypeComponent;
-          const resolvedTypeComponent = typeComponentsBySku.get(sku);
+      //   if (component.typeComponentId) {
+      //     resolvedTypeComponentId = component.typeComponentId;
+      //   } else {
+      //     const { sku } = component.newTypeComponent;
+      //     const resolvedTypeComponent = typeComponentsBySku.get(sku);
 
-          if (!resolvedTypeComponent) {
-            throw new NotFoundError(
-              `Không tìm thấy type component tương ứng với SKU ${sku}`
-            );
-          }
+      //     if (!resolvedTypeComponent) {
+      //       throw new NotFoundError(
+      //         `Không tìm thấy type component tương ứng với SKU ${sku}`
+      //       );
+      //     }
 
-          resolvedTypeComponentId = resolvedTypeComponent.typeComponentId;
-        }
+      //     resolvedTypeComponentId = resolvedTypeComponent.typeComponentId;
+      //   }
 
-        return {
-          vehicleModelId: vehicleModel.vehicleModelId,
-          typeComponentId: resolvedTypeComponentId,
-          quantity: component.quantity,
-          durationMonth: component.durationMonth,
-          mileageLimit: component.mileageLimit,
-        };
-      });
+      //   return {
+      //     vehicleModelId: vehicleModel.vehicleModelId,
+      //     typeComponentId: resolvedTypeComponentId,
+      //     quantity: component.quantity,
+      //     durationMonth: component.durationMonth,
+      //     mileageLimit: component.mileageLimit,
+      //   };
+      // });
 
-      const warrantyComponents =
-        await this.#warrantyComponentRepository.bulkCreateWarrantyComponents({
-          warrantyComponents: warrantyComponentsPayload,
-          transaction,
-        });
+      // const warrantyComponents =
+      //   await this.#warrantyComponentRepository.bulkCreateWarrantyComponents({
+      //     warrantyComponents: warrantyComponentsPayload,
+      //     transaction,
+      //   });
+      // // End: Component processing logic (commented out)
 
       return {
         vehicleModel,
-        typeComponents: Array.from(allTypeComponentsMap.values()),
-        warrantyComponents,
+        // typeComponents: Array.from(allTypeComponentsMap.values()), // Commented out
+        // warrantyComponents, // Commented out
       };
     });
   };

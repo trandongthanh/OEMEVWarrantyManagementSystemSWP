@@ -44,11 +44,13 @@ class OemVehicleModelController {
   createWarrantyComponentsForModel = async (req, res, next) => {
     const { vehicleModelId } = req.params;
     const { typeComponentWarrantyList } = req.body;
+    const { companyId } = req.user;
 
     const newComponents =
       await this.#oemVehicleModelService.createWarrantyComponentsForModel({
         vehicleModelId,
         typeComponentWarrantyList,
+        companyId,
       });
 
     res.status(201).json({

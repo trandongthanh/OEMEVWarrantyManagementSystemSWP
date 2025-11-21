@@ -56,7 +56,7 @@ module.exports = (sequelize, DataTypes) => {
       as: "reservations",
     });
     StockTransferRequestItem.belongsToMany(models.Component, {
-      through: models.ComponentHistory,
+      through: { model: models.ComponentHistory, unique: false },
       foreignKey: "stock_transfer_request_item_id",
       otherKey: "component_id",
       as: "historicalComponents",

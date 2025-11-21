@@ -206,9 +206,9 @@ class StockTransferRequestRepository {
               as: "component",
               attributes: ["name", "typeComponentId", "sku"],
             },
-            { 
+            {
               model: Component,
-              as: "components", 
+              as: "components",
               attributes: [
                 "componentId",
                 "serialNumber",
@@ -229,6 +229,17 @@ class StockTransferRequestRepository {
                   attributes: ["warehouseId", "name"],
                 },
               ],
+            },
+            {
+              model: Component,
+              as: "historicalComponents",
+              attributes: [
+                "componentId",
+                "serialNumber",
+                "status",
+                "typeComponentId",
+              ],
+              required: false,
             },
           ],
         },
