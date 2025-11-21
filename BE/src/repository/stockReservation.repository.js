@@ -96,8 +96,7 @@ class StockReservationRepository {
     transaction = null,
     lock = null
   ) => {
-    const reservation = await StockReservation.findOne({
-      where: { reservationId: reservationId },
+    const reservation = await StockReservation.findByPk(reservationId, {
       include: [
         {
           model: Stock,
