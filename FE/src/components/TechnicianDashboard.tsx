@@ -1306,7 +1306,11 @@ const TechnicianDashboard = ({
       }
 
       // Refresh processing records to reflect status change
-      try { await fetchProcessingRecords(); } catch (e) { /* ignore refresh error */ }
+      try { 
+        await fetchProcessingRecords(); 
+        await fetchAllProcessingRecords();
+        await fetchAssignedTasks();
+      } catch (e) { /* ignore refresh error */ }
       setViewCaseModalOpen(false);
       return resp?.data;
     } catch (err) {
