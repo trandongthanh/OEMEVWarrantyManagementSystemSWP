@@ -42,6 +42,7 @@ import StockTransferRequestRepository from "./src/repository/stockTransferReques
 import StockTransferRequestItemRepository from "./src/repository/stockTransferRequestItem.repository.js";
 import StockReservationRepository from "./src/repository/stockReservation.repository.js";
 import InventoryRepository from "./src/repository/inventory.repository.js";
+import ComponentHistoryRepository from "./src/repository/componentHistory.repository.js";
 
 import TaskAssignmentRepository from "./src/repository/taskAssignment.repository.js";
 import UserController from "./src/api/controller/user.controller.js";
@@ -225,6 +226,9 @@ export function setupContainer({ io, notificationNamespace }) {
       lifetime: Lifetime.SCOPED,
     }),
     componentRepository: asClass(ComponentRepository, {
+      lifetime: Lifetime.SCOPED,
+    }),
+    componentHistoryRepository: asClass(ComponentHistoryRepository, {
       lifetime: Lifetime.SCOPED,
     }),
   });

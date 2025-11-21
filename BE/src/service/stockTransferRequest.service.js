@@ -16,6 +16,7 @@ class StockTransferRequestService {
   #warehouseRepository;
   #componentRepository;
   #notificationService;
+  #componentHistoryRepository;
 
   constructor({
     stockTransferRequestRepository,
@@ -25,6 +26,7 @@ class StockTransferRequestService {
     warehouseRepository,
     componentRepository,
     notificationService,
+    componentHistoryRepository,
   }) {
     this.#stockTransferRequestRepository = stockTransferRequestRepository;
     this.#stockTransferRequestItemRepository =
@@ -34,6 +36,7 @@ class StockTransferRequestService {
     this.#warehouseRepository = warehouseRepository;
     this.#componentRepository = componentRepository;
     this.#notificationService = notificationService;
+    this.#componentHistoryRepository = componentHistoryRepository;
   }
 
   createStockTransferRequest = async ({
@@ -551,6 +554,20 @@ class StockTransferRequestService {
         );
       }
 
+      const receivedAt = formatUTCtzHCM(dayjs());
+      const historyRecords = componentsInTransit.map((component) => ({
+        componentId: component.componentId,
+        stockTransferRequestItemId: component.stockTransferRequestItemId,
+        receivedAt: receivedAt,
+      }));
+
+      if (historyRecords.length > 0) {
+        await this.#componentHistoryRepository.bulkCreate(
+          historyRecords,
+          transaction
+        );
+      }
+
       const componentsByType = componentsInTransit.reduce((acc, component) => {
         const typeId = component.typeComponentId;
 
@@ -619,7 +636,7 @@ class StockTransferRequestService {
           {
             requestId,
             status: "RECEIVED",
-            receivedAt: formatUTCtzHCM(dayjs()),
+            receivedAt: receivedAt,
           },
           transaction
         );
