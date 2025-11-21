@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
+import axios from 'axios';
 import {
 		LogOut,Wrench
 } from "lucide-react";
@@ -14,11 +15,11 @@ import { useAuth } from "@/contexts/AuthContext";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 interface StockTransferRequest {
-  id: string; // UUID from API
-  requestingWarehouseId: string; // UUID from API
-  requestedByUserId: string; // UUID from API
+  id: string; 
+  requestingWarehouseId: string;
+  requestedByUserId: string; 
   requestedAt: string;
-  approvedByUserId: string | null; // UUID from API
+  approvedByUserId: string | null;
   rejectedByUserId?: string | null;
   cancelledByUserId?: string | null;
   status: string;
@@ -79,6 +80,7 @@ const formatNumberWithCommas = (num: number): string => {
 const WarrantyDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [viewMode, setViewMode] = useState<'requests' | 'models'>('requests');
   const [stockTransferRequests, setStockTransferRequests] = useState<StockTransferRequest[]>([]);
   const [isLoadingTransfers, setIsLoadingTransfers] = useState<boolean>(false);
   const [page, setPage] = useState<number>(1);
@@ -95,6 +97,30 @@ const WarrantyDashboard: React.FC = () => {
   const [isApproving, setIsApproving] = useState<boolean>(false);
   const { user } = useAuth();
   
+  // Vehicle Models states
+  const [vehicleModels, setVehicleModels] = useState<any[]>([]);
+  const [selectedModel, setSelectedModel] = useState<any>(null);
+  const [isLoadingModels, setIsLoadingModels] = useState<boolean>(false);
+  const [isLoadingComponents, setIsLoadingComponents] = useState<boolean>(false);
+  const [modelComponents, setModelComponents] = useState<any[]>([]);
+  const [selectedModelFilter, setSelectedModelFilter] = useState<string>('');
+  
+  // Create Warranty Component states
+  const [isCreateComponentDialogOpen, setIsCreateComponentDialogOpen] = useState<boolean>(false);
+  const [isCreatingComponent, setIsCreatingComponent] = useState<boolean>(false);
+  const [selectedCopyComponent, setSelectedCopyComponent] = useState<string>(''); // Track selected component in dropdown
+  const [newComponent, setNewComponent] = useState({
+    typeComponentId: '', // For reusing existing component
+    sku: '',
+    name: '',
+    price: '',
+    category: 'HIGH_VOLTAGE_BATTERY',
+    makeBrand: '',
+    durationMonth: '',
+    mileageLimit: '',
+    quantity: '1'
+  });
+  
   useEffect(() => {
     // Auto-fetch when page changes
     if (user) {
@@ -102,13 +128,236 @@ const WarrantyDashboard: React.FC = () => {
     }
   }, [user, page]);
 
+  // Fetch vehicle models when switching to models view
+  useEffect(() => {
+    if (viewMode === 'models' && vehicleModels.length === 0) {
+      fetchVehicleModels();
+    }
+  }, [viewMode]);
+
+  const fetchVehicleModels = async () => {
+    setIsLoadingModels(true);
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      
+      if (!token) {
+        toast({
+          title: 'Authentication Required',
+          description: 'Please login again to continue.',
+          variant: 'destructive'
+        });
+        return [];
+      }
+
+      const response = await axios.get(`${API_BASE_URL}/oem-vehicle-models`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.data.status === 'success' && response.data.data) {
+        const models = Array.isArray(response.data.data) ? response.data.data : [];
+        setVehicleModels(models);
+        return models;
+      } else {
+        setVehicleModels([]);
+        return [];
+      }
+    } catch (error) {
+      toast({
+        title: 'Error Loading Vehicle Models',
+        description: 'Failed to load vehicle models.',
+        variant: 'destructive'
+      });
+      setVehicleModels([]);
+      return [];
+    } finally {
+      setIsLoadingModels(false);
+    }
+  };
+
+  const handleLoadModels = () => {
+    fetchVehicleModels();
+  };
+
+  const handleSelectModel = (model: any) => {
+    setSelectedModel(model);
+    // Components are already in model.typeComponents, no need to fetch
+    if (model.typeComponents && Array.isArray(model.typeComponents)) {
+      setModelComponents(model.typeComponents);
+    } else {
+      setModelComponents([]);
+    }
+  };
+
+  const handleCreateComponentClick = () => {
+    // Reset form and dropdown
+    setNewComponent({
+      typeComponentId: '',
+      sku: '',
+      name: '',
+      price: '',
+      category: 'HIGH_VOLTAGE_BATTERY',
+      makeBrand: '',
+      durationMonth: '',
+      mileageLimit: '',
+      quantity: '1'
+    });
+    setSelectedCopyComponent('');
+    setIsCreateComponentDialogOpen(true);
+  };
+
+  const handleCreateComponentSubmit = async () => {
+    if (!selectedModel) {
+      toast({
+        title: 'No Model Selected',
+        description: 'Please select a vehicle model from the dropdown first.',
+        variant: 'destructive'
+      });
+      return;
+    }
+    
+    if (!selectedModel) return;
+    
+    // Validation - different requirements for reusing vs creating new
+    const isReusingComponent = selectedCopyComponent.trim() !== '';
+    
+    console.log('Validation check:', {
+      isReusingComponent,
+      selectedCopyComponent,
+      newComponent
+    });
+    
+    if (isReusingComponent) {
+      // Trường hợp 1: Copy component - chỉ cần selectedCopyComponent và 3 field không disable
+      if (!selectedCopyComponent || !newComponent.durationMonth || !newComponent.mileageLimit || !newComponent.quantity) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please select a component to copy and fill in warranty duration, mileage limit, and quantity.',
+          variant: 'destructive'
+        });
+        return;
+      }
+    } else {
+      // Trường hợp 2: Tạo mới - cần tất cả các field
+      if (!newComponent.sku.trim() || !newComponent.name.trim() || !newComponent.price || 
+          !newComponent.durationMonth || !newComponent.mileageLimit || !newComponent.quantity) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please fill in all required fields (SKU, Name, Price, Warranty Duration, Mileage, Quantity).',
+          variant: 'destructive'
+        });
+        return;
+      }
+    }
+
+    setIsCreatingComponent(true);
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      
+      // Build payload based on whether copying or creating new
+      let componentData: any;
+      
+      if (isReusingComponent) {
+        // Trường hợp 1: Copy component - chỉ lấy phần vehicleModelId (bỏ ||componentIndex)
+        const [sourceVehicleModelId, componentIndexStr] = selectedCopyComponent.split('||');
+        const componentIndex = parseInt(componentIndexStr);
+        
+        // Sử dụng selectedCopyComponent làm componentId
+        const componentId = selectedCopyComponent;
+        
+        // Gửi selectedCopyComponent về endpoint
+        componentData = {
+          typeComponentId: componentId,
+          durationMonth: parseInt(newComponent.durationMonth),
+          mileageLimit: parseInt(newComponent.mileageLimit),
+          quantity: parseInt(newComponent.quantity)
+        };
+        
+        console.log('Copying component:', {
+          selectedCopyComponent,
+          extractedComponentId: componentId,
+          sendingToAPI: componentData
+        });
+      } else {
+        // Trường hợp 2: Tạo mới - gửi tất cả fields (KHÔNG có typeComponentId)
+        componentData = {
+          sku: newComponent.sku.trim(),
+          name: newComponent.name.trim(),
+          price: parseInt(newComponent.price),
+          category: newComponent.category,
+          makeBrand: newComponent.makeBrand.trim() || "",
+          durationMonth: parseInt(newComponent.durationMonth),
+          mileageLimit: parseInt(newComponent.mileageLimit),
+          quantity: parseInt(newComponent.quantity)
+        };
+      }
+
+      const payload = {
+        typeComponentWarrantyList: [componentData]
+      };
+
+      console.log('Creating warranty component:', payload);
+      
+      const response = await axios.post(
+        `${API_BASE_URL}/oem-vehicle-models/${selectedModel.vehicleModelId}/warranty-components`,
+        payload,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      if (response.data.status === 'success') {
+        toast({
+          title: 'Component Created! ✅',
+          description: 'The warranty component has been added successfully.',
+        });
+        setIsCreateComponentDialogOpen(false);
+        
+        // Refresh vehicle models to get updated components
+        const updatedModels = await fetchVehicleModels();
+        
+        // If the created component is for the currently selected model, update its components
+        if (selectedModel && updatedModels.length > 0) {
+          const updatedModel = updatedModels.find(m => m.vehicleModelId === selectedModel.vehicleModelId);
+          if (updatedModel) {
+            setSelectedModel(updatedModel);
+            if (updatedModel.typeComponents && Array.isArray(updatedModel.typeComponents)) {
+              setModelComponents(updatedModel.typeComponents);
+            }
+          }
+        }
+      } else {
+        toast({
+          title: 'Creation Failed',
+          description: response.data.message || 'Failed to create component. Please try again.',
+          variant: 'destructive'
+        });
+      }
+    } catch (error) {
+      console.error('Error creating component:', error);
+      toast({
+        title: 'Error',
+        description: axios.isAxiosError(error) && error.response?.data?.message
+          ? error.response.data.message
+          : 'An error occurred while creating the component.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsCreatingComponent(false);
+    }
+  };
+
   const fetchStockTransferRequests = async () => {
     setIsLoadingTransfers(true);
     try {
       const token = localStorage.getItem('ev_warranty_token');
       
       if (!token) {
-        console.error('❌ No authentication token found');
         toast({
           title: 'Authentication Required',
           description: 'Please login again to continue.',
@@ -124,26 +373,14 @@ const WarrantyDashboard: React.FC = () => {
         status: status
       });
       
-      console.log('🔍 Fetching stock transfer requests:', {
-        page,
-        limit,
-        status
-      });
-      
-      const response = await fetch(`${API_BASE_URL}/stock-transfer-requests?${queryParams}`, {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests?${queryParams}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
       
-      const data = await response.json();
-      console.log('📦 API Response:', data);
-      
-      if (!response.ok) {
-        console.error('❌ API Error:', response.status, data);
-        throw new Error(data.message || `API returned status ${response.status}`);
-      }
+      const data = response.data;
       
       // Handle API response structure: { status: "success", data: { stockTransferRequests: [...] } }
       if (data.status === 'success' && data.data?.stockTransferRequests) {
@@ -186,28 +423,17 @@ const WarrantyDashboard: React.FC = () => {
   // Fetch caseline info for a single item
   const fetchCaselineInfo = async (caselineId: string, token: string): Promise<CaselineInfo | null> => {
     try {
-      console.log(`🔍 Fetching caseline info for: ${caselineId}`);
-      
-      const response = await fetch(`${API_BASE_URL}/case-lines/${caselineId}`, {
+      const response = await axios.get(`${API_BASE_URL}/case-lines/${caselineId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
       
-      const data = await response.json();
-      console.log(`📋 Caseline API Response for ${caselineId}:`, data);
-      
-      if (!response.ok) {
-        console.warn(`⚠️ Failed to fetch caseline ${caselineId}:`, response.status, data);
-        return null;
-      }
-      
+      const data = response.data;
       // Extract caseline info from API response (backend returns 'caseLine' not 'caseline')
       if (data.status === 'success' && data.data?.caseLine) {
         const caseline = data.data.caseLine;
-        console.log(`✅ Caseline data:`, caseline);
-        console.log(`📦 TypeComponent:`, caseline.typeComponent);
         
         return {
           caselineId: caseline.id,
@@ -222,8 +448,7 @@ const WarrantyDashboard: React.FC = () => {
           }
         };
       }
-      
-      console.warn(`⚠️ Unexpected caseline response structure:`, data);
+
       return null;
     } catch (error) {
       return null;
@@ -234,39 +459,22 @@ const WarrantyDashboard: React.FC = () => {
     setIsLoadingDetail(true);
     try {
       const token = localStorage.getItem('ev_warranty_token');
-      
-      console.log('🔍 Fetching request detail for ID:', requestId);
-      
-      const response = await fetch(`${API_BASE_URL}/stock-transfer-requests/${requestId}`, {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests/${requestId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
       
-      const data = await response.json();
-      console.log('📋 Detail API Response:', data);
-      
-      if (!response.ok) {
-        console.error('❌ Detail API Error:', response.status, data);
-        throw new Error(data.message || `API returned status ${response.status}`);
-      }
+      const data = response.data;
       
       // Handle API response structure: { status: "success", data: { stockTransferRequest: {...} } }
       if (data.status === 'success' && data.data?.stockTransferRequest) {
         const requestDetail = data.data.stockTransferRequest;
-        
-        console.log('✅ Request detail loaded:', {
-          id: requestDetail.id,
-          requester: requestDetail.requester,
-          requestingWarehouse: requestDetail.requestingWarehouse,
-          itemsCount: requestDetail.items?.length || 0,
-          items: requestDetail.items
-        });
+
         
         // Fetch caseline info for each item that has a caselineId
         if (requestDetail.items && requestDetail.items.length > 0) {
-          console.log('🔄 Fetching caseline info for items...');
           const itemsWithCaselineInfo = await Promise.all(
             requestDetail.items.map(async (item: any) => {
               if (item.caselineId) {
@@ -278,13 +486,11 @@ const WarrantyDashboard: React.FC = () => {
           );
           
           requestDetail.items = itemsWithCaselineInfo;
-          console.log('✅ Caseline info loaded for items');
         }
         
         setSelectedRequest(requestDetail);
         setIsDetailDialogOpen(true);
       } else {
-        console.warn('⚠️ Unexpected detail response structure:', data);
         setSelectedRequest(null);
       }
     } catch (error) {
@@ -318,10 +524,10 @@ const WarrantyDashboard: React.FC = () => {
     setIsApproving(true);
     try {
       const token = localStorage.getItem('ev_warranty_token');
-      const response = await fetch(
+      const response = await axios.patch(
         `${API_BASE_URL}/stock-transfer-requests/${selectedRequest.id}/approve`,
+        {},
         {
-          method: 'PATCH',
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -329,9 +535,7 @@ const WarrantyDashboard: React.FC = () => {
         }
       );
       
-      const data = await response.json();
-      
-      if (response.ok) {
+      if (response.data.status === 'success') {
         toast({
           title: 'Request Approved! ✅',
           description: 'The stock transfer request has been approved successfully.',
@@ -342,7 +546,7 @@ const WarrantyDashboard: React.FC = () => {
       } else {
         toast({
           title: 'Approval Failed',
-          description: data.message || 'Failed to approve request. Please try again.',
+          description: response.data.message || 'Failed to approve request. Please try again.',
           variant: 'destructive'
         });
       }
@@ -372,23 +576,20 @@ const WarrantyDashboard: React.FC = () => {
     setIsRejecting(true);
     try {
       const token = localStorage.getItem('ev_warranty_token');
-      const response = await fetch(
+      const response = await axios.patch(
         `${API_BASE_URL}/stock-transfer-requests/${selectedRequest.id}/reject`,
         {
-          method: 'PATCH',
+          rejectionReason: rejectionReason.trim()
+        },
+        {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            rejectionReason: rejectionReason.trim()
-          })
+          }
         }
       );
       
-      const data = await response.json();
-      
-      if (response.ok) {
+      if (response.data.status === 'success') {
         toast({
           title: 'Request Rejected ❌',
           description: 'The stock transfer request has been rejected.',
@@ -400,7 +601,7 @@ const WarrantyDashboard: React.FC = () => {
       } else {
         toast({
           title: 'Rejection Failed',
-          description: data.message || 'Failed to reject request. Please try again.',
+          description: response.data.message || 'Failed to reject request. Please try again.',
           variant: 'destructive'
         });
       }
@@ -482,7 +683,32 @@ const WarrantyDashboard: React.FC = () => {
 							</Button>
       </div>
 
-      {/* Stock Transfer Requests */}
+      {/* Navigation Buttons */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex gap-2">
+            <Button
+              variant={viewMode === 'requests' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setViewMode('requests')}
+              className={viewMode === 'requests' ? 'bg-blue-600 hover:bg-blue-700' : 'hover:bg-blue-50 border-blue-300'}
+            >
+              📦 Stock Transfer Requests
+            </Button>
+            <Button
+              variant={viewMode === 'models' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setViewMode('models')}
+              className={viewMode === 'models' ? 'bg-purple-600 hover:bg-purple-700' : 'hover:bg-purple-50 border-purple-300'}
+            >
+              🚗 Vehicle Models
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Stock Transfer Requests - Only show when viewMode is 'requests' */}
+      {viewMode === 'requests' && (
       <Card>
           <CardHeader>
             <div className="flex flex-col gap-4">
@@ -671,6 +897,215 @@ const WarrantyDashboard: React.FC = () => {
           )}
         </CardContent>
       </Card>
+      )}
+
+      {/* Vehicle Models View */}
+      {viewMode === 'models' && (
+        <div className="space-y-6">
+          {/* Vehicle Model Selection */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Vehicle Models</CardTitle>
+                    <CardDescription>Select a vehicle model to view and manage its warranty components</CardDescription>
+                  </div>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleCreateComponentClick}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    Add Warranty Component
+                  </Button>
+                </div>
+                
+                {/* Filters */}
+                <div className="flex items-end gap-4">
+                  <div className="flex-1">
+                    <label className="text-sm font-medium mb-2 block">Vehicle Model</label>
+                    <select
+                      value={selectedModelFilter}
+                      onChange={(e) => setSelectedModelFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">All Models</option>
+                      <option value="VF e34">VF e34</option>
+                      <option value="VF 8">VF 8</option>
+                      <option value="VF 9">VF 9</option>
+                    </select>
+                  </div>
+                  
+                  <Button 
+                    onClick={handleLoadModels}
+                    disabled={isLoadingModels}
+                    className="px-6"
+                  >
+                    {isLoadingModels ? '🔄 Loading...' : 'Load'}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isLoadingModels ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="text-4xl mb-2">⏳</div>
+                    <div className="text-gray-500 font-medium">Loading models...</div>
+                  </div>
+                </div>
+              ) : vehicleModels.length === 0 ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="text-6xl mb-4">🚗</div>
+                    <div className="text-gray-500 font-medium text-lg mb-2">No vehicle models found</div>
+                    <div className="text-gray-400 text-sm">No models available in the system</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {vehicleModels
+                    .filter(model => !selectedModelFilter || model.vehicleModelName === selectedModelFilter)
+                    .map((model) => (
+                    <Card
+                      key={model.vehicleModelId}
+                      className={`cursor-pointer transition-all hover:shadow-lg ${
+                        selectedModel?.vehicleModelId === model.vehicleModelId
+                          ? 'ring-2 ring-blue-500 bg-blue-50'
+                          : 'hover:bg-gray-50'
+                      }`}
+                      onClick={() => handleSelectModel(model)}
+                    >
+                      <CardContent className="pt-6">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="text-3xl">🚗</div>
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-lg">{model.vehicleModelName}</h3>
+                            <p className="text-sm text-gray-500">Year: {new Date(model.yearOfLaunch).getFullYear()}</p>
+                          </div>
+                        </div>
+                        <div className="space-y-1 text-sm">
+                          <p className="text-gray-600">
+                            <span className="font-medium">Warranty:</span> {model.generalWarrantyDuration} months / {formatNumberWithCommas(model.generalWarrantyMileage)} km
+                          </p>
+                          <p className="text-gray-600">
+                            <span className="font-medium">Components:</span> {model.typeComponents?.length || 0}
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Model Components */}
+          {selectedModel && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Components for {selectedModel.vehicleModelName}</CardTitle>
+                    <CardDescription>
+                      Warranty: {selectedModel.generalWarrantyDuration} months / {formatNumberWithCommas(selectedModel.generalWarrantyMileage)} km
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedModel(null);
+                      setModelComponents([]);
+                    }}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {isLoadingComponents ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="text-center">
+                      <div className="text-4xl mb-2">⏳</div>
+                      <div className="text-gray-500 font-medium">Loading components...</div>
+                    </div>
+                  </div>
+                ) : modelComponents.length === 0 ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="text-center">
+                      <div className="text-6xl mb-4">📦</div>
+                      <div className="text-gray-500 font-medium text-lg mb-2">No components found</div>
+                      <div className="text-gray-400 text-sm">This model has no components configured</div>
+                    </div>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Component Name</TableHead>
+                        <TableHead>SKU</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Price</TableHead>
+                        <TableHead>Warranty Duration</TableHead>
+                        <TableHead>Warranty Mileage</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {modelComponents.map((component) => (
+                        <TableRow key={component.typeComponentId}>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <span className="text-blue-600">🔧</span>
+                              {component.name}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <code className="bg-gray-100 px-2 py-1 rounded text-sm">
+                              {component.sku}
+                            </code>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{component.category}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            {component.price ? (
+                              <span className="font-semibold text-green-600">
+                                {formatNumberWithCommas(component.price)} VND
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 italic">N/A</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {component.WarrantyComponent?.durationMonth ? (
+                              <span className="text-blue-600 font-medium">
+                                {component.WarrantyComponent.durationMonth} months
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 italic">N/A</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {component.WarrantyComponent?.mileageLimit ? (
+                              <span className="text-blue-600 font-medium">
+                                {formatNumberWithCommas(component.WarrantyComponent.mileageLimit)} km
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 italic">N/A</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
 
       {/* Detail Dialog */}
       {isDetailDialogOpen && selectedRequest && (
@@ -752,13 +1187,13 @@ const WarrantyDashboard: React.FC = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {selectedRequest.items.map((item) => (
-                        <div key={item.id} className="border rounded-lg p-4 space-y-3 hover:shadow-md transition-shadow bg-white">
+                      {selectedRequest.items.map((item, index) => (
+                        <div key={item.id || `item-${index}`} className="border rounded-lg p-4 space-y-3 hover:shadow-md transition-shadow bg-white">
                           {/* Request ID */}
                           <div className="pb-2 border-b">
                             <span className="text-xs text-gray-500">Request ID:</span>
                             <p className="text-sm font-medium text-gray-900 mt-1">
-                              #{item.id.substring(0, 8)}...
+                              #{item.id ? item.id.substring(0, 8) : `Item ${index + 1}`}...
                             </p>
                           </div>
 
@@ -1026,6 +1461,316 @@ const WarrantyDashboard: React.FC = () => {
                 className="bg-green-600 hover:bg-green-700"
               >
                 {isApproving ? '🔄 Approving...' : '✓ Confirm Approve'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Warranty Component Dialog */}
+      {isCreateComponentDialogOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Dialog Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-green-50 to-blue-50 border-b border-green-200 px-6 py-4 flex items-center justify-between rounded-t-lg">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl"></span>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Add Warranty Component</h2>
+                  <p className="text-sm text-gray-600 mt-0.5">Select a vehicle model to add warranty component</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCreateComponentDialogOpen(false)}
+                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Dialog Content */}
+            <div className="p-6 space-y-4">
+              {/* Vehicle Model Selection */}
+              <div>
+                <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                  Vehicle Model <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={selectedModel?.vehicleModelId || ''}
+                  onChange={(e) => {
+                    const model = vehicleModels.find(m => m.vehicleModelId === e.target.value);
+                    setSelectedModel(model || null);
+                    setSelectedCopyComponent(''); // Reset copy dropdown when model changes
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                >
+                  <option value="">-- Select Vehicle Model --</option>
+                  {vehicleModels.map((model) => (
+                    <option key={model.vehicleModelId} value={model.vehicleModelId}>
+                      {model.vehicleModelName} (Year: {new Date(model.yearOfLaunch).getFullYear()})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Copy from Existing Component */}
+              <div>
+                <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                  Copy from Existing Component (Optional)
+                </label>
+                <select
+                  value={selectedCopyComponent}
+                  onChange={(e) => {
+                    const selectedValue = e.target.value;
+                    setSelectedCopyComponent(selectedValue);
+                    
+                    if (!selectedValue) {
+                      // Reset form when deselecting copy option
+                      setNewComponent({
+                        typeComponentId: '',
+                        sku: '',
+                        name: '',
+                        price: '',
+                        category: 'HIGH_VOLTAGE_BATTERY',
+                        makeBrand: '',
+                        durationMonth: '',
+                        mileageLimit: '',
+                        quantity: '1'
+                      });
+                      return;
+                    }
+                    
+                    // Parse the value as "vehicleModelId-componentIndex"
+                    const [vehicleModelId, componentIndexStr] = selectedValue.split('||');
+                    const componentIndex = parseInt(componentIndexStr);
+                    
+                    // Find model by ID
+                    const model = vehicleModels.find(m => m.vehicleModelId === vehicleModelId);
+                    
+                    if (model && componentIndex >= 0) {
+                      const foundComponent = model.typeComponents?.[componentIndex];
+                      
+                      console.log('Found component:', foundComponent);
+                      console.log('All component properties:', Object.keys(foundComponent || {}));
+                      console.log('Component ID check:', {
+                        id: foundComponent?.id,
+                        typeComponentId: foundComponent?.typeComponentId,
+                        componentId: foundComponent?.componentId
+                      });
+                      
+                      if (foundComponent) {
+                        console.log('=== Copying component data ===');
+                        console.log('Source component:', foundComponent);
+                        console.log('Will use selectedCopyComponent for API:', selectedValue);
+                        
+                        // Pre-fill form with component data (typeComponentId stays empty, we'll use selectedCopyComponent)
+                        const newData = {
+                          typeComponentId: '', // Keep empty, will use selectedCopyComponent when submitting
+                          sku: foundComponent.sku || '',
+                          name: foundComponent.name || '',
+                          price: foundComponent.price?.toString() || '',
+                          category: foundComponent.category || 'HIGH_VOLTAGE_BATTERY',
+                          makeBrand: foundComponent.makeBrand || '',
+                          durationMonth: foundComponent.WarrantyComponent?.durationMonth?.toString() || '',
+                          mileageLimit: foundComponent.WarrantyComponent?.mileageLimit?.toString() || '',
+                          quantity: '1'
+                        };
+                        
+                        console.log('Pre-filled form data:', newData);
+                        setNewComponent(newData);
+                        
+                        toast({
+                          title: 'Component Copied! 📋',
+                          description: `Filled fields with data from "${foundComponent.name}" (${model.vehicleModelName})`,
+                        });
+                      } else {
+                        toast({
+                          title: 'Component Not Found',
+                          description: 'Could not find the selected component.',
+                          variant: 'destructive'
+                        });
+                      }
+                    }
+                  }}
+                  disabled={!selectedModel}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-blue-50 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
+                >
+                  <option value="">
+                    {selectedModel ? '-- Select Component to Copy --' : '-- Please select a vehicle model first --'}
+                  </option>
+                  {selectedModel && vehicleModels
+                    .filter(model => 
+                      model.typeComponents && 
+                      model.typeComponents.length > 0 &&
+                      model.vehicleModelId !== selectedModel.vehicleModelId
+                    )
+                    .map((model) => (
+                      <optgroup key={model.vehicleModelId} label={`${model.vehicleModelName} Components`}>
+                        {model.typeComponents.map((component, componentIndex) => (
+                          <option 
+                            key={`${model.vehicleModelId}-${componentIndex}`} 
+                            value={`${model.vehicleModelId}||${componentIndex}`}
+                          >
+                            {component.name} ({component.sku})
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  💡 {selectedModel 
+                    ? 'Select a component from OTHER vehicles to pre-fill the form. You can then adjust the warranty policy.' 
+                    : 'Please select a vehicle model first to enable this option.'}
+                </p>
+              </div>
+
+              {/* SKU */}
+              <div>
+                <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                  SKU {!selectedCopyComponent && <span className="text-red-500">*</span>}
+                  {selectedCopyComponent && <span className="text-blue-500 text-xs ml-2">(Read-only - Reusing Component)</span>}
+                </label>
+                <input
+                  type="text"
+                  value={newComponent.sku}
+                  onChange={(e) => setNewComponent({ ...newComponent, sku: e.target.value })}
+                  placeholder="e.g., SUSP-AIR-ADAPTIVE"
+                  disabled={!!selectedCopyComponent}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                />
+              </div>
+
+              {/* Component Name */}
+              <div>
+                <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                  Component Name {!selectedCopyComponent && <span className="text-red-500">*</span>}
+                  {selectedCopyComponent && <span className="text-blue-500 text-xs ml-2">(Read-only - Reusing Component)</span>}
+                </label>
+                <input
+                  type="text"
+                  value={newComponent.name}
+                  onChange={(e) => setNewComponent({ ...newComponent, name: e.target.value })}
+                  placeholder="e.g., Adaptive Air Suspension System"
+                  disabled={!!selectedCopyComponent}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                />
+              </div>
+
+              {/* Price and Category Row */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                    Price (VND) {!selectedCopyComponent && <span className="text-red-500">*</span>}
+                    {selectedCopyComponent && <span className="text-blue-500 text-xs ml-2">(Read-only)</span>}
+                  </label>
+                  <input
+                    type="number"
+                    value={newComponent.price}
+                    onChange={(e) => setNewComponent({ ...newComponent, price: e.target.value })}
+                    placeholder="e.g., 82000000"
+                    disabled={!!selectedCopyComponent}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                    Category {!selectedCopyComponent && <span className="text-red-500">*</span>}
+                    {selectedCopyComponent && <span className="text-blue-500 text-xs ml-2">(Read-only)</span>}
+                  </label>
+                  <select
+                    value={newComponent.category}
+                    onChange={(e) => setNewComponent({ ...newComponent, category: e.target.value })}
+                    disabled={!!selectedCopyComponent}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  >
+                    <option value="HIGH_VOLTAGE_BATTERY">HIGH_VOLTAGE_BATTERY</option>
+                    <option value="CHARGING_SYSTEM">CHARGING_SYSTEM</option>
+                    <option value="POWERTRAIN">POWERTRAIN</option>
+                    <option value="SUSPENSION_STEERING">SUSPENSION_STEERING</option>
+                    <option value="HVAC">HVAC</option>
+                    <option value="INFOTAINMENT_ADAS">INFOTAINMENT_ADAS</option>
+                    <option value="BODY_CHASSIS">BODY_CHASSIS</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Make Brand */}
+              <div>
+                <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                  Make Brand {!selectedCopyComponent && <span className="text-red-500">*</span>}
+                  {selectedCopyComponent && <span className="text-blue-500 text-xs ml-2">(Read-only)</span>}
+                </label>
+                <input
+                  type="text"
+                  value={newComponent.makeBrand}
+                  onChange={(e) => setNewComponent({ ...newComponent, makeBrand: e.target.value })}
+                  placeholder="e.g., China, Germany, Japan"
+                  disabled={!!selectedCopyComponent}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                />
+              </div>
+
+              {/* Warranty Duration and Mileage Row */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                    Warranty Duration (months) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={newComponent.durationMonth}
+                    onChange={(e) => setNewComponent({ ...newComponent, durationMonth: e.target.value })}
+                    placeholder="e.g., 72"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                    Warranty Mileage (km) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={newComponent.mileageLimit}
+                    onChange={(e) => setNewComponent({ ...newComponent, mileageLimit: e.target.value })}
+                    placeholder="e.g., 150000"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  />
+                </div>
+              </div>
+
+              {/* Quantity */}
+              <div>
+                <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                  Quantity <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  value={newComponent.quantity}
+                  onChange={(e) => setNewComponent({ ...newComponent, quantity: e.target.value })}
+                  placeholder="e.g., 1"
+                  min="1"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+              </div>
+            </div>
+
+            {/* Dialog Footer */}
+            <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end gap-3 rounded-b-lg">
+              <Button
+                variant="outline"
+                onClick={() => setIsCreateComponentDialogOpen(false)}
+                disabled={isCreatingComponent}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateComponentSubmit}
+                disabled={isCreatingComponent}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {isCreatingComponent ? '🔄 Creating...' : '✓ Create Component'}
               </Button>
             </div>
           </div>
