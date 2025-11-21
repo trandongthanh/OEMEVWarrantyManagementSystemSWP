@@ -45,7 +45,7 @@ const createProcessingRecord = async (recordData: {
   
   const result = await response.json();
   
-  console.log('📥 createProcessingRecord API result:', result);
+ 
   
   // Check for API errors
   if (!response.ok || result.status === 'error') {
@@ -1136,15 +1136,7 @@ const SuperAdvisor = () => {
     const token = localStorage.getItem('ev_warranty_token');
     const requestUrl = `${API_BASE_URL}/mail/otp/verify`;
     
-    console.log('🔍 DEBUG OTP Verify Request:', {
-      url: requestUrl,
-      method: 'POST',
-      hasToken: !!token,
-      tokenPreview: token ? `${token.substring(0, 20)}...` : 'NULL',
-      email: warrantyRecordForm.customerEmail,
-      otpLength: otpCode.length
-    });
-
+   
     if (!token) {
       toast({
         title: 'Authentication Error',
@@ -1168,15 +1160,7 @@ const SuperAdvisor = () => {
         redirect: 'manual' // Prevent auto-following redirects
       });
 
-      console.log('🔍 DEBUG OTP Verify Response:', {
-        status: response.status,
-        statusText: response.statusText,
-        url: response.url,
-        type: response.type,
-        redirected: response.redirected,
-        headers: Object.fromEntries(response.headers.entries())
-      });
-
+    
       // Check for redirects (status 3xx)
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('Location');
@@ -1189,7 +1173,7 @@ const SuperAdvisor = () => {
       }
 
       const responseText = await response.text();
-      console.log('🔍 DEBUG Response body:', responseText);
+    
 
       let result;
       try {
