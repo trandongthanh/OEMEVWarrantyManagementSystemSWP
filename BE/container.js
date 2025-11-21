@@ -10,6 +10,7 @@ import StockTransferRequestController from "./src/api/controller/stockTransferRe
 import MailController from "./src/api/controller/mail.controller.js";
 import InventoryController from "./src/api/controller/inventory.controller.js";
 import OemVehicleModelController from "./src/api/controller/oemVehicleModel.controller.js";
+import TypeComponentController from "./src/api/controller/typeComponent.controller.js";
 
 import AuthService from "./src/service/auth.service.js";
 import HashService from "./src/service/hash.service.js";
@@ -25,6 +26,7 @@ import StockTransferRequestService from "./src/service/stockTransferRequest.serv
 import MailService from "./src/service/mail.service.js";
 import InventoryService from "./src/service/inventory.service.js";
 import OemVehicleModelService from "./src/service/oemVehicleModel.service.js";
+import TypeComponentService from "./src/service/typeComponent.service.js";
 
 import UserRepository from "./src/repository/user.repository.js";
 import VehicleRepository from "./src/repository/vehicle.repository.js";
@@ -119,6 +121,9 @@ export function setupContainer({ io, notificationNamespace }) {
     componentController: asClass(ComponentController, {
       lifetime: Lifetime.SCOPED,
     }),
+    typeComponentController: asClass(TypeComponentController, {
+      lifetime: Lifetime.SCOPED,
+    }),
 
     // Services
     authService: asClass(AuthService, { lifetime: Lifetime.SCOPED }),
@@ -157,6 +162,9 @@ export function setupContainer({ io, notificationNamespace }) {
       lifetime: Lifetime.SCOPED,
     }),
     componentService: asClass(ComponentService, { lifetime: Lifetime.SCOPED }),
+    typeComponentService: asClass(TypeComponentService, {
+      lifetime: Lifetime.SCOPED,
+    }),
 
     // Repositories
     userRepository: asClass(UserRepository, { lifetime: Lifetime.SCOPED }),
