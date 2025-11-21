@@ -30,6 +30,7 @@ import inventoryRouter from "./src/api/routes/inventory.router.js";
 import serviceCenterRouter from "./src/api/routes/serviceCenter.router.js";
 import roleRouter from "./src/api/routes/role.router.js";
 import oemVehicleModelRouter from "./src/api/routes/oemVehicleModel.router.js";
+import typeComponentRouter from "./src/api/routes/typeComponent.router.js";
 
 app.get("/", async (req, res) => {
   res.send("Hello world");
@@ -54,6 +55,7 @@ app.use(`${url}/stock-transfer-requests`, stockTransferRequestRouter);
 app.use(`${url}/work-schedules`, workScheduleRouter);
 app.use(`${url}/roles`, roleRouter);
 app.use(`${url}/oem-vehicle-models`, oemVehicleModelRouter);
+app.use(`${url}/type-components`, typeComponentRouter);
 
 app.use(handleError);
 
