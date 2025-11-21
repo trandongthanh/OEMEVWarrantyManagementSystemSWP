@@ -22,7 +22,7 @@ class WarrantyComponentRepository {
   };
 
   bulkCreate = async (records, transaction = null) => {
-     if (!records || records.length === 0) {
+    if (!records || records.length === 0) {
       return [];
     }
 
@@ -32,7 +32,7 @@ class WarrantyComponentRepository {
     });
 
     return created.map((record) => record.toJSON());
-  }
+  };
 
   createWarrantyComponent = async ({
     vehicleModelId,
@@ -83,9 +83,12 @@ class WarrantyComponentRepository {
       return null;
     }
 
-    const updatedRecord = await WarrantyComponent.findByPk(warrantyComponentId, {
-      transaction,
-    });
+    const updatedRecord = await WarrantyComponent.findByPk(
+      warrantyComponentId,
+      {
+        transaction,
+      }
+    );
     return updatedRecord ? updatedRecord.toJSON() : null;
   };
 
@@ -101,6 +104,7 @@ class WarrantyComponentRepository {
       ],
       transaction,
     });
+
     return records.map((record) => record.toJSON());
   };
 }
