@@ -116,6 +116,16 @@ const PartsCompanyDashboard: React.FC = () => {
   const [showCaseLineModal, setShowCaseLineModal] = useState<boolean>(false);
   const [componentsList, setComponentsList] = useState<any[]>([]);
   const [isLoadingComponents, setIsLoadingComponents] = useState<boolean>(false);
+  const [reservations, setReservations] = useState<any[]>([]);
+  const [showReservationsModal, setShowReservationsModal] = useState<boolean>(false);
+  const [isLoadingReservations, setIsLoadingReservations] = useState<boolean>(false);
+  const [selectedRequestForShip, setSelectedRequestForShip] = useState<StockTransferRequest | null>(null);
+  const [matchedComponentsList, setMatchedComponentsList] = useState<any[]>([]);
+  const [showComponentsListModal, setShowComponentsListModal] = useState<boolean>(false);
+  const [isLoadingComponentsList, setIsLoadingComponentsList] = useState<boolean>(false);
+  const [selectedTypeComponentName, setSelectedTypeComponentName] = useState<string>('');
+  const [selectedComponentIdsByReservation, setSelectedComponentIdsByReservation] = useState<Record<string, string[]>>({});
+  const [currentReservationId, setCurrentReservationId] = useState<string | null>(null);
 
   // Fetch all stock transfer requests
   const fetchStockTransferRequests = async () => {
@@ -197,8 +207,8 @@ const PartsCompanyDashboard: React.FC = () => {
     } catch (error) {
       console.error('Failed to fetch case line detail:', error);
       toast({
-        title: 'Lỗi khi tải Case Line',
-        description: 'Không thể tải chi tiết Case Line. Kiểm tra console để biết thêm thông tin.',
+        title: 'Error Loading Case Line',
+        description: 'Failed to load Case Line details. Check console for more information.',
         variant: 'destructive'
       });
     } finally {
@@ -233,9 +243,53 @@ const PartsCompanyDashboard: React.FC = () => {
       setComponentsList(components);
     } catch (error: any) {
       console.error('Failed to fetch components:', error);
-      toast({ title: 'Lỗi khi tải components', description: error?.message || 'Không thể tải components', variant: 'destructive' });
+      toast({ title: 'Error Loading Components', description: error?.message || 'Failed to load components', variant: 'destructive' });
     } finally {
       setIsLoadingComponents(false);
+    }
+  };
+
+  // Fetch all components matching typeComponentId from external API
+  const handleSelectComponent = async (typeComponentId: string, typeComponentName: string, warehouseId: string, reservationId: string) => {
+    setIsLoadingComponentsList(true);
+    setCurrentReservationId(reservationId);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    
+    try {
+      // Call internal API with query parameters
+      const response = await axios.get(`${API_BASE_URL}/components`, {
+        params: {
+          warehouseId: warehouseId,
+          typeComponentId: typeComponentId,
+          limit: 100,
+          page: 1
+        },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const components = response.data?.data?.components || [];
+      
+      if (components.length > 0) {
+        console.log('🔍 Found components:', components);
+        setMatchedComponentsList(components);
+        setSelectedTypeComponentName(typeComponentName);
+        setShowComponentsListModal(true);
+      } else {
+        toast({
+          title: 'Component Not Found',
+          description: `No components found with Type Component ID: ${typeComponentId}`,
+          variant: 'destructive'
+        });
+      }
+    } catch (error: any) {
+      console.error('Failed to fetch components:', error);
+      toast({
+        title: 'Error Loading Component',
+        description: error?.message || 'Failed to load component information',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingComponentsList(false);
     }
   };
 
@@ -248,8 +302,50 @@ const PartsCompanyDashboard: React.FC = () => {
     }
   }, [selectedStatus, stockTransferRequests]);
 
-  // Ship stock transfer request
-  const handleShipRequest = async (requestId: string) => {
+  // Fetch reservations for a stock transfer request
+  const fetchReservations = async (requestId: string) => {
+    setIsLoadingReservations(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingReservations(false);
+      return;
+    }
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/stock-transfer-requests/${requestId}/reservations`,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+      const reservationsData = response.data?.data?.reservations || [];
+      console.log('📦 Fetched reservations:', reservationsData);
+      setReservations(reservationsData);
+      return reservationsData;
+    } catch (error: any) {
+      console.error('Failed to fetch reservations:', error);
+      toast({
+        title: 'Error Loading Reservations',
+        description: error?.message || 'Failed to load reservations',
+        variant: 'destructive'
+      });
+      return [];
+    } finally {
+      setIsLoadingReservations(false);
+    }
+  };
+
+  // Show reservations before shipping
+  const handleShipRequest = async (request: StockTransferRequest) => {
+    setSelectedRequestForShip(request);
+    await fetchReservations(request.id);
+    setShowReservationsModal(true);
+  };
+
+  // Confirm and execute ship action
+  const confirmShipRequest = async () => {
+    if (!selectedRequestForShip) return;
+    
+    const requestId = selectedRequestForShip.id;
     setShippingRequestId(requestId);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
@@ -257,39 +353,74 @@ const PartsCompanyDashboard: React.FC = () => {
       return;
     }
     try {
-      const response = await axios.patch(
-        `${API_BASE_URL}/stock-transfer-requests/${requestId}/ship`,
-        {},
-        {
-          headers: { Authorization: `Bearer ${token}` }
+      // Ship each reservation separately
+      const shipPromises = reservations.map(async (reservation) => {
+        const reservationId = reservation.reservationId;
+        const componentIds = selectedComponentIdsByReservation[reservationId] || [];
+        
+        // Skip if no components selected for this reservation
+        if (componentIds.length === 0) {
+          return null;
         }
-      );
-      console.log('✅ Request shipped successfully:', response.data);
+        
+        // Set estimated delivery date to 3 weeks from now
+        const estimatedDeliveryDate = new Date();
+        estimatedDeliveryDate.setDate(estimatedDeliveryDate.getDate() + 21);
+        const formattedDate = estimatedDeliveryDate.toISOString().split('T')[0];
+        
+        return axios.patch(
+          `${API_BASE_URL}/stock-transfer-requests/${requestId}/ship`,
+          {
+            reservationId: reservationId,
+            componentIds: componentIds,
+            estimatedDeliveryDate: formattedDate
+          },
+          {
+            headers: { Authorization: `Bearer ${token}` }
+          }
+        );
+      });
+      
+      // Wait for all ship requests to complete
+      const results = await Promise.all(shipPromises);
+      const successfulShips = results.filter(r => r !== null);
+      
+      console.log(`✅ Successfully shipped ${successfulShips.length} reservations`);
+      
+      // Close modals and reset state
+      setShowReservationsModal(false);
+      setSelectedComponentIdsByReservation({});
+      localStorage.removeItem('selectedComponentsByReservation');
       
       // Refresh the list
       await fetchStockTransferRequests();
       
-      // If modal is open, refresh the detail
+      // If detail modal is open, refresh the detail
       if (showDetailModal && selectedStockRequest?.id === requestId) {
         await fetchStockTransferRequestDetail(requestId);
       }
-      
-      toast({
-        title: 'Đã gửi hàng',
-        description: 'Yêu cầu vận chuyển đã được đánh dấu là shipped.',
-        variant: 'default'
-      });
     } catch (error: any) {
       console.error('Failed to ship request:', error);
       const errorMessage = error.response?.data?.message || 'Failed to ship request';
       toast({
-        title: 'Lỗi khi gửi hàng',
+        title: 'Shipping Error',
         description: errorMessage,
         variant: 'destructive'
       });
     } finally {
       setShippingRequestId(null);
     }
+  };
+
+  // Handle selecting component for shipping
+  const handleSelectComponentForShip = (componentId: string) => {
+    if (!currentReservationId) return;
+    
+    // Add component ID to the specific reservation's list
+    setSelectedComponentIdsByReservation(prev => ({
+      ...prev,
+      [currentReservationId]: [...(prev[currentReservationId] || []), componentId]
+    }));
   };
 
   const handleLogout = () => {
@@ -555,7 +686,7 @@ const PartsCompanyDashboard: React.FC = () => {
                                 <Button
                                   size="sm"
                                   variant="default"
-                                  onClick={() => handleShipRequest(request.id)}
+                                  onClick={() => handleShipRequest(request)}
                                   disabled={shippingRequestId === request.id}
                                 >
                                   {shippingRequestId === request.id ? (
@@ -587,29 +718,7 @@ const PartsCompanyDashboard: React.FC = () => {
         <Dialog open={showDetailModal} onOpenChange={setShowDetailModal}>
           <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="flex items-center justify-between">
-                <span>Stock Transfer Request Details</span>
-                {selectedStockRequest && selectedStockRequest.status === 'APPROVED' && (
-                  <Button
-                    size="sm"
-                    variant="default"
-                    onClick={() => handleShipRequest(selectedStockRequest.id)}
-                    disabled={shippingRequestId === selectedStockRequest.id}
-                  >
-                    {shippingRequestId === selectedStockRequest.id ? (
-                      <>
-                        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                        Shipping...
-                      </>
-                    ) : (
-                      <>
-                        <Truck className="mr-1 h-4 w-4" />
-                        Ship Request
-                      </>
-                    )}
-                  </Button>
-                )}
-              </DialogTitle>
+              <DialogTitle>Stock Transfer Request Details</DialogTitle>
               <DialogDescription>
                 Detailed information about the stock transfer request
               </DialogDescription>
@@ -823,6 +932,165 @@ const PartsCompanyDashboard: React.FC = () => {
           </DialogContent>
         </Dialog>
 
+        {/* Reservations Modal */}
+        <Dialog open={showReservationsModal} onOpenChange={setShowReservationsModal}>
+          <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+                <Package className="h-6 w-6 text-primary" />
+                Reservations for Ship Request
+              </DialogTitle>
+              <DialogDescription className="text-base">
+                Review reservations before shipping request <span className="font-mono font-semibold">#{selectedRequestForShip?.id.substring(0, 8)}</span>
+              </DialogDescription>
+            </DialogHeader>
+
+            {isLoadingReservations ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                <span className="ml-3 text-lg text-muted-foreground">Loading reservations...</span>
+              </div>
+            ) : reservations.length === 0 ? (
+              <div className="text-center py-12">
+                <Package className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                <p className="text-base text-muted-foreground">No reservations found</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {reservations.map((reservation, index) => (
+                  <Card key={reservation.reservationId || index} className="border-2 shadow-lg hover:shadow-xl transition-shadow">
+                    <CardHeader className="pb-3 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950 dark:to-purple-950">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Tag className="h-4 w-4 text-primary" />
+                            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Reservation ID</span>
+                          </div>
+                          <p className="font-mono text-sm font-medium">{reservation.reservationId || '---'}</p>
+                        </div>
+                        <Badge variant={getStatusBadgeVariant(reservation.status)} className="text-sm px-3 py-1">
+                          {reservation.status || 'N/A'}
+                        </Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Component Information */}
+                        <div className="space-y-4">
+                          <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg border-l-4 border-blue-500">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2">
+                                <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                                <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase tracking-wider">Component</label>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 bg-white dark:bg-blue-900 hover:bg-blue-100 dark:hover:bg-blue-800 border-blue-300"
+                                onClick={() => handleSelectComponent(
+                                  reservation.typeComponentId, 
+                                  reservation.typeComponent?.name || 'Unknown',
+                                  reservation.warehouse?.warehouseId || '',
+                                  reservation.reservationId
+                                )}
+                                disabled={isLoadingComponentsList}
+                              >
+                                {isLoadingComponentsList ? (
+                                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                ) : (
+                                  <Package className="h-3 w-3 mr-1" />
+                                )}
+                                Select
+                              </Button>
+                            </div>
+                            <p className="text-base font-bold text-blue-900 dark:text-blue-100">{reservation.typeComponent?.name || '---'}</p>
+                            {reservation.typeComponent?.sku && (
+                              <div className="mt-2 inline-flex items-center gap-1 px-2 py-1 bg-white dark:bg-blue-900/50 rounded border border-blue-200">
+                                <span className="text-xs font-medium text-blue-700 dark:text-blue-300">SKU:</span>
+                                <span className="font-mono text-xs font-semibold text-blue-900 dark:text-blue-100">{reservation.typeComponent.sku}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="p-4 bg-green-50 dark:bg-green-950/30 rounded-lg border-l-4 border-green-500">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Warehouse className="h-4 w-4 text-green-600 dark:text-green-400" />
+                              <label className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase tracking-wider">Warehouse</label>
+                            </div>
+                            <p className="text-base font-bold text-green-900 dark:text-green-100">{reservation.warehouse?.name || '---'}</p>
+                            {reservation.warehouse?.address && (
+                              <p className="text-sm text-green-800 dark:text-green-200 mt-2">{reservation.warehouse.address}</p>
+                            )}
+                            {reservation.warehouse?.warehouseId && (
+                              <p className="font-mono text-xs text-green-700 dark:text-green-300 mt-1">ID: {reservation.warehouse.warehouseId}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Quantity Information */}
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="p-4 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-center border-2 border-blue-200 dark:border-blue-800">
+                              <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase mb-2">Requested</p>
+                              <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{reservation.quantityRequested || 0}</p>
+                            </div>
+                            <div className="p-4 bg-green-50 dark:bg-green-950/30 rounded-lg text-center border-2 border-green-200 dark:border-green-800">
+                              <p className="text-xs font-semibold text-green-700 dark:text-green-400 uppercase mb-2">Reserved</p>
+                              <p className="text-3xl font-bold text-green-600 dark:text-green-400">{reservation.quantityReserved || 0}</p>
+                            </div>
+                          </div>
+
+                          {/* Technical IDs */}
+                          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg space-y-3 border border-gray-200 dark:border-gray-800">
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Stock ID</label>
+                              <p className="font-mono text-sm mt-1 text-foreground">{reservation.stockId || '---'}</p>
+                            </div>
+                            <div className="border-t pt-3">
+                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Request Item ID</label>
+                              <p className="font-mono text-sm mt-1 text-foreground">{reservation.requestItemId || '---'}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                
+                <div className="flex items-center justify-end gap-4 pt-6 border-t bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-4 rounded-lg -mx-6 -mb-6 mt-6">
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowReservationsModal(false)}
+                      className="px-6"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="default"
+                      onClick={confirmShipRequest}
+                      disabled={shippingRequestId === selectedRequestForShip?.id}
+                      className="px-6 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                    >
+                      {shippingRequestId === selectedRequestForShip?.id ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Shipping...
+                        </>
+                      ) : (
+                        <>
+                          <Truck className="mr-2 h-4 w-4" />
+                          Confirm Ship
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
         {/* CaseLine Detail Modal */}
         <Dialog open={showCaseLineModal} onOpenChange={setShowCaseLineModal}>
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
@@ -890,6 +1158,159 @@ const PartsCompanyDashboard: React.FC = () => {
               </div>
             ) : (
               <p className="text-center text-muted-foreground py-6">No case line details available</p>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Component Detail Modal */}
+        {/* Components List Modal */}
+        <Dialog open={showComponentsListModal} onOpenChange={setShowComponentsListModal}>
+          <DialogContent className="max-w-6xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+                <Package className="h-6 w-6 text-primary" />
+                Components List - {selectedTypeComponentName}
+              </DialogTitle>
+              <DialogDescription>
+                All available components for this type
+              </DialogDescription>
+            </DialogHeader>
+
+            {isLoadingComponentsList ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                <span className="ml-3 text-lg text-muted-foreground">Loading components...</span>
+              </div>
+            ) : matchedComponentsList.length > 0 ? (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-4 p-6 bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 dark:from-blue-950 dark:via-purple-950 dark:to-pink-950 rounded-xl border-2 border-blue-300 dark:border-blue-700 shadow-lg">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Found <span className="font-bold text-blue-600 dark:text-blue-400">{matchedComponentsList.length}</span> available components
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-blue-400 dark:bg-blue-600 rounded-lg blur opacity-25"></div>
+                      <div className="relative px-6 py-3 bg-white dark:bg-gray-900 rounded-lg border-2 border-blue-400 dark:border-blue-600 shadow-md">
+                        <div className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider mb-1 text-center">Selected</div>
+                        <div className="text-3xl font-black text-blue-600 dark:text-blue-400 text-center tabular-nums">
+                          {currentReservationId ? (selectedComponentIdsByReservation[currentReservationId]?.length || 0) : 0}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="text-3xl font-bold text-gray-400 dark:text-gray-600">/</div>
+                    
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-green-400 dark:bg-green-600 rounded-lg blur opacity-25"></div>
+                      <div className="relative px-6 py-3 bg-white dark:bg-gray-900 rounded-lg border-2 border-green-400 dark:border-green-600 shadow-md">
+                        <div className="text-xs font-bold text-green-600 dark:text-green-400 uppercase tracking-wider mb-1 text-center">Required</div>
+                        <div className="text-3xl font-black text-green-600 dark:text-green-400 text-center tabular-nums">
+                          {reservations.find(r => r.reservationId === currentReservationId)?.quantityRequested || 0}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="grid gap-4">
+                  {matchedComponentsList.map((component, index) => (
+                    <Card key={component.serialNumber || index} className="border-2 hover:shadow-lg transition-shadow">
+                      <CardContent className="pt-6">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Name</label>
+                              <p className="text-base font-bold mt-1">{component.typeComponent?.name || component.name || '---'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Serial Number</label>
+                              <p className="font-mono text-sm mt-1">{component.serialNumber || '---'}</p>
+                            </div>
+                            {(component.typeComponent?.sku || component.sku) && (
+                              <div className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-900/50 rounded border border-blue-200">
+                                <Tag className="h-3 w-3 text-blue-600 dark:text-blue-400" />
+                                <span className="font-mono text-xs font-semibold">{component.typeComponent?.sku || component.sku}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Category</label>
+                              <p className="text-sm mt-1">{component.typeComponent?.category || component.category || '---'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
+                              <div className="mt-1">
+                                <Badge variant={component.status === 'IN_WAREHOUSE' ? 'default' : 'secondary'}>
+                                  {component.status || 'N/A'}
+                                </Badge>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Make Brand</label>
+                              <p className="text-sm mt-1">{component.typeComponent?.makeBrand || component.makeBrand || '---'}</p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Component ID</label>
+                              <p className="font-mono text-xs mt-1">{component.componentId || '---'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Created At</label>
+                              <p className="text-sm mt-1">{component.createdAt ? formatDate(component.createdAt) : '---'}</p>
+                            </div>
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Price</label>
+                              <p className="text-base font-bold text-green-600 dark:text-green-400 mt-1">
+                                {(component.typeComponent?.price || component.price) ? `${(component.typeComponent?.price || component.price).toLocaleString()} VND` : '---'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end mt-4 pt-4 border-t">
+                          {currentReservationId && selectedComponentIdsByReservation[currentReservationId]?.includes(component.componentId) ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="bg-green-50 dark:bg-green-950 border-green-500 text-green-700 dark:text-green-400 cursor-default"
+                              disabled
+                            >
+                              <CheckCircle className="mr-2 h-4 w-4" />
+                              Selected
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="default"
+                              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectComponentForShip(component.componentId);
+                              }}
+                            >
+                              <CheckCircle className="mr-2 h-4 w-4" />
+                              Select This Component
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <Package className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                <p className="text-base text-muted-foreground">No components found</p>
+              </div>
             )}
           </DialogContent>
         </Dialog>
