@@ -9,6 +9,7 @@ class OemVehicleModelController {
     const vehicleModelData = req.body;
     const newVehicleModel =
       await this.#oemVehicleModelService.createVehicleModel(vehicleModelData);
+
     res.status(201).json({
       status: "success",
       data: newVehicleModel,
