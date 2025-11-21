@@ -98,6 +98,58 @@ interface StockTransferRequest {
   }>;
 }
 
+interface TypeComponent {
+  typeComponentId: string;
+  name: string;
+  price: number;
+  sku: string;
+  category: string;
+  makeBrand: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface TypeComponentsResponse {
+  status: string;
+  data: {
+    items: TypeComponent[];
+    pagination: {
+      totalItems: number;
+      totalPages: number;
+      currentPage: number;
+      itemsPerPage: number;
+    };
+  };
+}
+
+interface CreateComponentRequest {
+  typeComponentId: string;
+  warehouseId: string;
+  serialNumber: string;
+}
+
+interface CreateComponentResponse {
+  status: string;
+  data: {
+    component: {
+      componentId: string;
+      typeComponentId: string;
+      warehouseId: string;
+      serialNumber: string;
+      status: string;
+      updatedAt: string;
+      createdAt: string;
+    };
+    stock: {
+      stockId: string;
+      warehouseId: string;
+      typeComponentId: string;
+      quantityInStock: number;
+      quantityReserved: number;
+    };
+  };
+}
+
 const PartsCompanyDashboard: React.FC = () => {
   const { user, logout, getToken } = useAuth();
   const navigate = useNavigate();
@@ -128,6 +180,177 @@ const PartsCompanyDashboard: React.FC = () => {
   const [currentReservationId, setCurrentReservationId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
+  
+  // Type Components states
+  const [typeComponents, setTypeComponents] = useState<TypeComponent[]>([]);
+  const [isLoadingTypeComponents, setIsLoadingTypeComponents] = useState<boolean>(false);
+  const [showTypeComponentsModal, setShowTypeComponentsModal] = useState<boolean>(false);
+  const [typeComponentsPage, setTypeComponentsPage] = useState<number>(1);
+  const [typeComponentsTotalPages, setTypeComponentsTotalPages] = useState<number>(1);
+  const [typeComponentsTotalItems, setTypeComponentsTotalItems] = useState<number>(0);
+  
+  // Warehouse selection states
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [isLoadingWarehouses, setIsLoadingWarehouses] = useState<boolean>(false);
+  const [showWarehouseSelectionModal, setShowWarehouseSelectionModal] = useState<boolean>(false);
+  const [selectedWarehouse, setSelectedWarehouse] = useState<any | null>(null);
+  
+  // Create Component states
+  const [showCreateComponentModal, setShowCreateComponentModal] = useState<boolean>(false);
+  const [selectedTypeComponentForCreate, setSelectedTypeComponentForCreate] = useState<TypeComponent | null>(null);
+  const [componentSerialNumber, setComponentSerialNumber] = useState<string>('');
+  const [isCreatingComponent, setIsCreatingComponent] = useState<boolean>(false);
+
+  // Fetch type components from selected warehouse stocks
+  const fetchTypeComponentsFromWarehouse = () => {
+    if (!selectedWarehouse || !selectedWarehouse.stocks) {
+      setTypeComponents([]);
+      return;
+    }
+    
+    setIsLoadingTypeComponents(true);
+    
+    try {
+      // Extract type components from warehouse stocks
+      const components = selectedWarehouse.stocks
+        .filter((stock: any) => stock.typeComponent)
+        .map((stock: any) => ({
+          typeComponentId: stock.typeComponent.typeComponentId,
+          name: stock.typeComponent.name,
+          sku: stock.typeComponent.sku,
+          category: stock.typeComponent.category,
+          price: 0, // Price not available in stocks
+          makeBrand: 'N/A', // Make brand not available in stocks
+          createdAt: stock.typeComponent.createdAt || new Date().toISOString(),
+          updatedAt: stock.typeComponent.updatedAt || new Date().toISOString(),
+          // Additional stock info
+          quantityInStock: stock.quantityInStock,
+          quantityReserved: stock.quantityReserved,
+          quantityAvailable: stock.quantityAvailable,
+          stockId: stock.stockId
+        }));
+      
+      setTypeComponents(components);
+      setTypeComponentsTotalItems(components.length);
+      setTypeComponentsTotalPages(1);
+      setTypeComponentsPage(1);
+    } catch (error: any) {
+      console.error('Error processing type components:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load type components from warehouse',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingTypeComponents(false);
+    }
+  };
+
+  // Create component
+  const createComponent = async () => {
+    if (!selectedTypeComponentForCreate || !componentSerialNumber.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please enter a serial number',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!selectedWarehouse) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please select a warehouse first',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsCreatingComponent(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    
+    try {
+      const requestData: CreateComponentRequest = {
+        typeComponentId: selectedTypeComponentForCreate.typeComponentId,
+        warehouseId: selectedWarehouse.warehouseId,
+        serialNumber: componentSerialNumber.trim()
+      };
+
+      const response = await axios.post<CreateComponentResponse>(
+        'https://dongthanhswp.space/api/v1/components',
+        requestData,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token || FALLBACK_BEARER_TOKEN}`
+          }
+        }
+      );
+      
+      if (response.data.status === 'success') {
+        toast({
+          title: 'Success',
+          description: `Component created successfully with serial number: ${response.data.data.component.serialNumber}`,
+          variant: 'default'
+        });
+        
+        // Reset form and close modal
+        setComponentSerialNumber('');
+        setShowCreateComponentModal(false);
+        setSelectedTypeComponentForCreate(null);
+        
+        // Refresh warehouses to update stock
+        await fetchWarehouses();
+        
+        // Find and update selected warehouse
+        const updatedWarehouse = warehouses.find(w => w.warehouseId === selectedWarehouse.warehouseId);
+        if (updatedWarehouse) {
+          setSelectedWarehouse(updatedWarehouse);
+          fetchTypeComponentsFromWarehouse();
+        }
+      }
+    } catch (error: any) {
+      console.error('Error creating component:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to create component',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsCreatingComponent(false);
+    }
+  };
+
+  // Fetch warehouses
+  const fetchWarehouses = async () => {
+    setIsLoadingWarehouses(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    
+    try {
+      const response = await axios.get(
+        'https://dongthanhswp.space/api/v1/warehouses',
+        {
+          headers: {
+            Authorization: `Bearer ${token || FALLBACK_BEARER_TOKEN}`
+          }
+        }
+      );
+      
+      if (response.data.status === 'success') {
+        const warehousesData = response.data.data.warehouses || [];
+        setWarehouses(warehousesData);
+      }
+    } catch (error: any) {
+      console.error('Error fetching warehouses:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to fetch warehouses',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingWarehouses(false);
+    }
+  };
 
   // Fetch all stock transfer requests
   const fetchStockTransferRequests = async () => {
@@ -222,6 +445,14 @@ const PartsCompanyDashboard: React.FC = () => {
   useEffect(() => {
     fetchStockTransferRequests();
   }, []);
+
+  // Load type components when warehouse is selected
+  useEffect(() => {
+    if (selectedWarehouse) {
+      fetchTypeComponentsFromWarehouse();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWarehouse]);
 
   // Fetch components when Components tab selected
   useEffect(() => {
@@ -564,6 +795,19 @@ const PartsCompanyDashboard: React.FC = () => {
                   <Button size="sm" variant={selectedTab === 'REQUESTS' ? 'default' : 'ghost'} onClick={() => setSelectedTab('REQUESTS')}>Requests</Button>
                   <Button size="sm" variant={selectedTab === 'COMPONENTS' ? 'default' : 'ghost'} onClick={() => setSelectedTab('COMPONENTS')}>Components</Button>
                 </div>
+                {selectedTab === 'COMPONENTS' && (
+                  <Button 
+                    variant="default" 
+                    size="sm"
+                    onClick={() => {
+                      setShowWarehouseSelectionModal(true);
+                      fetchWarehouses();
+                    }}
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    View Type Components
+                  </Button>
+                )}
               </div>
               <CardTitle>{selectedTab === 'REQUESTS' ? 'Stock Transfer Requests' : 'Components'}</CardTitle>
               <CardDescription>
@@ -1447,6 +1691,364 @@ const PartsCompanyDashboard: React.FC = () => {
               <div className="text-center py-12">
                 <Package className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
                 <p className="text-base text-muted-foreground">No components found</p>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Warehouse Selection Modal */}
+        <Dialog open={showWarehouseSelectionModal} onOpenChange={setShowWarehouseSelectionModal}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Warehouse className="h-5 w-5 text-blue-600" />
+                Select Warehouse
+              </DialogTitle>
+              <DialogDescription>
+                Choose a warehouse to view its available type components
+              </DialogDescription>
+            </DialogHeader>
+
+            {isLoadingWarehouses ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <span className="ml-3 text-muted-foreground">Loading warehouses...</span>
+              </div>
+            ) : warehouses.length > 0 ? (
+              <div className="grid grid-cols-1 gap-4">
+                {warehouses.map((warehouse) => (
+                  <Card 
+                    key={warehouse.warehouseId} 
+                    className="border hover:border-blue-400 transition-all cursor-pointer hover:shadow-md"
+                    onClick={() => {
+                      setSelectedWarehouse(warehouse);
+                      setShowWarehouseSelectionModal(false);
+                      setShowTypeComponentsModal(true);
+                      // Load type components from this warehouse
+                      setTimeout(() => fetchTypeComponentsFromWarehouse(), 100);
+                    }}
+                  >
+                    <CardContent className="p-4">
+                      <div className="space-y-3">
+                        {/* Header */}
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-lg text-foreground mb-1">
+                              {warehouse.name}
+                            </h4>
+                            <p className="text-sm text-muted-foreground">{warehouse.address}</p>
+                          </div>
+                          <Badge variant={warehouse.priority === 1 ? 'default' : 'secondary'}>
+                            Priority {warehouse.priority}
+                          </Badge>
+                        </div>
+
+                        {/* Details Grid */}
+                        <div className="grid grid-cols-2 gap-4 pt-3 border-t">
+                          {warehouse.serviceCenter && (
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Service Center</label>
+                              <p className="text-sm mt-1">{warehouse.serviceCenter.name}</p>
+                              <p className="text-xs text-muted-foreground">{warehouse.serviceCenter.address}</p>
+                            </div>
+                          )}
+                          {warehouse.company && (
+                            <div>
+                              <label className="text-xs font-semibold text-muted-foreground uppercase">Company</label>
+                              <p className="text-sm mt-1">{warehouse.company.name}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Stock Summary */}
+                        <div className="pt-3 border-t">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium text-muted-foreground">
+                              <Package className="h-4 w-4 inline mr-1" />
+                              Component Types Available
+                            </span>
+                            <Badge variant="outline" className="text-sm">
+                              {warehouse.stocks?.length || 0} types
+                            </Badge>
+                          </div>
+                          {warehouse.stocks && warehouse.stocks.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {warehouse.stocks.slice(0, 3).map((stock: any, idx: number) => (
+                                <Badge key={idx} variant="secondary" className="text-xs">
+                                  {stock.typeComponent?.name}
+                                </Badge>
+                              ))}
+                              {warehouse.stocks.length > 3 && (
+                                <Badge variant="outline" className="text-xs">
+                                  +{warehouse.stocks.length - 3} more
+                                </Badge>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <Warehouse className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                <p className="text-base text-muted-foreground">No warehouses found</p>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Type Components Modal */}
+        <Dialog open={showTypeComponentsModal} onOpenChange={setShowTypeComponentsModal}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-blue-600" />
+                Type Components in {selectedWarehouse?.name || 'Warehouse'}
+              </DialogTitle>
+              <DialogDescription>
+                {selectedWarehouse 
+                  ? `Viewing components available in ${selectedWarehouse.name}`
+                  : 'Browse available component types'
+                }
+              </DialogDescription>
+            </DialogHeader>
+
+            {isLoadingTypeComponents ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <span className="ml-3 text-muted-foreground">Loading type components...</span>
+              </div>
+            ) : typeComponents.length > 0 ? (
+              <div className="space-y-4">
+                {/* Warehouse Info Banner */}
+                {selectedWarehouse && (
+                  <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-lg border border-blue-200">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Warehouse className="h-5 w-5 text-blue-600" />
+                        <div>
+                          <p className="font-semibold text-blue-900 dark:text-blue-100">{selectedWarehouse.name}</p>
+                          <p className="text-xs text-muted-foreground">{selectedWarehouse.address}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">
+                          {typeComponentsTotalItems} component types
+                        </Badge>
+                        <Badge variant={selectedWarehouse.priority === 1 ? 'default' : 'secondary'}>
+                          Priority {selectedWarehouse.priority}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Components Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {typeComponents.map((component: any) => (
+                    <Card key={component.typeComponentId} className="border hover:border-blue-300 transition-colors">
+                      <CardContent className="p-4">
+                        <div className="space-y-3">
+                          {/* Header */}
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-base text-foreground mb-1">
+                                {component.name}
+                              </h4>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge variant="outline" className="text-xs">
+                                  <Tag className="h-3 w-3 mr-1" />
+                                  {component.sku}
+                                </Badge>
+                                <Badge variant="secondary" className="text-xs">
+                                  {component.category.replace(/_/g, ' ')}
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Stock Info */}
+                          <div className="grid grid-cols-3 gap-2 pt-3 border-t">
+                            <div className="text-center p-2 bg-green-50 dark:bg-green-900/20 rounded">
+                              <p className="text-xs text-muted-foreground">In Stock</p>
+                              <p className="text-lg font-bold text-green-600 dark:text-green-400">
+                                {component.quantityInStock || 0}
+                              </p>
+                            </div>
+                            <div className="text-center p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded">
+                              <p className="text-xs text-muted-foreground">Reserved</p>
+                              <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">
+                                {component.quantityReserved || 0}
+                              </p>
+                            </div>
+                            <div className="text-center p-2 bg-blue-50 dark:bg-blue-900/20 rounded">
+                              <p className="text-xs text-muted-foreground">Available</p>
+                              <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                                {component.quantityAvailable || 0}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Action Button */}
+                          <div className="pt-2 border-t">
+                            <Button
+                              variant="default"
+                              size="sm"
+                              className="w-full"
+                              onClick={() => {
+                                setSelectedTypeComponentForCreate(component);
+                                setShowCreateComponentModal(true);
+                              }}
+                            >
+                              <Package className="h-4 w-4 mr-2" />
+                              Add Component
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Back to Warehouse Selection */}
+                <div className="flex items-center justify-center pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowTypeComponentsModal(false);
+                      setShowWarehouseSelectionModal(true);
+                      setSelectedWarehouse(null);
+                    }}
+                  >
+                    <Warehouse className="h-4 w-4 mr-2" />
+                    Back to Warehouse Selection
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <Package className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                <p className="text-base text-muted-foreground">
+                  {selectedWarehouse ? 'No type components found in this warehouse' : 'No type components found'}
+                </p>
+                {selectedWarehouse && (
+                  <Button
+                    variant="outline"
+                    className="mt-4"
+                    onClick={() => {
+                      setShowTypeComponentsModal(false);
+                      setShowWarehouseSelectionModal(true);
+                      setSelectedWarehouse(null);
+                    }}
+                  >
+                    <Warehouse className="h-4 w-4 mr-2" />
+                    Back to Warehouse Selection
+                  </Button>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Create Component Modal */}
+        <Dialog open={showCreateComponentModal} onOpenChange={setShowCreateComponentModal}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-green-600" />
+                Add New Component
+              </DialogTitle>
+              <DialogDescription>
+                Create a new component for {selectedTypeComponentForCreate?.name || 'this type'}
+              </DialogDescription>
+            </DialogHeader>
+
+            {selectedTypeComponentForCreate && selectedWarehouse && (
+              <div className="space-y-4">
+                {/* Warehouse Info Banner */}
+                <div className="p-3 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-lg border border-blue-200">
+                  <div className="flex items-center gap-2">
+                    <Warehouse className="h-4 w-4 text-blue-600" />
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground uppercase">Target Warehouse</label>
+                      <p className="text-sm font-semibold mt-0.5">{selectedWarehouse.name}</p>
+                      <p className="text-xs text-muted-foreground">{selectedWarehouse.address}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Type Component Info */}
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200">
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-xs font-semibold text-muted-foreground uppercase">Component Type</label>
+                      <p className="text-sm font-semibold mt-1">{selectedTypeComponentForCreate.name}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs">
+                        {selectedTypeComponentForCreate.sku}
+                      </Badge>
+                      <Badge variant="secondary" className="text-xs">
+                        {selectedTypeComponentForCreate.category.replace(/_/g, ' ')}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Serial Number Input */}
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-foreground">
+                    Serial Number <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Enter serial number (e.g., ADAS-CAM-666)"
+                    value={componentSerialNumber}
+                    onChange={(e) => setComponentSerialNumber(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white"
+                    disabled={isCreatingComponent}
+                    autoFocus
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This will be the unique identifier for this component
+                  </p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex items-center justify-end gap-2 pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowCreateComponentModal(false);
+                      setComponentSerialNumber('');
+                      setSelectedTypeComponentForCreate(null);
+                    }}
+                    disabled={isCreatingComponent}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="default"
+                    onClick={createComponent}
+                    disabled={isCreatingComponent || !componentSerialNumber.trim()}
+                    className="gap-2"
+                  >
+                    {isCreatingComponent ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="h-4 w-4" />
+                        Create Component
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
             )}
           </DialogContent>
