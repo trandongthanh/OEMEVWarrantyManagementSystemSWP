@@ -121,6 +121,18 @@ const WarrantyDashboard: React.FC = () => {
     quantity: '1'
   });
   
+  // Add New Vehicle Model states
+  const [isAddModelDialogOpen, setIsAddModelDialogOpen] = useState<boolean>(false);
+  const [isAddingModel, setIsAddingModel] = useState<boolean>(false);
+  const [newVehicleModel, setNewVehicleModel] = useState({
+    vehicleModelName: '',
+    yearOfLaunch: '',
+    placeOfManufacture: '',
+    generalWarrantyDuration: '',
+    generalWarrantyMileage: '',
+    companyId: ''
+  });
+  
   useEffect(() => {
     // Auto-fetch when page changes
     if (user) {
@@ -208,6 +220,88 @@ const WarrantyDashboard: React.FC = () => {
     setIsCreateComponentDialogOpen(true);
   };
 
+  const handleAddModelClick = () => {
+    // Reset form
+    setNewVehicleModel({
+      vehicleModelName: '',
+      yearOfLaunch: '',
+      placeOfManufacture: '',
+      generalWarrantyDuration: '',
+      generalWarrantyMileage: '',
+      companyId: ''
+    });
+    setIsAddModelDialogOpen(true);
+  };
+
+  const handleAddModelSubmit = async () => {
+    // Validation
+    if (!newVehicleModel.vehicleModelName.trim() || !newVehicleModel.yearOfLaunch || 
+        !newVehicleModel.placeOfManufacture.trim() || !newVehicleModel.generalWarrantyDuration || 
+        !newVehicleModel.generalWarrantyMileage || !newVehicleModel.companyId.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please fill in all required fields.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsAddingModel(true);
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      
+      const payload = {
+        vehicleModelName: newVehicleModel.vehicleModelName.trim(),
+        yearOfLaunch: new Date(newVehicleModel.yearOfLaunch).toISOString(),
+        placeOfManufacture: newVehicleModel.placeOfManufacture.trim(),
+        generalWarrantyDuration: parseInt(newVehicleModel.generalWarrantyDuration),
+        generalWarrantyMileage: parseInt(newVehicleModel.generalWarrantyMileage),
+        companyId: newVehicleModel.companyId.trim()
+      };
+
+      console.log('Adding new vehicle model:', payload);
+      
+      const response = await axios.post(
+        `${API_BASE_URL}/oem-vehicle-models`,
+        payload,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      if (response.data.status === 'success') {
+        toast({
+          title: 'Model Added! ✅',
+          description: 'The vehicle model has been added successfully.',
+        });
+        setIsAddModelDialogOpen(false);
+        
+        // Refresh vehicle models
+        await fetchVehicleModels();
+      } else {
+        toast({
+          title: 'Creation Failed',
+          description: response.data.message || 'Failed to add model. Please try again.',
+          variant: 'destructive'
+        });
+      }
+    } catch (error) {
+      console.error('Error adding model:', error);
+      toast({
+        title: 'Error',
+        description: axios.isAxiosError(error) && error.response?.data?.message
+          ? error.response.data.message
+          : 'An error occurred while adding the model.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsAddingModel(false);
+    }
+  };
+
   const handleCreateComponentSubmit = async () => {
     if (!selectedModel) {
       toast({
@@ -260,14 +354,39 @@ const WarrantyDashboard: React.FC = () => {
       let componentData: any;
       
       if (isReusingComponent) {
-        // Trường hợp 1: Copy component - chỉ lấy phần vehicleModelId (bỏ ||componentIndex)
+        // Trường hợp 1: Copy component - parse selectedCopyComponent để lấy typeComponentId từ API data
         const [sourceVehicleModelId, componentIndexStr] = selectedCopyComponent.split('||');
         const componentIndex = parseInt(componentIndexStr);
         
-        // Sử dụng selectedCopyComponent làm componentId
-        const componentId = selectedCopyComponent;
+        // Tìm model và component từ vehicleModels (đã có data từ API)
+        const sourceModel = vehicleModels.find(m => m.vehicleModelId === sourceVehicleModelId);
+        const sourceComponent = sourceModel?.typeComponents?.[componentIndex];
         
-        // Gửi selectedCopyComponent về endpoint
+        if (!sourceComponent) {
+          toast({
+            title: 'Error',
+            description: 'Could not find the selected component.',
+            variant: 'destructive'
+          });
+          setIsCreatingComponent(false);
+          return;
+        }
+        
+        // Lấy typeComponentId từ component object (API đã trả về field này)
+        const componentId = sourceComponent.typeComponentId;
+        
+        if (!componentId) {
+          toast({
+            title: 'Error',
+            description: 'Component ID not found. Please refresh and try again.',
+            variant: 'destructive'
+          });
+          console.error('Component missing typeComponentId:', sourceComponent);
+          setIsCreatingComponent(false);
+          return;
+        }
+        
+        // Gửi typeComponentId (UUID thuần) về endpoint
         componentData = {
           typeComponentId: componentId,
           durationMonth: parseInt(newComponent.durationMonth),
@@ -277,7 +396,8 @@ const WarrantyDashboard: React.FC = () => {
         
         console.log('Copying component:', {
           selectedCopyComponent,
-          extractedComponentId: componentId,
+          sourceComponentName: sourceComponent.name,
+          extractedTypeComponentId: componentId,
           sendingToAPI: componentData
         });
       } else {
@@ -911,14 +1031,24 @@ const WarrantyDashboard: React.FC = () => {
                     <CardTitle>Vehicle Models</CardTitle>
                     <CardDescription>Select a vehicle model to view and manage its warranty components</CardDescription>
                   </div>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    onClick={handleCreateComponentClick}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    Add Warranty Component
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleAddModelClick}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      Add New Vehicle Model
+                    </Button>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleCreateComponentClick}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      Add Warranty Component
+                    </Button>
+                  </div>
                 </div>
                 
                 {/* Filters */}
@@ -1604,18 +1734,35 @@ const WarrantyDashboard: React.FC = () => {
                       model.typeComponents.length > 0 &&
                       model.vehicleModelId !== selectedModel.vehicleModelId
                     )
-                    .map((model) => (
-                      <optgroup key={model.vehicleModelId} label={`${model.vehicleModelName} Components`}>
-                        {model.typeComponents.map((component, componentIndex) => (
-                          <option 
-                            key={`${model.vehicleModelId}-${componentIndex}`} 
-                            value={`${model.vehicleModelId}||${componentIndex}`}
-                          >
-                            {component.name} ({component.sku})
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
+                    .map((model) => {
+                      // Lấy danh sách typeComponentId đã có trong selectedModel
+                      const existingComponentIds = selectedModel.typeComponents?.map(c => c.typeComponentId) || [];
+                      
+                      // Lọc ra những component chưa tồn tại trong selectedModel
+                      const availableComponents = model.typeComponents.filter(component => 
+                        !existingComponentIds.includes(component.typeComponentId)
+                      );
+                      
+                      // Nếu không còn component nào available thì không hiển thị optgroup
+                      if (availableComponents.length === 0) return null;
+                      
+                      return (
+                        <optgroup key={model.vehicleModelId} label={`${model.vehicleModelName} Components`}>
+                          {availableComponents.map((component, componentIndex) => {
+                            // Tìm index thực của component trong mảng gốc
+                            const originalIndex = model.typeComponents.indexOf(component);
+                            return (
+                              <option 
+                                key={`${model.vehicleModelId}-${originalIndex}`} 
+                                value={`${model.vehicleModelId}||${originalIndex}`}
+                              >
+                                {component.name} ({component.sku})
+                              </option>
+                            );
+                          })}
+                        </optgroup>
+                      );
+                    })}
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
                   💡 {selectedModel 
@@ -1771,6 +1918,140 @@ const WarrantyDashboard: React.FC = () => {
                 className="bg-green-600 hover:bg-green-700"
               >
                 {isCreatingComponent ? '🔄 Creating...' : '✓ Create Component'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add New Vehicle Model Dialog */}
+      {isAddModelDialogOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Dialog Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-blue-50 to-purple-50 border-b border-blue-200 px-6 py-4 flex items-center justify-between rounded-t-lg">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl">🚗</span>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Add New Vehicle Model</h2>
+                  <p className="text-sm text-gray-600 mt-0.5">Create a new vehicle model with warranty information</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAddModelDialogOpen(false)}
+                className="text-gray-400 hover:text-gray-600 text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Dialog Content */}
+            <div className="p-6 space-y-4">
+              {/* Vehicle Model Name */}
+              <div>
+                <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                  Vehicle Model Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newVehicleModel.vehicleModelName}
+                  onChange={(e) => setNewVehicleModel({ ...newVehicleModel, vehicleModelName: e.target.value })}
+                  placeholder="e.g., VF 8, VF 9, VF e34"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              {/* Year of Launch */}
+              <div>
+                <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                  Year of Launch <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={newVehicleModel.yearOfLaunch}
+                  onChange={(e) => setNewVehicleModel({ ...newVehicleModel, yearOfLaunch: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              {/* Place of Manufacture */}
+              <div>
+                <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                  Place of Manufacture <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newVehicleModel.placeOfManufacture}
+                  onChange={(e) => setNewVehicleModel({ ...newVehicleModel, placeOfManufacture: e.target.value })}
+                  placeholder="e.g., Vietnam, China, USA"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              {/* General Warranty Duration and Mileage Row */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                    General Warranty Duration (months) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={newVehicleModel.generalWarrantyDuration}
+                    onChange={(e) => setNewVehicleModel({ ...newVehicleModel, generalWarrantyDuration: e.target.value })}
+                    placeholder="e.g., 120"
+                    min="1"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                    General Warranty Mileage (km) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={newVehicleModel.generalWarrantyMileage}
+                    onChange={(e) => setNewVehicleModel({ ...newVehicleModel, generalWarrantyMileage: e.target.value })}
+                    placeholder="e.g., 200000"
+                    min="1"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Company ID */}
+              <div>
+                <label className="text-sm font-semibold text-gray-900 mb-2 block">
+                  Company ID <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newVehicleModel.companyId}
+                  onChange={(e) => setNewVehicleModel({ ...newVehicleModel, companyId: e.target.value })}
+                  placeholder="e.g., UUID of the vehicle company"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  💡 Enter the UUID of the vehicle company that manufactures this model
+                </p>
+              </div>
+            </div>
+
+            {/* Dialog Footer */}
+            <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end gap-3 rounded-b-lg">
+              <Button
+                variant="outline"
+                onClick={() => setIsAddModelDialogOpen(false)}
+                disabled={isAddingModel}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddModelSubmit}
+                disabled={isAddingModel}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {isAddingModel ? '🔄 Adding...' : '✓ Add Model'}
               </Button>
             </div>
           </div>
