@@ -1,26 +1,22 @@
 import express from "express";
-import { authentication } from "../middleware/index.js";
+import {
+  authentication,
+  authorizationByRole,
+  validate,
+} from "../middleware/index.js";
+import createComponentSchema from "../../validators/component.validator.js";
 
 const router = express.Router();
 
 /**
  * @swagger
- * /components/{componentId}/status:
- *   patch:
- *     summary: Update component status
- *     description: Update the status of a component (e.g., IN_STOCK, RESERVED, INSTALLED, RETURNED, DEFECTIVE)
- *     tags: [Components]
+ * /components:
+ *   post:
+ *     summary: Tạo mới component trong kho
+ *     description: Parts coordinator hoặc nhân viên OEM thêm component thực tế vào kho; số lượng tồn sẽ tự động tăng.
+ *     tags: [Component]
  *     security:
  *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: componentId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *         description: Component ID
- *         example: "1096033d-f11f-4a49-a751-8be0cfb9d705"
  *     requestBody:
  *       required: true
  *       content:
@@ -28,16 +24,24 @@ const router = express.Router();
  *           schema:
  *             type: object
  *             required:
- *               - status
+ *               - typeComponentId
+ *               - warehouseId
+ *               - serialNumber
  *             properties:
- *               status:
+ *               typeComponentId:
  *                 type: string
- *                 enum: [IN_STOCK, RESERVED, INSTALLED, RETURNED, DEFECTIVE]
- *                 description: New status for the component
- *                 example: "DEFECTIVE"
+ *                 format: uuid
+ *                 description: Loại component tương ứng
+ *               warehouseId:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Kho sẽ chứa component này
+ *               serialNumber:
+ *                 type: string
+ *                 description: Mã serial duy nhất của component
  *     responses:
- *       200:
- *         description: Component status updated successfully
+ *       201:
+ *         description: Tạo component thành công
  *         content:
  *           application/json:
  *             schema:
@@ -51,30 +55,32 @@ const router = express.Router();
  *                   properties:
  *                     component:
  *                       type: object
- *                       properties:
- *                         componentId:
- *                           type: string
- *                           format: uuid
- *                         serialNumber:
- *                           type: string
- *                         status:
- *                           type: string
- *                           example: "DEFECTIVE"
- *                         updatedAt:
- *                           type: string
- *                           format: date-time
+ *                       description: Component vừa tạo
+ *                     stock:
+ *                       type: object
+ *                       description: Trạng thái stock sau khi cộng tồn
  *       400:
- *         description: Bad request - Invalid status
+ *         description: Dữ liệu không hợp lệ
  *       401:
- *         description: Unauthorized
- *       404:
- *         description: Component not found
+ *         description: Chưa xác thực
+ *       403:
+ *         description: Không có quyền
  */
-router.patch("/:componentId/status", authentication, async (req, res, next) => {
-  const componentController = req.container.resolve("componentController");
+router.post(
+  "/",
+  authentication,
+  authorizationByRole([
+    "parts_coordinator_company",
+    "parts_coordinator_service_center",
+    "emv_staff",
+  ]),
+  validate(createComponentSchema, "body"),
+  async (req, res, next) => {
+    const componentController = req.container.resolve("componentController");
 
-  await componentController.updateStatus(req, res, next);
-});
+    await componentController.createComponent(req, res, next);
+  }
+);
 
 router.get("/", authentication, async (req, res, next) => {
   const componentController = req.container.resolve("componentController");

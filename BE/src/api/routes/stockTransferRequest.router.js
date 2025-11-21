@@ -615,10 +615,6 @@ router.get(
  *                 type: string
  *                 format: date
  *                 description: Ngày dự kiến giao hàng (chỉ cần khi ship reservation cuối cùng)
- *               estimatedDeliveryDate:
- *                 type: string
- *                 format: date
- *                 description: Ngày dự kiến giao hàng
  *                 example: "2025-11-05"
  *     responses:
  *       200:

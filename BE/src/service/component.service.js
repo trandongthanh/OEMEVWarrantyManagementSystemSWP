@@ -1,4 +1,8 @@
-import { BadRequestError } from "../error/index.js";
+import {
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+} from "../error/index.js";
 import db from "../models/index.cjs";
 
 const VALID_COMPONENT_STATUSES = new Set([
@@ -12,9 +16,20 @@ const VALID_COMPONENT_STATUSES = new Set([
 
 class ComponentService {
   #componentRepository;
+  #warehouseRepository;
+  #typeComponentRepository;
+  #inventoryRepository;
 
-  constructor({ componentRepository }) {
+  constructor({
+    componentRepository,
+    warehouseRepository,
+    typeComponentRepository,
+    inventoryRepository,
+  }) {
     this.#componentRepository = componentRepository;
+    this.#warehouseRepository = warehouseRepository;
+    this.#typeComponentRepository = typeComponentRepository;
+    this.#inventoryRepository = inventoryRepository;
   }
 
   listComponents = async (query = {}) => {
@@ -84,6 +99,109 @@ class ComponentService {
     });
 
     return components;
+  };
+
+  createComponent = async ({
+    typeComponentId,
+    warehouseId,
+    serialNumber,
+    status = "IN_WAREHOUSE",
+  }) => {
+    if (!typeComponentId || !warehouseId || !serialNumber) {
+      throw new BadRequestError(
+        "typeComponentId, warehouseId và serialNumber là bắt buộc"
+      );
+    }
+
+    const normalizedSerialNumber = serialNumber.trim();
+
+    if (!normalizedSerialNumber) {
+      throw new BadRequestError("serialNumber không được bỏ trống");
+    }
+
+    if (!VALID_COMPONENT_STATUSES.has(status)) {
+      throw new BadRequestError(`Trạng thái component không hợp lệ: ${status}`);
+    }
+
+    if (status !== "IN_WAREHOUSE") {
+      throw new BadRequestError(
+        "Component mới tạo phải ở trạng thái IN_WAREHOUSE"
+      );
+    }
+
+    return db.sequelize.transaction(async (transaction) => {
+      const [typeComponent, warehouse] = await Promise.all([
+        this.#typeComponentRepository.findByPk(typeComponentId, transaction),
+        this.#warehouseRepository.findById({ warehouseId }, transaction),
+      ]);
+
+      if (!typeComponent) {
+        throw new NotFoundError("Không tìm thấy type component");
+      }
+
+      if (!warehouse) {
+        throw new NotFoundError("Không tìm thấy warehouse");
+      }
+
+      const existingComponent =
+        await this.#componentRepository.findBySerialNumber(
+          normalizedSerialNumber,
+          transaction,
+          transaction.LOCK.UPDATE
+        );
+
+      if (existingComponent) {
+        throw new ConflictError(
+          `Component với serial ${normalizedSerialNumber} đã tồn tại`
+        );
+      }
+
+      const createdComponent = await this.#componentRepository.createComponent(
+        {
+          typeComponentId,
+          warehouseId,
+          serialNumber: normalizedSerialNumber,
+          status,
+        },
+        transaction
+      );
+
+      let stockRow = await this.#inventoryRepository.findStockForUpdate({
+        where: { warehouseId, typeComponentId },
+        transaction,
+      });
+
+      if (stockRow) {
+        await stockRow.increment("quantityInStock", { by: 1, transaction });
+        await stockRow.reload({ transaction });
+      } else {
+        stockRow = await this.#inventoryRepository.createStock(
+          {
+            warehouseId,
+            typeComponentId,
+            quantityInStock: 1,
+            quantityReserved: 0,
+          },
+          { transaction }
+        );
+      }
+
+      const stockSnapshot =
+        typeof stockRow?.toJSON === "function" ? stockRow.toJSON() : stockRow;
+
+      return {
+        component: createdComponent,
+        stock: stockSnapshot
+          ? {
+              stockId: stockSnapshot.stockId,
+              warehouseId: stockSnapshot.warehouseId,
+              typeComponentId: stockSnapshot.typeComponentId,
+              quantityInStock: stockSnapshot.quantityInStock,
+              quantityReserved: stockSnapshot.quantityReserved,
+            }
+          : null,
+      };
+    });
   };
 }
 

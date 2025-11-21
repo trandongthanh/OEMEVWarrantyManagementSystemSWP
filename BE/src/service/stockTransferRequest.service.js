@@ -202,6 +202,7 @@ class StockTransferRequestService {
         ? {
             warehouseId: reservation.stock.warehouse.warehouseId,
             name: reservation.stock.warehouse.name,
+            address: reservation.stock.warehouse.address,
           }
         : null,
       typeComponent: reservation.requestItem?.component
