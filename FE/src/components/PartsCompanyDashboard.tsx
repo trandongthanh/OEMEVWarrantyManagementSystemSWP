@@ -126,6 +126,8 @@ const PartsCompanyDashboard: React.FC = () => {
   const [selectedTypeComponentName, setSelectedTypeComponentName] = useState<string>('');
   const [selectedComponentIdsByReservation, setSelectedComponentIdsByReservation] = useState<Record<string, string[]>>({});
   const [currentReservationId, setCurrentReservationId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalPages, setTotalPages] = useState<number>(1);
 
   // Fetch all stock transfer requests
   const fetchStockTransferRequests = async () => {
@@ -230,21 +232,31 @@ const PartsCompanyDashboard: React.FC = () => {
   }, [selectedTab]);
 
   // Fetch external components list
-  const fetchComponents = async () => {
+  const fetchComponents = async (page: number = 1) => {
     setIsLoadingComponents(true);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     const bearer = token || FALLBACK_BEARER_TOKEN;
     try {
       const response = await axios.get(EXTERNAL_COMPONENTS_API, {
         params: {
-          limit: 50,
-          page: 1
+          limit: 100,
+          page: page
         },
         headers: { Authorization: `Bearer ${bearer}` }
       });
       const components = response.data?.data?.components || [];
+      const pagination = response.data?.data?.pagination;
       console.log('🔩 Fetched external components:', components);
+      console.log('📄 Pagination:', pagination);
       setComponentsList(components);
+      setCurrentPage(page);
+      // Calculate total pages from pagination info if available
+      if (pagination?.total && pagination?.limit) {
+        setTotalPages(Math.ceil(pagination.total / pagination.limit));
+      } else {
+        // If no pagination info, assume there might be more pages if we got full page
+        setTotalPages(components.length === 100 ? page + 1 : page);
+      }
     } catch (error: any) {
       console.error('Failed to fetch components:', error);
       toast({ title: 'Error Loading Components', description: error?.message || 'Failed to load components', variant: 'destructive' });
@@ -632,6 +644,81 @@ const PartsCompanyDashboard: React.FC = () => {
                         ))}
                       </TableBody>
                     </Table>
+                    
+                    {/* Pagination Controls */}
+                    <div className="flex items-center justify-between mt-6 pt-4 border-t bg-gradient-to-r from-gray-50 to-blue-50 dark:from-gray-900 dark:to-blue-950 p-4 rounded-lg">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchComponents(currentPage - 1)}
+                        disabled={currentPage <= 1 || isLoadingComponents}
+                        className="gap-2"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                        Previous
+                      </Button>
+                      
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium text-muted-foreground">Page</span>
+                        <div className="flex items-center gap-1">
+                          {(() => {
+                            const pages = [];
+                            const maxVisible = 5;
+                            
+                            if (totalPages <= maxVisible) {
+                              // Show all pages if total is 5 or less
+                              for (let i = 1; i <= totalPages; i++) {
+                                pages.push(i);
+                              }
+                            } else {
+                              // Smart pagination for more than 5 pages
+                              if (currentPage <= 3) {
+                                // Near the start: show 1,2,3,4,5
+                                for (let i = 1; i <= 5; i++) {
+                                  pages.push(i);
+                                }
+                              } else if (currentPage >= totalPages - 2) {
+                                // Near the end: show last 5 pages
+                                for (let i = totalPages - 4; i <= totalPages; i++) {
+                                  pages.push(i);
+                                }
+                              } else {
+                                // In the middle: show current page centered
+                                for (let i = currentPage - 2; i <= currentPage + 2; i++) {
+                                  pages.push(i);
+                                }
+                              }
+                            }
+                            
+                            return pages.map((page, idx) => {                              return (
+                                <Button
+                                  key={page}
+                                  variant={currentPage === page ? "default" : "outline"}
+                                  size="sm"
+                                  onClick={() => fetchComponents(page as number)}
+                                  disabled={isLoadingComponents}
+                                  className={`min-w-[36px] h-9 ${currentPage === page ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700' : ''}`}
+                                >
+                                  {page}
+                                </Button>
+                              );
+                            });
+                          })()}
+                        </div>
+                        <span className="text-sm font-medium text-muted-foreground">of {totalPages}</span>
+                      </div>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchComponents(currentPage + 1)}
+                        disabled={currentPage >= totalPages || isLoadingComponents}
+                        className="gap-2"
+                      >
+                        Next
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                      </Button>
+                    </div>
                   </div>
                 )
               ) : isLoadingRequests ? (
