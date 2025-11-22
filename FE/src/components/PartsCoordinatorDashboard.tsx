@@ -281,7 +281,6 @@ const PartsCoordinatorDashboard: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       const requestsData = response.data?.data?.stockTransferRequests || [];
-      console.log('📦 Fetched all stock transfer requests:', requestsData);
       setStockTransferRequests(requestsData);
     } catch (error) {
       console.error('Failed to fetch stock transfer requests:', error);
@@ -303,21 +302,6 @@ const PartsCoordinatorDashboard: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       const detailData = response.data?.data?.stockTransferRequest || null;
-      console.log('📦 Stock Transfer Request Detail:', detailData);
-      console.log('📦 Items in request:', detailData?.items);
-      console.log('📦 Number of items:', detailData?.items?.length);
-      
-      // Log each item details
-      detailData?.items?.forEach((item: any, index: number) => {
-        console.log(`Item ${index + 1}:`, {
-          id: item.id,
-          typeComponentId: item.typeComponentId,
-          quantityRequested: item.quantityRequested,
-          quantityApproved: item.quantityApproved,
-          typeComponent: item.typeComponent,
-          caselineId: item.caselineId
-        });
-      });
       
       setSelectedStockRequest(detailData);
       setShowDetailModal(true);
@@ -429,72 +413,26 @@ const PartsCoordinatorDashboard: React.FC = () => {
     setIsLoadingReservations(true);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
-      console.error('❌ No token found');
       setIsLoadingReservations(false);
       return;
     }
     try {
-      console.log(`🔍 Fetching reservations - Page ${page}, Limit ${pageLimit}`);
       const url = `${API_BASE_URL}/reservations?page=${page}&limit=${pageLimit}`;
-      console.log('📍 Request URL:', url);
       
       const response = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      console.log('📦 Full API Response:', response.data);
-      console.log('📦 Response status:', response.status);
-      
-      // Try different response structures
-      let reservationsData: any[] = [];
-      let pagination: any = {};
-      
-      // Structure 1: { data: { reservations: [], pagination: {} } }
-      if (response.data?.data?.reservations) {
-        reservationsData = response.data.data.reservations;
-        pagination = response.data.data.pagination || {};
-        console.log('✅ Found reservations in response.data.data.reservations');
-      }
-      // Structure 2: { data: { componentReservations: [], pagination: {} } }
-      else if (response.data?.data?.componentReservations) {
-        reservationsData = response.data.data.componentReservations;
-        pagination = response.data.data.pagination || {};
-        console.log('✅ Found reservations in response.data.data.componentReservations');
-      }
-      // Structure 3: { reservations: [] }
-      else if (response.data?.reservations) {
-        reservationsData = response.data.reservations;
-        console.log('✅ Found reservations in response.data.reservations');
-      }
-      // Structure 4: Direct array
-      else if (Array.isArray(response.data)) {
-        reservationsData = response.data;
-        console.log('✅ Response is direct array');
-      }
-      // Structure 5: { data: [] }
-      else if (Array.isArray(response.data?.data)) {
-        reservationsData = response.data.data;
-        console.log('✅ Found reservations in response.data (array)');
-      }
-      
-      console.log('� Reservations data:', reservationsData);
-      console.log('📊 Number of reservations:', reservationsData.length);
-      console.log('📄 Pagination info:', pagination);
+      const reservationsData = response.data?.data?.reservations || [];
+      const pagination = response.data?.data?.pagination || {};
       
       setReservations(reservationsData);
-      setCurrentPage(pagination.currentPage || page);
-      setTotalPages(pagination.totalPages || Math.ceil(reservationsData.length / pageLimit) || 1);
-      setTotalReservations(pagination.totalItems || reservationsData.length);
-      
-      console.log('✅ State updated - Current Page:', pagination.currentPage || page);
-      console.log('✅ State updated - Total Pages:', pagination.totalPages || 1);
-      console.log('✅ State updated - Total Items:', pagination.totalItems || reservationsData.length);
+      setCurrentPage(pagination.page || page);
+      setTotalPages(pagination.totalPages || 1);
+      setTotalReservations(pagination.total || 0);
       
     } catch (error: any) {
       console.error('❌ Failed to fetch reservations:', error);
-      console.error('❌ Error response:', error.response?.data);
-      console.error('❌ Error status:', error.response?.status);
-      console.error('❌ Error message:', error.message);
       setReservations([]);
       setTotalPages(1);
       setTotalReservations(0);
