@@ -471,7 +471,8 @@ const getWorkloadBadgeVariant = (workload: number | undefined, maxWorkload = 5) 
   const canAssignTechnician = (technician: Technician, maxWorkload = 5): boolean => {
     const tasksToday = technician.tasksAssignedToday || 0;
     return tasksToday < maxWorkload && technician.status === 'AVAILABLE';
-  };// Helper function to get warning message based on workload
+  };
+  // Helper function to get warning message based on workload
 const getWorkloadWarningMessage = (workload: number, maxWorkload = 5): string => {
   if (workload >= maxWorkload) return `⚠️ Technician at maximum daily capacity (${workload}/${maxWorkload} tasks today)`;
   if (workload >= Math.max(1, maxWorkload - 1)) return "⚠️ Technician almost at daily capacity";
@@ -2646,7 +2647,7 @@ const ServiceCenterDashboard = () => {
                                           )}
 
                                           {/* For case lines WITHOUT component, show Assign Technician button directly */}
-                                          {!line.typeComponent && (line.status === 'CUSTOMER_APPROVED' || line.status === 'ELIGIBLE') && hasPermission(user, 'assign_technicians') && !line.repairTechId && (
+                                          {!line.typeComponent && (line.status === 'READY_FOR_REPAIR' || line.status === 'ELIGIBLE') && hasPermission(user, 'assign_technicians') && !line.repairTechId && (
                                             <div className="mt-2 flex items-center gap-2">
                                               <Button
                                                 size="sm"

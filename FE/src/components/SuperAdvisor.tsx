@@ -120,7 +120,7 @@ interface VehicleSearchResult {
   company?: string;
   licensePlate?: string;
   purchaseDate?: string;
-  registrationDate?: string | null;
+  registerationDate?: string | null;
   owner?: {
     id: string;
     fullName: string;
@@ -144,7 +144,6 @@ const SuperAdvisor = () => {
   // UI State
   const [searchVin, setSearchVin] = useState('');
   const [searchMode, setSearchMode] = useState<'warranty' | 'vehicle' | 'phone'>('phone');
-  const [isEditMode, setIsEditMode] = useState(false);
   const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
   
   // Record State
@@ -252,19 +251,6 @@ const SuperAdvisor = () => {
   const [isCheckingVehicleWarranty, setIsCheckingVehicleWarranty] = useState(false);
   const [vehicleWarrantyStatus, setVehicleWarrantyStatus] = useState<'valid' | 'expired' | null>(null);
   const [newVehicleVin, setNewVehicleVin] = useState('');
-
-  // Form state for editing record
-  const [editRecord, setEditRecord] = useState({
-    vinNumber: '',
-    odometer: '',
-    visitorFullName: '', // Visitor name from visitorInfo
-    visitorPhone: '', // Visitor phone (legacy, keeping for compatibility)
-    customerEmail: '', // Customer email for OTP
-    cases: [] as CaseNote[],
-    purchaseDate: '',
-    status: 'pending' as 'pending' | 'in-progress' | 'completed',
-    rawStatus: 'CHECKED_IN' // Store actual API status
-  });
 
   const [records, setRecords] = useState<WarrantyRecord[]>([]);
 
@@ -477,7 +463,7 @@ const SuperAdvisor = () => {
           licensePlate: vehicle.licensePlate,
           purchaseDate: vehicle.purchaseDate,
           // Backend trả về registerationDate (lỗi chính tả trong DB/model)
-          registrationDate: vehicle.registerationDate || null,
+          registerationDate: vehicle.registerationDate || null,
           owner: vehicle.owner
         });
 
@@ -545,6 +531,7 @@ const SuperAdvisor = () => {
   };
 
   const handleSearchCustomerByPhone = async (phoneToSearch?: string) => {
+    //tham số phone truyền vào khi sử dụng tính năng Register New Vehicle cho customer đã tồn tại trong hệ thống
     const phoneNumber = phoneToSearch || customerSearchPhone.trim();
     
     if (!phoneNumber) {
@@ -555,9 +542,7 @@ const SuperAdvisor = () => {
       });
       return;
     }
-
-
-    //de tranh truong hop nguoi dung bam lien tuc
+    //để khi đang load người dùng không được phép click button
     setIsSearchingCustomer(true);
     //reset trang thai cua obj customer
     setFoundCustomer(null);
@@ -588,17 +573,6 @@ const SuperAdvisor = () => {
       if (response.data && response.data.status === 'success') {
         let customer = response.data.data?.customer;
         //có nghĩa là response.data tồn tại thì gán giá trị cho customer, không thì gán undefined
-        
-        // Map registerationDate (backend typo) to registrationDate (UI standard) cho vehicles
-        if (customer && Array.isArray(customer.vehicles)) {
-          customer = {
-            ...customer,
-            vehicles: customer.vehicles.map((v: any) => ({
-              ...v,
-              registrationDate: v.registerationDate || v.registrationDate
-            }))
-          };
-        }
         
         // nếu API get về có customer id tức có tồn tại cả obj customer
         if (customer.id) {
@@ -774,7 +748,7 @@ const SuperAdvisor = () => {
       });
       return;
     }
-
+    //để không cho người dùng click nhiều lần khi đang update
     setIsUpdatingCustomer(true);
 
     try {
@@ -807,9 +781,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      // IMPORTANT: Backend middleware ensureOtpVerified checks for verificationEmail field
-      // This field is required to verify OTP was validated before update
-      // Must use lowercase to match how backend stores in Redis
+      // redis yêu cầu xác minh email ở lowercase
       const verificationEmail = editCustomerForm.email.trim().toLowerCase();
       updateData.verificationEmail = verificationEmail;
 
@@ -1082,28 +1054,21 @@ const SuperAdvisor = () => {
     setIsSendingOtp(true);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/mail/otp/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
-        },
-        body: JSON.stringify({
+      const response = await axios.post(
+        `${API_BASE_URL}/mail/otp/send`,
+        {
           email: warrantyRecordForm.customerEmail,
           vin: warrantyRecordForm.vin
-        })
-      });
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
+          }
+        }
+      );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Server error response:', errorText);
-        throw new Error(`Server error: ${response.status}`);
-      }
-
-      const result = await response.json();
-
-
-      if (result.status === 'success') {
+      if (response.data && response.data.status === 'success') {
         setOtpSent(true);
         setOtpCountdown(300); // 5 minutes
         toast({
@@ -1111,7 +1076,8 @@ const SuperAdvisor = () => {
           description: `OTP code has been sent to ${warrantyRecordForm.customerEmail}. Please check your email inbox.`,
         });
       } else {
-        throw new Error(result.message || 'Failed to send OTP');
+        const message = response.data?.message || 'Failed to send OTP';
+        throw new Error(message);
       }
     } catch (error) {
       toast({
@@ -1243,32 +1209,27 @@ const SuperAdvisor = () => {
       return;
     }
 
+    //set trạng thái để người dùng không thể spam button send OTP
     setIsSendingOtpForCustomer(true);
 
     try {
       const verificationEmail = editCustomerForm.email.trim().toLowerCase();
 
-      const response = await fetch(`${API_BASE_URL}/mail/otp/send`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
-        },
-        body: JSON.stringify({
+      const response = await axios.post(
+        `${API_BASE_URL}/mail/otp/send`,
+        {
           email: verificationEmail,
           vin: customerVin
-        })
-      });
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
+          }
+        }
+      );
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Server error response:', errorText);
-        throw new Error(`Server error: ${response.status}`);
-      }
-
-      const result = await response.json();
-
-      if (result.status === 'success') {
+      if (response.data && response.data.status === 'success') {
         setOtpSentForCustomer(true);
         setOtpCountdownForCustomer(300); // 5 minutes
         toast({
@@ -1276,7 +1237,8 @@ const SuperAdvisor = () => {
           description: `OTP code has been sent to ${editCustomerForm.email}. Please check your email inbox.`,
         });
       } else {
-        throw new Error(result.message || 'Failed to send OTP');
+        const message = response.data?.message || 'Failed to send OTP';
+        throw new Error(message);
       }
     } catch (error) {
       toast({
@@ -2039,8 +2001,8 @@ const SuperAdvisor = () => {
         setWarrantyStatus(null);
         
         toast({
-          title: '⚠️ Invalid Purchase Date',
-          description: 'The purchase date must be before today or must be after Date of Manufacture. Please correct the purchase date and check the warranty again.',
+          title: 'Invalid Purchase Date',
+          description: 'Please correct the purchase date and check the warranty again.',
           variant: 'destructive'
         });
       } else {
@@ -2185,134 +2147,6 @@ const SuperAdvisor = () => {
         variant: 'destructive'
       });
     }
-  };
-
-  const handleEditRecord = async (record: WarrantyRecord) => {
-    
-    setSelectedRecord(record);
-    
-    // Fetch full record details to get visitorInfo
-    try {
-      const token = localStorage.getItem('ev_warranty_token');
-      if (!token) {
-        toast({
-          title: 'Error',
-          description: 'Authentication token not found',
-          variant: 'destructive'
-        });
-        return;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const result = await response.json();
-
-      if (result.status === 'success' && result.data?.record) {
-        const recordData = result.data.record;
-        
-        // Get customer name from API response
-        // Note: processing-record API doesn't include vehicle owner, need to call vehicle API separately
-        let apiCustomerName = 'Unknown Customer';
-        
-        try {
-          const vehicleResponse = await fetch(`${API_BASE_URL}/vehicles/${recordData.vin}`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          const vehicleResult = await vehicleResponse.json();
-          
-          if (vehicleResult.status === 'success' && vehicleResult.data?.vehicle?.owner) {
-            apiCustomerName = vehicleResult.data.vehicle.owner.fullName || 'Unknown Customer';
-          }
-        } catch (vehicleError) {
-        }
-        
-        setEditRecord({
-          vinNumber: record.vinNumber,
-          odometer: record.odometer.toString(),
-          visitorFullName: recordData.visitorInfo?.fullName || '',
-          visitorPhone: recordData.visitorInfo?.phone || '',
-          customerEmail: recordData.visitorInfo?.email || '',
-          cases: record.cases || [],
-          purchaseDate: record.purchaseDate || '',
-          status: record.status,
-          rawStatus: record.rawStatus || 'CHECKED_IN'
-        });
-      } else {
-        // Fallback to record data without visitorInfo
-        setEditRecord({
-          vinNumber: record.vinNumber,
-          odometer: record.odometer.toString(),
-          visitorFullName: '',
-          visitorPhone: '',
-          customerEmail: '',
-          cases: record.cases || [],
-          purchaseDate: record.purchaseDate || '',
-          status: record.status,
-          rawStatus: record.rawStatus || 'CHECKED_IN'
-        });
-      }
-    } catch (error) {
-      // Fallback to record data without visitorInfo
-      setEditRecord({
-        vinNumber: record.vinNumber,
-        odometer: record.odometer.toString(),
-        visitorFullName: '',
-        visitorPhone: '',
-        customerEmail: '',
-        cases: record.cases || [],
-        purchaseDate: record.purchaseDate || '',
-        status: record.status,
-        rawStatus: record.rawStatus || 'CHECKED_IN'
-      });
-    }
-    
-    setIsEditMode(true);
-  };
-
-  const handleSaveEdit = () => {
-    if (!validateRecord(editRecord)) {
-      toast({
-        title: 'Validation Error',
-        description: 'Please fill in all required fields and have at least one case',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    const updatedRecords = records.map(record => {
-      if (record.id === selectedRecord?.id) {
-        return {
-          ...record,
-          vinNumber: editRecord.vinNumber.toUpperCase(),
-          visitorFullName: editRecord.visitorFullName,
-          odometer: parseInt(editRecord.odometer),
-          cases: editRecord.cases,
-          purchaseDate: editRecord.purchaseDate,
-          status: editRecord.status,
-          rawStatus: editRecord.rawStatus
-        };
-      }
-      return record;
-    });
-
-    setRecords(updatedRecords);
-    setIsEditMode(false);
-
-    toast({
-      title: 'Record Updated Successfully',
-      description: `Warranty claim ${selectedRecord?.id} has been updated`,
-    });
   };
 
   const getStatusBadge = (status: string) => {
@@ -2892,6 +2726,7 @@ const SuperAdvisor = () => {
                     }
                     className="pl-10 h-11"
                     value={searchMode === 'phone' ? customerSearchPhone : searchVin}
+                    //Để hiển thị cho đúng value theo searchMode khi người dùng nhập
                     onChange={(e) => {
                       if (searchMode === 'phone') {
                         //chỉ cho nhập số và giới hạn 10 ký tự
@@ -3657,7 +3492,8 @@ const SuperAdvisor = () => {
                                   isSendingOtpForCustomer || 
                                   otpSentForCustomer || 
                                   !editCustomerForm.email ||
-                                  // Disable if no changes detected
+                                  // Disable nếu người dùng không thay đổi gì
+                                  //bằng cách so editingCustomerForm với foundCustomer (Dữ liệu gốc)
                                   (editCustomerForm.fullName.trim() === foundCustomer.fullName &&
                                    editCustomerForm.phone.trim() === foundCustomer.phone &&
                                    editCustomerForm.email.trim() === foundCustomer.email &&
@@ -3749,8 +3585,8 @@ const SuperAdvisor = () => {
                               <div>
                                 <span className="text-sm font-medium text-gray-600">Register Date: </span>
                                 <span className="text-sm">
-                                  {vehicle?.registrationDate 
-                                    ? new Date(vehicle.registrationDate).toLocaleDateString('en-GB', {
+                                  {vehicle?.registerationDate 
+                                    ? new Date(vehicle.registerationDate).toLocaleDateString('en-GB', {
                                         day: '2-digit',
                                         month: '2-digit',
                                         year: 'numeric'
@@ -3905,34 +3741,6 @@ const SuperAdvisor = () => {
                   variant: 'destructive'
                 });
                 return;
-              }
-
-              if (isEditMode) {
-                // Working with edit dialog
-                if (editingCaseId) {
-                  // Edit existing case in edit mode
-                  setEditRecord({
-                    ...editRecord,
-                    cases: editRecord.cases.map(c => 
-                      c.id === editingCaseId 
-                        ? { ...c, text: currentCaseText } 
-                        : c
-                    )
-                  });
-                  toast({ title: 'Case updated successfully' });
-                } else {
-                  // Add new case in edit mode
-                  const newCase: CaseNote = {
-                    id: Date.now().toString(),
-                    text: currentCaseText,
-                    createdAt: new Date().toISOString()
-                  };
-                  setEditRecord({
-                    ...editRecord,
-                    cases: [...editRecord.cases, newCase]
-                  });
-                  toast({ title: 'Case added successfully' });
-                }
               }
 
               setIsAddNewcaseOpen(false);

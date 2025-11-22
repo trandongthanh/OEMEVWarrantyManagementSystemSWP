@@ -131,8 +131,7 @@ const WarrantyDashboard: React.FC = () => {
     yearOfLaunch: '',
     placeOfManufacture: '',
     generalWarrantyDuration: '',
-    generalWarrantyMileage: '',
-    companyId: ''
+    generalWarrantyMileage: ''
   });
   
   useEffect(() => {
@@ -229,8 +228,7 @@ const WarrantyDashboard: React.FC = () => {
       yearOfLaunch: '',
       placeOfManufacture: '',
       generalWarrantyDuration: '',
-      generalWarrantyMileage: '',
-      companyId: ''
+      generalWarrantyMileage: ''
     });
     setIsAddModelDialogOpen(true);
   };
@@ -248,6 +246,20 @@ const WarrantyDashboard: React.FC = () => {
       return;
     }
 
+    // Validate Year of Launch is not in the future
+    const selectedDate = new Date(newVehicleModel.yearOfLaunch);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (selectedDate > today) {
+      toast({
+        title: 'Invalid Date',
+        description: 'Year of Launch cannot be in the future.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setIsAddingModel(true);
     try {
       const token = localStorage.getItem('ev_warranty_token');
@@ -259,11 +271,6 @@ const WarrantyDashboard: React.FC = () => {
         generalWarrantyDuration: parseInt(newVehicleModel.generalWarrantyDuration),
         generalWarrantyMileage: parseInt(newVehicleModel.generalWarrantyMileage)
       };
-      
-      // Only add companyId if provided
-      if (newVehicleModel.companyId.trim()) {
-        payload.companyId = newVehicleModel.companyId.trim();
-      }
 
       const response = await axios.post(
         `${API_BASE_URL}/oem-vehicle-models`,
@@ -1796,6 +1803,7 @@ const WarrantyDashboard: React.FC = () => {
                 <input
                   type="date"
                   value={newVehicleModel.yearOfLaunch}
+                  max={new Date().toISOString().split('T')[0]}
                   onChange={(e) => setNewVehicleModel({ ...newVehicleModel, yearOfLaunch: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
@@ -1844,23 +1852,6 @@ const WarrantyDashboard: React.FC = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
-              </div>
-
-              {/* Company ID */}
-              <div>
-                <label className="text-sm font-semibold text-gray-900 mb-2 block">
-                  Company ID
-                </label>
-                <input
-                  type="text"
-                  value={newVehicleModel.companyId}
-                  onChange={(e) => setNewVehicleModel({ ...newVehicleModel, companyId: e.target.value })}
-                  placeholder="e.g., UUID of the vehicle company"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  💡 Enter the UUID of the vehicle company that manufactures this model
-                </p>
               </div>
             </div>
 

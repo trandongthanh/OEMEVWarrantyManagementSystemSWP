@@ -1391,7 +1391,7 @@ const TechnicianDashboard = ({
       if (response.data?.status === 'success' && Array.isArray(response.data?.data?.reservations)) {
         setReservations(response.data.data.reservations);
       } else {
-        console.warn('⚠️ No reservations found or invalid response structure');
+        // console.warn('⚠️ No reservations found or invalid response structure');
         setReservations([]);
       }
     } catch (error) {
@@ -1563,15 +1563,15 @@ const TechnicianDashboard = ({
   const caseReservations = reservationsResponse.data?.data?.reservations || [];
 
       // Check if there are any reservations
-      if (caseReservations.length === 0) {
-        toast({
-          title: 'Warning',
-          description: 'No reservations found for this case line',
-          variant: 'destructive'
-        });
-        setCompletingCaseLineId(null);
-        return;
-      }
+      // if (caseReservations.length === 0) {
+      //   toast({
+      //     title: 'Warning',
+      //     description: 'No reservations found for this case line',
+      //     variant: 'destructive'
+      //   });
+      //   setCompletingCaseLineId(null);
+      //   return;
+      // }
 
       // Check if all reservations are installed
       const allInstalled = caseReservations.every(r => r.status === 'INSTALLED');

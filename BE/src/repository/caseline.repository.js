@@ -219,19 +219,23 @@ class CaseLineRepository {
   assignTechnicianToRepairCaseline = async ({
     caselineId,
     technicianId,
+    status,
     transaction = null,
   }) => {
-    const [rowsUpdated] = await CaseLine.update(
-      {
-        repairTechId: technicianId,
+    const updatePayload = {
+      repairTechId: technicianId,
+    };
+
+    if (status) {
+      updatePayload.status = status;
+    }
+
+    const [rowsUpdated] = await CaseLine.update(updatePayload, {
+      where: {
+        id: caselineId,
       },
-      {
-        where: {
-          id: caselineId,
-        },
-        transaction: transaction,
-      }
-    );
+      transaction: transaction,
+    });
 
     if (rowsUpdated === 0) {
       return 0;
