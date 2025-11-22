@@ -3408,7 +3408,7 @@ const ServiceCenterDashboard = () => {
                                         <div>
                                           <p className="font-medium text-sm">{stock.typeComponent?.name || 'N/A'}</p>
                                           <p className="text-xs text-muted-foreground font-mono">
-                                            ID: {stock.typeComponentId.substring(0, 8)}...
+                                            ID: {stock.typeComponentId}
                                           </p>
                                         </div>
                                       </TableCell>
@@ -3986,7 +3986,7 @@ const ServiceCenterDashboard = () => {
                             {selectedCaseLineDetail.reservations.map((reservation) => (
                               <TableRow key={reservation.reservationId}>
                                 <TableCell className="font-mono text-xs">
-                                  {reservation.reservationId.substring(0, 8)}...
+                                  {reservation.reservationId}
                                 </TableCell>
                                 <TableCell className="font-mono text-xs">
                                   {reservation.component?.serialNumber || 'N/A'}
@@ -4116,12 +4116,12 @@ const ServiceCenterDashboard = () => {
                       {stockTransferRequests.map((request) => (
                         <TableRow key={request.id}>
                           <TableCell className="font-mono text-xs">
-                            {request.id.substring(0, 8)}...
+                            {request.id}
                           </TableCell>
                           <TableCell>
                             <p className="font-medium text-sm">{request.requester?.name || 'Unknown'}</p>
                             <p className="text-xs text-muted-foreground">
-                              SC: {request.requester?.serviceCenterId?.substring(0, 8) || 'N/A'}
+                              SC: {request.requester?.serviceCenterId || 'N/A'}
                             </p>
                           </TableCell>
                           <TableCell>
