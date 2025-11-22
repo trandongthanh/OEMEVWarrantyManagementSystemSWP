@@ -1,55 +1,14 @@
-import { useState } from "react";
+
 import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Car, Wrench, Building2, Shield, ArrowRight, LogIn } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
 
 const Index = () => {
-  const [selectedRole, setSelectedRole] = useState<string | null>(null);
-  const { isAuthenticated } = useAuth();
+ 
   const navigate = useNavigate();
 
-  const roles = [
-    {
-      id: "service-center",
-      title: "Service Center",
-      description: "Manage vehicle profiles, warranty claims, and customer service",
-      icon: Wrench,
-      features: [
-        "Vehicle & Customer Management",
-        "Warranty Claim Processing",
-        "Technician Assignment",
-        "Service History Tracking"
-      ],
-      color: "bg-gradient-primary"
-    },
-    {
-      id: "manufacturer",
-      title: "Manufacturer (EVM)",
-      description: "Oversee warranty policies, parts management, and analytics",
-      icon: Building2,
-      features: [
-        "Parts & Policy Management",
-        "Claim Approval System",
-        "Supply Chain Management",
-        "Analytics & Reporting"
-      ],
-      color: "bg-gradient-card"
-    }
-  ];
-
-  const handleRoleSelect = (roleId: string) => {
-    setSelectedRole(roleId);
-    if (isAuthenticated) {
-      // If already logged in, go directly to dashboard
-      navigate('/dashboard');
-    } else {
-      // If not logged in, go to login page
-      navigate('/login');
-    }
-  };
 
   return (
     <div className="min-h-screen w-full relative">

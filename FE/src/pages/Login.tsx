@@ -35,36 +35,7 @@ const Login = () => {
 	const navigate = useNavigate();
 	const { toast } = useToast();
 
-	// const demoAccounts = [
-	//   {
-	//     role: 'Service Center Staff',
-	//     email: 'staff@evservice.com',
-	//     password: 'staff123',
-	//     description: 'Tạo hồ sơ xe, xử lý khách hàng',
-	//     color: 'bg-primary'
-	//   },
-	//   {
-	//     role: 'Technician',
-	//     email: 'tech@evservice.com',
-	//     password: 'tech123',
-	//     description: 'Chẩn đoán, sửa chữa, cập nhật tiến độ',
-	//     color: 'bg-success'
-	//   },
-	//   {
-	//     role: 'EVM Admin',
-	//     email: 'admin@evm.com',
-	//     password: 'admin123',
-	//     description: 'Quản lý toàn bộ hệ thống',
-	//     color: 'bg-destructive'
-	//   },
-	//   {
-	//     role: 'EVM Staff',
-	//     email: 'evmstaff@evm.com',
-	//     password: 'evm123',
-	//     description: 'Duyệt warranty claims, quản lý parts',
-	//     color: 'bg-warning'
-	//   }
-	// ];
+	
 
 	const handleLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -88,10 +59,7 @@ const Login = () => {
 		}
 	};
 
-	const quickLogin = (demoUsername: string, demoPassword: string) => {
-		setUsername(demoUsername);
-		setPassword(demoPassword);
-	};
+	
 
 	const handleCarClick = () => {
 		setIsCarRotating(true);
@@ -188,7 +156,7 @@ const Login = () => {
 									</div>
 
 									<div className="space-y-2">
-										<Label htmlFor="password">Mật khẩu</Label>
+										<Label htmlFor="password">Password</Label>
 										<div className="relative">
 											<Input
 												id="password"
