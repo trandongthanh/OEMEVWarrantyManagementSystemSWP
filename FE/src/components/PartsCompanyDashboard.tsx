@@ -1045,7 +1045,7 @@ const PartsCompanyDashboard: React.FC = () => {
                       {filteredRequests.map((request) => (
                         <TableRow key={request.id}>
                           <TableCell className="font-mono text-xs">
-                            #{request.id.substring(0, 8)}
+                            #{request.id}
                           </TableCell>
                           <TableCell>
                             <Badge variant={getStatusBadgeVariant(request.status)}>
@@ -1159,7 +1159,7 @@ const PartsCompanyDashboard: React.FC = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Request ID</label>
-                        <p className="font-mono text-sm">#{selectedStockRequest.id.substring(0, 8)}...</p>
+                        <p className="font-mono text-sm">#{selectedStockRequest.id}</p>
                       </div>
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">Status</label>
@@ -1301,25 +1301,8 @@ const PartsCompanyDashboard: React.FC = () => {
                                         </span>
                                       </div>
                                     )}
-                                    {item.component?.typeComponentId && (
-                                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200">
-                                        <span className="font-mono text-xs text-muted-foreground">
-                                          Type ID: {item.component.typeComponentId}
-                                        </span>
-                                      </div>
-                                    )}
                                   </div>
                                 </div>
-                                {item.caselineId && (
-                                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200">
-                                    <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase">
-                                      Case Line ID
-                                    </label>
-                                    <p className="font-mono text-xs text-blue-900 dark:text-blue-100 mt-1">
-                                      {item.caselineId}
-                                    </p>
-                                  </div>
-                                )}
                               </div>
                               <div>
                                 <label className="text-xs font-semibold text-muted-foreground uppercase">Quantity Requested</label>
@@ -1459,18 +1442,6 @@ const PartsCompanyDashboard: React.FC = () => {
                               <p className="text-3xl font-bold text-green-600 dark:text-green-400">{reservation.quantityReserved || 0}</p>
                             </div>
                           </div>
-
-                          {/* Technical IDs */}
-                          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg space-y-3 border border-gray-200 dark:border-gray-800">
-                            <div>
-                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Stock ID</label>
-                              <p className="font-mono text-sm mt-1 text-foreground">{reservation.stockId || '---'}</p>
-                            </div>
-                            <div className="border-t pt-3">
-                              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Request Item ID</label>
-                              <p className="font-mono text-sm mt-1 text-foreground">{reservation.requestItemId || '---'}</p>
-                            </div>
-                          </div>
                         </div>
                       </div>
                     </CardContent>
@@ -1526,10 +1497,6 @@ const PartsCompanyDashboard: React.FC = () => {
             ) : selectedCaseLine ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Case Line ID</label>
-                    <p className="font-mono text-sm">{selectedCaseLine.caseLineId || selectedCaseLine.id || '---'}</p>
-                  </div>
                   <div>
                     <label className="text-sm font-medium text-muted-foreground">Guarantee Case ID</label>
                     <p className="font-mono text-sm">{selectedCaseLine.guaranteeCaseId || '---'}</p>

@@ -1292,8 +1292,6 @@ const TechnicianDashboard = ({
         checkOutDate: nowIso
       });
 
-      toast({ title: 'Record Completed', description: `Processing record ${recordId} marked as completed.` });
-
       // Update local selectedRecord state if it refers to the same record we just completed.
       if (selectedRecord) {
         // Backend may return the id under different keys (recordId, id). Normalize safely without using `any`.
