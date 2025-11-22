@@ -246,6 +246,20 @@ const WarrantyDashboard: React.FC = () => {
       return;
     }
 
+    // Validate Year of Launch is not in the future
+    const selectedDate = new Date(newVehicleModel.yearOfLaunch);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (selectedDate > today) {
+      toast({
+        title: 'Invalid Date',
+        description: 'Year of Launch cannot be in the future.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setIsAddingModel(true);
     try {
       const token = localStorage.getItem('ev_warranty_token');
@@ -1789,6 +1803,7 @@ const WarrantyDashboard: React.FC = () => {
                 <input
                   type="date"
                   value={newVehicleModel.yearOfLaunch}
+                  max={new Date().toISOString().split('T')[0]}
                   onChange={(e) => setNewVehicleModel({ ...newVehicleModel, yearOfLaunch: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
