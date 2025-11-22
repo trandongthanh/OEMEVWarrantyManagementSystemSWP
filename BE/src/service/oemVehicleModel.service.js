@@ -29,15 +29,14 @@ class OemVehicleModelService {
     this.#caselineRepository = caselineRepository;
   }
 
-  createVehicleModel = async ({ typeComponentWarrantyList, companyId }) => {
-    const {
-      vehicleModelName,
-      yearOfLaunch,
-      placeOfManufacture,
-      generalWarrantyDuration,
-      generalWarrantyMileage,
-    } = typeComponentWarrantyList;
-
+  createVehicleModel = async ({
+    vehicleModelName,
+    yearOfLaunch,
+    placeOfManufacture,
+    generalWarrantyDuration,
+    generalWarrantyMileage,
+    companyId,
+  }) => {
     return db.sequelize.transaction(async (transaction) => {
       const vehicleModelPayload = {
         vehicleModelName,
