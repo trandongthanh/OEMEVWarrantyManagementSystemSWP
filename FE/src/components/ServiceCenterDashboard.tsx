@@ -34,7 +34,8 @@ import {
   Edit,
   Trash,
   Eye,
-  Building2
+  Building2,
+  Info
 } from "lucide-react";
 
 interface Technician {
@@ -2641,6 +2642,31 @@ const ServiceCenterDashboard = () => {
                                                   </Button>
                                                 </div>
                                               </div>
+                                            </div>
+                                          )}
+
+                                          {/* For case lines WITHOUT component, show Assign Technician button directly */}
+                                          {!line.typeComponent && (line.status === 'CUSTOMER_APPROVED' || line.status === 'ELIGIBLE') && hasPermission(user, 'assign_technicians') && !line.repairTechId && (
+                                            <div className="mt-2 flex items-center gap-2">
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => {
+                                                  setSelectedCaseLineForTechnician({
+                                                    guaranteeCaseId: gc.guaranteeCaseId,
+                                                    caseLineId: line.id
+                                                  });
+                                                  setShowTechnicianSelectionModal(true);
+                                                }}
+                                                className="bg-purple-600 hover:bg-purple-700 text-white border-purple-600 text-xs h-7 px-3"
+                                              >
+                                                <User className="h-3 w-3 mr-1" />
+                                                Assign Repair Technician
+                                              </Button>
+                                              <Badge variant="outline" className="text-xs bg-gray-50 border-gray-400 text-gray-700">
+                                                <Info className="h-3 w-3 mr-1" />
+                                                No component required
+                                              </Badge>
                                             </div>
                                           )}
 
