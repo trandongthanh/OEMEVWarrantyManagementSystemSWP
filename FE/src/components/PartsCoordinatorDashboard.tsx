@@ -250,17 +250,6 @@ const PartsCoordinatorDashboard: React.FC = () => {
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
 
-  // Stock Adjustment States
-  const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
-  const [selectedStock, setSelectedStock] = useState<Stock | null>(null);
-  const [isAdjusting, setIsAdjusting] = useState(false);
-  const [adjustmentForm, setAdjustmentForm] = useState({
-    adjustmentType: 'IN' as 'IN' | 'OUT',
-    quantity: '',
-    reason: 'SUPPLIER_DELIVERY',
-    note: ''
-  });
-
   // Component Reservation States
   const [reservations, setReservations] = useState<ComponentReservation[]>([]);
   const [filteredReservations, setFilteredReservations] = useState<ComponentReservation[]>([]);
@@ -536,18 +525,6 @@ const PartsCoordinatorDashboard: React.FC = () => {
     }
   };
 
-  // Open stock adjustment modal
-  const openAdjustmentModal = (stock: Stock) => {
-    setSelectedStock(stock);
-    setAdjustmentForm({
-      adjustmentType: 'IN',
-      quantity: '',
-      reason: 'SUPPLIER_DELIVERY',
-      note: ''
-    });
-    setShowAdjustmentModal(true);
-  };
-
   // View reservation details
   const viewReservationDetails = (reservation: ComponentReservation) => {
     // Simply show the modal with the reservation data we already have from the list
@@ -669,88 +646,6 @@ const PartsCoordinatorDashboard: React.FC = () => {
       });
     } finally {
       setIsPickingUp(false);
-    }
-  };
-
-  // Handle stock adjustment
-  const handleStockAdjustment = async () => {
-    if (!selectedStock || !adjustmentForm.quantity || parseInt(adjustmentForm.quantity) <= 0) {
-      toast({
-        title: 'Invalid Input',
-        description: 'Please enter a valid quantity',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    setIsAdjusting(true);
-    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-    if (!token) {
-      setIsAdjusting(false);
-      toast({
-        title: 'Authentication Required',
-        description: 'Please login again.',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/inventory/adjustments`,
-        {
-          stockId: selectedStock.stockId,
-          adjustmentType: adjustmentForm.adjustmentType,
-          quantity: parseInt(adjustmentForm.quantity),
-          reason: adjustmentForm.reason,
-          note: adjustmentForm.note
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
-
-      if (response.data.status === 'success') {
-        toast({
-          title: 'Success',
-          description: 'Stock adjustment completed successfully'
-        });
-        setShowAdjustmentModal(false);
-        
-        // Update the stock in selectedWarehouse
-        if (selectedWarehouse) {
-          const updatedStocks = selectedWarehouse.stocks?.map(stock => 
-            stock.stockId === selectedStock.stockId 
-              ? {
-                  ...stock,
-                  quantityInStock: response.data.data.updatedStock.quantityInStock,
-                  quantityReserved: response.data.data.updatedStock.quantityReserved,
-                  quantityAvailable: response.data.data.updatedStock.quantityAvailable,
-                }
-              : stock
-          );
-          setSelectedWarehouse({
-            ...selectedWarehouse,
-            stocks: updatedStocks
-          });
-          
-          // Also update in warehouses list
-          setWarehouses(warehouses.map(w => 
-            w.warehouseId === selectedWarehouse.warehouseId 
-              ? { ...selectedWarehouse, stocks: updatedStocks }
-              : w
-          ));
-        }
-      }
-    } catch (error: any) {
-      console.error('Failed to adjust stock:', error);
-      toast({
-        title: 'Error',
-        description: error.response?.data?.message || 'Failed to adjust stock',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsAdjusting(false);
     }
   };
 
@@ -1896,7 +1791,6 @@ const PartsCoordinatorDashboard: React.FC = () => {
                                 <TableHead className="text-right">Reserved</TableHead>
                                 <TableHead className="text-right">Available</TableHead>
                                 <TableHead className="text-right">Status</TableHead>
-                                <TableHead className="text-right">Actions</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -1963,20 +1857,11 @@ const PartsCoordinatorDashboard: React.FC = () => {
                                           </Badge>
                                         )}
                                       </TableCell>
-                                      <TableCell className="text-right">
-                                        <Button
-                                          size="sm"
-                                          variant="outline"
-                                          onClick={() => openAdjustmentModal(stock)}
-                                        >
-                                          Adjust
-                                        </Button>
-                                      </TableCell>
                                     </TableRow>
                                   ))
                                 ) : (
                                   <TableRow>
-                                    <TableCell colSpan={9} className="text-center py-8">
+                                    <TableCell colSpan={8} className="text-center py-8">
                                       <p className="text-muted-foreground">
                                         No components in category "{selectedCategory}"
                                       </p>
@@ -1996,163 +1881,6 @@ const PartsCoordinatorDashboard: React.FC = () => {
                     )}
                   </CardContent>
                 </Card>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
-
-        {/* Stock Adjustment Modal */}
-        <Dialog open={showAdjustmentModal} onOpenChange={setShowAdjustmentModal}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Adjust Stock Quantity</DialogTitle>
-              <DialogDescription>
-                Update stock levels for inventory management
-              </DialogDescription>
-            </DialogHeader>
-            
-            {selectedStock && (
-              <div className="space-y-6">
-                {/* Stock Information */}
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium">Stock Information</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Component:</span>
-                      <span className="font-medium">{selectedStock.typeComponent?.name}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">SKU:</span>
-                      <code className="text-xs bg-muted px-2 py-1 rounded">{selectedStock.typeComponent?.sku}</code>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Category:</span>
-                      <Badge variant="outline" className="text-xs">{selectedStock.typeComponent?.category}</Badge>
-                    </div>
-                    <div className="border-t pt-2 mt-2">
-                      <div className="grid grid-cols-3 gap-4">
-                        <div>
-                          <p className="text-xs text-muted-foreground">In Stock</p>
-                          <p className="text-lg font-semibold">{selectedStock.quantityInStock}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Reserved</p>
-                          <p className="text-lg font-semibold text-amber-600">{selectedStock.quantityReserved}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Available</p>
-                          <p className="text-lg font-semibold text-green-600">{selectedStock.quantityAvailable}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Adjustment Form */}
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="adjustmentType">Adjustment Type *</Label>
-                      <Select
-                        value={adjustmentForm.adjustmentType}
-                        onValueChange={(value: 'IN' | 'OUT') => 
-                          setAdjustmentForm({ ...adjustmentForm, adjustmentType: value })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="IN">IN - Increase Stock</SelectItem>
-                          <SelectItem value="OUT">OUT - Decrease Stock</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">
-                        {adjustmentForm.adjustmentType === 'IN' 
-                          ? 'Add items to inventory' 
-                          : 'Remove items from inventory'}
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="quantity">Quantity *</Label>
-                      <Input
-                        id="quantity"
-                        type="number"
-                        min="1"
-                        placeholder="Enter quantity"
-                        value={adjustmentForm.quantity}
-                        onChange={(e) => 
-                          setAdjustmentForm({ ...adjustmentForm, quantity: e.target.value })
-                        }
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Number of items to {adjustmentForm.adjustmentType === 'IN' ? 'add' : 'remove'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="reason">Reason</Label>
-                    <Select
-                      value={adjustmentForm.reason}
-                      onValueChange={(value) => 
-                        setAdjustmentForm({ ...adjustmentForm, reason: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="SUPPLIER_DELIVERY">Supplier Delivery</SelectItem>
-                        <SelectItem value="CUSTOMER_RETURN">Customer Return</SelectItem>
-                        <SelectItem value="DAMAGE">Damage/Defect</SelectItem>
-                        <SelectItem value="THEFT">Theft/Loss</SelectItem>
-                        <SelectItem value="MANUAL_COUNT">Manual Count Correction</SelectItem>
-                        <SelectItem value="OTHER">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="note">Note</Label>
-                    <Textarea
-                      id="note"
-                      placeholder="Enter additional details (PO number, invoice, etc.)"
-                      rows={3}
-                      value={adjustmentForm.note}
-                      onChange={(e) => 
-                        setAdjustmentForm({ ...adjustmentForm, note: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex justify-end gap-3 pt-4 border-t">
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowAdjustmentModal(false)}
-                    disabled={isAdjusting}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleStockAdjustment}
-                    disabled={isAdjusting || !adjustmentForm.quantity}
-                  >
-                    {isAdjusting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Adjusting...
-                      </>
-                    ) : (
-                      'Confirm Adjustment'
-                    )}
-                  </Button>
-                </div>
               </div>
             )}
           </DialogContent>
