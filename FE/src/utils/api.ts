@@ -73,30 +73,25 @@ const startTokenExpirationCheck = () => {
     const token = localStorage.getItem('ev_warranty_token');
     const currentPath = window.location.pathname;
     
-    // Only check if not on login page
-    if (currentPath !== '/login') {
-      if (token && isTokenExpired(token)) {
-        console.log('⏰ Token expired - auto logout');
-        handleAuthExpiration(401);
-        if (tokenCheckInterval) {
-          clearInterval(tokenCheckInterval);
-          tokenCheckInterval = null;
-        }
-      } else if (!token) {
-        // No token and not on login page - redirect to login
-        console.log('🚫 No token found - redirecting to login');
-        window.location.href = '/login';
-        if (tokenCheckInterval) {
-          clearInterval(tokenCheckInterval);
-          tokenCheckInterval = null;
-        }
+    // Only check if not on login page or public pages
+    const publicPaths = ['/', '/login', '/register'];
+    const isPublicPath = publicPaths.includes(currentPath);
+    
+    if (!isPublicPath && token && isTokenExpired(token)) {
+      // Token exists but expired - redirect to login
+      console.log('⏰ Token expired - auto logout');
+      handleAuthExpiration(401);
+      if (tokenCheckInterval) {
+        clearInterval(tokenCheckInterval);
+        tokenCheckInterval = null;
       }
     }
+    // Removed the "no token" check to allow access to public pages
   };
 
-  // Check every 1 minute
+  // Check every 30 seconds (reduced from 10 seconds)
   if (!tokenCheckInterval) {
-    tokenCheckInterval = window.setInterval(checkToken, 10000); // Check every 10 seconds for faster detection
+    tokenCheckInterval = window.setInterval(checkToken, 30000);
   }
   
   // Check when page becomes visible again
