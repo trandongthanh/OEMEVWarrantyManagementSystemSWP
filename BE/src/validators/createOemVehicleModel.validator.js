@@ -6,7 +6,6 @@ const createOemVehicleModelSchema = Joi.object({
   placeOfManufacture: Joi.string().min(2).max(100).required(),
   generalWarrantyDuration: Joi.number().integer().min(0).required(),
   generalWarrantyMileage: Joi.number().integer().min(0).required(),
-  // companyId: Joi.string().uuid().required(),
 });
 
 export default createOemVehicleModelSchema;

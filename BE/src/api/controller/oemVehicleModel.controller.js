@@ -7,8 +7,14 @@ class OemVehicleModelController {
 
   createVehicleModel = async (req, res, next) => {
     const vehicleModelData = req.body;
+
+    const { companyId } = req.user;
+
     const newVehicleModel =
-      await this.#oemVehicleModelService.createVehicleModel(vehicleModelData);
+      await this.#oemVehicleModelService.createVehicleModel({
+        ...vehicleModelData,
+        companyId,
+      });
 
     res.status(201).json({
       status: "success",
