@@ -643,7 +643,37 @@ class CaseLineService {
         await this.#notificationService.sendToRoom(roomName, eventName, data);
       }
 
-      return { updatedApprovedCaseLines, updatedRejectedCaseLines };
+      let finalApprovedCaselines = updatedApprovedCaseLines || [];
+
+      if (finalApprovedCaselines.length > 0) {
+        const componentlessIds = finalApprovedCaselines
+          .filter((caseline) => !caseline.typeComponentId)
+          .map((caseline) => caseline.id);
+
+        if (componentlessIds.length > 0) {
+          const readyCaselines =
+            await this.#caselineRepository.bulkUpdateStatusByIds(
+              {
+                caseLineIds: componentlessIds,
+                status: "READY_FOR_REPAIR",
+              },
+              transaction
+            );
+
+          const readyMap = new Map(
+            readyCaselines.map((caseline) => [caseline.id, caseline])
+          );
+
+          finalApprovedCaselines = finalApprovedCaselines.map(
+            (caseline) => readyMap.get(caseline.id) || caseline
+          );
+        }
+      }
+
+      return {
+        updatedApprovedCaseLines: finalApprovedCaselines,
+        updatedRejectedCaseLines,
+      };
     });
 
     const { updatedApprovedCaseLines, updatedRejectedCaseLines } = rawResult;
@@ -808,9 +838,23 @@ class CaseLineService {
         throw new NotFoundError("Caseline not found");
       }
 
-      if (caseline.status !== "READY_FOR_REPAIR") {
+      const requiresComponent = Boolean(caseline.typeComponentId);
+
+      const allowedStatuses = requiresComponent
+        ? ["READY_FOR_REPAIR"]
+        : [
+            "READY_FOR_REPAIR",
+            "CUSTOMER_APPROVED",
+            "PARTS_AVAILABLE",
+            "IN_REPAIR",
+          ];
+
+      if (!allowedStatuses.includes(caseline.status)) {
+        const statusHint = requiresComponent
+          ? ""
+          : " (componentless caselines also allow CUSTOMER_APPROVED)";
         throw new ConflictError(
-          `Caseline must be READY_FOR_REPAIR to assign technician. Current status: ${caseline.status}`
+          `Caseline must be in READY_FOR_REPAIR status${statusHint} to assign technician. Current status: ${caseline.status}`
         );
       }
 
@@ -869,6 +913,8 @@ class CaseLineService {
         );
       }
 
+      const shouldAutoStartRepair = !requiresComponent;
+
       const [taskAssignment, updatedCaseline] = await Promise.all([
         this.#taskAssignmentRepository.createTaskAssignmentForCaseline(
           {
@@ -883,6 +929,7 @@ class CaseLineService {
         this.#caselineRepository.assignTechnicianToRepairCaseline({
           caselineId,
           technicianId,
+          status: shouldAutoStartRepair ? "IN_REPAIR" : undefined,
           transaction,
         }),
       ]);
@@ -941,9 +988,18 @@ class CaseLineService {
         throw new NotFoundError("Caseline not found");
       }
 
-      if (caseline.status !== "IN_REPAIR") {
+      const requiresComponent = Boolean(caseline.typeComponentId);
+
+      const allowedCompletionStatuses = requiresComponent
+        ? ["IN_REPAIR"]
+        : ["IN_REPAIR", "READY_FOR_REPAIR"];
+
+      if (!allowedCompletionStatuses.includes(caseline.status)) {
+        const completionHint = requiresComponent
+          ? ""
+          : " Componentless caselines can also complete directly from READY_FOR_REPAIR.";
         throw new ConflictError(
-          `Caseline must be IN_REPAIR to be marked as completed. Current status: ${caseline.status}`
+          `Caseline must be IN_REPAIR to be marked as completed. Current status: ${caseline.status}.${completionHint}`
         );
       }
 
@@ -969,69 +1025,71 @@ class CaseLineService {
         );
       }
 
-      const reservations =
-        await this.#componentReservationRepository.findByCaselineId(
-          caselineId,
-          transaction,
-          Transaction.LOCK.SHARE
-        );
-
-      const activeReservationStatuses = new Set([
-        "RESERVED",
-        "PICKED_UP",
-        "INSTALLED",
-      ]);
-
-      const relevantReservations = (reservations || []).filter((reservation) =>
-        activeReservationStatuses.has(reservation.status)
-      );
-
-      if (relevantReservations.length > 0) {
-        const recordVin = guaranteeCase?.vehicleProcessingRecord?.vin;
-
-        if (!recordVin) {
-          throw new ConflictError(
-            "Cannot verify installed components without vehicle VIN"
-          );
-        }
-
-        const normalizedRecordVin = recordVin.trim().toUpperCase();
-
-        for (const reservation of relevantReservations) {
-          if (reservation.status !== "INSTALLED") {
-            throw new ConflictError(
-              "All reserved components must be installed before completing the repair"
-            );
-          }
-
-          const component = await this.#componentRepository.findById(
-            reservation.componentId,
+      if (requiresComponent) {
+        const reservations =
+          await this.#componentReservationRepository.findByCaselineId(
+            caselineId,
             transaction,
             Transaction.LOCK.SHARE
           );
 
-          if (!component) {
-            throw new NotFoundError(
-              `Component ${reservation.componentId} not found`
+        const activeReservationStatuses = new Set([
+          "RESERVED",
+          "PICKED_UP",
+          "INSTALLED",
+        ]);
+
+        const relevantReservations = (reservations || []).filter(
+          (reservation) => activeReservationStatuses.has(reservation.status)
+        );
+
+        if (relevantReservations.length > 0) {
+          const recordVin = guaranteeCase?.vehicleProcessingRecord?.vin;
+
+          if (!recordVin) {
+            throw new ConflictError(
+              "Cannot verify installed components without vehicle VIN"
             );
           }
 
-          const componentVin = component.vehicleVin?.trim()?.toUpperCase();
+          const normalizedRecordVin = recordVin.trim().toUpperCase();
 
-          if (
-            component.status !== "INSTALLED" ||
-            !componentVin ||
-            !component.installedAt
-          ) {
-            throw new ConflictError(
-              `Component ${component.serialNumber} must be in INSTALLED status with valid vehicle VIN and installed date`
-            );
-          }
+          for (const reservation of relevantReservations) {
+            if (reservation.status !== "INSTALLED") {
+              throw new ConflictError(
+                "All reserved components must be installed before completing the repair"
+              );
+            }
 
-          if (componentVin !== normalizedRecordVin) {
-            throw new ConflictError(
-              `Component ${component.serialNumber} is installed on VIN ${component.vehicleVin}, expected ${recordVin}`
+            const component = await this.#componentRepository.findById(
+              reservation.componentId,
+              transaction,
+              Transaction.LOCK.SHARE
             );
+
+            if (!component) {
+              throw new NotFoundError(
+                `Component ${reservation.componentId} not found`
+              );
+            }
+
+            const componentVin = component.vehicleVin?.trim()?.toUpperCase();
+
+            if (
+              component.status !== "INSTALLED" ||
+              !componentVin ||
+              !component.installedAt
+            ) {
+              throw new ConflictError(
+                `Component ${component.serialNumber} must be in INSTALLED status with valid vehicle VIN and installed date`
+              );
+            }
+
+            if (componentVin !== normalizedRecordVin) {
+              throw new ConflictError(
+                `Component ${component.serialNumber} is installed on VIN ${component.vehicleVin}, expected ${recordVin}`
+              );
+            }
           }
         }
       }
