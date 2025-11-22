@@ -24,8 +24,6 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 const EXTERNAL_COMPONENTS_API = 'https://dongthanhswp.space/api/v1/components';
-// Fallback token provided by user when no auth token available locally
-const FALLBACK_BEARER_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI4N2YxOGQ1MS1lMjdjLTQxMWMtOGZmYi0xM2FmZDk1NGE1ZDUiLCJyb2xlTmFtZSI6InBhcnRzX2Nvb3JkaW5hdG9yX2NvbXBhbnkiLCJzZXJ2aWNlQ2VudGVySWQiOm51bGwsImNvbXBhbnlJZCI6IjQ2NWQ3NWU1LTJlYTYtNDc4Ny05NTBhLTE0YzBjMzVmZTVkYSIsImlhdCI6MTc2MzcwMTc0MywiZXhwIjoxNzYzNzE5NzQzfQ.2hGuLramgfynoPfQSNLY8cZp3U0dPHOXjF-YoETMEWI';
 
 interface StockTransferRequest {
   id: string;
@@ -295,7 +293,7 @@ const PartsCompanyDashboard: React.FC = () => {
         {
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token || FALLBACK_BEARER_TOKEN}`
+            Authorization: `Bearer ${token}`
           }
         }
       );
@@ -326,7 +324,7 @@ const PartsCompanyDashboard: React.FC = () => {
             'https://dongthanhswp.space/api/v1/warehouses',
             {
               headers: {
-                Authorization: `Bearer ${token || FALLBACK_BEARER_TOKEN}`
+                Authorization: `Bearer ${token}`
               }
             }
           ).then(res => {
@@ -373,7 +371,7 @@ const PartsCompanyDashboard: React.FC = () => {
         'https://dongthanhswp.space/api/v1/warehouses',
         {
           headers: {
-            Authorization: `Bearer ${token || FALLBACK_BEARER_TOKEN}`
+            Authorization: `Bearer ${token}`
           }
         }
       );
@@ -511,14 +509,13 @@ const PartsCompanyDashboard: React.FC = () => {
   const fetchComponents = async (page: number = 1) => {
     setIsLoadingComponents(true);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-    const bearer = token || FALLBACK_BEARER_TOKEN;
     try {
       const response = await axios.get(EXTERNAL_COMPONENTS_API, {
         params: {
           limit: 100,
           page: page
         },
-        headers: { Authorization: `Bearer ${bearer}` }
+        headers: { Authorization: `Bearer ${token}` }
       });
       const components = response.data?.data?.components || [];
       const pagination = response.data?.data?.pagination;
