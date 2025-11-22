@@ -782,7 +782,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
                       {filteredRequests.map((request) => (
                         <TableRow key={request.id}>
                           <TableCell className="font-mono text-xs">
-                            #{request.id.substring(0, 8)}
+                            {request.id}
                           </TableCell>
                           <TableCell>
                             <Badge variant={getStatusBadgeVariant(request.status)}>
@@ -1126,7 +1126,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
                                     {reservation.component?.serialNumber || 'N/A'}
                                   </code>
                                   <p className="text-xs text-muted-foreground mt-1">
-                                    ID: {reservation.componentId?.substring(0, 8) || 'N/A'}...
+                                    ID: {reservation.componentId || 'N/A'}
                                   </p>
                                 </div>
                               </TableCell>
@@ -1136,7 +1136,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
                                     {reservation.caseLine?.guaranteeCase?.vehicleProcessingRecord?.vin || 'N/A'}
                                   </p>
                                   <p className="text-xs text-muted-foreground">
-                                    Case: {reservation.caseLine?.guaranteeCaseId?.substring(0, 8) || 'N/A'}...
+                                    Case: {reservation.caseLine?.guaranteeCaseId || 'N/A'}
                                   </p>
                                 </div>
                               </TableCell>
@@ -1339,7 +1339,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="text-xs font-semibold text-muted-foreground uppercase">Request ID</label>
-                        <p className="font-mono text-sm mt-1">#{selectedStockRequest.id.substring(0, 8)}...</p>
+                        <p className="font-mono text-sm mt-1">{selectedStockRequest.id}</p>
                       </div>
                       <div>
                         <label className="text-xs font-semibold text-muted-foreground uppercase">Status</label>
@@ -1435,29 +1435,6 @@ const PartsCoordinatorDashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* User IDs */}
-                    <div className="pt-3 border-t">
-                      <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-3">Action By Users</h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-muted-foreground">Approved By User ID</label>
-                          <p className="font-mono text-xs mt-1">{selectedStockRequest.approvedByUserId || '---'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground">Received By User ID</label>
-                          <p className="font-mono text-xs mt-1">{selectedStockRequest.receivedByUserId || '---'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground">Rejected By User ID</label>
-                          <p className="font-mono text-xs mt-1">{selectedStockRequest.rejectedByUserId || '---'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-muted-foreground">Cancelled By User ID</label>
-                          <p className="font-mono text-xs mt-1">{selectedStockRequest.cancelledByUserId || '---'}</p>
-                        </div>
-                      </div>
-                    </div>
-
                     {/* Rejection/Cancellation Reasons */}
                     {selectedStockRequest.rejectionReason && (
                       <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
@@ -1495,33 +1472,15 @@ const PartsCoordinatorDashboard: React.FC = () => {
                   <CardContent>
                     {selectedStockRequest.items && selectedStockRequest.items.length > 0 ? (
                       <div className="space-y-3">
-                        {selectedStockRequest.items.map((item, index) => {
-                          // Get component info with priority: item.component (new API) > typeComponent (old format)
-                          let componentName = 'Unknown Component';
-                          let componentDescription = '';
-                          
-                          // Priority 1: New API response with component object
-                          if (item.component?.name) {
-                            componentName = item.component.name;
-                          }
-                          // Priority 2: Fallback to old typeComponent format
-                          else if (item.typeComponent?.nameComponent || item.typeComponent?.name) {
-                            componentName = item.typeComponent.nameComponent || item.typeComponent.name || 'Unknown';
-                            componentDescription = item.typeComponent.description || '';
-                          }
-                          
-                          return (
+                        {selectedStockRequest.items.map((item, index) => (
                           <div key={item.id || index} className="p-4 bg-white dark:bg-gray-800 rounded-lg border shadow-sm">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                               <div className="space-y-2">
                                 <div>
                                   <label className="text-xs font-semibold text-muted-foreground uppercase">Component Name</label>
                                   <p className="font-medium text-base mt-1">
-                                    {componentName}
+                                    {item.component?.name || 'Unknown Component'}
                                   </p>
-                                  {componentDescription && (
-                                    <p className="text-xs text-muted-foreground mt-1">{componentDescription}</p>
-                                  )}
                                   <div className="flex flex-wrap gap-2 mt-2">
                                     {item.component?.sku && (
                                       <div className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded border border-indigo-200">
@@ -1531,25 +1490,9 @@ const PartsCoordinatorDashboard: React.FC = () => {
                                         </span>
                                       </div>
                                     )}
-                                    {item.component?.typeComponentId && (
-                                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 dark:bg-gray-900/50 rounded border border-gray-200">
-                                        <span className="font-mono text-xs text-muted-foreground">
-                                          Type ID: {item.component.typeComponentId}
-                                        </span>
-                                      </div>
-                                    )}
                                   </div>
                                 </div>
-                                {item.caselineId && (
-                                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200">
-                                    <label className="text-xs font-semibold text-blue-700 dark:text-blue-400 uppercase">
-                                      Case Line ID
-                                    </label>
-                                    <p className="font-mono text-xs text-blue-900 dark:text-blue-100 mt-1">
-                                      {item.caselineId}
-                                    </p>
-                                  </div>
-                                )}
+                                
                               </div>
                               <div>
                                 <label className="text-xs font-semibold text-muted-foreground uppercase">Quantity Requested</label>
@@ -1567,8 +1510,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
                               )}
                             </div>
                           </div>
-                          );
-                        })}
+                        ))}
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground text-center py-4">No items found</p>
@@ -1750,7 +1692,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
                                         <div>
                                           <p className="font-medium text-sm">{stock.typeComponent?.name || 'N/A'}</p>
                                           <p className="text-xs text-muted-foreground font-mono">
-                                            ID: {stock.typeComponentId.substring(0, 8)}...
+                                            ID: {stock.typeComponentId}
                                           </p>
                                         </div>
                                       </TableCell>
