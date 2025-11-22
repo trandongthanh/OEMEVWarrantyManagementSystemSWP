@@ -29,13 +29,9 @@ class OemVehicleModelService {
     this.#caselineRepository = caselineRepository;
   }
 
-  createVehicleModel = async ({
-    vehicleModelName,
-    typeComponentWarrantyList,
-    // components,
-    companyId,
-  }) => {
+  createVehicleModel = async ({ typeComponentWarrantyList, companyId }) => {
     const {
+      vehicleModelName,
       yearOfLaunch,
       placeOfManufacture,
       generalWarrantyDuration,
