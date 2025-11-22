@@ -1886,7 +1886,7 @@ const PartsCoordinatorDashboard: React.FC = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Reservation Detail Modal */
+        {/* Reservation Detail Modal */}
         <Dialog open={showReservationDetailModal} onOpenChange={setShowReservationDetailModal}>
           <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
             <DialogHeader>
