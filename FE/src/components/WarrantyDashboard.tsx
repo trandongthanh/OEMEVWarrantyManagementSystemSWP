@@ -1284,7 +1284,7 @@ const WarrantyDashboard: React.FC = () => {
                               )}
                               
                               <div className="pt-2 border-t border-blue-200">
-                                <span className="text-xs text-gray-600">� Correction:</span>
+                                <span className="text-xs text-gray-600">Correction:</span>
                                 <p className="text-sm text-gray-700 mt-1">{item.caselineInfo.correctionText}</p>
                               </div>
                               
