@@ -144,7 +144,6 @@ const SuperAdvisor = () => {
   // UI State
   const [searchVin, setSearchVin] = useState('');
   const [searchMode, setSearchMode] = useState<'warranty' | 'vehicle' | 'phone'>('phone');
-  const [isEditMode, setIsEditMode] = useState(false);
   const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
   
   // Record State
@@ -252,19 +251,6 @@ const SuperAdvisor = () => {
   const [isCheckingVehicleWarranty, setIsCheckingVehicleWarranty] = useState(false);
   const [vehicleWarrantyStatus, setVehicleWarrantyStatus] = useState<'valid' | 'expired' | null>(null);
   const [newVehicleVin, setNewVehicleVin] = useState('');
-
-  // Form state for editing record
-  const [editRecord, setEditRecord] = useState({
-    vinNumber: '',
-    odometer: '',
-    visitorFullName: '', // Visitor name from visitorInfo
-    visitorPhone: '', // Visitor phone (legacy, keeping for compatibility)
-    customerEmail: '', // Customer email for OTP
-    cases: [] as CaseNote[],
-    purchaseDate: '',
-    status: 'pending' as 'pending' | 'in-progress' | 'completed',
-    rawStatus: 'CHECKED_IN' // Store actual API status
-  });
 
   const [records, setRecords] = useState<WarrantyRecord[]>([]);
 
@@ -2039,8 +2025,8 @@ const SuperAdvisor = () => {
         setWarrantyStatus(null);
         
         toast({
-          title: '⚠️ Invalid Purchase Date',
-          description: 'The purchase date must be before today or must be after Date of Manufacture. Please correct the purchase date and check the warranty again.',
+          title: 'Invalid Purchase Date',
+          description: 'Please correct the purchase date and check the warranty again.',
           variant: 'destructive'
         });
       } else {
@@ -2185,134 +2171,6 @@ const SuperAdvisor = () => {
         variant: 'destructive'
       });
     }
-  };
-
-  const handleEditRecord = async (record: WarrantyRecord) => {
-    
-    setSelectedRecord(record);
-    
-    // Fetch full record details to get visitorInfo
-    try {
-      const token = localStorage.getItem('ev_warranty_token');
-      if (!token) {
-        toast({
-          title: 'Error',
-          description: 'Authentication token not found',
-          variant: 'destructive'
-        });
-        return;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const result = await response.json();
-
-      if (result.status === 'success' && result.data?.record) {
-        const recordData = result.data.record;
-        
-        // Get customer name from API response
-        // Note: processing-record API doesn't include vehicle owner, need to call vehicle API separately
-        let apiCustomerName = 'Unknown Customer';
-        
-        try {
-          const vehicleResponse = await fetch(`${API_BASE_URL}/vehicles/${recordData.vin}`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          const vehicleResult = await vehicleResponse.json();
-          
-          if (vehicleResult.status === 'success' && vehicleResult.data?.vehicle?.owner) {
-            apiCustomerName = vehicleResult.data.vehicle.owner.fullName || 'Unknown Customer';
-          }
-        } catch (vehicleError) {
-        }
-        
-        setEditRecord({
-          vinNumber: record.vinNumber,
-          odometer: record.odometer.toString(),
-          visitorFullName: recordData.visitorInfo?.fullName || '',
-          visitorPhone: recordData.visitorInfo?.phone || '',
-          customerEmail: recordData.visitorInfo?.email || '',
-          cases: record.cases || [],
-          purchaseDate: record.purchaseDate || '',
-          status: record.status,
-          rawStatus: record.rawStatus || 'CHECKED_IN'
-        });
-      } else {
-        // Fallback to record data without visitorInfo
-        setEditRecord({
-          vinNumber: record.vinNumber,
-          odometer: record.odometer.toString(),
-          visitorFullName: '',
-          visitorPhone: '',
-          customerEmail: '',
-          cases: record.cases || [],
-          purchaseDate: record.purchaseDate || '',
-          status: record.status,
-          rawStatus: record.rawStatus || 'CHECKED_IN'
-        });
-      }
-    } catch (error) {
-      // Fallback to record data without visitorInfo
-      setEditRecord({
-        vinNumber: record.vinNumber,
-        odometer: record.odometer.toString(),
-        visitorFullName: '',
-        visitorPhone: '',
-        customerEmail: '',
-        cases: record.cases || [],
-        purchaseDate: record.purchaseDate || '',
-        status: record.status,
-        rawStatus: record.rawStatus || 'CHECKED_IN'
-      });
-    }
-    
-    setIsEditMode(true);
-  };
-
-  const handleSaveEdit = () => {
-    if (!validateRecord(editRecord)) {
-      toast({
-        title: 'Validation Error',
-        description: 'Please fill in all required fields and have at least one case',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    const updatedRecords = records.map(record => {
-      if (record.id === selectedRecord?.id) {
-        return {
-          ...record,
-          vinNumber: editRecord.vinNumber.toUpperCase(),
-          visitorFullName: editRecord.visitorFullName,
-          odometer: parseInt(editRecord.odometer),
-          cases: editRecord.cases,
-          purchaseDate: editRecord.purchaseDate,
-          status: editRecord.status,
-          rawStatus: editRecord.rawStatus
-        };
-      }
-      return record;
-    });
-
-    setRecords(updatedRecords);
-    setIsEditMode(false);
-
-    toast({
-      title: 'Record Updated Successfully',
-      description: `Warranty claim ${selectedRecord?.id} has been updated`,
-    });
   };
 
   const getStatusBadge = (status: string) => {
@@ -3905,34 +3763,6 @@ const SuperAdvisor = () => {
                   variant: 'destructive'
                 });
                 return;
-              }
-
-              if (isEditMode) {
-                // Working with edit dialog
-                if (editingCaseId) {
-                  // Edit existing case in edit mode
-                  setEditRecord({
-                    ...editRecord,
-                    cases: editRecord.cases.map(c => 
-                      c.id === editingCaseId 
-                        ? { ...c, text: currentCaseText } 
-                        : c
-                    )
-                  });
-                  toast({ title: 'Case updated successfully' });
-                } else {
-                  // Add new case in edit mode
-                  const newCase: CaseNote = {
-                    id: Date.now().toString(),
-                    text: currentCaseText,
-                    createdAt: new Date().toISOString()
-                  };
-                  setEditRecord({
-                    ...editRecord,
-                    cases: [...editRecord.cases, newCase]
-                  });
-                  toast({ title: 'Case added successfully' });
-                }
               }
 
               setIsAddNewcaseOpen(false);
