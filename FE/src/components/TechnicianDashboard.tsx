@@ -2464,20 +2464,10 @@ const TechnicianDashboard = ({
                           records.map((record) => (
                           <TableRow key={record.recordId || (record.vin + record.checkInDate)}>
                             <TableCell className="font-mono text-sm">
-                              <div>
-                                <p>{record.vin}</p>
-                                {record.recordId && (
-                                  <p className="text-xs text-muted-foreground">ID: {(record.recordId as string)?.substring?.(0, 8) ?? ''}...</p>
-                                )}
-                              </div>
+                              <p>{record.vin}</p>
                             </TableCell>
                             <TableCell>
-                              <div>
-                                <p className="font-medium">{record.vehicle?.model?.name ?? 'Unknown model'}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  Model ID: {(record.vehicle?.model?.vehicleModelId as string | undefined)?.substring?.(0, 8) ?? 'N/A'}...
-                                </p>
-                              </div>
+                              <p className="font-medium">{record.vehicle?.model?.name ?? 'Unknown model'}</p>
                             </TableCell>
                             <TableCell>
                               <p className="text-sm">{(record.odometer ?? 0).toLocaleString()} km</p>
@@ -2486,12 +2476,7 @@ const TechnicianDashboard = ({
                               {formatDate(record.checkInDate ?? new Date().toISOString())}
                             </TableCell>
                             <TableCell>
-                              <div>
-                                <p className="font-medium">{record.mainTechnician?.name ?? '—'}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {(record.mainTechnician?.userId as string | undefined)?.substring?.(0, 8) ?? ''}...
-                                </p>
-                              </div>
+                              <p className="font-medium">{record.mainTechnician?.name ?? '—'}</p>
                             </TableCell>
                             <TableCell>
                               <Badge variant={getStatusBadgeVariant(record.status)}>
