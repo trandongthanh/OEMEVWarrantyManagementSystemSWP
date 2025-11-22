@@ -95,9 +95,6 @@ const WarrantyDashboard: React.FC = () => {
   const [selectedRequest, setSelectedRequest] = useState<StockTransferRequestDetail | null>(null);
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState<boolean>(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState<boolean>(false);
-  const [isRejectDialogOpen, setIsRejectDialogOpen] = useState<boolean>(false);
-  const [rejectionReason, setRejectionReason] = useState<string>('');
-  const [isRejecting, setIsRejecting] = useState<boolean>(false);
   const [isApproveDialogOpen, setIsApproveDialogOpen] = useState<boolean>(false);
   const [isApproving, setIsApproving] = useState<boolean>(false);
   const { user } = useAuth();
@@ -619,11 +616,6 @@ const WarrantyDashboard: React.FC = () => {
     fetchRequestDetail(requestId);
   };
 
-  const handleRejectClick = () => {
-    setRejectionReason('');
-    setIsRejectDialogOpen(true);
-  };
-
   const handleApproveClick = () => {
     setIsApproveDialogOpen(true);
   };
@@ -668,61 +660,6 @@ const WarrantyDashboard: React.FC = () => {
       });
     } finally {
       setIsApproving(false);
-    }
-  };
-
-  const handleRejectSubmit = async () => {
-    if (!selectedRequest) return;
-    
-    if (!rejectionReason.trim()) {
-      toast({
-        title: 'Rejection Reason Required',
-        description: 'Please enter a reason for rejecting this request.',
-        variant: 'destructive'
-      });
-      return;
-    }
-    
-    setIsRejecting(true);
-    try {
-      const token = localStorage.getItem('ev_warranty_token');
-      const response = await axios.patch(
-        `${API_BASE_URL}/stock-transfer-requests/${selectedRequest.id}/reject`,
-        {
-          rejectionReason: rejectionReason.trim()
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      
-      if (response.data.status === 'success') {
-        toast({
-          title: 'Request Rejected ❌',
-          description: 'The stock transfer request has been rejected.',
-        });
-        setIsRejectDialogOpen(false);
-        setIsDetailDialogOpen(false);
-        setRejectionReason('');
-        fetchStockTransferRequests();
-      } else {
-        toast({
-          title: 'Rejection Failed',
-          description: response.data.message || 'Failed to reject request. Please try again.',
-          variant: 'destructive'
-        });
-      }
-    } catch (error) {
-      toast({
-        title: 'Rejection Failed',
-        description: 'An error occurred while rejecting the request. Please try again.',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsRejecting(false);
     }
   };
 
@@ -1407,13 +1344,6 @@ const WarrantyDashboard: React.FC = () => {
               {selectedRequest.status === 'PENDING_APPROVAL' && (
                 <div className="flex gap-3">
                   <Button
-                    variant="destructive"
-                    onClick={handleRejectClick}
-                    className="bg-red-600 hover:bg-red-700"
-                  >
-                    ❌ Reject
-                  </Button>
-                  <Button
                     onClick={handleApproveClick}
                     className="bg-green-600 hover:bg-green-700"
                   >
@@ -1421,86 +1351,6 @@ const WarrantyDashboard: React.FC = () => {
                   </Button>
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reject Confirmation Dialog */}
-      {isRejectDialogOpen && selectedRequest && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-            {/* Dialog Header */}
-            <div className="bg-red-50 border-b border-red-200 px-6 py-4 flex items-center justify-between rounded-t-lg">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl">⚠️</span>
-                <div>
-                  <h2 className="text-xl font-bold text-red-900">Reject Request</h2>
-                  <p className="text-sm text-red-600 mt-0.5">This action cannot be undone</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsRejectDialogOpen(false)}
-                className="text-red-400 hover:text-red-600 text-2xl font-bold"
-              >
-                ×
-              </button>
-            </div>
-
-            {/* Dialog Content */}
-            <div className="p-6 space-y-4">
-              <div>
-                <p className="text-sm text-gray-600 mb-2">
-                  Request ID: <span className="font-mono font-semibold">#{selectedRequest.id.substring(0, 8)}...</span>
-                </p>
-                <p className="text-sm text-gray-600">
-                  Requested by: <span className="font-semibold">{selectedRequest.requester?.name || 'Unknown'}</span>
-                </p>
-              </div>
-
-              <div>
-                <label className="text-sm font-semibold text-gray-900 mb-2 block">
-                  Rejection Reason <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  value={rejectionReason}
-                  onChange={(e) => setRejectionReason(e.target.value)}
-                  placeholder="Please provide a clear reason for rejection..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
-                  rows={4}
-                  autoFocus
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  {rejectionReason.trim().length} / 500 characters
-                </p>
-              </div>
-
-              {rejectionReason.trim().length === 0 && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
-                  <p className="text-sm text-yellow-800">
-                    ℹ️ Please enter a rejection reason to proceed
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Dialog Footer */}
-            <div className="bg-gray-50 border-t px-6 py-4 flex justify-end gap-3 rounded-b-lg">
-              <Button
-                variant="outline"
-                onClick={() => setIsRejectDialogOpen(false)}
-                disabled={isRejecting}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={handleRejectSubmit}
-                disabled={isRejecting || !rejectionReason.trim()}
-                className="bg-red-600 hover:bg-red-700"
-              >
-                {isRejecting ? '🔄 Rejecting...' : '❌ Confirm Reject'}
-              </Button>
             </div>
           </div>
         </div>
