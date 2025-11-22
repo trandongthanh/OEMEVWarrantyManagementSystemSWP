@@ -3729,7 +3729,7 @@ const TechnicianDashboard = ({
                     </div>
                     {selectedCaseLine?.updatedAt && (
                       <div className="space-y-2">
-                        <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Updat At</span>
+                        <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Updated At</span>
                         <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-blue-100 shadow-sm">
                           <span className="text-sm text-gray-800">
                             {new Date(selectedCaseLine.updatedAt).toLocaleString('vi-VN', { 
