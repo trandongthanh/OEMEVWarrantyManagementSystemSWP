@@ -632,7 +632,7 @@ const SuperAdvisor = () => {
 
           toast({
             title: 'No customer found!',
-            description: 'No customer found with this phone number. You can enter new customer information.',
+            description: 'No customer found . You can enter new customer information.',
             variant: 'destructive'
           });
         }
@@ -653,7 +653,7 @@ const SuperAdvisor = () => {
 
         toast({
           title: 'No customer found!',
-          description: 'No customer found with this phone number. You can enter new customer information.',
+          description: 'No customer found . You can enter new customer information.',
           variant: 'destructive'
         });
         
@@ -675,7 +675,7 @@ const SuperAdvisor = () => {
       // Hiển thị thông báo không tìm thấy (màu trắng)
       toast({
         title: 'No customer found!',
-        description: 'No customer found with this phone number. You can enter new customer information.',
+        description: 'No customer found. You can enter new customer information.',
         variant: 'destructive'
       });
     } finally {
@@ -813,12 +813,7 @@ const SuperAdvisor = () => {
       const verificationEmail = editCustomerForm.email.trim().toLowerCase();
       updateData.verificationEmail = verificationEmail;
 
-      console.log('🔍 Update customer request:', {
-        customerId: foundCustomer.id,
-        verificationEmail,
-        updateData,
-        otpVerified: otpVerifiedForCustomer
-      });
+     
 
       const response = await axios.patch(
         `${API_BASE_URL}/customers/${foundCustomer.id}`,
