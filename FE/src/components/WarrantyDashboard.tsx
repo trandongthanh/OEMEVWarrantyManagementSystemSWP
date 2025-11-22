@@ -134,6 +134,11 @@ const WarrantyDashboard: React.FC = () => {
     generalWarrantyMileage: ''
   });
   
+  // Caseline Detail Dialog states
+  const [isCaselineDetailOpen, setIsCaselineDetailOpen] = useState<boolean>(false);
+  const [selectedCaselineDetail, setSelectedCaselineDetail] = useState<any>(null);
+  const [isLoadingCaselineDetail, setIsLoadingCaselineDetail] = useState<boolean>(false);
+  
   useEffect(() => {
     // Auto-fetch when page changes
     if (user) {
@@ -566,6 +571,40 @@ const WarrantyDashboard: React.FC = () => {
       return null;
     } catch (error) {
       return null;
+    }
+  };
+
+  // Fetch full caseline detail for detail dialog
+  const fetchCaselineDetail = async (caselineId: string) => {
+    setIsLoadingCaselineDetail(true);
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      const response = await axios.get(`${API_BASE_URL}/case-lines/${caselineId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const data = response.data;
+      if (data.status === 'success' && data.data?.caseLine) {
+        setSelectedCaselineDetail(data.data.caseLine);
+        setIsCaselineDetailOpen(true);
+      } else {
+        toast({
+          title: 'Error',
+          description: 'Failed to load caseline details.',
+          variant: 'destructive'
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to load caseline details.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingCaselineDetail(false);
     }
   };
 
@@ -1233,7 +1272,7 @@ const WarrantyDashboard: React.FC = () => {
                     <div>
                       <span className="text-xs text-gray-500">Approved By:</span>
                       {selectedRequest.approvedByUserId ? (
-                        <p className="font-medium text-green-600">✓ {selectedRequest.approver?.name || `User #${selectedRequest.approvedByUserId.substring(0, 8)}...`}</p>
+                        <p className="font-medium text-600">👤 {selectedRequest.approver?.name || `User #${selectedRequest.approvedByUserId.substring(0, 8)}...`}</p>
                       ) : (
                         <p className="text-sm text-gray-400 italic">Pending approval</p>
                       )}
@@ -1253,11 +1292,11 @@ const WarrantyDashboard: React.FC = () => {
                     <div className="space-y-4">
                       {selectedRequest.items.map((item, index) => (
                         <div key={item.id || `item-${index}`} className="border rounded-lg p-4 space-y-3 hover:shadow-md transition-shadow bg-white">
-                          {/* Request ID */}
+                          {/* Request ID - Full Display */}
                           <div className="pb-2 border-b">
-                            <span className="text-xs text-gray-500">Request ID:</span>
-                            <p className="text-sm font-medium text-gray-900 mt-1">
-                              #{item.id ? item.id.substring(0, 8) : `Item ${index + 1}`}...
+                            <span className="text-xs text-gray-500 font-medium">Request ID:</span>
+                            <p className="text-xs font-mono text-gray-900 mt-1 bg-gray-50 px-2 py-1 rounded">
+                              {item.id || `Item ${index + 1}`}
                             </p>
                           </div>
 
@@ -1295,27 +1334,38 @@ const WarrantyDashboard: React.FC = () => {
                             </div>
                           )}
 
-                          {/* Quantity Requested & Caseline ID */}
-                          <div className="grid grid-cols-2 gap-3 pt-2">
-                            <div className="flex items-baseline gap-2">
-                              <span className="text-xs text-gray-500">Quantity Requested:</span>
-                              <div className="flex flex-col gap-1">
-                                <span className="font-bold text-blue-600 text-lg">{item.quantityRequested}</span>
-                                {item.quantityApproved !== null && item.quantityApproved !== undefined && (
-                                  <span className="text-xs text-green-600 font-medium">✓ Approved: {item.quantityApproved}</span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-baseline gap-2">
-                              <span className="text-xs text-gray-500">Caseline ID:</span>
-                              {item.caselineId ? (
-                                <span className="text-sm font-medium text-gray-900">
-                                  #{item.caselineId.substring(0, 8)}...
-                                </span>
-                              ) : (
-                                <span className="text-sm text-gray-400 italic">N/A</span>
+                          {/* Quantity Requested */}
+                          <div className="pt-2">
+                            <span className="text-xs text-gray-500 font-medium">Quantity Requested:</span>
+                            <div className="flex items-center gap-3 mt-1">
+                              <span className="font-bold text-blue-600 text-lg">{item.quantityRequested}</span>
+                              {item.quantityApproved !== null && item.quantityApproved !== undefined && (
+                                <span className="text-xs text-green-600 font-medium">✓ Approved: {item.quantityApproved}</span>
                               )}
                             </div>
+                          </div>
+
+                          {/* Caseline ID - Separate Row */}
+                          <div className="pt-2 border-t">
+                            <span className="text-xs text-gray-500 font-medium">Caseline ID:</span>
+                            {item.caselineId ? (
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-xs font-mono text-gray-900 bg-gray-100 px-2 py-1 rounded flex-1">
+                                  {item.caselineId}
+                                </span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs"
+                                  onClick={() => fetchCaselineDetail(item.caselineId!)}
+                                  disabled={isLoadingCaselineDetail}
+                                >
+                                  {isLoadingCaselineDetail ? 'Loading...' : 'View Detail'}
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-gray-400 italic mt-1 block">N/A</span>
+                            )}
                           </div>
                           
                           {/* Total Price - Below Quantity */}
@@ -1870,6 +1920,307 @@ const WarrantyDashboard: React.FC = () => {
                 className="bg-blue-600 hover:bg-blue-700"
               >
                 {isAddingModel ? '🔄 Adding...' : '✓ Add Model'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Caseline Detail Dialog */}
+      {isCaselineDetailOpen && selectedCaselineDetail && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between rounded-t-lg">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                  <span className="text-blue-600 text-xl">📋</span>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Case Line Details</h2>
+                  <p className="text-sm text-gray-500">Complete information about this case line</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCaselineDetailOpen(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-4">
+              {/* Case Line Information Card */}
+              <Card className="border border-gray-200">
+                <CardHeader className="bg-gray-50 border-b">
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-600">📋</span>
+                    <CardTitle className="text-base font-semibold">Case Line Information</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <span className="text-xs text-gray-500 font-medium">Case Line ID</span>
+                      <p className="text-sm text-gray-900 mt-1 font-mono">
+                        {selectedCaselineDetail.id}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-xs text-gray-500 font-medium">Status</span>
+                      <div className="mt-1">
+                        <Badge 
+                          className={`${
+                            selectedCaselineDetail.status === 'COMPLETED' 
+                              ? 'bg-green-500 hover:bg-green-600' 
+                              : selectedCaselineDetail.status === 'APPROVED'
+                              ? 'bg-blue-500 hover:bg-blue-600'
+                              : 'bg-gray-500 hover:bg-gray-600'
+                          } text-white`}
+                        >
+                          {selectedCaselineDetail.status || 'N/A'}
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6 mt-4">
+                    <div>
+                      <span className="text-xs text-gray-500 font-medium">Warranty Status</span>
+                      <div className="mt-1">
+                        <Badge 
+                          className={`${
+                            selectedCaselineDetail.warrantyStatus === 'ELIGIBLE' 
+                              ? 'bg-blue-500 hover:bg-blue-600' 
+                              : 'bg-gray-500 hover:bg-gray-600'
+                          } text-white`}
+                        >
+                          {selectedCaselineDetail.warrantyStatus || 'N/A'}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-xs text-gray-500 font-medium">Quantity</span>
+                      <p className="text-lg font-semibold text-gray-900 mt-1">
+                        {selectedCaselineDetail.quantity || 1}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Solution */}
+                  <div className="mt-4 p-3 bg-green-50 border-l-4 border-green-400 rounded">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-green-600">✓</span>
+                      <span className="text-sm font-semibold text-green-800">Solution</span>
+                    </div>
+                    <p className="text-sm text-gray-900">
+                      {selectedCaselineDetail.correctionText || 'No solution provided'}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Component Information Card */}
+              {selectedCaselineDetail.typeComponent && (
+                <Card className="border border-gray-200">
+                  <CardHeader className="bg-gray-50 border-b">
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-600">📦</span>
+                      <CardTitle className="text-base font-semibold">Component Information</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-2 gap-6">
+                      <div>
+                        <span className="text-xs text-gray-500 font-medium">Component Name</span>
+                        <p className="text-sm text-gray-900 mt-1 font-semibold">
+                          {selectedCaselineDetail.typeComponent.name}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-500 font-medium">SKU</span>
+                        <p className="text-sm text-gray-900 mt-1 font-mono">
+                          {selectedCaselineDetail.typeComponent.sku}
+                        </p>
+                      </div>
+                    </div>
+
+                    {selectedCaselineDetail.typeComponent.price && (
+                      <div className="mt-4">
+                        <span className="text-xs text-gray-500 font-medium">Price</span>
+                        <p className="text-sm text-gray-900 mt-1 font-semibold">
+                          {formatNumberWithCommas(selectedCaselineDetail.typeComponent.price)} đ
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Guarantee Case & Vehicle Information Card */}
+              {(selectedCaselineDetail.guaranteeCase || selectedCaselineDetail.vehicle) && (
+                <Card className="border border-gray-200">
+                  <CardHeader className="bg-gray-50 border-b">
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-600">🚗</span>
+                      <CardTitle className="text-base font-semibold">Guarantee Case & Vehicle Information</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-4 space-y-4">
+                    {selectedCaselineDetail.guaranteeCase && (
+                      <>
+                        <div>
+                          <span className="text-xs text-gray-500 font-medium">Guarantee Case ID</span>
+                          <p className="text-sm text-gray-900 mt-1 font-mono">
+                            {selectedCaselineDetail.guaranteeCase.guaranteeCaseId || selectedCaselineDetail.guaranteeCaseId}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-xs text-gray-500 font-medium">Content</span>
+                          <p className="text-sm text-gray-900 mt-1 bg-blue-50 p-3 rounded">
+                            {selectedCaselineDetail.guaranteeCase.contentGuarantee || selectedCaselineDetail.diagnosisText || 'N/A'}
+                          </p>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Vehicle Details */}
+                    {selectedCaselineDetail.vehicle && (
+                      <div className="pt-4 border-t">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Vehicle Details</h4>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <span className="text-xs text-gray-500 font-medium">VIN</span>
+                            <p className="text-sm text-gray-900 mt-1 font-mono">
+                              {selectedCaselineDetail.vehicle.vin}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-xs text-gray-500 font-medium">Processing Record ID</span>
+                            <p className="text-sm text-gray-900 mt-1 font-mono">
+                              {selectedCaselineDetail.vehicleProcessingRecordId || 'N/A'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Assigned Technicians Card */}
+              {(selectedCaselineDetail.diagnosticTechnician || selectedCaselineDetail.repairTechnician) && (
+                <Card className="border border-gray-200">
+                  <CardHeader className="bg-gray-50 border-b">
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-600">👥</span>
+                      <CardTitle className="text-base font-semibold">Assigned Technicians</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      {selectedCaselineDetail.diagnosticTechnician && (
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                          <h4 className="text-sm font-semibold text-blue-900 mb-2">Diagnostic Technician</h4>
+                          <p className="text-gray-900 font-medium">
+                            {selectedCaselineDetail.diagnosticTechnician.name || selectedCaselineDetail.diagnosticTechnician.fullName}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1 font-mono">
+                            ID: {selectedCaselineDetail.diagnosticTechnician.userId || selectedCaselineDetail.diagnosticTechnicianId}
+                          </p>
+                        </div>
+                      )}
+                      {selectedCaselineDetail.repairTechnician && (
+                        <div className="bg-purple-50 p-4 rounded-lg">
+                          <h4 className="text-sm font-semibold text-purple-900 mb-2">Repair Technician</h4>
+                          <p className="text-gray-900 font-medium">
+                            {selectedCaselineDetail.repairTechnician.name || selectedCaselineDetail.repairTechnician.fullName}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1 font-mono">
+                            ID: {selectedCaselineDetail.repairTechnician.userId || selectedCaselineDetail.repairTechnicianId}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Component Reservations Card */}
+              {selectedCaselineDetail.componentReservations && selectedCaselineDetail.componentReservations.length > 0 && (
+                <Card className="border border-gray-200">
+                  <CardHeader className="bg-gray-50 border-b">
+                    <div className="flex items-center gap-2">
+                      <span className="text-blue-600">🔧</span>
+                      <CardTitle className="text-base font-semibold">Component Reservations ({selectedCaselineDetail.componentReservations.length})</CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-4">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 border-b">
+                          <tr>
+                            <th className="text-left py-2 px-3 text-xs font-semibold text-gray-600">Reservation ID</th>
+                            <th className="text-left py-2 px-3 text-xs font-semibold text-gray-600">Serial Number</th>
+                            <th className="text-center py-2 px-3 text-xs font-semibold text-gray-600">Component Status</th>
+                            <th className="text-center py-2 px-3 text-xs font-semibold text-gray-600">Reservation Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedCaselineDetail.componentReservations.map((reservation: any, index: number) => (
+                            <tr key={reservation.componentReservationId || index} className="border-b hover:bg-gray-50">
+                              <td className="py-3 px-3 font-mono text-xs">{reservation.componentReservationId}</td>
+                              <td className="py-3 px-3 font-mono text-xs">{reservation.component?.serialNumber || 'N/A'}</td>
+                              <td className="py-3 px-3 text-center">
+                                <Badge className="bg-green-500 hover:bg-green-600 text-white text-xs">
+                                  {reservation.component?.status || 'N/A'}
+                                </Badge>
+                              </td>
+                              <td className="py-3 px-3 text-center">
+                                <Badge className="bg-green-500 hover:bg-green-600 text-white text-xs">
+                                  {reservation.status || 'N/A'}
+                                </Badge>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Timestamps Card */}
+              <Card className="border border-gray-200">
+                <CardHeader className="bg-gray-50 border-b">
+                  <div className="flex items-center gap-2">
+                    <span className="text-blue-600">🕐</span>
+                    <CardTitle className="text-base font-semibold">Timestamps</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  {selectedCaselineDetail.updatedAt && (
+                    <div>
+                      <span className="text-xs text-gray-500 font-medium">Last Updated At</span>
+                      <p className="text-sm text-gray-900 mt-1">
+                        {formatDateTime(selectedCaselineDetail.updatedAt)}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex justify-end rounded-b-lg">
+              <Button
+                variant="outline"
+                onClick={() => setIsCaselineDetailOpen(false)}
+              >
+                Close
               </Button>
             </div>
           </div>
