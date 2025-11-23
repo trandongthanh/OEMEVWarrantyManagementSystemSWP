@@ -625,10 +625,29 @@ class CaseLineService {
         );
 
       if (pendingCount === 0) {
+        const allCaselines =
+          await this.#caselineRepository.findByProcessingRecordId(
+            { vehicleProcessingRecordId },
+            transaction
+          );
+
+        const hasApprovedItems = allCaselines.some((cl) =>
+          [
+            "CUSTOMER_APPROVED",
+            "READY_FOR_REPAIR",
+            "WAITING_FOR_PARTS",
+            "PARTS_AVAILABLE",
+            "IN_REPAIR",
+            "COMPLETED",
+          ].includes(cl.status)
+        );
+
+        const newStatus = hasApprovedItems ? "PROCESSING" : "CANCELLED";
+
         await this.#vehicleProcessingRecordRepository.updateStatus(
           {
             vehicleProcessingRecordId: vehicleProcessingRecordId,
-            status: "PROCESSING",
+            status: newStatus,
           },
           transaction
         );
@@ -637,7 +656,7 @@ class CaseLineService {
         const eventName = "vehicleProcessingRecordStatusUpdated";
         const data = {
           vehicleProcessingRecordId,
-          status: "PROCESSING",
+          status: newStatus,
         };
 
         await this.#notificationService.sendToRoom(roomName, eventName, data);
