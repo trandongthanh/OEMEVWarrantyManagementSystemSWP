@@ -451,6 +451,7 @@ const TechnicianDashboard = ({
   // Compatible components for Processing Records modal
   const [compatibleComponents, setCompatibleComponents] = useState<Array<{ typeComponentId: string; name: string; isUnderWarranty: boolean; availableQuantity?: number }>>([]);
   const [componentSearchQuery, setComponentSearchQuery] = useState<string>("");
+  const [selectedComponentWarranty, setSelectedComponentWarranty] = useState<boolean | null>(null);
   const [isLoadingComponents, setIsLoadingComponents] = useState(false);
 
   // Assigned Tasks state
@@ -477,6 +478,7 @@ const TechnicianDashboard = ({
   const [selectCaseLineModalOpen, setSelectCaseLineModalOpen] = useState(false);
   const [isUpdatingCaseLine, setIsUpdatingCaseLine] = useState(false);
   const [updateComponentSearchQuery, setUpdateComponentSearchQuery] = useState('');
+  const [updateSelectedComponentWarranty, setUpdateSelectedComponentWarranty] = useState<boolean | null>(null);
   const [updateCaseLineForm, setUpdateCaseLineForm] = useState({
     correctionText: '',
     typeComponentId: '',
@@ -1289,8 +1291,6 @@ const TechnicianDashboard = ({
       const resp = await apiService.patch(`/processing-records/${recordId}/complete-diagnosis`, {
         checkOutDate: nowIso
       });
-
-      toast({ title: 'Record Completed', description: `Processing record ${recordId} marked as completed.` });
 
       // Update local selectedRecord state if it refers to the same record we just completed.
       if (selectedRecord) {
@@ -2449,20 +2449,10 @@ const TechnicianDashboard = ({
                           records.map((record) => (
                           <TableRow key={record.recordId || (record.vin + record.checkInDate)}>
                             <TableCell className="font-mono text-sm">
-                              <div>
-                                <p>{record.vin}</p>
-                                {record.recordId && (
-                                  <p className="text-xs text-muted-foreground">ID: {(record.recordId as string)?.substring?.(0, 8) ?? ''}...</p>
-                                )}
-                              </div>
+                              <p>{record.vin}</p>
                             </TableCell>
                             <TableCell>
-                              <div>
-                                <p className="font-medium">{record.vehicle?.model?.name ?? 'Unknown model'}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  Model ID: {(record.vehicle?.model?.vehicleModelId as string | undefined)?.substring?.(0, 8) ?? 'N/A'}...
-                                </p>
-                              </div>
+                              <p className="font-medium">{record.vehicle?.model?.name ?? 'Unknown model'}</p>
                             </TableCell>
                             <TableCell>
                               <p className="text-sm">{(record.odometer ?? 0).toLocaleString()} km</p>
@@ -2471,12 +2461,7 @@ const TechnicianDashboard = ({
                               {formatDate(record.checkInDate ?? new Date().toISOString())}
                             </TableCell>
                             <TableCell>
-                              <div>
-                                <p className="font-medium">{record.mainTechnician?.name ?? '—'}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {(record.mainTechnician?.userId as string | undefined)?.substring?.(0, 8) ?? ''}...
-                                </p>
-                              </div>
+                              <p className="font-medium">{record.mainTechnician?.name ?? '—'}</p>
                             </TableCell>
                             <TableCell>
                               <Badge variant={getStatusBadgeVariant(record.status)}>
@@ -2834,7 +2819,7 @@ const TechnicianDashboard = ({
 
                 {selectedCaseLine?.componentId !== undefined && (
                   <div>
-                    <div className="text-sm text-gray-600">Component ID</div>
+                    <div className="text-sm text-gray-600">Type Component ID</div>
                     <div className="font-mono bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.componentId ?? selectedCaseLine?.typeComponentId ?? '—'}</div>
                   </div>
                 )}
@@ -3716,7 +3701,7 @@ const TechnicianDashboard = ({
                     </div>
                     {selectedCaseLine?.updatedAt && (
                       <div className="space-y-2">
-                        <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Updat At</span>
+                        <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Updated At</span>
                         <div className="bg-white/80 backdrop-blur px-4 py-3 rounded-lg border-2 border-blue-100 shadow-sm">
                           <span className="text-sm text-gray-800">
                             {new Date(selectedCaseLine.updatedAt).toLocaleString('vi-VN', { 
@@ -4198,7 +4183,7 @@ const TechnicianDashboard = ({
                                     <div className="flex-1">
                                       <p className="text-xs text-slate-600">Component</p>
                                       <p className="text-sm font-semibold text-slate-900">
-                                        Component ID: {caseLine.componentId}
+                                        Type Component ID: {caseLine.componentId}
                                       </p>
                                       <p className="text-xs text-slate-500">Quantity: {caseLine.quantity}</p>
                                     </div>
@@ -4599,11 +4584,20 @@ const TechnicianDashboard = ({
                             <CheckCircle className="h-5 w-5 text-white" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-green-600 uppercase tracking-wide">Component Selected</p>
-                            <p className="text-sm font-bold text-green-900 mt-1 break-words">{updateComponentSearchQuery || 'Component'}</p>
+                            <p className="text-xs font-semibold text-green-600 uppercase tracking-wide">Type Component Selected</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <p className="text-sm font-bold text-green-900 break-words"><span className="font-semibold">Name:</span> {updateComponentSearchQuery || 'Component'}</p>
+                              {updateSelectedComponentWarranty !== null && (
+                                updateSelectedComponentWarranty ? (
+                                  <CheckCircle className="h-4 w-4 text-green-600 flex-shrink-0" />
+                                ) : (
+                                  <X className="h-4 w-4 text-red-600 flex-shrink-0" />
+                                )
+                              )}
+                            </div>
                             {/* Show full component ID */}
                             <div className="mt-3 bg-white/60 rounded-lg px-3 py-2 border border-green-200">
-                              <p className="text-xs text-gray-600 font-semibold mb-0.5">Component ID</p>
+                              <p className="text-xs text-gray-600 font-semibold mb-0.5">Type Component ID</p>
                               <p className="text-xs text-gray-800 font-mono break-all">{updateCaseLineForm.typeComponentId}</p>
                             </div>
                           </div>
@@ -4618,6 +4612,7 @@ const TechnicianDashboard = ({
                         if (value === "none" || value === "") {
                           setUpdateCaseLineForm(prev => ({ ...prev, typeComponentId: '', quantity: 0 }));
                           setUpdateComponentSearchQuery('');
+                          setUpdateSelectedComponentWarranty(null);
                         } else {
                           const selectedComponent = compatibleComponents.find(c => c.typeComponentId === value);
                           if (selectedComponent) {
@@ -4627,6 +4622,7 @@ const TechnicianDashboard = ({
                               quantity: prev.quantity && prev.quantity > 0 ? prev.quantity : 1
                             }));
                             setUpdateComponentSearchQuery(selectedComponent.name);
+                            setUpdateSelectedComponentWarranty(selectedComponent.isUnderWarranty);
                           }
                         }
                       }}
@@ -4995,6 +4991,9 @@ const TechnicianDashboard = ({
                                 <div className="font-medium text-sm mb-1">
                                   Guarantee Case #{index + 1}
                                 </div>
+                                <div className="text-xs text-gray-700 mb-2">
+                                  <span className="font-semibold">Content:</span> {gc.contentGuarantee}
+                                </div>
                                 <div className="text-xs font-mono text-gray-500 mb-2">
                                   {gc.guaranteeCaseId}
                                 </div>
@@ -5089,11 +5088,20 @@ const TechnicianDashboard = ({
                             <CheckCircle className="h-5 w-5 text-white" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-green-600 uppercase tracking-wide">Component Selected</p>
-                            <p className="text-sm font-bold text-green-900 mt-1 break-words">{componentSearchQuery || 'Selected'}</p>
+                            <p className="text-xs font-semibold text-green-600 uppercase tracking-wide">Type Component Selected</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <p className="text-sm font-bold text-green-900 break-words"><span className="font-semibold">Name:</span> {componentSearchQuery || 'Selected'}</p>
+                              {selectedComponentWarranty !== null && (
+                                selectedComponentWarranty ? (
+                                  <CheckCircle className="h-4 w-4 text-green-600 flex-shrink-0" />
+                                ) : (
+                                  <X className="h-4 w-4 text-red-600 flex-shrink-0" />
+                                )
+                              )}
+                            </div>
                             {/* Show full component ID */}
                             <div className="mt-3 bg-white/60 rounded-lg px-3 py-2 border border-green-200">
-                              <p className="text-xs text-gray-600 font-semibold mb-0.5">Component ID</p>
+                              <p className="text-xs text-gray-600 font-semibold mb-0.5">Type Component ID</p>
                               <p className="text-xs text-gray-800 font-mono break-all">{caseLineForm.componentId}</p>
                             </div>
                           </div>
@@ -5109,6 +5117,7 @@ const TechnicianDashboard = ({
                           // Clear selection and reset quantity when none selected
                           setCaseLineForm(prev => ({ ...prev, componentId: null, quantity: 0, warrantyStatus: 'ELIGIBLE' }));
                           setComponentSearchQuery('');
+                          setSelectedComponentWarranty(null);
                         } else {
                           // Find selected component
                           const selectedComponent = compatibleComponents.find(c => c.typeComponentId === value);
@@ -5120,6 +5129,7 @@ const TechnicianDashboard = ({
                               quantity: prev.quantity && prev.quantity > 0 ? prev.quantity : 1
                             }));
                             setComponentSearchQuery(selectedComponent.name);
+                            setSelectedComponentWarranty(selectedComponent.isUnderWarranty);
                             // component selection changed
                           }
                         }
@@ -5453,7 +5463,7 @@ const TechnicianDashboard = ({
                         </p>
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-muted-foreground uppercase">Component ID</label>
+                        <label className="text-xs font-semibold text-muted-foreground uppercase">Type Component ID</label>
                         <p className="text-sm font-mono mt-1">
                           {selectedAssignedCaseLine.typeComponent.typeComponentId}
                         </p>
