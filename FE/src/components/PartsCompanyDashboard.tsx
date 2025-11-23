@@ -218,7 +218,6 @@ const PartsCompanyDashboard: React.FC = () => {
     setIsLoadingTypeComponents(true);
     
     try {
-      console.log('📦 Processing stocks:', selectedWarehouse.stocks.length);
       
       // Extract type components from warehouse stocks
       const components = selectedWarehouse.stocks

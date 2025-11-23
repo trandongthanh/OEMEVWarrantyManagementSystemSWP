@@ -1437,18 +1437,13 @@ const ServiceCenterDashboard = () => {
       const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
       if (token) {
         try {
-          console.log('🔍 Fetching assigned caselines for technician:', technician.id);
           // Use the correct endpoint: /case-lines?repairTechId=xxx
           const response = await axios.get(`${API_BASE_URL}/case-lines`, {
             params: { repairTechId: technician.id },
             headers: { Authorization: `Bearer ${token}` }
           });
-          console.log('📋 Full API response:', response);
-          console.log('📋 Response data:', response.data);
           
           const caseLines = response.data?.data?.caseLines || [];
-          console.log('📋 Parsed caselines:', caseLines);
-          console.log('📋 Caselines count:', caseLines.length);
           
           setTechnicianCaseLines(caseLines);
         } catch (error) {
