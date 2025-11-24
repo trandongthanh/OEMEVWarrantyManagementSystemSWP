@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import type { AxiosResponse } from "axios";
+import axios from "axios";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,7 +15,17 @@ import { useAuth } from "@/contexts/AuthContext";
 import { apiService } from "@/utils/api";
 import { toast } from "@/hooks/use-toast";
 import { processingRecordsService, ProcessingRecord, ProcessingRecordsByStatus } from "@/services/processingRecordsService";
-import { caseLineService, CaseLineRequest } from "@/services/caseLineService";
+
+// Case Line Request interface (moved from caseLineService.ts)
+interface CaseLineRequest {
+  diagnosisText: string;
+  correctionText: string;
+  componentId?: string | null;
+  quantity: number;
+  warrantyStatus: 'ELIGIBLE' | 'INELIGIBLE';
+  rejectionReason?: string;
+  evidenceImageUrls?: string[];
+}
 import {
   Wrench,
   FileText,
@@ -340,35 +351,6 @@ interface CaseLine {
   }>;
 }
 
-interface WarrantyCase {
-  id: string;
-  vehicleVin: string;
-  customerName: string;
-  vehicleModel: string;
-  status: string;
-  createdDate: string;
-  // Optional fields
-  vin?: string;
-  issueType?: string;
-  submissionDate?: string;
-  updatedDate?: string;
-  technicianName?: string;
-  photos?: string[];
-  diagnosis?: string;
-  customerPhone?: string;
-  components?: Array<{ id?: string; name: string; quantity: number; status: string }>;
-  technicianNotes?: string;
-  manufacturerResponse?: string;
-}
-
-interface IssueDiagnosisForm {
-  affectedComponent: string;
-  damageLevel: string;
-  repairPossibility: string;
-  warrantyDecision: string;
-  technicianNotes: string;
-}
-
 interface TechnicianDashboardProps {
   onViewCase?: (caseId: string) => void;
   onAddReport?: (caseId: string) => void;
@@ -383,17 +365,10 @@ const TechnicianDashboard = ({
   onRecordInstallation
 }: TechnicianDashboardProps) => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [appliedSearchTerm, setAppliedSearchTerm] = useState("");
   const [viewCaseLineModalOpen, setViewCaseLineModalOpen] = useState(false);
   const [selectedCaseLine, setSelectedCaseLine] = useState<CaseLine | null>(null);
   const [imagePreviewModalOpen, setImagePreviewModalOpen] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string>("");
-
-  const [reportPreviewModalOpen, setReportPreviewModalOpen] = useState(false);
-  const [updateDetailsModalOpen, setUpdateDetailsModalOpen] = useState(false);
-  const [selectedWarrantyCase, setSelectedWarrantyCase] = useState<WarrantyCase | null>(null);
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-  const [uploadedFileUrls, setUploadedFileUrls] = useState<string[]>([]);
   const [caseLines, setCaseLines] = useState<CaseLine[]>([]);
   // Processing Records state
   const [processingRecords, setProcessingRecords] = useState<ProcessingRecord[]>([]);
@@ -436,17 +411,7 @@ const TechnicianDashboard = ({
     rejectionReason: ''
   });
 
-  // Issue Diagnosis tab form (old modal with different fields)
-  const [issueDiagnosisForm, setIssueDiagnosisForm] = useState<IssueDiagnosisForm>({
-    affectedComponent: '',
-    damageLevel: '',
-    repairPossibility: '',
-    warrantyDecision: '',
-    technicianNotes: ''
-  });
 
-  // Component search state (for Affected Components field in Issue Diagnosis tab)
-  const [componentQuery, setComponentQuery] = useState<string>("");
 
   // Compatible components for Processing Records modal
   const [compatibleComponents, setCompatibleComponents] = useState<Array<{ typeComponentId: string; name: string; isUnderWarranty: boolean; availableQuantity?: number }>>([]);
@@ -487,50 +452,7 @@ const TechnicianDashboard = ({
     rejectionReason: ''
   });
 
-  // Handle file upload
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || []);
-    const imageFiles = files.filter(file => file.type.startsWith('image/'));
-    
-    if (imageFiles.length !== files.length) {
-      toast({
-        title: "Invalid File Type",
-        description: "Please select only image files (JPG, PNG, etc.)",
-        variant: "destructive"
-      });
-    }
-    
-    // Convert files to base64 data URLs for better persistence
-    imageFiles.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        setUploadedFiles(prev => [...prev, file]);
-        setUploadedFileUrls(prev => [...prev, dataUrl]);
-      };
-      reader.readAsDataURL(file);
-    });
-    
-    // Reset input value to allow selecting the same file again
-    event.target.value = '';
-  };
 
-  // Remove uploaded file
-  const removeFile = (index: number) => {
-    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
-    setUploadedFileUrls(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // Form state for update details
-  const [updateForm, setUpdateForm] = useState({
-    vehicleVin: "",
-    vehicleModel: "",
-    customerName: "",
-    customerPhone: "",
-    status: "",
-    diagnosis: "",
-    additionalNotes: ""
-  });
 
   // State cho API data
   const [selectedGuaranteeCase, setSelectedGuaranteeCase] = useState<GuaranteeCase | null>(null);
@@ -1156,10 +1078,23 @@ const TechnicianDashboard = ({
 
         if (guaranteeIds.length > 0) {
           
-          const fetches = guaranteeIds.map(id => caseLineService.getCaseLines(id).catch(err => {
-            console.error('❌ Failed loading case lines for', id, err);
-            return [] as unknown[];
-          }));
+          const fetches = guaranteeIds.map(id => {
+            const token = localStorage.getItem('ev_warranty_token');
+            return axios.get(`${API_BASE_URL}/guarantee-cases/${id}/case-lines`, {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+              }
+            })
+            .then(response => {
+              const rawCaseLines = (response.data?.data?.caseLines || []) as unknown[];
+              return rawCaseLines;
+            })
+            .catch(err => {
+              console.error('❌ Failed loading case lines for', id, err);
+              return [] as unknown[];
+            });
+          });
 
           const results = await Promise.all(fetches);
           // Flatten and dedupe by caseLineId / caseLineId-like fields
@@ -1670,9 +1605,8 @@ const TechnicianDashboard = ({
     }
   };
 
-  // NOTE: createCaseLines handled by `caseLineService.createCaseLines` (uses axios POST).
-  // Keep component-side logic (handleCreateIssueDiagnosis) using the service so created
-  // case-lines are persisted to backend and then merged into local state for display.
+  // createCaseLines: implementation moved inline into this component.
+  // The component builds a sanitized payload, POSTs to the API, and normalizes the response.
 
   // Fetch components để hiển thị trong dropdown
   const fetchComponents = useCallback(async () => {
@@ -1798,10 +1732,67 @@ const TechnicianDashboard = ({
   // creating case line for guaranteeCase
 
       // Create case line (backend no longer accepts diagnosisText)
-      const serverCreatedCaseLines = await caseLineService.createCaseLines(
-        guaranteeCase.guaranteeCaseId,
-        [caseLineForm] // Send form as-is (only correctionText, no diagnosisText)
+      // Inline API call (previously in caseLineService.ts)
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+      const token = localStorage.getItem('ev_warranty_token');
+      
+      // Build sanitized payload (only include fields accepted by backend validators)
+      const payload = {
+        caselines: [caseLineForm].map((cl: typeof caseLineForm) => {
+          const caselinePayload: Record<string, any> = {
+            correctionText: cl.correctionText,
+            typeComponentId: cl.componentId ?? null,
+            quantity: cl.quantity,
+            warrantyStatus: cl.warrantyStatus,
+            evidenceImageUrls: cl.evidenceImageUrls || [],
+          };
+          
+          // Only include rejectionReason if it has a value
+          if (cl.rejectionReason && cl.rejectionReason.trim()) {
+            caselinePayload.rejectionReason = cl.rejectionReason;
+          }
+          
+          return caselinePayload;
+        })
+      };
+      
+      console.debug('📤 Payload being sent to backend:', JSON.stringify(payload, null, 2));
+      
+      const response = await axios.post(
+        `${API_BASE_URL}/guarantee-cases/${guaranteeCase.guaranteeCaseId}/case-lines`,
+        payload,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          timeout: 10000
+        }
       );
+      
+      console.debug('✅ Case lines created (raw response):', response.data);
+      
+      // Normalize backend response
+      const rawCaseLines = (response.data?.data?.caseLines || []) as unknown[];
+      const serverCreatedCaseLines = rawCaseLines.map((cl: unknown): any => {
+        const c = cl as Record<string, unknown>;
+        return {
+          caseLineId: String(c.id ?? ''),
+          guaranteeCaseId: String(c.guaranteeCaseId ?? ''),
+          diagnosisText: '',
+          correctionText: String(c.correctionText ?? ''),
+          componentId: c.typeComponentId ? String(c.typeComponentId) : null,
+          quantity: typeof c.quantity === 'number' ? c.quantity : 0,
+          warrantyStatus: (c.warrantyStatus as 'ELIGIBLE' | 'INELIGIBLE') ?? 'ELIGIBLE',
+          techId: String(c.diagnosticTechId ?? ''),
+          status: c.status ?? 'DRAFT',
+          createdAt: String(c.createdAt ?? ''),
+          updatedAt: String(c.updatedAt ?? ''),
+          evidenceImageUrls: [],
+        };
+      });
+      
+      console.debug('📦 Case lines normalized: %d items', serverCreatedCaseLines.length);
 
   // case lines created on server and merged into state
 
@@ -2013,116 +2004,7 @@ const TechnicianDashboard = ({
     try { return String(status).toUpperCase() === 'COMPLETED'; } catch { return false; }
   };
 
-  // Warranty cases state with mock data
-  const [warrantyDiagnosisCases, setWarrantyDiagnosisCases] = useState<WarrantyCase[]>([
-    {
-      id: "case-001",
-      vehicleVin: "VF8ABC123456789",
-      vehicleModel: "VF8 Plus",
-      customerName: "Nguyễn Văn Hùng",
-      customerPhone: "0901234567",
-      diagnosis: "Battery performance degradation, showing reduced capacity and charging efficiency after 18 months of use",
-      components: [
-        {
-          id: "comp-001",
-          name: "Lithium-ion Battery VF8",
-          quantity: 1,
-          status: "approved"
-        }
-      ],
-      status: "submitted",
-      createdDate: "2025-10-01",
-      technicianNotes: "Battery diagnostic shows 65% capacity retention, below warranty threshold"
-    },
-    {
-      id: "case-002",
-      vehicleVin: "VF9DEF987654321",
-      vehicleModel: "VF9 Premium",
-      customerName: "Trần Quốc Bảo",
-      customerPhone: "0912345678",
-      diagnosis: "Front motor making unusual noise during acceleration, vibration detected in drivetrain system",
-      components: [
-        {
-          id: "comp-002",
-          name: "Front Electric Motor",
-          quantity: 1,
-          status: "approved"
-        },
-        {
-          id: "comp-004",
-          name: "Front Brake Assembly",
-          quantity: 2,
-          status: "approved"
-        }
-      ],
-      status: "approved",
-      createdDate: "2025-09-28",
-      updatedDate: "2025-10-05",
-      technicianNotes: "Motor bearing replacement required, brake pads worn beyond specification",
-      manufacturerResponse: "Approved for warranty replacement under powertrain coverage"
-    }
-  ]);
 
-  // Handle search functionality
-  const handleSearch = () => {
-    // Apply the search term for filtering
-    setAppliedSearchTerm(searchTerm);
-    
-    if (searchTerm.trim()) {
-      // Calculate results based on the search term that will be applied
-      const tempResults = warrantyDiagnosisCases.filter(warrantyCase => {
-        const matches = warrantyCase.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                       warrantyCase.vehicleModel.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                       warrantyCase.vehicleVin.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                       warrantyCase.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                       warrantyCase.diagnosis.toLowerCase().includes(searchTerm.toLowerCase());
-        return matches;
-      });
-      
-      toast({ 
-        title: "Search Completed", 
-        description: `Found ${tempResults.length} warranty case${tempResults.length !== 1 ? 's' : ''} matching "${searchTerm}"` 
-      });
-    } else {
-      toast({ 
-        title: "Search Cleared", 
-        description: `Showing all ${warrantyDiagnosisCases.length} warranty cases` 
-      });
-    }
-  };
-
-  // Update warranty case function
-  const updateWarrantyCase = (updatedCase: WarrantyCase) => {
-    const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-    const caseWithUpdatedDate = {
-      ...updatedCase,
-      updatedDate: currentDate
-    };
-    
-    setWarrantyDiagnosisCases(prevCases => 
-      prevCases.map(warrantyCase => 
-        warrantyCase.id === updatedCase.id ? caseWithUpdatedDate : warrantyCase
-      )
-    );
-    
-    // Also update the selected case for immediate UI update
-    setSelectedWarrantyCase(caseWithUpdatedDate);
-  };
-
-  // Initialize form when opening update modal
-  const openUpdateModal = (warrantyCase: WarrantyCase) => {
-    setSelectedWarrantyCase(warrantyCase);
-    setUpdateForm({
-      vehicleVin: warrantyCase.vehicleVin,
-      vehicleModel: warrantyCase.vehicleModel,
-      customerName: warrantyCase.customerName,
-      customerPhone: warrantyCase.customerPhone || "",
-      status: warrantyCase.status,
-      diagnosis: warrantyCase.diagnosis,
-      additionalNotes: ""
-    });
-    setUpdateDetailsModalOpen(true);
-  };
 
   // Handle view case line: enrich the lightweight UI caseLine with any detailed
   // response we've previously loaded into `createdCaseLines` so the modal can
@@ -2135,7 +2017,15 @@ const TechnicianDashboard = ({
       setViewCaseLineModalOpen(true);
 
       // Call API to get full case line detail including images
-      const detailedCaseLine = await caseLineService.getCaseLineById(caseLine.id);
+      const token = localStorage.getItem('ev_warranty_token');
+      const response = await axios.get(`${API_BASE_URL}/case-lines/${caseLine.id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const detailedCaseLine = response.data?.data?.caseLine;
 
       if (!detailedCaseLine) {
         console.warn('Case line not found on server, cleaning up local state for ID:', caseLine.id);
@@ -2760,906 +2650,7 @@ const TechnicianDashboard = ({
       </div>
       </div>
 
-      {/* View Case Modal */}
-      <Dialog open={viewCaseModalOpen} onOpenChange={setViewCaseModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader className="pb-6">
-            <DialogTitle className="text-xl font-semibold">View Warranty Case Details</DialogTitle>
-            <DialogDescription className="text-base">
-              Detailed information for warranty case <span className="font-mono font-medium">{selectedWarrantyCase?.id}</span>
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-8">
-            {/* Vehicle & Customer Information */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Vehicle Information */}
-              <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                    <Car className="h-4 w-4 text-white" />
-                  </div>
-                  <h4 className="font-semibold text-lg text-blue-900">Vehicle Information</h4>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-blue-700">VIN Number</span>
-                    <span className="text-lg font-mono bg-white px-3 py-2 rounded border">{selectedWarrantyCase?.vehicleVin}</span>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-blue-700">Model</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedWarrantyCase?.vehicleModel}</span>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Customer Information */}
-              <div className="bg-green-50 p-6 rounded-lg border border-green-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                    <User className="h-4 w-4 text-white" />
-                  </div>
-                  <h4 className="font-semibold text-lg text-green-900">Customer Information</h4>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-green-700">Full Name</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedWarrantyCase?.customerName}</span>
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <span className="text-sm font-medium text-green-700">Phone Number</span>
-                    <span className="text-lg bg-white px-3 py-2 rounded border">{selectedWarrantyCase?.customerPhone || 'Not provided'}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Technical / Backend Fields (show if available) */}
-            <div className="bg-white p-6 rounded-lg border border-gray-200">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center">
-                  <FileText className="h-4 w-4 text-white" />
-                </div>
-                <h4 className="font-semibold text-lg text-gray-900">Technical Details</h4>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {selectedCaseLine?.correctionText !== undefined && (
-                  <div className="md:col-span-2">
-                    <div className="text-sm text-gray-600">Solution</div>
-                    <div className="bg-muted p-3 rounded mt-1">{selectedCaseLine?.correctionText || '—'}</div>
-                  </div>
-                )}
-
-                {selectedCaseLine?.componentId !== undefined && (
-                  <div>
-                    <div className="text-sm text-gray-600">Type Component ID</div>
-                    <div className="font-mono bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.componentId ?? selectedCaseLine?.typeComponentId ?? '—'}</div>
-                  </div>
-                )}
-
-                {selectedCaseLine?.quantity !== undefined && (
-                  <div>
-                    <div className="text-sm text-gray-600">Quantity</div>
-                    <div className="bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.quantity ?? '—'}</div>
-                  </div>
-                )}
-
-                {selectedCaseLine?.warrantyStatus !== undefined && (
-                  <div>
-                    <div className="text-sm text-gray-600">Warranty Status</div>
-                    <div className="bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.warrantyStatus ?? '—'}</div>
-                  </div>
-                )}
-
-                {selectedCaseLine?.diagnosticTechId !== undefined && (
-                  <div>
-                    <div className="text-sm text-gray-600">Diagnostic Tech ID</div>
-                    <div className="font-mono bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.diagnosticTechId ?? '—'}</div>
-                  </div>
-                )}
-
-                {selectedCaseLine?.repairTechId !== undefined && (
-                  <div>
-                    <div className="text-sm text-gray-600">Repair Tech ID</div>
-                    <div className="font-mono bg-white px-3 py-2 rounded border mt-1">{selectedCaseLine?.repairTechId ?? '—'}</div>
-                  </div>
-                )}
-
-                {selectedCaseLine?.rejectionReason !== undefined && (
-                  <div className="md:col-span-2">
-                    <div className="text-sm text-gray-600">Rejection Reason</div>
-                    <div className="bg-muted p-3 rounded mt-1">{selectedCaseLine?.rejectionReason || '—'}</div>
-                  </div>
-                )}
-
-                {selectedCaseLine?.updatedAt !== undefined && (
-                  <div>
-                    <div className="text-sm text-gray-600">Update At</div>
-                    <div className="bg-white px-3 py-2 rounded border mt-1 text-sm text-gray-800">{selectedCaseLine?.updatedAt ?? '—'}</div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Case Status & Timeline */}
-            <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center">
-                  <FileText className="h-4 w-4 text-white" />
-                </div>
-                <h4 className="font-semibold text-lg text-gray-900">Case Information</h4>
-              </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-white p-4 rounded-lg border text-center">
-                  <div className="text-sm font-medium text-gray-600 mb-1">Case ID</div>
-                  <div className="text-lg font-mono font-semibold text-gray-900">{selectedWarrantyCase?.id}</div>
-                </div>
-                <div className="bg-white p-4 rounded-lg border text-center">
-                  <div className="text-sm font-medium text-gray-600 mb-1">Status</div>
-                  <Badge 
-                    variant={
-                      selectedWarrantyCase?.status === 'approved' ? 'default' :
-                      selectedWarrantyCase?.status === 'rejected' ? 'destructive' :
-                      selectedWarrantyCase?.status === 'in-progress' ? 'secondary' :
-                      'outline'
-                    }
-                    className="text-sm px-3 py-1"
-                  >
-                    {selectedWarrantyCase?.status}
-                  </Badge>
-                </div>
-                <div className="bg-white p-4 rounded-lg border text-center">
-                  <div className="text-sm font-medium text-gray-600 mb-1">Created Date</div>
-                  <div className="text-lg font-semibold text-gray-900">{selectedWarrantyCase?.createdDate}</div>
-                </div>
-                <div className="bg-white p-4 rounded-lg border text-center">
-                  <div className="text-sm font-medium text-gray-600 mb-1">Update At</div>
-                  <div className="text-sm text-gray-800">{selectedWarrantyCase?.updatedDate || 'N/A'}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Diagnosis */}
-            <div className="bg-yellow-50 p-6 rounded-lg border border-yellow-200">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
-                  <Wrench className="h-4 w-4 text-white" />
-                </div>
-                <h4 className="font-semibold text-lg text-yellow-900">Diagnosis Report</h4>
-              </div>
-              <div className="bg-white p-4 rounded-lg border border-yellow-300">
-                <p className="text-base leading-relaxed text-gray-800">{selectedWarrantyCase?.diagnosis}</p>
-              </div>
-            </div>
-
-            {/* Components */}
-            <div className="bg-purple-50 p-6 rounded-lg border border-purple-200">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
-                  <Settings className="h-4 w-4 text-white" />
-                </div>
-                <h4 className="font-semibold text-lg text-purple-900">Affected Components</h4>
-              </div>
-              <div className="grid grid-cols-1 gap-3">
-                {selectedWarrantyCase?.components.map((component, index) => (
-                  <div key={index} className="bg-white p-4 rounded-lg border border-purple-200 flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                        <span className="text-purple-600 font-semibold">#{index + 1}</span>
-                      </div>
-                      <div>
-                        <div className="font-semibold text-gray-900">{component.name}</div>
-                        <div className="text-sm text-gray-600">Quantity: <span className="font-medium">{component.quantity}</span></div>
-                      </div>
-                    </div>
-                    <Badge 
-                      variant={
-                        component.status === 'approved' ? 'default' :
-                        component.status === 'rejected' ? 'destructive' :
-                        component.status === 'shipped' ? 'secondary' :
-                        'outline'
-                      }
-                      className="text-sm px-3 py-1"
-                    >
-                      {component.status}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex justify-end gap-3 pt-6 border-t mt-8">
-            <Button 
-              variant="default" 
-              onClick={() => {
-                setViewCaseModalOpen(false);
-                if (selectedWarrantyCase) {
-                  openUpdateModal(selectedWarrantyCase);
-                }
-              }}
-              className="px-6"
-            >
-              <Settings className="h-4 w-4 mr-2" />
-              Update Details
-            </Button>
-            <Button variant="outline" onClick={() => setViewCaseModalOpen(false)} className="px-6">
-              Close
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Report Preview Modal */}
-      <Dialog open={reportPreviewModalOpen} onOpenChange={setReportPreviewModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader className="pb-6">
-            <DialogTitle className="text-xl font-semibold">Warranty Report Preview</DialogTitle>
-            <DialogDescription className="text-base">
-              Generated warranty report for case <span className="font-mono font-medium">{selectedWarrantyCase?.id}</span>
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-6">
-            {/* Report Type */}
-            <div className="space-y-4">
-              <h4 className="font-medium text-base">📋 Report Type</h4>
-              <Select>
-                <SelectTrigger>
-                  <SelectValue placeholder="Comprehensive Warranty Report" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="standard">� Standard Report</SelectItem>
-                  <SelectItem value="detailed">� Detailed Report</SelectItem>
-                  <SelectItem value="summary">� Summary Report</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Report Options */}
-            <div className="space-y-4">
-              <h4 className="font-medium text-base">⚙️ Report Options</h4>
-              <div className="space-y-3">
-                <div className="flex items-center space-x-2">
-                  <input type="checkbox" id="include-photos" className="rounded" defaultChecked />
-                  <Label htmlFor="include-photos" className="text-sm">📷 Include Photos</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <input type="checkbox" id="include-diagnosis" className="rounded" defaultChecked />
-                  <Label htmlFor="include-diagnosis" className="text-sm">🔍 Include Diagnosis</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <input type="checkbox" id="manufacturer-format" className="rounded" />
-                  <Label htmlFor="manufacturer-format" className="text-sm">🏭 Use Official Format</Label>
-                </div>
-              </div>
-            </div>
-
-            {/* Additional Notes */}
-            <div className="space-y-4">
-              <h4 className="font-medium text-base">📝 Additional Notes</h4>
-              <Textarea 
-                placeholder="Add any additional notes or comments for the report..."
-                className="min-h-20"
-              />
-            </div>
-
-            {/* Case Summary */}
-            <div className="space-y-4">
-              <h4 className="font-medium text-base">📊 Case Summary</h4>
-              <div className="bg-muted p-4 rounded-lg space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Case ID:</span>
-                  <span className="font-mono">{selectedWarrantyCase?.id}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Vehicle:</span>
-                  <span>{selectedWarrantyCase?.vehicleModel}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Customer:</span>
-                  <span>{selectedWarrantyCase?.customerName}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Components:</span>
-                  <span>{selectedWarrantyCase?.components.length} items</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex gap-2 pt-4 border-t">
-            <Button variant="outline" onClick={() => setReportPreviewModalOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Report Preview Modal */}
-      <Dialog open={reportPreviewModalOpen} onOpenChange={setReportPreviewModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader className="pb-6">
-            <DialogTitle className="text-xl font-semibold">Warranty Report Preview</DialogTitle>
-            <DialogDescription className="text-base">
-              Generated warranty report for case <span className="font-mono font-medium">{selectedWarrantyCase?.id}</span>
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-6 bg-white p-6 border rounded-lg">
-            {/* Report Header */}
-            <div className="text-center border-b pb-6 mb-6">
-              <h1 className="text-3xl font-bold text-blue-900 mb-2">Warranty Report</h1>
-              <div className="flex items-center justify-center gap-2 text-gray-600">
-                <FileText className="h-4 w-4" />
-                <span>Generated on {new Date().toLocaleDateString('en-GB')} at {new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
-              </div>
-            </div>
-
-            {/* Case Information */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
-                    <FileText className="h-5 w-5 text-white" />
-                  </div>
-                  <h3 className="font-bold text-lg text-blue-900">Case Information</h3>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center py-2 border-b border-blue-200">
-                    <span className="font-medium text-blue-700">Case ID:</span>
-                    <span className="font-mono font-semibold text-blue-900">{selectedWarrantyCase?.id}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-blue-200">
-                    <span className="font-medium text-blue-700">Status:</span>
-                    <span className="capitalize font-semibold text-blue-900">{selectedWarrantyCase?.status}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-blue-200">
-                    <span className="font-medium text-blue-700">Created Date:</span>
-                    <span className="font-semibold text-blue-900">{selectedWarrantyCase?.createdDate}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2">
-                    <span className="font-medium text-blue-700">Updat At:</span>
-                    <span className="text-sm text-blue-900">{selectedWarrantyCase?.updatedDate || 'N/A'}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                {/* Vehicle Information */}
-                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                      <Car className="h-4 w-4 text-white" />
-                    </div>
-                    <h3 className="font-bold text-base text-green-900">Vehicle Information</h3>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center py-1 border-b border-green-200">
-                      <span className="font-medium text-green-700 text-sm">VIN:</span>
-                      <span className="font-mono font-semibold text-green-900 text-sm">{selectedWarrantyCase?.vehicleVin}</span>
-                    </div>
-                    <div className="flex justify-between items-center py-1 border-b border-green-200">
-                      <span className="font-medium text-green-700 text-sm">Model:</span>
-                      <span className="font-semibold text-green-900 text-sm">{selectedWarrantyCase?.vehicleModel}</span>
-                    </div>
-                    <div className="flex justify-between items-center py-1 border-b border-green-200">
-                      <span className="font-medium text-green-700 text-sm">Year:</span>
-                      <span className="font-semibold text-green-900 text-sm">2023</span>
-                    </div>
-                    <div className="flex justify-between items-center py-1 border-b border-green-200">
-                      <span className="font-medium text-green-700 text-sm">Mileage:</span>
-                      <span className="font-semibold text-green-900 text-sm">18,500 km</span>
-                    </div>
-                    <div className="flex justify-between items-center py-1">
-                      <span className="font-medium text-green-700 text-sm">Purchase Date:</span>
-                      <span className="font-semibold text-green-900 text-sm">2023-01-15</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Customer Information */}
-                <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
-                      <User className="h-4 w-4 text-white" />
-                    </div>
-                    <h3 className="font-bold text-base text-purple-900">Customer Information</h3>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center py-1 border-b border-purple-200">
-                      <span className="font-medium text-purple-700 text-sm">Customer:</span>
-                      <span className="font-semibold text-purple-900 text-sm">{selectedWarrantyCase?.customerName}</span>
-                    </div>
-                    <div className="flex justify-between items-center py-1 border-b border-purple-200">
-                      <span className="font-medium text-purple-700 text-sm">Phone:</span>
-                      <span className="font-semibold text-purple-900 text-sm">{selectedWarrantyCase?.customerPhone || 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between items-center py-1 border-b border-purple-200">
-                      <span className="font-medium text-purple-700 text-sm">Email:</span>
-                      <span className="font-semibold text-purple-900 text-sm">customer@email.com</span>
-                    </div>
-                    <div className="flex justify-between items-center py-1">
-                      <span className="font-medium text-purple-700 text-sm">Address:</span>
-                      <span className="font-semibold text-purple-900 text-sm">123 Main St, District 1, HCMC</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Service Center Information */}
-            <div className="bg-cyan-50 p-6 rounded-lg border border-cyan-200">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-cyan-500 rounded-full flex items-center justify-center">
-                  <Wrench className="h-5 w-5 text-white" />
-                </div>
-                <h3 className="font-bold text-lg text-cyan-900">Service Center Information</h3>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center py-2 border-b border-cyan-200">
-                    <span className="font-medium text-cyan-700">Service Center:</span>
-                    <span className="font-semibold text-cyan-900">VinFast Service HCMC</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-cyan-200">
-                    <span className="font-medium text-cyan-700">Technician:</span>
-                    <span className="font-semibold text-cyan-900">Nguyễn Văn Bảo</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2">
-                    <span className="font-medium text-cyan-700">Contact:</span>
-                    <span className="font-semibold text-cyan-900">+84 28 1234 5678</span>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center py-2 border-b border-cyan-200">
-                    <span className="font-medium text-cyan-700">Inspection Date:</span>
-                    <span className="font-semibold text-cyan-900">{selectedWarrantyCase?.createdDate}</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-cyan-200">
-                    <span className="font-medium text-cyan-700">Priority Level:</span>
-                    <span className="font-semibold text-cyan-900">High</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2">
-                    <span className="font-medium text-cyan-700">Estimated Repair Time:</span>
-                    <span className="font-semibold text-cyan-900">3-5 business days</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Warranty Status */}
-            <div className="bg-indigo-50 p-6 rounded-lg border border-indigo-200">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-indigo-500 rounded-full flex items-center justify-center">
-                  <Palette className="h-5 w-5 text-white" />
-                </div>
-                <h3 className="font-bold text-lg text-indigo-900">Warranty Status</h3>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white p-4 rounded-lg border border-indigo-200">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600">VALID</div>
-                    <div className="text-sm text-gray-600">Warranty Status</div>
-                  </div>
-                </div>
-                <div className="bg-white p-4 rounded-lg border border-indigo-200">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600">24 months</div>
-                    <div className="text-sm text-gray-600">Remaining Period</div>
-                  </div>
-                </div>
-                <div className="bg-white p-4 rounded-lg border border-indigo-200">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-purple-600">Battery</div>
-                    <div className="text-sm text-gray-600">Warranty Type</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Diagnosis */}
-            <div className="bg-orange-50 p-6 rounded-lg border border-orange-200">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
-                  <Search className="h-5 w-5 text-white" />
-                </div>
-                <h3 className="font-bold text-lg text-orange-900">Diagnosis Report</h3>
-              </div>
-              <div className="bg-white p-4 rounded-lg border border-orange-200 shadow-sm">
-                <p className="text-sm leading-relaxed text-gray-800">{selectedWarrantyCase?.diagnosis}</p>
-              </div>
-            </div>
-
-            {/* Affected Components */}
-            <div className="bg-purple-50 p-6 rounded-lg border border-purple-200">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-purple-500 rounded-full flex items-center justify-center">
-                  <Settings className="h-5 w-5 text-white" />
-                </div>
-                <h3 className="font-bold text-lg text-purple-900">Affected Components</h3>
-              </div>
-              <div className="space-y-3">
-                {selectedWarrantyCase?.components.map((component, index) => (
-                  <div key={index} className="bg-white p-4 rounded-lg border border-purple-200 shadow-sm">
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-                          <span className="text-purple-700 font-bold text-sm">#{index + 1}</span>
-                        </div>
-                        <div>
-                          <span className="font-semibold text-gray-900">{component.name}</span>
-                          <span className="text-sm text-gray-600 ml-3">Qty: <span className="font-medium">{component.quantity}</span></span>
-                          <div className="text-xs text-gray-500 mt-1">
-                            Part Number: VF8-BAT-001 | Serial: BAT123456789
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                          component.status === 'approved' ? 'bg-green-100 text-green-800' :
-                          component.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                          component.status === 'shipped' ? 'bg-blue-100 text-blue-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {component.status.toUpperCase()}
-                        </span>
-                        <div className="text-sm font-semibold text-gray-700 mt-1">
-                          Cost: $1,250.00
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Cost Analysis */}
-            <div className="bg-yellow-50 p-6 rounded-lg border border-yellow-200">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-yellow-500 rounded-full flex items-center justify-center">
-                  <span className="text-white font-bold">$</span>
-                </div>
-                <h3 className="font-bold text-lg text-yellow-900">Cost Analysis</h3>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center py-2 border-b border-yellow-200">
-                    <span className="font-medium text-yellow-700">Parts Cost:</span>
-                    <span className="font-semibold text-yellow-900">$1,250.00</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-yellow-200">
-                    <span className="font-medium text-yellow-700">Labor Cost:</span>
-                    <span className="font-semibold text-yellow-900">$150.00</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 border-b border-yellow-200">
-                    <span className="font-medium text-yellow-700">Diagnostic Fee:</span>
-                    <span className="font-semibold text-yellow-900">$50.00</span>
-                  </div>
-                  <div className="flex justify-between items-center py-2 font-bold text-lg">
-                    <span className="text-yellow-700">Total Cost:</span>
-                    <span className="text-yellow-900">$1,450.00</span>
-                  </div>
-                </div>
-                <div className="bg-white p-4 rounded-lg border border-yellow-200">
-                  <h4 className="font-semibold text-yellow-900 mb-3">Coverage Details</h4>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-yellow-700">Warranty Coverage:</span>
-                      <span className="text-green-600 font-semibold">100%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-yellow-700">Customer Payment:</span>
-                      <span className="text-red-600 font-semibold">$0.00</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-yellow-700">Manufacturer Coverage:</span>
-                      <span className="text-blue-600 font-semibold">$1,450.00</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Timeline */}
-            <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-gray-500 rounded-full flex items-center justify-center">
-                  <span className="text-white font-bold">📅</span>
-                </div>
-                <h3 className="font-bold text-lg text-gray-900">Case Timeline</h3>
-              </div>
-              <div className="space-y-4">
-                <div className="flex items-start gap-4">
-                  <div className="w-4 h-4 bg-blue-500 rounded-full mt-1"></div>
-                  <div className="flex-1">
-                    <div className="flex justify-between items-center">
-                      <span className="font-semibold text-gray-900">Case Created</span>
-                      <span className="text-sm text-gray-600">{selectedWarrantyCase?.createdDate}</span>
-                    </div>
-                    <p className="text-sm text-gray-600">Initial warranty claim submitted by service center</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-4">
-                  <div className="w-4 h-4 bg-yellow-500 rounded-full mt-1"></div>
-                  <div className="flex-1">
-                    <div className="flex justify-between items-center">
-                      <span className="font-semibold text-gray-900">Under Review</span>
-                      <span className="text-sm text-gray-600">{selectedWarrantyCase?.createdDate}</span>
-                    </div>
-                    <p className="text-sm text-gray-600">Technical assessment and documentation review in progress</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-4">
-                  <div className="w-4 h-4 bg-green-500 rounded-full mt-1"></div>
-                  <div className="flex-1">
-                    <div className="flex justify-between items-center">
-                      <span className="font-semibold text-gray-900">Approved & Parts Ordered</span>
-                      <span className="text-sm text-gray-600">Expected: {new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toLocaleDateString('en-GB')}</span>
-                    </div>
-                    <p className="text-sm text-gray-600">Warranty claim approved, replacement parts have been ordered</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Technician Notes */}
-            {selectedWarrantyCase?.technicianNotes && (
-              <div className="space-y-3">
-                <h3 className="font-semibold text-lg border-b pb-2">Technician Notes</h3>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <p className="text-sm leading-relaxed">{selectedWarrantyCase.technicianNotes}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Manufacturer Response */}
-            {selectedWarrantyCase?.manufacturerResponse && (
-              <div className="space-y-3">
-                <h3 className="font-semibold text-lg border-b pb-2">Manufacturer Response</h3>
-                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                  <p className="text-sm leading-relaxed text-green-800">{selectedWarrantyCase.manufacturerResponse}</p>
-                </div>
-              </div>
-            )}
-
-          </div>
-          
-          <div className="flex justify-end gap-3 pt-6 border-t">
-            <Button variant="outline" onClick={() => setReportPreviewModalOpen(false)} className="px-6">
-              Close
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Update Details Modal */}
-      <Dialog open={updateDetailsModalOpen} onOpenChange={setUpdateDetailsModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader className="pb-6">
-            <DialogTitle className="text-xl font-semibold">Update Warranty Case Details</DialogTitle>
-            <DialogDescription className="text-base">
-              Edit information for warranty case <span className="font-mono font-medium">{selectedWarrantyCase?.id}</span>
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-8">
-            {/* Vehicle & Customer Information */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Vehicle Information */}
-              <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                    <Car className="h-4 w-4 text-white" />
-                  </div>
-                  <h4 className="font-semibold text-lg text-blue-900">Vehicle Information</h4>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex flex-col space-y-1">
-                    <Label className="text-sm font-medium text-blue-700">VIN Number</Label>
-                    <Input 
-                      value={updateForm.vehicleVin}
-                      onChange={(e) => setUpdateForm(prev => ({ ...prev, vehicleVin: e.target.value }))}
-                      className="font-mono"
-                      placeholder="Enter VIN number..."
-                    />
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <Label className="text-sm font-medium text-blue-700">Model</Label>
-                    <Select value={updateForm.vehicleModel} onValueChange={(value) => setUpdateForm(prev => ({ ...prev, vehicleModel: value }))}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select vehicle model..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="VF8 Plus">VF8 Plus</SelectItem>
-                        <SelectItem value="VF9 Premium">VF9 Premium</SelectItem>
-                        <SelectItem value="VF6 Standard">VF6 Standard</SelectItem>
-                        <SelectItem value="VF7 Eco">VF7 Eco</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Customer Information */}
-              <div className="bg-green-50 p-6 rounded-lg border border-green-200">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-                    <User className="h-4 w-4 text-white" />
-                  </div>
-                  <h4 className="font-semibold text-lg text-green-900">Customer Information</h4>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex flex-col space-y-1">
-                    <Label className="text-sm font-medium text-green-700">Full Name</Label>
-                    <Input 
-                      value={updateForm.customerName}
-                      onChange={(e) => setUpdateForm(prev => ({ ...prev, customerName: e.target.value }))}
-                      placeholder="Enter customer name..."
-                    />
-                  </div>
-                  <div className="flex flex-col space-y-1">
-                    <Label className="text-sm font-medium text-green-700">Phone Number</Label>
-                    <Input 
-                      value={updateForm.customerPhone}
-                      onChange={(e) => setUpdateForm(prev => ({ ...prev, customerPhone: e.target.value }))}
-                      placeholder="Enter phone number..."
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Case Status & Priority */}
-            <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center">
-                  <FileText className="h-4 w-4 text-white" />
-                </div>
-                <h4 className="font-semibold text-lg text-gray-900">Case Management</h4>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex flex-col space-y-1">
-                  <Label className="text-sm font-medium text-gray-700">Case Status</Label>
-                  <Select value={updateForm.status} onValueChange={(value) => setUpdateForm(prev => ({ ...prev, status: value }))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select status..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="submitted">Submitted</SelectItem>
-                      <SelectItem value="in-progress">In Progress</SelectItem>
-                      <SelectItem value="approved">Approved</SelectItem>
-                      <SelectItem value="rejected">Rejected</SelectItem>
-                      <SelectItem value="completed">Completed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col space-y-1">
-                  <Label className="text-sm font-medium text-gray-700">Priority Level</Label>
-                  <Select>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select priority..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="low">🟢 Low Priority</SelectItem>
-                      <SelectItem value="medium">🟡 Medium Priority</SelectItem>
-                      <SelectItem value="high">🔴 High Priority</SelectItem>
-                      <SelectItem value="urgent">🚨 Urgent</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-
-            {/* Diagnosis Update */}
-            <div className="bg-yellow-50 p-6 rounded-lg border border-yellow-200">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center">
-                  <Wrench className="h-4 w-4 text-white" />
-                </div>
-                <h4 className="font-semibold text-lg text-yellow-900">Diagnosis Update</h4>
-              </div>
-              <div className="space-y-3">
-                <div className="flex flex-col space-y-1">
-                  <Label className="text-sm font-medium text-yellow-700">Current Diagnosis</Label>
-                  <Textarea 
-                    value={updateForm.diagnosis}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, diagnosis: e.target.value }))}
-                    placeholder="Update diagnosis information..."
-                    className="min-h-24"
-                  />
-                </div>
-                <div className="flex flex-col space-y-1">
-                  <Label className="text-sm font-medium text-yellow-700">Additional Notes</Label>
-                  <Textarea 
-                    value={updateForm.additionalNotes}
-                    onChange={(e) => setUpdateForm(prev => ({ ...prev, additionalNotes: e.target.value }))}
-                    placeholder="Add any additional findings or updates..."
-                    className="min-h-20"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Components Update */}
-            <div className="bg-purple-50 p-6 rounded-lg border border-purple-200">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
-                  <Settings className="h-4 w-4 text-white" />
-                </div>
-                <h4 className="font-semibold text-lg text-purple-900">Component Status Update</h4>
-              </div>
-              <div className="space-y-3">
-                {selectedWarrantyCase?.components.map((component, index) => (
-                  <div key={index} className="bg-white p-4 rounded-lg border border-purple-200">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                      <div>
-                        <div className="font-semibold text-gray-900">{component.name}</div>
-                        <div className="text-sm text-gray-600">Quantity: {component.quantity}</div>
-                      </div>
-                      <div className="flex flex-col space-y-1">
-                        <Label className="text-xs font-medium text-purple-700">Component Status</Label>
-                        <Select defaultValue={component.status}>
-                          <SelectTrigger className="h-8">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="pending">Pending</SelectItem>
-                            <SelectItem value="approved">Approved</SelectItem>
-                            <SelectItem value="rejected">Rejected</SelectItem>
-                            <SelectItem value="shipped">Shipped</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="flex flex-col space-y-1">
-                        <Label className="text-xs font-medium text-purple-700">Update Quantity</Label>
-                        <Input 
-                          type="number" 
-                          defaultValue={component.quantity}
-                          className="h-8"
-                          min="1"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex justify-end gap-3 pt-6 border-t mt-8">
-            <Button 
-              variant="default" 
-              onClick={() => {
-                if (selectedWarrantyCase) {
-                  const updatedCase: WarrantyCase = {
-                    ...selectedWarrantyCase,
-                    vehicleVin: updateForm.vehicleVin,
-                    vehicleModel: updateForm.vehicleModel,
-                    customerName: updateForm.customerName,
-                    customerPhone: updateForm.customerPhone,
-                    status: updateForm.status as 'submitted' | 'approved' | 'rejected' | 'in-progress' | 'completed',
-                    diagnosis: updateForm.diagnosis
-                  };
-                  updateWarrantyCase(updatedCase);
-                  toast({ 
-                    title: "Details Updated", 
-                    description: `Warranty case ${selectedWarrantyCase.id} has been updated successfully` 
-                  });
-                  setUpdateDetailsModalOpen(false);
-                }
-              }}
-              className="px-6"
-            >
-              <Settings className="h-4 w-4 mr-2" />
-              Save Changes
-            </Button>
-            <Button variant="outline" onClick={() => setUpdateDetailsModalOpen(false)} className="px-6">
-              Cancel
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Removed unused warranty case modals that referenced deleted state variables */}
 
       {/* View Issue Diagnosis Modal */}
       <Dialog open={viewCaseLineModalOpen} onOpenChange={setViewCaseLineModalOpen}>
