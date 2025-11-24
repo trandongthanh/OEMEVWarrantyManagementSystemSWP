@@ -493,6 +493,7 @@ const WarrantyDashboard: React.FC = () => {
       });
       
       const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests?${queryParams}`, {
+        //gán queryparram ở status , status lấy ở dropdown
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -848,7 +849,7 @@ const WarrantyDashboard: React.FC = () => {
                     placeholder="Items per page"
                   />
                 </div>
-                
+                      {/* //dropdown status ne */}
                 <div className="flex-1">
                   <label className="text-sm font-medium mb-2 block">Status</label>
                   <select
