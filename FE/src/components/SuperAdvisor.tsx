@@ -22,6 +22,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 // API service function for creating processing record
 const createProcessingRecord = async (recordData: {
+  //tất cả thông tin để tạo một hồ sơ xử lý bảo hành.recordData là tham số duy nhất
   vin: string;
   odometer: number;
   guaranteeCases: { contentGuarantee: string }[];
@@ -40,10 +41,10 @@ const createProcessingRecord = async (recordData: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: JSON.stringify(recordData)
+    body: JSON.stringify(recordData) //chuyển object thành chuỗi JSON
   });
   
-  const result = await response.json();
+  const result = await response.json();  //chờ sv phản hồi
   
  
   
@@ -982,6 +983,7 @@ const SuperAdvisor = () => {
     customer?: any,
     odometerValue?: string,
     shouldCloseWarrantyDialog?: boolean
+    //dữ liệu lấy từ luồng sdt 
   }) => {
     // Xác định nguồn data - Fallback to state if options not provided
     const vehicle = options?.vehicle || vehicleSearchResult;
@@ -1361,10 +1363,11 @@ const SuperAdvisor = () => {
       }));
     }
   };
-
   // Handle evidence image upload
   const handleEvidenceImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    //changeEvent là báo chọn ô select kiểu input 
     const files = event.target.files;
+    //event.target là phần tử input
     if (!files || files.length === 0) return;
 
     setUploadingImage(true);
@@ -1418,12 +1421,20 @@ const SuperAdvisor = () => {
         if (response.ok) {
           const data = await response.json();
           uploadedUrls.push(data.secure_url);
+          //trỏ tới ảnh trc đó, đẩy vào ,
         } else {
           throw new Error(`Failed to upload ${file.name}`);
         }
       }
 
       if (uploadedUrls.length > 0) {
+//   Truyền một callback prev => ... để đảm bảo dùng state mới nhất (tránh race condition nếu nhiều lần cập nhật gần nhau).
+
+// [...] là spread operator:
+
+// ...prev giữ tất cả phần tử cũ trong state
+
+// ...uploadedUrls thêm các URL mới vừa upload
         setEvidenceImages(prev => [...prev, ...uploadedUrls]);
         toast({
           title: 'Success',
@@ -2355,6 +2366,7 @@ const SuperAdvisor = () => {
 
       if (result.status === 'success' && result.data?.record) {
         // Map vehicleProcessingRecordId to id for easier access
+        //tao bien recordData de sao chep du lieu tu api
         const recordData = {
           ...result.data.record,
           id: result.data.record.vehicleProcessingRecordId || result.data.record.id
@@ -2400,6 +2412,7 @@ const SuperAdvisor = () => {
       'REJECTED_BY_CUSTOMER'
     ];
 
+    //duyet qua tat ca caseline xem co caseline chua
     // Check all guarantee cases for their caselines
     for (const guaranteeCase of viewRecordData.guaranteeCases) {
       // If no caselines in this case, it's not ready
@@ -2769,10 +2782,22 @@ const SuperAdvisor = () => {
         {/* Warranty Records Section - Only show in warranty mode */}
         {searchMode === 'warranty' && (
           <Card className="shadow-lg">
+            <div className="flex items-center justify-between">
             <CardHeader>
               <CardTitle className="text-xl">Recent Warranty Records</CardTitle>
               <CardDescription>Manage warranty records and track their progress</CardDescription>
+               {/* Create Record Button - Show ONLY when warranty is valid AND vehicle has owner */}
+                          
+                      <Button
+                        onClick={() => handleCreateRecord()}
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Create Record
+                      </Button>
+                              
             </CardHeader>
+              </div>
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
