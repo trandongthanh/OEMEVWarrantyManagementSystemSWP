@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCircle, Save, Clock, FileText, Shield } from 'lucide-react';
+import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCircle, Save, Clock, FileText, Shield, Eye, Check } from 'lucide-react';
 
 
 // API Base URL
@@ -2733,8 +2733,7 @@ const SuperAdvisor = () => {
                               onClick={() => handleViewRecord(record)}
                               className="text-green-600 hover:bg-green-50"
                             >
-                              <FileText className="h-4 w-4 mr-1" />
-                              View Record
+                              <Eye className="h-4 w-4 mr-1" />
                             </Button>
                             <Button
                               variant="outline"
@@ -2742,9 +2741,9 @@ const SuperAdvisor = () => {
                               onClick={() => handleViewCaselines(record)}
                               className="text-blue-600 hover:bg-blue-50"
                             >
-                              <FileText className="h-4 w-4 mr-1" />
-                              View Diagnosis
+                              <Check className="h-4 w-4" />
                             </Button>
+                            {/* Delete Record,View Record */}
                             <Button
                               variant="outline"
                               size="sm"
