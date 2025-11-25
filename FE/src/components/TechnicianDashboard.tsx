@@ -34,6 +34,7 @@ import {
   LogOut,
   Camera,
   Eye,
+  Edit,
   Settings,
   Zap,
   Palette,
@@ -46,6 +47,7 @@ import {
   AlertCircle,
   RefreshCw,
   Package,
+  Trash,
   Users,
   Clock,
   CheckCircle,
@@ -452,6 +454,11 @@ const TechnicianDashboard = ({
     rejectionReason: ''
   });
 
+  // Delete Case Line modal state
+  const [deleteCaseLineModalOpen, setDeleteCaseLineModalOpen] = useState(false);
+  const [caseLineToDelete, setCaseLineToDelete] = useState<string | null>(null);
+  const [isDeletingCaseLine, setIsDeletingCaseLine] = useState(false);
+
 
 
   // State cho API data
@@ -789,6 +796,16 @@ const TechnicianDashboard = ({
       });
 
       if (!response.ok) {
+        // If 404, remove from local state as it was deleted
+        if (response.status === 404) {
+          setCreatedCaseLines(prev => prev.filter(cl => cl.caseLineId !== caseLineId));
+          toast({
+            title: 'Case Line Not Found',
+            description: 'This case line has been deleted and will be removed from the list.',
+            variant: 'destructive'
+          });
+          return null;
+        }
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -966,6 +983,79 @@ const TechnicianDashboard = ({
       }
     } finally {
       setIsUpdatingCaseLine(false);
+    }
+  }, []);
+
+  // Delete case line function
+  const deleteCaseLine = useCallback(async (caseLineId: string) => {
+    try {
+      setIsDeletingCaseLine(true);
+      const token = getAuthToken();
+      if (!token) {
+        console.error('No token found');
+        toast({
+          title: 'Error',
+          description: 'No authentication token found',
+          variant: 'destructive'
+        });
+        return false;
+      }
+
+      const response = await axios.delete(
+        `https://dongthanhswp.space/api/v1/case-lines/${caseLineId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.status === 200 || response.status === 204) {
+        // Remove from local state
+        setCreatedCaseLines(prev => prev.filter(cl => cl.caseLineId !== caseLineId));
+        
+        toast({
+          title: 'Success',
+          description: 'Case line deleted successfully',
+        });
+        
+        setDeleteCaseLineModalOpen(false);
+        setCaseLineToDelete(null);
+        return true;
+      } else {
+        toast({
+          title: 'Error',
+          description: 'Failed to delete case line',
+          variant: 'destructive'
+        });
+        return false;
+      }
+    } catch (error) {
+      console.error('Error deleting case line:', error);
+      
+      if (error instanceof Error) {
+        const axiosError = error as any;
+        if (axiosError.response) {
+          console.error('API Error Response:', axiosError.response.data);
+          console.error('API Error Status:', axiosError.response.status);
+          
+          toast({
+            title: 'Error',
+            description: axiosError.response.data?.message || 'Failed to delete case line',
+            variant: 'destructive'
+          });
+        } else {
+          toast({
+            title: 'Error',
+            description: 'Failed to delete case line',
+            variant: 'destructive'
+          });
+        }
+      }
+      return false;
+    } finally {
+      setIsDeletingCaseLine(false);
     }
   }, []);
 
@@ -1844,12 +1934,8 @@ const TechnicianDashboard = ({
         description: `Case line created successfully! You can create another case line for this or another guarantee case.`,
       });
 
-      // Switch user to the Issue Diagnosis tab so they can see the created case line
-      try {
-        setActiveTab('issue-diagnosis');
-      } catch (err) {
-        console.warn('Failed to switch to Issue Diagnosis tab automatically', err);
-      }
+      // Do not automatically switch tabs after creating a case line.
+      // Keeping the user on the current tab (Processing Records) avoids unexpected navigation.
 
       // Reset form but keep modal open and keep selected guarantee case
       setCaseLineForm({
@@ -2309,8 +2395,20 @@ const TechnicianDashboard = ({
                                       variant="outline"
                                       size="sm"
                                       onClick={async () => {
+                                        // Validate case line ID before fetching
+                                        const caseLineId = caseLine.id;
+                                        if (!caseLineId || typeof caseLineId !== 'string' || caseLineId.trim() === '') {
+                                          console.error('Invalid case line ID:', caseLine);
+                                          toast({
+                                            title: 'Error',
+                                            description: 'Invalid case line ID',
+                                            variant: 'destructive'
+                                          });
+                                          return;
+                                        }
+                                        
                                         // Fetch full case line details from API
-                                        const details = await fetchCaseLineDetails(caseLine.id);
+                                        const details = await fetchCaseLineDetails(caseLineId);
                                         if (details) {
                                           setSelectedCaseLine(details as any);
                                           setViewCaseLineModalOpen(true);
@@ -2500,13 +2598,99 @@ const TechnicianDashboard = ({
                             <TableCell>{formatSafeDate(cl.createdAt)}</TableCell>
                             <TableCell>
                               <div className="flex gap-2">
-                                <Button size="sm" variant="outline" onClick={() => navigator.clipboard?.writeText(cl.caseLineId || '')} title="Copy ID">Copy</Button>
-                                <Button size="sm" onClick={() => {
-                                  // switch to processing-records tab and show PROCESSING filter so user can manage
-                                  setActiveTab('processing-records');
-                                  setActiveProcessingStatus('PROCESSING');
-                                }}>
-                                  Manage
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={async () => {
+                                    try {
+                                      const id = cl.caseLineId || '';
+                                      if (!id) {
+                                        toast({ title: 'Error', description: 'Invalid case line id', variant: 'destructive' });
+                                        return;
+                                      }
+
+                                      // Load full details and open view modal
+                                      const details = await fetchCaseLineDetails(id);
+                                      if (details) {
+                                        setSelectedCaseLine(details as any);
+                                        setViewCaseLineModalOpen(true);
+                                      } else {
+                                        toast({ title: 'Not found', description: 'Case line details not found', variant: 'destructive' });
+                                      }
+                                    } catch (err) {
+                                      console.error('Failed to load case line details from Issue Diagnosis tab', err);
+                                      toast({ title: 'Error', description: 'Failed to load case line details', variant: 'destructive' });
+                                    }
+                                  }}
+                                  title="View Case"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={async () => {
+                                    // Open Update modal pre-filled with case line details
+                                    try {
+                                      const id = cl.caseLineId || '';
+                                      if (!id) {
+                                        toast({ title: 'Error', description: 'Invalid case line id', variant: 'destructive' });
+                                        return;
+                                      }
+                                      const details = await fetchCaseLineDetails(id);
+                                      if (!details) {
+                                        toast({ title: 'Not found', description: 'Case line details not found', variant: 'destructive' });
+                                        return;
+                                      }
+
+                                      setSelectedCaseLine(details as any);
+
+                                      const typeComponentId = details.typeComponentId || details.typeComponent?.typeComponentId || cl.componentId || '';
+
+                                      const formData = {
+                                        correctionText: details.correctionText || '',
+                                        typeComponentId: typeComponentId,
+                                        quantity: details.quantity || 0,
+                                        warrantyStatus: details.warrantyStatus || 'ELIGIBLE',
+                                        rejectionReason: details.rejectionReason || ''
+                                      };
+
+                                      if (typeComponentId) {
+                                        setUpdateComponentSearchQuery(details.componentName || details.typeComponent?.name || '');
+                                      } else {
+                                        setUpdateComponentSearchQuery('');
+                                      }
+
+                                      setUpdateCaseLineForm(formData);
+
+                                      // If we can find the record id, fetch compatible components
+                                      const recordId = details.guaranteeCase?.vehicleProcessingRecord?.vehicleProcessingRecordId || details.guaranteeCase?.vehicleProcessingRecord?.recordId || details.guaranteeCase?.vehicleProcessingRecord?.id;
+                                      if (recordId) {
+                                        await fetchCompatibleComponents(recordId.toString(), '');
+                                      }
+
+                                      setUpdateCaseLineModalOpen(true);
+                                    } catch (err) {
+                                      console.error('Failed to open update modal for case line', err);
+                                      toast({ title: 'Error', description: 'Failed to prepare update form', variant: 'destructive' });
+                                    }
+                                  }}
+                                  title="Update"
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => {
+                                    setCaseLineToDelete(cl.caseLineId || '');
+                                    setDeleteCaseLineModalOpen(true);
+                                  }}
+                                  title="Delete"
+                                >
+                                  <Trash className="h-4 w-4" />
                                 </Button>
                               </div>
                             </TableCell>
@@ -3223,136 +3407,7 @@ const TechnicianDashboard = ({
                           </div>
                         </div>
                         
-                        {/* Case Lines nested under Guarantee Case */}
-                        {caseLinesForCase.length > 0 ? (
-                          <div className="p-4 space-y-3 bg-white">
-                            {caseLinesForCase.map((caseLine, clIndex) => (
-                              <div key={caseLine.caseLineId} className="border border-slate-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                                <div className="flex items-start justify-between mb-3">
-                                  <div className="flex items-center gap-2">
-                                    <span className="flex items-center justify-center w-6 h-6 bg-blue-600 text-white text-xs font-bold rounded-full">
-                                      {clIndex + 1}
-                                    </span>
-                                    {/* caseLine ID hidden from view per UX request */}
-                                  </div>
-                                  <Badge 
-                                    variant={
-                                      caseLine.warrantyStatus === 'ELIGIBLE' ? 'default' : 
-                                      caseLine.status === 'rejected' ? 'destructive' : 
-                                      'secondary'
-                                    }
-                                    className="text-xs"
-                                  >
-                                    {caseLine.warrantyStatus || caseLine.status}
-                                  </Badge>
-                                </div>
-                                
-                                {/* Correction only - diagnosis removed from UI */}
-                                <div className="mb-3">
-                                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                                    <p className="text-xs font-semibold text-green-700 mb-1">Correction</p>
-                                    <p className="text-sm text-slate-800">{caseLine.correctionText || 'N/A'}</p>
-                                  </div>
-                                </div>
-                                
-                                {/* Component Info */}
-                                {caseLine.componentId && (
-                                  <div className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg mb-3">
-                                    <div className="p-2 bg-blue-100 rounded">
-                                      <Package className="h-4 w-4 text-blue-600" />
-                                    </div>
-                                    <div className="flex-1">
-                                      <p className="text-xs text-slate-600">Component</p>
-                                      <p className="text-sm font-semibold text-slate-900">
-                                        Type Component ID: {caseLine.componentId}
-                                      </p>
-                                      <p className="text-xs text-slate-500">Quantity: {caseLine.quantity}</p>
-                                    </div>
-                                  </div>
-                                )}
-                                
-                                {/* Evidence Photos */}
-                                {caseLine.evidenceImageUrls && caseLine.evidenceImageUrls.length > 0 && (
-                                  <div className="space-y-2">
-                                    <div className="flex items-center gap-2">
-                                      <Camera className="h-4 w-4 text-slate-600" />
-                                      <p className="text-xs font-semibold text-slate-700">Evidence Photos ({caseLine.evidenceImageUrls.length})</p>
-                                    </div>
-                                    <div className="grid grid-cols-4 gap-2">
-                                      {caseLine.evidenceImageUrls.map((url, imgIndex) => (
-                                        <div 
-                                          key={imgIndex}
-                                          className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 cursor-pointer hover:opacity-80 transition-opacity"
-                                          onClick={() => window.open(url, '_blank')}
-                                        >
-                                          <img 
-                                            src={url} 
-                                            alt={`Evidence ${imgIndex + 1}`}
-                                            className="w-full h-full object-cover"
-                                          />
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                                
-                                {/* View Details Button */}
-                                <div className="mt-3 pt-3 border-t border-slate-200">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="w-full"
-                                    onClick={() => {
-                                      // Validate case line ID before fetching
-                                      const caseLineId = caseLine.caseLineId;
-                                      if (!caseLineId || caseLineId.trim() === '') {
-                                        console.error('❌ Invalid case line ID:', caseLine);
-                                        toast({
-                                          title: "Invalid Case Line",
-                                          description: "This case line has no valid ID and cannot be viewed.",
-                                          variant: "destructive"
-                                        });
-                                        return;
-                                      }
-                                      
-                                      console.log('📋 Viewing case line with ID:', caseLineId);
-                                      
-                                      // Convert to CaseLine format for view modal
-                                      const formattedCaseLine: CaseLine = {
-                                        id: caseLineId,
-                                        caseId: caseLine.guaranteeCaseId,
-                                        damageLevel: 'medium',
-                                        repairPossibility: 'repairable',
-                                        warrantyDecision: caseLine.warrantyStatus === 'ELIGIBLE' ? 'approved' : 'rejected',
-                                        // Use correctionText as primary note now that diagnosis is removed
-                                        technicianNotes: caseLine.correctionText || '',
-                                        photos: caseLine.evidenceImageUrls || [],
-                                        evidenceImageUrls: caseLine.evidenceImageUrls || [],
-                                        createdDate: formatSafeDate(caseLine.createdAt),
-                                        status: caseLine.status ?? 'submitted',
-                                        correctionText: caseLine.correctionText,
-                                        componentId: caseLine.componentId,
-                                        quantity: caseLine.quantity,
-                                        warrantyStatus: caseLine.warrantyStatus,
-                                        diagnosticTechId: caseLine.techId,
-                                        updatedAt: caseLine.updatedAt
-                                      };
-                                      handleViewCaseLine(formattedCaseLine);
-                                    }}
-                                  >
-                                    <Eye className="h-3 w-3 mr-2" />
-                                    View Full Details
-                                  </Button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="p-6 text-center text-slate-500 bg-slate-50">
-                            <FileText className="h-10 w-10 text-slate-400 mx-auto mb-2" />
-                            <p className="text-sm">No case lines created for this guarantee case yet.</p>
-                          </div>
-                        )}
+                        {/* Case Lines nested under Guarantee Case removed per UX request */}
                       </div>
                     );
                   })}
@@ -3366,44 +3421,25 @@ const TechnicianDashboard = ({
             <Button variant="outline" onClick={() => setViewCaseModalOpen(false)}>Close</Button>
 
             {selectedRecord && selectedRecord.status !== 'COMPLETED' && selectedRecord.status !== 'WAITING_CUSTOMER_APPROVAL' && (() => {
-              // Check if ALL guarantee cases have at least one case line
+              // Compute guarantee cases and whether any created case lines exist for this record
               const guaranteeCases = selectedRecord.guaranteeCases || [];
+              
+              // Check if ALL guarantee cases have at least one case line
               const allGuaranteeCasesHaveCaseLines = guaranteeCases.length > 0 && guaranteeCases.every(gc => 
                 createdCaseLines.some(cl => cl.guaranteeCaseId === gc.guaranteeCaseId)
               );
               
-              // Count how many guarantee cases are missing case lines
               const guaranteeCasesWithoutCaseLines = guaranteeCases.filter(gc =>
                 !createdCaseLines.some(cl => cl.guaranteeCaseId === gc.guaranteeCaseId)
               );
-              
+
+              // Any created case lines that belong to this record's guarantee cases
+              const availableCaseLines = createdCaseLines.filter(cl =>
+                guaranteeCases.some(gc => gc.guaranteeCaseId === cl.guaranteeCaseId)
+              );
+
               return (
                 <>
-                  <Button 
-                    variant="default" 
-                    onClick={() => {
-                      // Check if there are any case lines
-                      const availableCaseLines = createdCaseLines.filter(cl => 
-                        guaranteeCases.some(gc => gc.guaranteeCaseId === cl.guaranteeCaseId)
-                      );
-                      
-                      if (availableCaseLines.length === 0) {
-                        toast({
-                          title: 'No Case Lines',
-                          description: 'Please create a case line first before updating.',
-                          variant: 'destructive'
-                        });
-                        return;
-                      }
-                      
-                      // Open case line selection modal
-                      setSelectCaseLineModalOpen(true);
-                    }}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    <Settings className="h-4 w-4 mr-2" />
-                    Update
-                  </Button>
                   <Button
                     className="bg-blue-600 hover:bg-blue-700"
                     onClick={async () => {
@@ -3414,6 +3450,8 @@ const TechnicianDashboard = ({
                         toast({ title: 'Missing Record ID', description: 'Cannot complete record: ID not found', variant: 'destructive' });
                         return;
                       }
+
+                      // Require ALL guarantee cases to have at least one case line
                       if (!allGuaranteeCasesHaveCaseLines) {
                         const missingCount = guaranteeCasesWithoutCaseLines.length;
                         const missingCases = guaranteeCasesWithoutCaseLines.map((gc, idx) => 
@@ -3421,12 +3459,13 @@ const TechnicianDashboard = ({
                         ).join('\n');
                         
                         toast({ 
-                          title: 'Cannot Complete Record', 
-                          description: `All guarantee cases must have at least one case line. Missing case lines for ${missingCount} guarantee case(s):\n\n${missingCases}`, 
-                          variant: 'destructive' 
+                          title: 'Cannot Complete Record',
+                          description: `All guarantee cases must have at least one case line. Missing case lines for ${missingCount} guarantee case(s):\n\n${missingCases}`,
+                          variant: 'destructive'
                         });
                         return;
                       }
+
                       try {
                         await completeProcessingRecord(candidateId);
                       } catch (err) {
@@ -5040,6 +5079,58 @@ const TechnicianDashboard = ({
             </>
             );
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Case Line Confirmation Modal */}
+      <Dialog open={deleteCaseLineModalOpen} onOpenChange={setDeleteCaseLineModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold text-red-600">Delete Case Line</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this case line? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="py-4">
+            <p className="text-sm text-slate-600">
+              Case Line ID: <span className="font-mono font-semibold">{caseLineToDelete}</span>
+            </p>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteCaseLineModalOpen(false);
+                setCaseLineToDelete(null);
+              }}
+              disabled={isDeletingCaseLine}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (caseLineToDelete) {
+                  await deleteCaseLine(caseLineToDelete);
+                }
+              }}
+              disabled={isDeletingCaseLine}
+            >
+              {isDeletingCaseLine ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash className="h-4 w-4 mr-2" />
+                  Delete
+                </>
+              )}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
