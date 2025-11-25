@@ -1844,6 +1844,13 @@ const TechnicianDashboard = ({
         description: `Case line created successfully! You can create another case line for this or another guarantee case.`,
       });
 
+      // Switch user to the Issue Diagnosis tab so they can see the created case line
+      try {
+        setActiveTab('issue-diagnosis');
+      } catch (err) {
+        console.warn('Failed to switch to Issue Diagnosis tab automatically', err);
+      }
+
       // Reset form but keep modal open and keep selected guarantee case
       setCaseLineForm({
         diagnosisText: '',
@@ -2143,8 +2150,9 @@ const TechnicianDashboard = ({
       <div className="container mx-auto px-6 py-6">
       
   <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
                       <TabsTrigger value="processing-records">Processing Records</TabsTrigger>
+                      <TabsTrigger value="issue-diagnosis">Issue Diagnosis</TabsTrigger>
                       <TabsTrigger value="assigned-tasks">Assigned Tasks</TabsTrigger>
                       <TabsTrigger value="work-schedules">Work Schedules</TabsTrigger>
                     </TabsList>
@@ -2437,6 +2445,75 @@ const TechnicianDashboard = ({
                       })()}
                     </TableBody>
                   </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Issue Diagnosis Tab - show created case lines (no modal) */}
+          <TabsContent value="issue-diagnosis">
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Settings className="h-5 w-5" />
+                    Issue Diagnosis
+                  </CardTitle>
+                  <CardDescription>
+                    Case lines you created from the Create Issue Diagnosis form.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {createdCaseLines.length === 0 ? (
+                    <div className="text-center py-8 text-slate-500">
+                      <AlertCircle className="h-8 w-8 mx-auto mb-2 text-slate-300" />
+                      <p>No created case lines yet</p>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Case Line ID</TableHead>
+                          <TableHead>Guarantee Case</TableHead>
+                          <TableHead>Component ID</TableHead>
+                          <TableHead>Quantity</TableHead>
+                          <TableHead>Warranty Status</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Created At</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {createdCaseLines.map((cl) => (
+                          <TableRow key={cl.caseLineId}>
+                            <TableCell className="font-mono text-xs">{cl.caseLineId?.substring(0,8)}...</TableCell>
+                            <TableCell>{cl.guaranteeCaseId || 'N/A'}</TableCell>
+                            <TableCell className="font-mono text-sm">{cl.componentId || '—'}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="font-semibold">{cl.quantity ?? 0}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={cl.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}>{cl.warrantyStatus || 'N/A'}</Badge>
+                            </TableCell>
+                            <TableCell>{cl.status || 'N/A'}</TableCell>
+                            <TableCell>{formatSafeDate(cl.createdAt)}</TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="outline" onClick={() => navigator.clipboard?.writeText(cl.caseLineId || '')} title="Copy ID">Copy</Button>
+                                <Button size="sm" onClick={() => {
+                                  // switch to processing-records tab and show PROCESSING filter so user can manage
+                                  setActiveTab('processing-records');
+                                  setActiveProcessingStatus('PROCESSING');
+                                }}>
+                                  Manage
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   )}
                 </CardContent>
               </Card>
