@@ -1495,20 +1495,7 @@ const TechnicianDashboard = ({
         }
       });
 
-  const caseReservations = reservationsResponse.data?.data?.reservations || [];
-
-      // Check if there are any reservations
-      // if (caseReservations.length === 0) {
-      //   toast({
-      //     title: 'Warning',
-      //     description: 'No reservations found for this case line',
-      //     variant: 'destructive'
-      //   });
-      //   setCompletingCaseLineId(null);
-      //   return;
-      // }
-
-      // Check if all reservations are installed
+      const caseReservations = reservationsResponse.data?.data?.reservations || [];
       const allInstalled = caseReservations.every(r => r.status === 'INSTALLED');
       const notInstalledCount = caseReservations.filter(r => r.status !== 'INSTALLED').length;
 
