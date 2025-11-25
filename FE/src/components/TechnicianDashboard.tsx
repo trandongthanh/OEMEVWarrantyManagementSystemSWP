@@ -394,7 +394,6 @@ const TechnicianDashboard = ({
   // Processing Records View states
   const [selectedRecord, setSelectedRecord] = useState<ProcessingRecord | null>(null);
   const [viewCaseModalOpen, setViewCaseModalOpen] = useState(false);
-  const [viewReportModalOpen, setViewReportModalOpen] = useState(false);
   const [createIssueDiagnosisModalOpen, setCreateIssueDiagnosisModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Loading state for completing a processing record
@@ -442,7 +441,6 @@ const TechnicianDashboard = ({
 
   // Update Case Line modal state
   const [updateCaseLineModalOpen, setUpdateCaseLineModalOpen] = useState(false);
-  const [selectCaseLineModalOpen, setSelectCaseLineModalOpen] = useState(false);
   const [isUpdatingCaseLine, setIsUpdatingCaseLine] = useState(false);
   const [updateComponentSearchQuery, setUpdateComponentSearchQuery] = useState('');
   const [updateSelectedComponentWarranty, setUpdateSelectedComponentWarranty] = useState<boolean | null>(null);
@@ -3472,118 +3470,7 @@ const TechnicianDashboard = ({
       </Dialog>
 
       {/* Select Case Line Modal */}
-      <Dialog open={selectCaseLineModalOpen} onOpenChange={setSelectCaseLineModalOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-semibold">Select Case Line to Update</DialogTitle>
-            <DialogDescription>
-              Choose a case line from the list below to update its information
-            </DialogDescription>
-          </DialogHeader>
 
-          <div className="space-y-3 py-4">
-            {selectedRecord && selectedRecord.guaranteeCases && selectedRecord.guaranteeCases.map((guaranteeCase, gcIndex) => {
-              const caseLinesForThisCase = createdCaseLines.filter(cl => 
-                cl.guaranteeCaseId === guaranteeCase.guaranteeCaseId
-              );
-
-              if (caseLinesForThisCase.length === 0) return null;
-
-              return (
-                <div key={guaranteeCase.guaranteeCaseId} className="border rounded-lg p-4 bg-slate-50">
-                  <h4 className="font-semibold text-sm mb-3 text-slate-700">
-                    Guarantee Case #{gcIndex + 1}: {guaranteeCase.contentGuarantee?.substring(0, 50)}...
-                  </h4>
-                  <div className="space-y-2">
-                    {caseLinesForThisCase.map((caseLine) => (
-                      <div 
-                        key={caseLine.caseLineId}
-                        className="bg-white border rounded-lg p-3 hover:border-blue-500 hover:shadow-md transition-all cursor-pointer"
-                        onClick={async () => {
-                          console.log('Selected case line:', caseLine);
-                          
-                          // Fetch full case line details
-                          const details = await fetchCaseLineDetails(caseLine.caseLineId);
-                          if (details) {
-                            setSelectedCaseLine(details as any);
-                            
-                            // Pre-fill form - get typeComponentId from multiple possible sources
-                            const typeComponentId = details.typeComponentId 
-                              || details.typeComponent?.typeComponentId 
-                              || caseLine.componentId 
-                              || '';
-                            
-                            console.log('Type Component ID:', typeComponentId);
-                            
-                            const formData = {
-                              correctionText: details.correctionText || '',
-                              typeComponentId: typeComponentId,
-                              quantity: details.quantity || 0,
-                              warrantyStatus: details.warrantyStatus || 'ELIGIBLE',
-                              rejectionReason: details.rejectionReason || ''
-                            };
-                            
-                            console.log('Form data to be filled:', formData);
-                            
-                            // Set component name for display only if typeComponentId exists
-                            if (typeComponentId) {
-                              setUpdateComponentSearchQuery(details.componentName || details.typeComponent?.name || '');
-                            } else {
-                              // Clear component search if no component assigned
-                              setUpdateComponentSearchQuery('');
-                            }
-                            
-                            setUpdateCaseLineForm(formData);
-                            
-                            // Load compatible components for this record
-                            if (selectedRecord?.recordId) {
-                              await fetchCompatibleComponents(selectedRecord.recordId, '');
-                            }
-                            
-                            setSelectCaseLineModalOpen(false);
-                            setUpdateCaseLineModalOpen(true);
-                          }
-                        }}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <p className="font-mono text-xs text-slate-600 mb-1">
-                              ID: {caseLine.caseLineId?.substring(0, 12)}...
-                            </p>
-                            <p className="text-sm font-medium text-slate-900">
-                              Component: {caseLine.componentId || 'N/A'}
-                            </p>
-                            <p className="text-xs text-slate-600 mt-1">
-                              Correction: {caseLine.correctionText?.substring(0, 60)}...
-                            </p>
-                          </div>
-                          <div className="flex flex-col items-end gap-2">
-                            <Badge variant={caseLine.status === 'SUBMITTED' ? 'default' : 'secondary'}>
-                              {caseLine.status}
-                            </Badge>
-                            <Badge variant={caseLine.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}>
-                              {caseLine.warrantyStatus}
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={() => setSelectCaseLineModalOpen(false)}
-            >
-              Cancel
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Update Case Line Modal */}
       <Dialog open={updateCaseLineModalOpen} onOpenChange={setUpdateCaseLineModalOpen}>
@@ -3928,112 +3815,7 @@ const TechnicianDashboard = ({
       </Dialog>
 
       {/* View Report Modal from Processing Records */}
-      <Dialog open={viewReportModalOpen} onOpenChange={setViewReportModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader className="pb-4">
-            <DialogTitle className="text-xl font-semibold">Warranty Report Preview</DialogTitle>
-            <DialogDescription className="text-sm text-muted-foreground">
-              Generated processing report for VIN {selectedRecord?.vin}
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedRecord && (
-            <div className="space-y-6">
-              <div className="text-center py-4 border-b">
-                <h2 className="text-2xl font-bold text-blue-600">Warranty Report</h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  📅 Generated on {new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })} at {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                </p>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="bg-blue-500 text-white rounded-full p-1.5">
-                      <FileText className="h-4 w-4" />
-                    </div>
-                    <h3 className="font-semibold text-blue-700">Case Information</h3>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Case ID:</span>
-                      <span className="font-semibold text-blue-600">{(selectedRecord?.guaranteeCases?.[0]?.guaranteeCaseId as string | undefined)?.substring?.(0, 8) ?? 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Status:</span>
-                      <Badge variant={getStatusBadgeVariant(selectedRecord.status)}>{getStatusLabel(selectedRecord.status)}</Badge>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Created Date:</span>
-                      <span className="font-medium">{formatDate(selectedRecord.checkInDate)}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="bg-green-500 text-white rounded-full p-1.5">
-                      <Car className="h-4 w-4" />
-                    </div>
-                    <h3 className="font-semibold text-green-700">Vehicle Information</h3>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">VIN:</span>
-                      <span className="font-semibold font-mono">{selectedRecord.vin}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Model:</span>
-                      <span className="font-medium">{selectedRecord.vehicle.model.name}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Mileage:</span>
-                      <span className="font-medium">{selectedRecord.odometer.toLocaleString()} km</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-cyan-50 p-4 rounded-lg border border-cyan-200">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="bg-cyan-500 text-white rounded-full p-1.5">
-                    <Wrench className="h-4 w-4" />
-                  </div>
-                  <h3 className="font-semibold text-cyan-700">Service Center Information</h3>
-                </div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Technician:</span>
-                    <p className="font-medium">{selectedRecord.mainTechnician.name}</p>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Check-in Date:</span>
-                    <p className="font-medium">{formatDate(selectedRecord.checkInDate)}</p>
-                  </div>
-                </div>
-              </div>
-
-              { (selectedRecord?.guaranteeCases?.length ?? 0) > 0 && (
-                <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="bg-orange-500 text-white rounded-full p-1.5">
-                      <AlertCircle className="h-4 w-4" />
-                    </div>
-                    <h3 className="font-semibold text-orange-700">Diagnosis Report</h3>
-                  </div>
-                  <p className="text-sm">{selectedRecord.guaranteeCases[0]?.contentGuarantee}</p>
-                </div>
-              )}
-            </div>
-          )}
-          
-          <div className="flex justify-end pt-4 border-t">
-            <Button onClick={() => setViewReportModalOpen(false)}>
-              Close
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Create Issue Diagnosis Modal from Processing Records */}
       <Dialog open={createIssueDiagnosisModalOpen} onOpenChange={(open) => {
