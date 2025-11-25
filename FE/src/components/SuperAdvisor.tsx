@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCircle, Save, Clock, FileText, Shield } from 'lucide-react';
+import { Search, LogOut, Plus, Edit, Wrench, CheckCircle, Car, Trash2, User, XCircle, Save, Clock, FileText, Shield, Eye, Check } from 'lucide-react';
 
 
 // API Base URL
@@ -35,10 +35,6 @@ const createProcessingRecord = async (recordData: {
 }) => {
   const token = localStorage.getItem("ev_warranty_token");
   
-  console.log('🔍 createProcessingRecord called with data:', recordData);
-  console.log('🔑 Token exists:', !!token);
-  console.log('🔑 Token length:', token?.length);
-  
   const response = await fetch(`${API_BASE_URL}/processing-records`, {
     method: 'POST',
     headers: {
@@ -48,18 +44,12 @@ const createProcessingRecord = async (recordData: {
     body: JSON.stringify(recordData) //chuyển object thành chuỗi JSON
   });
   
-  console.log('📡 API Response status:', response.status);
-  console.log('📡 API Response headers:', Object.fromEntries(response.headers.entries()));
-  
   const result = await response.json();  //chờ sv phản hồi
-  
-  console.log('📦 API Response data:', result);
   
  
   
   // Check for API errors
   if (!response.ok || result.status === 'error') {
-    console.error('❌ API Error:', result);
     throw new Error(result.message || 'API call failed');
   }
   
@@ -249,6 +239,24 @@ const SuperAdvisor = () => {
   const [warrantyStatus, setWarrantyStatus] = useState<'valid' | 'expired' | null>(null);
   const [warrantyDetails, setWarrantyDetails] = useState(null);
 
+  // Edit Record states
+  const [showEditRecordDialog, setShowEditRecordDialog] = useState(false);
+  const [editRecordForm, setEditRecordForm] = useState({
+    id: '',
+    vin: '',
+    odometer: '',
+    guaranteeCases: [{ contentGuarantee: '' }],
+    visitorInfo: {
+      fullName: '',
+      email: '',
+      phone: ''
+    }
+  });
+  const [isUpdatingRecord, setIsUpdatingRecord] = useState(false);
+
+  // Create Record Dialog states (standalone - không cần warranty check)
+  const [showStandaloneCreateDialog, setShowStandaloneCreateDialog] = useState(false);
+
   // States for customer vehicle warranty check in phone mode
   const [selectedVehicleForWarranty, setSelectedVehicleForWarranty] = useState<any>(null);
   const [vehicleOdometer, setVehicleOdometer] = useState('');
@@ -257,6 +265,11 @@ const SuperAdvisor = () => {
   const [newVehicleVin, setNewVehicleVin] = useState('');
 
   const [records, setRecords] = useState<WarrantyRecord[]>([]);
+
+  // Delete record dialog states
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<WarrantyRecord | null>(null);
+  const [isDeletingRecord, setIsDeletingRecord] = useState(false);
 
   // Helper Functions
   // Validate record - customerName is optional for new records (will be fetched from vehicle owner)
@@ -2512,6 +2525,320 @@ const SuperAdvisor = () => {
     }
   };
 
+  // Handle delete record
+  const handleDeleteRecord = async (record: WarrantyRecord) => {
+    setRecordToDelete(record);
+    setShowDeleteDialog(true);
+  };
+
+  // Confirm delete record
+  const confirmDeleteRecord = async () => {
+    if (!recordToDelete) return;
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'Authentication token not found',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/processing-records/${recordToDelete.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete record');
+      }
+
+      toast({
+        title: 'Success',
+        description: 'Warranty record deleted successfully',
+      });
+
+      // Refresh the records list
+      await loadProcessingRecords();
+
+      // Close dialog
+      setShowDeleteDialog(false);
+      setRecordToDelete(null);
+
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to delete record',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Handle edit record - open dialog with pre-filled data
+  const handleEditRecord = async (record: WarrantyRecord) => {
+    try {
+      // Fetch full record details first
+      const token = localStorage.getItem('ev_warranty_token');
+      const response = await fetch(`${API_BASE_URL}/processing-records/${record.id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch record details');
+      
+      const result = await response.json();
+      const fullRecord = result.data?.processingRecord;
+
+      // Pre-fill form with record data
+      setEditRecordForm({
+        id: record.id,
+        vin: fullRecord?.vehicleProcessingRecord?.vin || record.vinNumber || '',
+        odometer: fullRecord?.vehicleProcessingRecord?.odometer?.toString() || '',
+        guaranteeCases: fullRecord?.guaranteeCases?.map((gc: any) => ({
+          contentGuarantee: gc.contentGuarantee || ''
+        })) || [{ contentGuarantee: '' }],
+        visitorInfo: {
+          fullName: fullRecord?.guest?.fullName || '',
+          email: fullRecord?.guest?.email || '',
+          phone: fullRecord?.guest?.phone || ''
+        }
+      });
+
+      setShowEditRecordDialog(true);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to load record details',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Handle update record
+  const handleUpdateRecord = async () => {
+    try {
+      setIsUpdatingRecord(true);
+
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'Authentication token not found',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Validate form
+      if (!editRecordForm.vin || !editRecordForm.odometer) {
+        toast({
+          title: 'Validation Error',
+          description: 'VIN and odometer are required',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      if (editRecordForm.guaranteeCases.length === 0 || !editRecordForm.guaranteeCases[0].contentGuarantee) {
+        toast({
+          title: 'Validation Error',
+          description: 'At least one guarantee case is required',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      const updateData = {
+        vin: editRecordForm.vin,
+        odometer: parseInt(editRecordForm.odometer),
+        guaranteeCases: editRecordForm.guaranteeCases.filter(gc => gc.contentGuarantee.trim() !== ''),
+        visitorInfo: editRecordForm.visitorInfo
+      };
+
+      const response = await fetch(`${API_BASE_URL}/processing-records/${editRecordForm.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updateData)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update record');
+      }
+
+      toast({
+        title: 'Success',
+        description: 'Record updated successfully'
+      });
+
+      // Refresh records list
+      await loadProcessingRecords();
+
+      // Close dialog
+      setShowEditRecordDialog(false);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to update record',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsUpdatingRecord(false);
+    }
+  };
+
+  // Open standalone create dialog
+  const handleOpenStandaloneCreate = () => {
+    // Reset form
+    setWarrantyRecordForm({
+      vin: '',
+      odometer: '',
+      purchaseDate: '',
+      customerName: '',
+      customerPhone: '',
+      cases: [],
+      visitorFullName: '',
+      visitorPhone: '',
+      customerEmail: ''
+    });
+    setWarrantyRecordCaseText('');
+    setEvidenceImages([]);
+    setShowStandaloneCreateDialog(true);
+  };
+
+  // Handle evidence image upload (if not exists)
+  const handleEvidenceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingImage(true);
+
+    try {
+      const uploadPromises = Array.from(files).map(async (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', 'ml_default'); // Replace with your Cloudinary upload preset
+
+        const response = await fetch(
+          'https://api.cloudinary.com/v1_1/dkqomtqvv/image/upload', // Replace with your Cloudinary cloud name
+          {
+            method: 'POST',
+            body: formData
+          }
+        );
+
+        const data = await response.json();
+        return data.secure_url;
+      });
+
+      const uploadedUrls = await Promise.all(uploadPromises);
+      setEvidenceImages([...evidenceImages, ...uploadedUrls]);
+
+      toast({
+        title: 'Success',
+        description: `${uploadedUrls.length} image(s) uploaded successfully`
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to upload images',
+        variant: 'destructive'
+      });
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  // Handle create warranty record
+  const handleCreateWarrantyRecord = async () => {
+    try {
+      setIsCreatingRecord(true);
+
+      // Validate form
+      if (!warrantyRecordForm.vin || !warrantyRecordForm.odometer) {
+        toast({
+          title: 'Validation Error',
+          description: 'VIN and odometer are required',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      if (warrantyRecordForm.cases.length === 0) {
+        toast({
+          title: 'Validation Error',
+          description: 'At least one guarantee case is required',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Prepare record data
+      const recordData = {
+        vin: warrantyRecordForm.vin,
+        odometer: parseInt(warrantyRecordForm.odometer),
+        guaranteeCases: warrantyRecordForm.cases.map((caseText: string) => ({
+          contentGuarantee: caseText
+        })),
+        visitorInfo: {
+          fullName: warrantyRecordForm.visitorFullName || 'Guest',
+          phone: warrantyRecordForm.visitorPhone || '',
+          email: warrantyRecordForm.customerEmail || ''
+        },
+        evidenceImageUrls: evidenceImages
+      };
+
+      // Call API to create record
+      const result = await createProcessingRecord(recordData);
+
+      toast({
+        title: 'Success',
+        description: 'Warranty record created successfully'
+      });
+
+      // Refresh records list
+      await loadProcessingRecords();
+
+      // Close dialog
+      setShowCreateWarrantyDialog(false);
+      setShowStandaloneCreateDialog(false);
+
+      // Reset form
+      setWarrantyRecordForm({
+        vin: '',
+        odometer: '',
+        purchaseDate: '',
+        customerName: '',
+        customerPhone: '',
+        cases: [],
+        visitorFullName: '',
+        visitorPhone: '',
+        customerEmail: ''
+      });
+      setWarrantyRecordCaseText('');
+      setEvidenceImages([]);
+
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to create record',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsCreatingRecord(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       {/* Header */}
@@ -2638,11 +2965,35 @@ const SuperAdvisor = () => {
           <Card className="shadow-lg">
           
             <CardHeader>
-              <CardTitle className="text-xl">Recent Warranty Records</CardTitle>
-              <CardDescription>Manage warranty records and track their progress</CardDescription>
-               {/* Create Record Button - Show ONLY when warranty is valid AND vehicle has owner */}
-      
-                              
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-xl">Recent Warranty Records</CardTitle>
+                  <CardDescription>Manage warranty records and track their progress</CardDescription>
+                </div>
+                <Button
+                  onClick={() => {
+                    // Reset form và mở dialog có sẵn
+                    setWarrantyRecordForm({
+                      vin: '',
+                      odometer: '',
+                      purchaseDate: '',
+                      customerName: '',
+                      customerPhone: '',
+                      cases: [],
+                      visitorFullName: '',
+                      visitorPhone: '',
+                      customerEmail: ''
+                    });
+                    setWarrantyRecordCaseText('');
+                    setEvidenceImages([]);
+                    setShowCreateWarrantyDialog(true);
+                  }}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Record
+                </Button>
+              </div>
             </CardHeader>
            
           <CardContent>
@@ -2684,18 +3035,34 @@ const SuperAdvisor = () => {
                               onClick={() => handleViewRecord(record)}
                               className="text-green-600 hover:bg-green-50"
                             >
-                              <FileText className="h-4 w-4 mr-1" />
-                              View Record
+                              <Eye className="h-4 w-4 mr-1" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEditRecord(record)}
+                              className="text-blue-600 hover:bg-blue-50"
+                            >
+                              <Edit className="h-4 w-4" />
                             </Button>
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => handleViewCaselines(record)}
-                              className="text-blue-600 hover:bg-blue-50"
+                              className="text-purple-600 hover:bg-purple-50"
                             >
-                              <FileText className="h-4 w-4 mr-1" />
-                              View Diagnosis
+                              <Check className="h-4 w-4" />
                             </Button>
+                            {/* Delete Record,View Record */}
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeleteRecord(record)}
+                              className="text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              
+                              </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -4016,13 +4383,6 @@ const SuperAdvisor = () => {
       <Dialog open={showCreateWarrantyDialog} onOpenChange={(open) => {
         setShowCreateWarrantyDialog(open);
         if (!open) {
-          // Reset OTP states when closing dialog
-          setOtpCode('');
-          setOtpSent(false);
-          setOtpVerified(false);
-          setOtpCountdown(0);
-          // Reset visitor same as customer checkbox
-          setVisitorSameAsCustomer(false);
           // Reset evidence images
           setEvidenceImages([]);
           // Reset warranty record case text
@@ -4074,22 +4434,7 @@ const SuperAdvisor = () => {
               />
             </div>
 
-            {/* Checkbox: Visitor same as Customer */}
-            <div className="flex items-center space-x-2 p-3 bg-blue-50 rounded-md border border-blue-200">
-              <Checkbox 
-                id="visitor-same-as-customer"
-                checked={visitorSameAsCustomer}
-                onCheckedChange={handleVisitorSameAsCustomerChange}
-              />
-              <label
-                htmlFor="visitor-same-as-customer"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-              >
-                Visitor is the same as Customer
-              </label>
-            </div>
-
-            {/* Visitor Full Name - Editable */}
+            {/* Visitor Full Name */}
             <div className="grid gap-2">
               <Label htmlFor="visitor-fullname">Visitor Full Name *</Label>
               <Input
@@ -4097,12 +4442,10 @@ const SuperAdvisor = () => {
                 value={warrantyRecordForm.visitorFullName}
                 onChange={(e) => setWarrantyRecordForm(prev => ({ ...prev, visitorFullName: e.target.value }))}
                 placeholder="Enter visitor's full name"
-                className="border-green-300 focus:border-green-500"
-                disabled={visitorSameAsCustomer}
               />
             </div>
 
-            {/* Visitor Phone - Editable */}
+            {/* Visitor Phone */}
             <div className="grid gap-2">
               <Label htmlFor="visitor-phone">Visitor Phone *</Label>
               <Input
@@ -4111,8 +4454,6 @@ const SuperAdvisor = () => {
                 value={warrantyRecordForm.visitorPhone}
                 onChange={(e) => setWarrantyRecordForm(prev => ({ ...prev, visitorPhone: e.target.value }))}
                 placeholder="Enter visitor's phone number"
-                className="border-green-300 focus:border-green-500"
-                disabled={visitorSameAsCustomer}
               />
             </div>
 
@@ -4125,7 +4466,6 @@ const SuperAdvisor = () => {
                 value={warrantyRecordForm.customerEmail}
                 onChange={(e) => setWarrantyRecordForm(prev => ({ ...prev, customerEmail: e.target.value }))}
                 placeholder="Customer email from vehicle owner"
-                className="border-green-300 focus:border-green-500"
               />
             </div>
 
@@ -4258,7 +4598,6 @@ const SuperAdvisor = () => {
                 setShowCreateWarrantyDialog(false);
                 setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', customerPhone: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
                 setWarrantyRecordCaseText('');
-                setVisitorSameAsCustomer(false); // Reset checkbox
                 setEvidenceImages([]); // Reset evidence images
               }}
             >
@@ -4546,6 +4885,7 @@ const SuperAdvisor = () => {
                       <Label className="text-xs text-gray-600">VIN</Label>
                       <p className="font-mono font-semibold text-sm">{viewRecordData.vin}</p>
                     </div>
+
                     <div>
                       <Label className="text-xs text-gray-600">Check-in Date</Label>
                       <p className="text-sm">{viewRecordData.checkInDate ? new Date(viewRecordData.checkInDate).toLocaleString() : 'N/A'}</p>
@@ -4948,6 +5288,216 @@ const SuperAdvisor = () => {
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Record Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center text-red-600">
+              <Trash2 className="h-5 w-5 mr-2" />
+              Delete Record
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this processing record? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            {recordToDelete && (
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="text-sm">
+                  <div className="font-medium">Record ID: {recordToDelete.id}</div>
+                  <div className="text-gray-600 mt-1">
+                    Customer: {recordToDelete.customerName || 'N/A'}
+                  </div>
+                 
+              
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmDeleteRecord}
+              disabled={isDeletingRecord}
+            >
+              {isDeletingRecord ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Record
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Record Dialog */}
+      <Dialog open={showEditRecordDialog} onOpenChange={setShowEditRecordDialog}>
+        <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center text-blue-600">
+              <Edit className="h-5 w-5 mr-2" />
+              Edit Processing Record
+            </DialogTitle>
+            <DialogDescription>
+              Update the warranty record information
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {/* VIN */}
+            <div>
+              <Label htmlFor="edit-vin">VIN *</Label>
+              <Input
+                id="edit-vin"
+                value={editRecordForm.vin}
+                onChange={(e) => setEditRecordForm({ ...editRecordForm, vin: e.target.value })}
+                placeholder="Enter VIN"
+                className="mt-1"
+              />
+            </div>
+
+            {/* Odometer */}
+            <div>
+              <Label htmlFor="edit-odometer">Odometer (km) *</Label>
+              <Input
+                id="edit-odometer"
+                type="number"
+                value={editRecordForm.odometer}
+                onChange={(e) => setEditRecordForm({ ...editRecordForm, odometer: e.target.value })}
+                placeholder="Enter odometer reading"
+                className="mt-1"
+              />
+            </div>
+
+            {/* Guarantee Cases */}
+            <div>
+              <Label>Guarantee Cases *</Label>
+              <div className="space-y-2 mt-2">
+                {editRecordForm.guaranteeCases.map((gc, index) => (
+                  <div key={index} className="flex gap-2">
+                    <Textarea
+                      value={gc.contentGuarantee}
+                      onChange={(e) => {
+                        const newCases = [...editRecordForm.guaranteeCases];
+                        newCases[index].contentGuarantee = e.target.value;
+                        setEditRecordForm({ ...editRecordForm, guaranteeCases: newCases });
+                      }}
+                      placeholder="Describe the warranty issue"
+                      className="flex-1"
+                      rows={2}
+                    />
+                    {editRecordForm.guaranteeCases.length > 1 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const newCases = editRecordForm.guaranteeCases.filter((_, i) => i !== index);
+                          setEditRecordForm({ ...editRecordForm, guaranteeCases: newCases });
+                        }}
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setEditRecordForm({
+                      ...editRecordForm,
+                      guaranteeCases: [...editRecordForm.guaranteeCases, { contentGuarantee: '' }]
+                    });
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Case
+                </Button>
+              </div>
+            </div>
+
+            {/* Visitor Information */}
+            <div className="border-t pt-4">
+              <Label className="text-base font-semibold">Visitor Information</Label>
+              <div className="space-y-3 mt-3">
+                <div>
+                  <Label htmlFor="edit-visitor-name">Full Name</Label>
+                  <Input
+                    id="edit-visitor-name"
+                    value={editRecordForm.visitorInfo.fullName}
+                    onChange={(e) => setEditRecordForm({
+                      ...editRecordForm,
+                      visitorInfo: { ...editRecordForm.visitorInfo, fullName: e.target.value }
+                    })}
+                    placeholder="Enter visitor name"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-visitor-email">Email</Label>
+                  <Input
+                    id="edit-visitor-email"
+                    type="email"
+                    value={editRecordForm.visitorInfo.email}
+                    onChange={(e) => setEditRecordForm({
+                      ...editRecordForm,
+                      visitorInfo: { ...editRecordForm.visitorInfo, email: e.target.value }
+                    })}
+                    placeholder="Enter email"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-visitor-phone">Phone</Label>
+                  <Input
+                    id="edit-visitor-phone"
+                    value={editRecordForm.visitorInfo.phone}
+                    onChange={(e) => setEditRecordForm({
+                      ...editRecordForm,
+                      visitorInfo: { ...editRecordForm.visitorInfo, phone: e.target.value }
+                    })}
+                    placeholder="Enter phone number"
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditRecordDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleUpdateRecord}
+              disabled={isUpdatingRecord}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              {isUpdatingRecord ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Updating...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Update Record
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

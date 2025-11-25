@@ -549,6 +549,23 @@ const ServiceCenterDashboard = () => {
   const [selectedStockRequest, setSelectedStockRequest] = useState<StockTransferRequest | null>(null);
   const [showStockRequestDetailModal, setShowStockRequestDetailModal] = useState(false);
 
+  // Request Management Tab States
+  const [allStockTransferRequests, setAllStockTransferRequests] = useState<any[]>([]);
+  const [requestFilter, setRequestFilter] = useState<'ALL' | 'APPROVED' | 'PENDING_APPROVAL' | 'CANCELLED'>('ALL');
+  const [showCreateRequestModal, setShowCreateRequestModal] = useState(false);
+  const [showRequestDetailsModal, setShowRequestDetailsModal] = useState(false);
+  const [showUpdateRequestModal, setShowUpdateRequestModal] = useState(false);
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [showCancelConfirmModal, setShowCancelConfirmModal] = useState(false);
+  const [selectedRequestForAction, setSelectedRequestForAction] = useState<any | null>(null);
+  const [requestForm, setRequestForm] = useState<{
+    requestingWarehouseId: string;
+    items: Array<{ typeComponentId: string; quantityRequested: number }>;
+  }>({ requestingWarehouseId: '', items: [{ typeComponentId: '', quantityRequested: 1 }] });
+  const [isLoadingRequests, setIsLoadingRequests] = useState(false);
+  const [requestDetailsData, setRequestDetailsData] = useState<any | null>(null);
+  const [availableComponents, setAvailableComponents] = useState<any[]>([]);
+
   // Technician assignment for case line states
   const [showTechnicianSelectionModal, setShowTechnicianSelectionModal] = useState(false);
   const [selectedCaseLineForTechnician, setSelectedCaseLineForTechnician] = useState<{
@@ -1437,18 +1454,13 @@ const ServiceCenterDashboard = () => {
       const token = typeof getToken === 'function' ? getToken() : (localStorage.getItem('ev_warranty_token') || localStorage.getItem('token'));
       if (token) {
         try {
-          console.log('🔍 Fetching assigned caselines for technician:', technician.id);
           // Use the correct endpoint: /case-lines?repairTechId=xxx
           const response = await axios.get(`${API_BASE_URL}/case-lines`, {
             params: { repairTechId: technician.id },
             headers: { Authorization: `Bearer ${token}` }
           });
-          console.log('📋 Full API response:', response);
-          console.log('📋 Response data:', response.data);
           
           const caseLines = response.data?.data?.caseLines || [];
-          console.log('📋 Parsed caselines:', caseLines);
-          console.log('📋 Caselines count:', caseLines.length);
           
           setTechnicianCaseLines(caseLines);
         } catch (error) {
@@ -1918,6 +1930,295 @@ const ServiceCenterDashboard = () => {
     }
   };
 
+  // ==================== Request Management Tab Functions ====================
+
+  // Fetch all stock transfer requests for Request Management tab
+  const fetchAllStockTransferRequests = async () => {
+    setIsLoadingRequests(true);
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      setIsLoadingRequests(false);
+      return;
+    }
+    try {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const requestsData = response.data?.data?.stockTransferRequests || [];
+      console.log('📦 Fetched all stock transfer requests for management:', requestsData);
+      setAllStockTransferRequests(requestsData);
+    } catch (error) {
+      console.error('Failed to fetch stock transfer requests:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch stock transfer requests',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingRequests(false);
+    }
+  };
+
+  // Fetch request details
+  const fetchRequestDetails = async (requestId: string) => {
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) return null;
+    
+    try {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests/${requestId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const detailData = response.data?.data?.stockTransferRequest || null;
+      console.log('📦 Request Detail:', detailData);
+      setRequestDetailsData(detailData);
+      return detailData;
+    } catch (error) {
+      console.error('Failed to fetch request details:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch request details',
+        variant: 'destructive'
+      });
+      return null;
+    }
+  };
+
+  // Create new stock transfer request
+  const createStockTransferRequest = async () => {
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      toast({
+        title: 'Authentication Required',
+        description: 'Please login again.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Validate form
+    if (!requestForm.requestingWarehouseId) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please select a warehouse',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (requestForm.items.length === 0 || !requestForm.items[0].typeComponentId) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please add at least one component',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      await axios.post(
+        `${API_BASE_URL}/stock-transfer-requests`,
+        requestForm,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      toast({
+        title: 'Success',
+        description: 'Stock transfer request created successfully'
+      });
+
+      // Reset form and close modal
+      setRequestForm({ requestingWarehouseId: '', items: [{ typeComponentId: '', quantityRequested: 1 }] });
+      setShowCreateRequestModal(false);
+
+      // Refresh list
+      await fetchAllStockTransferRequests();
+    } catch (error: any) {
+      console.error('Failed to create request:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to create request',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Update stock transfer request
+  const updateStockTransferRequest = async (requestId: string) => {
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      toast({
+        title: 'Authentication Required',
+        description: 'Please login again.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Validate form
+    if (!requestForm.requestingWarehouseId) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please select a warehouse',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (requestForm.items.length === 0 || !requestForm.items[0].typeComponentId) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please add at least one component',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      await axios.put(
+        `${API_BASE_URL}/stock-transfer-requests/${requestId}`,
+        requestForm,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      toast({
+        title: 'Success',
+        description: 'Stock transfer request updated successfully'
+      });
+
+      // Close modal
+      setShowUpdateRequestModal(false);
+      setSelectedRequestForAction(null);
+
+      // Refresh list and details if viewing
+      await fetchAllStockTransferRequests();
+      if (showRequestDetailsModal && requestDetailsData) {
+        await fetchRequestDetails(requestId);
+      }
+    } catch (error: any) {
+      console.error('Failed to update request:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to update request',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Delete stock transfer request
+  const deleteStockTransferRequest = async (requestId: string) => {
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      toast({
+        title: 'Authentication Required',
+        description: 'Please login again.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      await axios.delete(
+        `${API_BASE_URL}/stock-transfer-requests/${requestId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      toast({
+        title: 'Success',
+        description: 'Stock transfer request deleted successfully'
+      });
+
+      // Close modals
+      setShowDeleteConfirmModal(false);
+      setShowRequestDetailsModal(false);
+      setSelectedRequestForAction(null);
+      setRequestDetailsData(null);
+
+      // Refresh list
+      await fetchAllStockTransferRequests();
+    } catch (error: any) {
+      console.error('Failed to delete request:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to delete request',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Cancel stock transfer request
+  const cancelStockTransferRequest = async (requestId: string) => {
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) {
+      toast({
+        title: 'Authentication Required',
+        description: 'Please login again.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    try {
+      await axios.patch(
+        `${API_BASE_URL}/stock-transfer-requests/${requestId}/cancel`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      toast({
+        title: 'Success',
+        description: 'Stock transfer request cancelled successfully'
+      });
+
+      // Close modal
+      setShowCancelConfirmModal(false);
+
+      // Refresh list and details if viewing
+      await fetchAllStockTransferRequests();
+      if (showRequestDetailsModal && requestDetailsData) {
+        await fetchRequestDetails(requestId);
+      }
+    } catch (error: any) {
+      console.error('Failed to cancel request:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to cancel request',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  // Fetch components from selected warehouse for create/update forms
+  const fetchWarehouseComponents = async (warehouseId: string) => {
+    const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+    if (!token) return;
+
+    try {
+      // Fetch warehouse details to get stock components
+      const warehouseDetail = warehouses.find(w => w.warehouseId === warehouseId);
+      if (warehouseDetail && warehouseDetail.stocks) {
+        const components = warehouseDetail.stocks.map(stock => ({
+          typeComponentId: stock.typeComponent?.typeComponentId || stock.typeComponentId,
+          name: stock.typeComponent?.name || 'Unknown',
+          sku: stock.typeComponent?.sku || 'N/A',
+          quantity: stock.quantityInStock
+        }));
+        setAvailableComponents(components);
+      }
+    } catch (error) {
+      console.error('Failed to fetch warehouse components:', error);
+    }
+  };
+
+  // ==================== End Request Management Functions ====================
+
+  // Load initial data for Request Management tab
+  useEffect(() => {
+    if (user) {
+      fetchWarehouses();
+      fetchAllStockTransferRequests();
+    }
+  }, [user]);
+
   return (
     <div className="min-h-screen w-full relative">
       {/* Radial Gradient Background */}
@@ -1968,10 +2269,11 @@ const ServiceCenterDashboard = () => {
         <div className="container mx-auto px-6 py-6">
           {/* Main Content */}
           <Tabs defaultValue="claims" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="claims">Warranty Claims</TabsTrigger>
               <TabsTrigger value="repairs">Technician Management</TabsTrigger>
               <TabsTrigger value="warehouses">Warehouse Management</TabsTrigger>
+              <TabsTrigger value="requests">Request Management</TabsTrigger>
             </TabsList>
 
             <TabsContent value="claims" className="space-y-6">
@@ -2333,6 +2635,160 @@ const ServiceCenterDashboard = () => {
                       Showing {warehouses.length} warehouse{warehouses.length !== 1 ? 's' : ''}
                     </p>
                   </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Request Management Tab */}
+            <TabsContent value="requests" className="space-y-6">
+              <Card className="shadow-elegant">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Package className="h-5 w-5" />
+                    Stock Transfer Request Management
+                  </CardTitle>
+                  <CardDescription>
+                    Create, view, update, and manage stock transfer requests
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {/* Filter Buttons and Create Button */}
+                  <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {(['ALL', 'APPROVED', 'PENDING_APPROVAL', 'CANCELLED'] as const).map(status => (
+                        <Button
+                          key={status}
+                          variant={status === requestFilter ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setRequestFilter(status)}
+                        >
+                          {status === 'ALL' ? 'All Requests' : status.replace(/_/g, ' ')}
+                          {' '}
+                          ({
+                            status === 'ALL' 
+                              ? allStockTransferRequests.length 
+                              : allStockTransferRequests.filter(r => r.status === status).length
+                          })
+                        </Button>
+                      ))}
+                    </div>
+                    <Button 
+                      variant="default" 
+                      size="sm"
+                      onClick={() => {
+                        setRequestForm({ requestingWarehouseId: '', items: [{ typeComponentId: '', quantityRequested: 1 }] });
+                        setShowCreateRequestModal(true);
+                      }}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Request
+                    </Button>
+                  </div>
+
+                  {/* Requests Table */}
+                  {isLoadingRequests ? (
+                    <div className="text-center py-8">
+                      <p className="text-muted-foreground">Loading requests...</p>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Request ID</TableHead>
+                            <TableHead>Requester</TableHead>
+                            <TableHead>Warehouse</TableHead>
+                            <TableHead>Items</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Requested At</TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {allStockTransferRequests
+                            .filter(req => requestFilter === 'ALL' || req.status === requestFilter)
+                            .map((request) => (
+                            <TableRow key={request.id}>
+                              <TableCell className="font-mono text-xs">{request.id}</TableCell>
+                              <TableCell>
+                                <div>
+                                  <p className="font-medium">{request.requester?.name || 'N/A'}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {request.requester?.serviceCenter?.name || 'N/A'}
+                                  </p>
+                                </div>
+                              </TableCell>
+                              <TableCell>{request.requestingWarehouse?.name || 'N/A'}</TableCell>
+                              <TableCell>{request.items?.length || 0} item(s)</TableCell>
+                              <TableCell>
+                                <Badge 
+                                  variant={
+                                    request.status === 'APPROVED' ? 'default' :
+                                    request.status === 'PENDING_APPROVAL' ? 'secondary' :
+                                    'destructive'
+                                  }
+                                >
+                                  {request.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {request.requestedAt 
+                                  ? new Date(request.requestedAt).toLocaleDateString() 
+                                  : 'N/A'}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={async () => {
+                                      await fetchRequestDetails(request.id);
+                                      setSelectedRequestForAction(request);
+                                      setShowRequestDetailsModal(true);
+                                    }}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={request.status !== 'PENDING_APPROVAL'}
+                                    onClick={() => {
+                                      // Pre-fill form with current data
+                                      setRequestForm({
+                                        requestingWarehouseId: request.requestingWarehouseId,
+                                        items: request.items?.map(item => ({
+                                          typeComponentId: item.typeComponentId,
+                                          quantityRequested: item.quantityRequested
+                                        })) || [{ typeComponentId: '', quantityRequested: 1 }]
+                                      });
+                                      setSelectedRequestForAction(request);
+                                      setShowUpdateRequestModal(true);
+                                      if (request.requestingWarehouseId) {
+                                        fetchWarehouseComponents(request.requestingWarehouseId);
+                                      }
+                                    }}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedRequestForAction(request);
+                                      setShowDeleteConfirmModal(true);
+                                    }}
+                                  >
+                                    <Trash className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -5096,6 +5552,443 @@ const ServiceCenterDashboard = () => {
                 </div>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Create Request Modal */}
+        <Dialog open={showCreateRequestModal} onOpenChange={setShowCreateRequestModal}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Create Stock Transfer Request</DialogTitle>
+              <DialogDescription>
+                Create a new stock transfer request from manufacturer
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 mt-4">
+              {/* Warehouse Selection */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">Select Warehouse *</label>
+                <Select
+                  value={requestForm.requestingWarehouseId}
+                  onValueChange={(value) => {
+                    setRequestForm({ 
+                      requestingWarehouseId: value,
+                      items: [{ typeComponentId: '', quantityRequested: 1 }]
+                    });
+                    setAvailableComponents([]);
+                    fetchWarehouseComponents(value);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select warehouse" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warehouses.map(warehouse => (
+                      <SelectItem key={warehouse.warehouseId} value={warehouse.warehouseId}>
+                        {warehouse.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Component Items */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">Components *</label>
+                {!requestForm.requestingWarehouseId && (
+                  <p className="text-sm text-muted-foreground mb-2">Please select a warehouse first</p>
+                )}
+                {requestForm.items.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-2 mb-2">
+                    <Select
+                      value={item.typeComponentId}
+                      disabled={!requestForm.requestingWarehouseId || availableComponents.length === 0}
+                      onValueChange={(value) => {
+                        const newItems = [...requestForm.items];
+                        newItems[idx].typeComponentId = value;
+                        setRequestForm({ ...requestForm, items: newItems });
+                      }}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder={!requestForm.requestingWarehouseId ? "Select warehouse first" : availableComponents.length === 0 ? "No components in warehouse" : "Select component"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableComponents.map(comp => (
+                          <SelectItem key={comp.typeComponentId} value={comp.typeComponentId}>
+                            {comp.name} (SKU: {comp.sku}) - Available: {comp.quantity}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={item.quantityRequested}
+                      onChange={(e) => {
+                        const newItems = [...requestForm.items];
+                        newItems[idx].quantityRequested = parseInt(e.target.value) || 1;
+                        setRequestForm({ ...requestForm, items: newItems });
+                      }}
+                      className="w-24"
+                      placeholder="Qty"
+                    />
+                    {idx > 0 && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          const newItems = requestForm.items.filter((_, i) => i !== idx);
+                          setRequestForm({ ...requestForm, items: newItems });
+                        }}
+                      >
+                        <Trash className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!requestForm.requestingWarehouseId || availableComponents.length === 0}
+                  onClick={() => {
+                    setRequestForm({
+                      ...requestForm,
+                      items: [...requestForm.items, { typeComponentId: '', quantityRequested: 1 }]
+                    });
+                  }}
+                  className="mt-2"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Component
+                </Button>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-4">
+                <Button variant="outline" onClick={() => setShowCreateRequestModal(false)}>
+                  Cancel
+                </Button>
+                <Button variant="default" onClick={createStockTransferRequest}>
+                  <Save className="h-4 w-4 mr-2" />
+                  Create Request
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Update Request Modal */}
+        <Dialog open={showUpdateRequestModal} onOpenChange={setShowUpdateRequestModal}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Update Stock Transfer Request</DialogTitle>
+              <DialogDescription>
+                Modify the stock transfer request details
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 mt-4">
+              {/* Warehouse Selection */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">Select Warehouse *</label>
+                <Select
+                  value={requestForm.requestingWarehouseId}
+                  onValueChange={(value) => {
+                    setRequestForm({ 
+                      requestingWarehouseId: value,
+                      items: [{ typeComponentId: '', quantityRequested: 1 }]
+                    });
+                    setAvailableComponents([]);
+                    fetchWarehouseComponents(value);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select warehouse" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warehouses.map(warehouse => (
+                      <SelectItem key={warehouse.warehouseId} value={warehouse.warehouseId}>
+                        {warehouse.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Component Items */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">Components *</label>
+                {!requestForm.requestingWarehouseId && (
+                  <p className="text-sm text-muted-foreground mb-2">Please select a warehouse first</p>
+                )}
+                {requestForm.items.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-2 mb-2">
+                    <Select
+                      value={item.typeComponentId}
+                      disabled={!requestForm.requestingWarehouseId || availableComponents.length === 0}
+                      onValueChange={(value) => {
+                        const newItems = [...requestForm.items];
+                        newItems[idx].typeComponentId = value;
+                        setRequestForm({ ...requestForm, items: newItems });
+                      }}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder={!requestForm.requestingWarehouseId ? "Select warehouse first" : availableComponents.length === 0 ? "No components in warehouse" : "Select component"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableComponents.map(comp => (
+                          <SelectItem key={comp.typeComponentId} value={comp.typeComponentId}>
+                            {comp.name} (SKU: {comp.sku}) - Available: {comp.quantity}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={item.quantityRequested}
+                      onChange={(e) => {
+                        const newItems = [...requestForm.items];
+                        newItems[idx].quantityRequested = parseInt(e.target.value) || 1;
+                        setRequestForm({ ...requestForm, items: newItems });
+                      }}
+                      className="w-24"
+                      placeholder="Qty"
+                    />
+                    {idx > 0 && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => {
+                          const newItems = requestForm.items.filter((_, i) => i !== idx);
+                          setRequestForm({ ...requestForm, items: newItems });
+                        }}
+                      >
+                        <Trash className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!requestForm.requestingWarehouseId || availableComponents.length === 0}
+                  onClick={() => {
+                    setRequestForm({
+                      ...requestForm,
+                      items: [...requestForm.items, { typeComponentId: '', quantityRequested: 1 }]
+                    });
+                  }}
+                  className="mt-2"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Component
+                </Button>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end gap-3 pt-4">
+                <Button variant="outline" onClick={() => setShowUpdateRequestModal(false)}>
+                  Cancel
+                </Button>
+                <Button 
+                  variant="default" 
+                  onClick={() => selectedRequestForAction && updateStockTransferRequest(selectedRequestForAction.id)}
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  Update Request
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Request Details Modal */}
+        <Dialog open={showRequestDetailsModal} onOpenChange={setShowRequestDetailsModal}>
+          <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Stock Transfer Request Details</DialogTitle>
+              <DialogDescription>
+                Complete information for this stock transfer request
+              </DialogDescription>
+            </DialogHeader>
+            {requestDetailsData && (
+              <div className="space-y-4 mt-4">
+                {/* Request Info */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Request Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground">Request ID</label>
+                        <p className="text-sm font-mono">{requestDetailsData.id}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground">Status</label>
+                        <div className="mt-1">
+                          <Badge 
+                            variant={
+                              requestDetailsData.status === 'APPROVED' ? 'default' :
+                              requestDetailsData.status === 'PENDING_APPROVAL' ? 'secondary' :
+                              'destructive'
+                            }
+                          >
+                            {requestDetailsData.status}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground">Requested At</label>
+                        <p className="text-sm">
+                          {requestDetailsData.requestedAt 
+                            ? new Date(requestDetailsData.requestedAt).toLocaleString() 
+                            : 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground">Approved At</label>
+                        <p className="text-sm">
+                          {requestDetailsData.approvedAt 
+                            ? new Date(requestDetailsData.approvedAt).toLocaleString() 
+                            : 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground">Warehouse</label>
+                        <p className="text-sm font-medium">{requestDetailsData.requestingWarehouse?.name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-muted-foreground">Requested By</label>
+                        <p className="text-sm font-medium">{requestDetailsData.requestedBy?.name || 'N/A'}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Items */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Components Requested</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Component</TableHead>
+                          <TableHead>SKU</TableHead>
+                          <TableHead>Quantity</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {requestDetailsData.items?.map((item: any, idx: number) => (
+                          <TableRow key={idx}>
+                            <TableCell>{item.typeComponent?.name || 'N/A'}</TableCell>
+                            <TableCell className="font-mono text-xs">{item.typeComponent?.sku || 'N/A'}</TableCell>
+                            <TableCell>{item.quantityRequested}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+
+                {/* Actions */}
+                <div className="flex items-center justify-end gap-3">
+                  {requestDetailsData.status === 'PENDING_APPROVAL' && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setShowCancelConfirmModal(true);
+                      }}
+                    >
+                      <XCircle className="h-4 w-4 mr-2" />
+                      Cancel Request
+                    </Button>
+                  )}
+                  {requestDetailsData.status === 'PENDING_APPROVAL' && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        // Pre-fill form
+                        setRequestForm({
+                          requestingWarehouseId: requestDetailsData.requestingWarehouse?.id || '',
+                          items: requestDetailsData.items?.map((item: any) => ({
+                            typeComponentId: item.typeComponent?.id || item.typeComponentId,
+                            quantityRequested: item.quantityRequested
+                          })) || [{ typeComponentId: '', quantityRequested: 1 }]
+                        });
+                        setShowRequestDetailsModal(false);
+                        setShowUpdateRequestModal(true);
+                        if (requestDetailsData.requestingWarehouse?.id) {
+                          fetchWarehouseComponents(requestDetailsData.requestingWarehouse.id);
+                        }
+                      }}
+                    >
+                      <Edit className="h-4 w-4 mr-2" />
+                      Edit
+                    </Button>
+                  )}
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      setShowDeleteConfirmModal(true);
+                    }}
+                  >
+                    <Trash className="h-4 w-4 mr-2" />
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Modal */}
+        <Dialog open={showDeleteConfirmModal} onOpenChange={setShowDeleteConfirmModal}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirm Delete</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this stock transfer request? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex items-center justify-end gap-3 mt-4">
+              <Button variant="outline" onClick={() => setShowDeleteConfirmModal(false)}>
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={() => selectedRequestForAction && deleteStockTransferRequest(selectedRequestForAction.id)}
+              >
+                <Trash className="h-4 w-4 mr-2" />
+                Delete
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Cancel Confirmation Modal */}
+        <Dialog open={showCancelConfirmModal} onOpenChange={setShowCancelConfirmModal}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirm Cancel</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to cancel this stock transfer request?
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex items-center justify-end gap-3 mt-4">
+              <Button variant="outline" onClick={() => setShowCancelConfirmModal(false)}>
+                No, Keep It
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={() => requestDetailsData && cancelStockTransferRequest(requestDetailsData.id)}
+              >
+                <XCircle className="h-4 w-4 mr-2" />
+                Yes, Cancel Request
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
