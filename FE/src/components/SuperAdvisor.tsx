@@ -35,6 +35,10 @@ const createProcessingRecord = async (recordData: {
 }) => {
   const token = localStorage.getItem("ev_warranty_token");
   
+  console.log('🔍 createProcessingRecord called with data:', recordData);
+  console.log('🔑 Token exists:', !!token);
+  console.log('🔑 Token length:', token?.length);
+  
   const response = await fetch(`${API_BASE_URL}/processing-records`, {
     method: 'POST',
     headers: {
@@ -44,12 +48,18 @@ const createProcessingRecord = async (recordData: {
     body: JSON.stringify(recordData) //chuyển object thành chuỗi JSON
   });
   
+  console.log('📡 API Response status:', response.status);
+  console.log('📡 API Response headers:', Object.fromEntries(response.headers.entries()));
+  
   const result = await response.json();  //chờ sv phản hồi
+  
+  console.log('📦 API Response data:', result);
   
  
   
   // Check for API errors
   if (!response.ok || result.status === 'error') {
+    console.error('❌ API Error:', result);
     throw new Error(result.message || 'API call failed');
   }
   
@@ -223,13 +233,6 @@ const SuperAdvisor = () => {
   const [currentImageIndex, setCurrentImageIndex] = useState<number>(0);
   const [allViewerImages, setAllViewerImages] = useState<string[]>([]);
 
-  // OTP states
-  const [otpCode, setOtpCode] = useState('');
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpVerified, setOtpVerified] = useState(false);
-  const [otpCountdown, setOtpCountdown] = useState(0);
-
   // OTP states for customer update
   const [otpCodeForCustomer, setOtpCodeForCustomer] = useState('');
   const [isSendingOtpForCustomer, setIsSendingOtpForCustomer] = useState(false);
@@ -361,24 +364,6 @@ const SuperAdvisor = () => {
     loadProcessingRecords();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // OTP countdown timer
-  useEffect(() => {
-    if (otpCountdown > 0) {
-      const timer = setTimeout(() => {
-        setOtpCountdown(prev => prev - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else if (otpCountdown === 0 && otpSent) {
-      setOtpSent(false);
-      setOtpCode('');
-      toast({
-        title: 'OTP Expired',
-        description: 'Please request a new OTP code',
-        variant: 'default'
-      });
-    }
-  }, [otpCountdown, otpSent, toast]);
 
   // OTP countdown timer for customer update
   useEffect(() => {
@@ -983,194 +968,83 @@ const SuperAdvisor = () => {
     customer?: any,
     odometerValue?: string,
     shouldCloseWarrantyDialog?: boolean
-    //dữ liệu lấy từ luồng sdt 
+    //dữ liệu lấy từ luồng sdt
   }) => {
-    // Xác định nguồn data - Fallback to state if options not provided
-    const vehicle = options?.vehicle || vehicleSearchResult;
-    const customer = options?.customer || foundCustomer || vehicleSearchResult?.owner;
-    const odometerValue = options?.odometerValue || vehicleOdometer || odometer;
-    
-    // Validation
-    if (!vehicle) {
-      toast({
-        title: 'Error',
-        description: 'Vehicle information is required',
-        variant: 'destructive'
+    // Nếu có vehicleSearchResult (đã tìm vehicle bằng VIN và validation), set form data
+    if (vehicleSearchResult) {
+      const vehicle = options?.vehicle || vehicleSearchResult;
+      const customer = options?.customer || foundCustomer || vehicleSearchResult?.owner;
+      const odometerValue = options?.odometerValue || vehicleOdometer || odometer;
+
+      // Validation
+      if (!vehicle) {
+        toast({
+          title: 'Error',
+          description: 'Vehicle information is required',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      if (!customer) {
+        toast({
+          title: 'Error',
+          description: 'Vehicle must have an owner before creating a processing record',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      if (!odometerValue) {
+        toast({
+          title: 'Error',
+          description: 'Please enter odometer reading first',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Prepare form data and open create warranty dialog
+      setWarrantyRecordForm({
+        vin: vehicle.vin,
+        odometer: odometerValue,
+        purchaseDate: vehicle.purchaseDate || '',
+        customerName: customer.fullName || customer.name,
+        customerPhone: customer.phone || '',
+        cases: [],
+        visitorFullName: '',
+        visitorPhone: '',
+        customerEmail: customer.email || ''
       });
-      return;
-    }
-    
-    if (!customer) {
-      toast({
-        title: 'Error',
-        description: 'Vehicle must have an owner before creating a processing record',
-        variant: 'destructive'
+
+      // Close warranty dialog if needed (only from phone search flow)
+      if (options?.shouldCloseWarrantyDialog) {
+        setShowWarrantyDialog(false);
+      }
+    } else {
+      // Nếu chưa tìm vehicle bằng VIN, chỉ mở dialog để nhập data bằng tay
+      setWarrantyRecordForm({
+        vin: '',
+        odometer: '',
+        purchaseDate: '',
+        customerName: '',
+        customerPhone: '',
+        cases: [],
+        visitorFullName: '',
+        visitorPhone: '',
+        customerEmail: ''
       });
-      return;
     }
 
-    if (!odometerValue) {
-      toast({
-        title: 'Error',
-        description: 'Please enter odometer reading first',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    // Prepare form data and open create warranty dialog
-    setWarrantyRecordForm({
-      vin: vehicle.vin,
-      odometer: odometerValue,
-      purchaseDate: vehicle.purchaseDate || '',
-      customerName: customer.fullName || customer.name,
-      customerPhone: customer.phone || '',
-      cases: [],
-      visitorFullName: '',
-      visitorPhone: '',
-      customerEmail: customer.email || ''
-    });
-    
-    // Close warranty dialog if needed (only from phone search flow)
-    if (options?.shouldCloseWarrantyDialog) {
-      setShowWarrantyDialog(false);
-    }
-    
     // Open create dialog
     setShowCreateWarrantyDialog(true);
   };
 
   // Handle add case to warranty record form
   // Handle send OTP to customer email
-  const handleSendOtp = async () => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!warrantyRecordForm.customerEmail || !emailRegex.test(warrantyRecordForm.customerEmail)) {
-      toast({
-        title: 'Error',
-        description: 'Please enter a valid email address first',
-        variant: 'destructive'
-      });
-      return;
-    }
 
-    setIsSendingOtp(true);
 
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/mail/otp/send`,
-        {
-          email: warrantyRecordForm.customerEmail,
-          vin: warrantyRecordForm.vin
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('ev_warranty_token')}`
-          }
-        }
-      );
 
-      if (response.data && response.data.status === 'success') {
-        setOtpSent(true);
-        setOtpCountdown(300); // 5 minutes
-        toast({
-          title: 'OTP Sent',
-          description: `OTP code has been sent to ${warrantyRecordForm.customerEmail}. Please check your email inbox.`,
-        });
-      } else {
-        const message = response.data?.message || 'Failed to send OTP';
-        throw new Error(message);
-      }
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to send OTP. Please try again.',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsSendingOtp(false);
-    }
-  };
-
-  // Handle verify OTP from email
-  const handleVerifyOtp = async () => {
-    if (!otpCode || otpCode.length !== 6) {
-      toast({
-        title: 'Error',
-        description: 'Please enter a valid 6-digit OTP code',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    const token = localStorage.getItem('ev_warranty_token');
-    const requestUrl = `${API_BASE_URL}/mail/otp/verify`;
-    
-   
-    if (!token) {
-      toast({
-        title: 'Authentication Error',
-        description: 'No token found. Please login again.',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    try {
-      const response = await fetch(requestUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          email: warrantyRecordForm.customerEmail,
-          otp: otpCode
-        }),
-        redirect: 'manual' // Prevent auto-following redirects
-      });
-
-    
-      // Check for redirects (status 3xx)
-      if (response.status >= 300 && response.status < 400) {
-        const location = response.headers.get('Location');
-        console.error('❌ Server redirected OTP verify request:', {
-          status: response.status,
-          location,
-          reason: 'POST request was redirected, likely due to authentication middleware'
-        });
-        throw new Error(`Server redirect detected (${response.status}). This usually means authentication failed. Check your token.`);
-      }
-
-      const responseText = await response.text();
-    
-
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('❌ Failed to parse response as JSON:', responseText);
-        throw new Error(`Invalid response format. Got: ${responseText.substring(0, 100)}`);
-      }
-
-      if (response.ok && result.status === 'success' && result.isValid) {
-        setOtpVerified(true);
-        toast({
-          title: 'Success',
-          description: 'OTP verified successfully. You can now create the record.',
-        });
-      } else {
-        throw new Error(result.message || 'Invalid or expired OTP code');
-      }
-    } catch (error) {
-      console.error('❌ OTP Verify Error:', error);
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to verify OTP. Please try again.',
-        variant: 'destructive'
-      });
-    }
-  };
 
   // Handle send OTP for customer update
   const handleSendOtpForCustomer = async () => {
@@ -1506,15 +1380,7 @@ const SuperAdvisor = () => {
       return;
     }
 
-    // Validate OTP verification - MUST verify OTP before creating record
-    if (!otpVerified) {
-      toast({
-        title: 'OTP Verification Required',
-        description: 'Please send and verify OTP for the email address before creating record',
-        variant: 'destructive'
-      });
-      return;
-    }
+
 
     setIsCreatingRecord(true);
 
@@ -1545,19 +1411,7 @@ const SuperAdvisor = () => {
       setWarrantyRecordCaseText('');
       setShowCreateWarrantyDialog(false);
       setVisitorSameAsCustomer(false); // Reset checkbox
-      setOtpSent(false);
-      setOtpVerified(false);
-      setOtpCode('');
-      setOtpCountdown(0);
-      setVehicleWarrantyStatus(null);
-      setVehicleOdometer('');
-      setEvidenceImages([]); // Reset evidence images
-      
-      // Reset OTP states
-      setOtpCode('');
-      setOtpSent(false);
-      setOtpVerified(false);
-      setOtpCountdown(0);
+
       
       toast({
         title: 'Success',
@@ -2782,22 +2636,15 @@ const SuperAdvisor = () => {
         {/* Warranty Records Section - Only show in warranty mode */}
         {searchMode === 'warranty' && (
           <Card className="shadow-lg">
-            <div className="flex items-center justify-between">
+          
             <CardHeader>
               <CardTitle className="text-xl">Recent Warranty Records</CardTitle>
               <CardDescription>Manage warranty records and track their progress</CardDescription>
                {/* Create Record Button - Show ONLY when warranty is valid AND vehicle has owner */}
-                          
-                      <Button
-                        onClick={() => handleCreateRecord()}
-                        className="flex-1 bg-green-600 hover:bg-green-700"
-                      >
-                        <Plus className="h-4 w-4 mr-2" />
-                        Create Record
-                      </Button>
+      
                               
             </CardHeader>
-              </div>
+           
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
@@ -4194,38 +4041,35 @@ const SuperAdvisor = () => {
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
-            {/* VIN Number - Read Only */}
+            {/* VIN Number */}
             <div className="grid gap-2">
               <Label htmlFor="record-vin">VIN Number *</Label>
               <Input
                 id="record-vin"
                 value={warrantyRecordForm.vin}
-                readOnly
-                className="bg-gray-100"
+                onChange={(e) => setWarrantyRecordForm(prev => ({ ...prev, vin: e.target.value }))}
                 placeholder="Enter VIN (17 characters)"
               />
             </div>
 
-            {/* Customer Name - Read Only */}
+            {/* Customer Name */}
             <div className="grid gap-2">
               <Label htmlFor="record-customer">Customer Name *</Label>
               <Input
                 id="record-customer"
                 value={warrantyRecordForm.customerName}
-                readOnly
-                className="bg-gray-100"
+                onChange={(e) => setWarrantyRecordForm(prev => ({ ...prev, customerName: e.target.value }))}
                 placeholder="Customer name"
               />
             </div>
 
-            {/* Odometer - Read Only */}
+            {/* Odometer */}
             <div className="grid gap-2">
               <Label htmlFor="record-odometer">Odometer (km) *</Label>
               <Input
                 id="record-odometer"
                 value={warrantyRecordForm.odometer}
-                readOnly
-                className="bg-gray-100"
+                onChange={(e) => setWarrantyRecordForm(prev => ({ ...prev, odometer: e.target.value }))}
                 placeholder="Enter current odometer reading"
               />
             </div>
@@ -4272,74 +4116,18 @@ const SuperAdvisor = () => {
               />
             </div>
 
-            {/* Customer Email - Read-only */}
+            {/* Customer Email */}
             <div className="grid gap-2">
               <Label htmlFor="customer-email">Customer Email *</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="customer-email"
-                  type="email"
-                  value={warrantyRecordForm.customerEmail}
-                  placeholder="Customer email from vehicle owner"
-                  className="flex-1 bg-gray-100"
-                  readOnly
-                />
-                <Button
-                  type="button"
-                  onClick={handleSendOtp}
-                  disabled={!warrantyRecordForm.customerEmail || isSendingOtp || otpVerified || (otpSent && otpCountdown > 0)}
-                  className="bg-blue-600 hover:bg-blue-700"
-                >
-                  {isSendingOtp ? 'Sending...' : otpSent && otpCountdown > 0 ? `Resend (${Math.floor(otpCountdown / 60)}:${(otpCountdown % 60).toString().padStart(2, '0')})` : otpVerified ? 'Verified ✓' : 'Send OTP'}
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">OTP will be sent to this email address</p>
+              <Input
+                id="customer-email"
+                type="email"
+                value={warrantyRecordForm.customerEmail}
+                onChange={(e) => setWarrantyRecordForm(prev => ({ ...prev, customerEmail: e.target.value }))}
+                placeholder="Customer email from vehicle owner"
+                className="border-green-300 focus:border-green-500"
+              />
             </div>
-
-            {/* OTP Verification Section */}
-            {otpSent && !otpVerified && (
-              <div className="grid gap-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex items-center gap-2 mb-2">
-                  <Clock className="h-4 w-4 text-blue-600" />
-                  <Label htmlFor="otp-code" className="text-blue-900 font-semibold">Enter OTP Code</Label>
-                </div>
-                <p className="text-xs text-blue-700 mb-2">
-                  A 6-digit OTP code has been sent to {warrantyRecordForm.customerEmail}. 
-                  Valid for {Math.floor(otpCountdown / 60)}:{(otpCountdown % 60).toString().padStart(2, '0')} minutes.
-                </p>
-                <div className="flex gap-2">
-                  <Input
-                    id="otp-code"
-                    type="text"
-                    value={otpCode}
-                    onChange={(e) => {
-                      const numericValue = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
-                      setOtpCode(numericValue);
-                    }}
-                    placeholder="Enter 6-digit OTP"
-                    className="flex-1 font-mono text-center text-lg"
-                    maxLength={6}
-                  />
-                  <Button
-                    type="button"
-                    onClick={handleVerifyOtp}
-                    disabled={!otpCode || otpCode.length !== 6}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    Verify
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* OTP Verified Success Message */}
-            {otpVerified && (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-green-600" />
-                <span className="text-sm font-medium text-green-800">Email verified successfully! You can now create the record.</span>
-              </div>
-            )}
 
             {/* Cases Section */}
             <div className="grid gap-2">
@@ -4472,18 +4260,13 @@ const SuperAdvisor = () => {
                 setWarrantyRecordCaseText('');
                 setVisitorSameAsCustomer(false); // Reset checkbox
                 setEvidenceImages([]); // Reset evidence images
-                // Reset OTP states
-                setOtpCode('');
-                setOtpSent(false);
-                setOtpVerified(false);
-                setOtpCountdown(0);
               }}
             >
               Cancel
             </Button>
             <Button 
               onClick={handleSubmitWarrantyRecord}
-              disabled={warrantyRecordForm.cases.length === 0 || isCreatingRecord || !warrantyRecordForm.visitorFullName.trim() || !warrantyRecordForm.visitorPhone.trim() || !warrantyRecordForm.customerEmail.trim() || !otpVerified}
+              disabled={warrantyRecordForm.cases.length === 0 || isCreatingRecord || !warrantyRecordForm.visitorFullName.trim() || !warrantyRecordForm.visitorPhone.trim() || !warrantyRecordForm.customerEmail.trim()}
               className="bg-blue-600 hover:bg-blue-700"
             >
               <Plus className="h-4 w-4 mr-2" />
