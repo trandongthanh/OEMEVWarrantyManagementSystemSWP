@@ -35,10 +35,6 @@ const createProcessingRecord = async (recordData: {
 }) => {
   const token = localStorage.getItem("ev_warranty_token");
   
-  console.log('🔍 createProcessingRecord called with data:', recordData);
-  console.log('🔑 Token exists:', !!token);
-  console.log('🔑 Token length:', token?.length);
-  
   const response = await fetch(`${API_BASE_URL}/processing-records`, {
     method: 'POST',
     headers: {
@@ -48,18 +44,12 @@ const createProcessingRecord = async (recordData: {
     body: JSON.stringify(recordData) //chuyển object thành chuỗi JSON
   });
   
-  console.log('📡 API Response status:', response.status);
-  console.log('📡 API Response headers:', Object.fromEntries(response.headers.entries()));
-  
   const result = await response.json();  //chờ sv phản hồi
-  
-  console.log('📦 API Response data:', result);
   
  
   
   // Check for API errors
   if (!response.ok || result.status === 'error') {
-    console.error('❌ API Error:', result);
     throw new Error(result.message || 'API call failed');
   }
   
@@ -257,6 +247,11 @@ const SuperAdvisor = () => {
   const [newVehicleVin, setNewVehicleVin] = useState('');
 
   const [records, setRecords] = useState<WarrantyRecord[]>([]);
+
+  // Delete record dialog states
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<WarrantyRecord | null>(null);
+  const [isDeletingRecord, setIsDeletingRecord] = useState(false);
 
   // Helper Functions
   // Validate record - customerName is optional for new records (will be fetched from vehicle owner)
@@ -2512,6 +2507,60 @@ const SuperAdvisor = () => {
     }
   };
 
+  // Handle delete record
+  const handleDeleteRecord = async (record: WarrantyRecord) => {
+    setRecordToDelete(record);
+    setShowDeleteDialog(true);
+  };
+
+  // Confirm delete record
+  const confirmDeleteRecord = async () => {
+    if (!recordToDelete) return;
+
+    try {
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'Authentication token not found',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/processing-records/${recordToDelete.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete record');
+      }
+
+      toast({
+        title: 'Success',
+        description: 'Warranty record deleted successfully',
+      });
+
+      // Refresh the records list
+      await loadProcessingRecords();
+
+      // Close dialog
+      setShowDeleteDialog(false);
+      setRecordToDelete(null);
+
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to delete record',
+        variant: 'destructive'
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       {/* Header */}
@@ -2696,6 +2745,15 @@ const SuperAdvisor = () => {
                               <FileText className="h-4 w-4 mr-1" />
                               View Diagnosis
                             </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeleteRecord(record)}
+                              className="text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              
+                              </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -4546,6 +4604,7 @@ const SuperAdvisor = () => {
                       <Label className="text-xs text-gray-600">VIN</Label>
                       <p className="font-mono font-semibold text-sm">{viewRecordData.vin}</p>
                     </div>
+
                     <div>
                       <Label className="text-xs text-gray-600">Check-in Date</Label>
                       <p className="text-sm">{viewRecordData.checkInDate ? new Date(viewRecordData.checkInDate).toLocaleString() : 'N/A'}</p>
@@ -4948,6 +5007,57 @@ const SuperAdvisor = () => {
               </div>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Record Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center text-red-600">
+              <Trash2 className="h-5 w-5 mr-2" />
+              Delete Record
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this processing record? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            {recordToDelete && (
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="text-sm">
+                  <div className="font-medium">Record ID: {recordToDelete.id}</div>
+                  <div className="text-gray-600 mt-1">
+                    Customer: {recordToDelete.customerName || 'N/A'}
+                  </div>
+                 
+              
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmDeleteRecord}
+              disabled={isDeletingRecord}
+            >
+              {isDeletingRecord ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Record
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
