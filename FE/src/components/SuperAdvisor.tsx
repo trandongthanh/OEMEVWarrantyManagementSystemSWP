@@ -5790,11 +5790,8 @@ const SuperAdvisor = () => {
                   return;
                 }
 
-                // Check date is not in future
-                const selectedDate = new Date(addVehicleForm.dateOfManufacture);
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                if (selectedDate > today) {
+                // Check date is not in future (allow today)
+                if (addVehicleForm.dateOfManufacture && addVehicleForm.dateOfManufacture > todayDate) {
                   toast({
                     title: 'Validation Error',
                     description: 'Date of Manufacture cannot be in the future',
