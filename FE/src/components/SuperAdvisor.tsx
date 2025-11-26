@@ -148,7 +148,7 @@ const SuperAdvisor = () => {
   const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
   
   // Record State
-  const [selectedRecord, setSelectedRecord] = useState<WarrantyRecord | null>(null);
+  
   const [currentCaseText, setCurrentCaseText] = useState('');
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
   
@@ -230,9 +230,6 @@ const SuperAdvisor = () => {
   const [otpVerifiedForCustomer, setOtpVerifiedForCustomer] = useState(false);
   const [otpCountdownForCustomer, setOtpCountdownForCustomer] = useState(0);
 
-  // Visitor same as customer checkbox state
-  const [visitorSameAsCustomer, setVisitorSameAsCustomer] = useState(false);
-
   // Warranty check states
   const [odometer, setOdometer] = useState('');
   const [isCheckingWarranty, setIsCheckingWarranty] = useState(false);
@@ -254,8 +251,7 @@ const SuperAdvisor = () => {
   });
   const [isUpdatingRecord, setIsUpdatingRecord] = useState(false);
 
-  // Create Record Dialog states (standalone - không cần warranty check)
-  const [showStandaloneCreateDialog, setShowStandaloneCreateDialog] = useState(false);
+  
 
   // States for customer vehicle warranty check in phone mode
   const [selectedVehicleForWarranty, setSelectedVehicleForWarranty] = useState<any>(null);
@@ -2697,148 +2693,7 @@ const SuperAdvisor = () => {
     }
   };
 
-  // Open standalone create dialog
-  const handleOpenStandaloneCreate = () => {
-    // Reset form
-    setWarrantyRecordForm({
-      vin: '',
-      odometer: '',
-      purchaseDate: '',
-      customerName: '',
-      customerPhone: '',
-      cases: [],
-      visitorFullName: '',
-      visitorPhone: '',
-      customerEmail: ''
-    });
-    setWarrantyRecordCaseText('');
-    setEvidenceImages([]);
-    setShowStandaloneCreateDialog(true);
-  };
-
-  // Handle evidence image upload (if not exists)
-  const handleEvidenceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    setUploadingImage(true);
-
-    try {
-      const uploadPromises = Array.from(files).map(async (file) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('upload_preset', 'ml_default'); // Replace with your Cloudinary upload preset
-
-        const response = await fetch(
-          'https://api.cloudinary.com/v1_1/dkqomtqvv/image/upload', // Replace with your Cloudinary cloud name
-          {
-            method: 'POST',
-            body: formData
-          }
-        );
-
-        const data = await response.json();
-        return data.secure_url;
-      });
-
-      const uploadedUrls = await Promise.all(uploadPromises);
-      setEvidenceImages([...evidenceImages, ...uploadedUrls]);
-
-      toast({
-        title: 'Success',
-        description: `${uploadedUrls.length} image(s) uploaded successfully`
-      });
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to upload images',
-        variant: 'destructive'
-      });
-    } finally {
-      setUploadingImage(false);
-    }
-  };
-
-  // Handle create warranty record
-  const handleCreateWarrantyRecord = async () => {
-    try {
-      setIsCreatingRecord(true);
-
-      // Validate form
-      if (!warrantyRecordForm.vin || !warrantyRecordForm.odometer) {
-        toast({
-          title: 'Validation Error',
-          description: 'VIN and odometer are required',
-          variant: 'destructive'
-        });
-        return;
-      }
-
-      if (warrantyRecordForm.cases.length === 0) {
-        toast({
-          title: 'Validation Error',
-          description: 'At least one guarantee case is required',
-          variant: 'destructive'
-        });
-        return;
-      }
-
-      // Prepare record data
-      const recordData = {
-        vin: warrantyRecordForm.vin,
-        odometer: parseInt(warrantyRecordForm.odometer),
-        guaranteeCases: warrantyRecordForm.cases.map((caseText: string) => ({
-          contentGuarantee: caseText
-        })),
-        visitorInfo: {
-          fullName: warrantyRecordForm.visitorFullName || 'Guest',
-          phone: warrantyRecordForm.visitorPhone || '',
-          email: warrantyRecordForm.customerEmail || ''
-        },
-        evidenceImageUrls: evidenceImages
-      };
-
-      // Call API to create record
-      const result = await createProcessingRecord(recordData);
-
-      toast({
-        title: 'Success',
-        description: 'Warranty record created successfully'
-      });
-
-      // Refresh records list
-      await loadProcessingRecords();
-
-      // Close dialog
-      setShowCreateWarrantyDialog(false);
-      setShowStandaloneCreateDialog(false);
-
-      // Reset form
-      setWarrantyRecordForm({
-        vin: '',
-        odometer: '',
-        purchaseDate: '',
-        customerName: '',
-        customerPhone: '',
-        cases: [],
-        visitorFullName: '',
-        visitorPhone: '',
-        customerEmail: ''
-      });
-      setWarrantyRecordCaseText('');
-      setEvidenceImages([]);
-
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to create record',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsCreatingRecord(false);
-    }
-  };
-
+ 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       {/* Header */}
