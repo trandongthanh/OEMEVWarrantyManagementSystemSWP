@@ -140,6 +140,8 @@ interface OwnerForm {
 const SuperAdvisor = () => {
   const { logout, getToken } = useAuth();
   const { toast } = useToast();
+  // Today's date in YYYY-MM-DD format for date max validation
+  const todayDate = new Date().toISOString().split('T')[0];
   
   // UI State
   const [searchVin, setSearchVin] = useState('');
@@ -316,10 +318,7 @@ const SuperAdvisor = () => {
   const [recordToDelete, setRecordToDelete] = useState<WarrantyRecord | null>(null);
   const [isDeletingRecord, setIsDeletingRecord] = useState(false);
 
-  // Helper Functions
-  // Validate record - customerName is optional for new records (will be fetched from vehicle owner)
-  const validateRecord = (record: { vinNumber: string; customerName?: string; odometer: string; cases: CaseNote[] }) => 
-    record.vinNumber && record.odometer && record.cases.length > 0;
+  
 
   const mapApiStatus = (apiStatus: string): 'pending' | 'in-progress' | 'completed' => {
     // Pending statuses
@@ -2921,6 +2920,7 @@ const SuperAdvisor = () => {
         visitorInfo: editRecordForm.visitorInfo
       };
 
+      
       console.log('Sending update data:', updateData); // Debug log
 
       const response = await fetch(`${API_BASE_URL}/processing-records/${editRecordForm.id}`, {
@@ -3548,6 +3548,7 @@ const SuperAdvisor = () => {
                           <Input
                             type="date"
                             value={vehicleSearchResult.purchaseDate ? new Date(vehicleSearchResult.purchaseDate).toISOString().split('T')[0] : ''}
+                            max={todayDate}
                             onChange={(e) => setVehicleSearchResult(prev => prev ? ({
                               ...prev,
                               purchaseDate: e.target.value ? new Date(e.target.value).toISOString() : ''
@@ -5329,6 +5330,7 @@ const SuperAdvisor = () => {
                         <Input
                           type="date"
                           value={editVehicleForm.dateOfManufacture}
+                          max={todayDate}
                           onChange={(e) => setEditVehicleForm(prev => ({ ...prev, dateOfManufacture: e.target.value }))}
                           className="mt-1"
                         />
@@ -5350,6 +5352,7 @@ const SuperAdvisor = () => {
                         <Input
                           type="date"
                           value={editVehicleForm.purchaseDate}
+                          max={todayDate}
                           onChange={(e) => setEditVehicleForm(prev => ({ ...prev, purchaseDate: e.target.value }))}
                           className="mt-1"
                         />
@@ -5452,6 +5455,24 @@ const SuperAdvisor = () => {
                 <Button
                   onClick={async () => {
                     try {
+                      // Validate date fields are not in the future
+                      if (editVehicleForm.dateOfManufacture && editVehicleForm.dateOfManufacture > todayDate) {
+                        toast({
+                          title: 'Validation Error',
+                          description: 'Date of Manufacture cannot be later than today',
+                          variant: 'destructive'
+                        });
+                        return;
+                      }
+                      // Validate purchase date is not in the future
+                      if (editVehicleForm.purchaseDate && editVehicleForm.purchaseDate > todayDate) {
+                        toast({
+                          title: 'Validation Error',
+                          description: 'Purchase date cannot be later than today',
+                          variant: 'destructive'
+                        });
+                        return;
+                      }
                       setIsUpdatingVehicle(true);
                       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
                       
@@ -5712,7 +5733,7 @@ const SuperAdvisor = () => {
                   type="date"
                   value={addVehicleForm.dateOfManufacture}
                   onChange={(e) => setAddVehicleForm(prev => ({ ...prev, dateOfManufacture: e.target.value }))}
-                  max={new Date().toISOString().split('T')[0]}
+                  max={todayDate}
                   className="mt-1"
                 />
                 <p className="text-xs text-gray-500 mt-1">Must be before today</p>
@@ -5772,11 +5793,8 @@ const SuperAdvisor = () => {
                   return;
                 }
 
-                // Check date is not in future
-                const selectedDate = new Date(addVehicleForm.dateOfManufacture);
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                if (selectedDate > today) {
+                // Check date is not in future (allow today)
+                if (addVehicleForm.dateOfManufacture && addVehicleForm.dateOfManufacture > todayDate) {
                   toast({
                     title: 'Validation Error',
                     description: 'Date of Manufacture cannot be in the future',
@@ -6441,37 +6459,11 @@ const SuperAdvisor = () => {
                           )}
                         </Button>
                       )}
-                      {/* Delete button - only show if multiple cases */}
-                      {editRecordForm.guaranteeCases.length > 1 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const newCases = editRecordForm.guaranteeCases.filter((_: any, i: number) => i !== index);
-                            setEditRecordForm({ ...editRecordForm, guaranteeCases: newCases });
-                          }}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <XCircle className="h-3 w-3 mr-1" />
-                          Remove
-                        </Button>
-                      )}
+                     
                     </div>
                   </div>
                 ))}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setEditRecordForm({
-                      ...editRecordForm,
-                      guaranteeCases: [...editRecordForm.guaranteeCases, { contentGuarantee: '', guaranteeCaseId: null }]
-                    });
-                  }}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add New Case
-                </Button>
+               
               </div>
             </div>
 
