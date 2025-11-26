@@ -57,11 +57,10 @@ const createProcessingRecord = async (recordData: {
 };
 
 // API service function for fetching processing records
-const fetchProcessingRecords = async () => {
+const fetchProcessingRecords = async (page: number = 1, limit: number = 10) => {
   const token = localStorage.getItem("ev_warranty_token");
   
-  // Set limit to a large number to get all records (backend default is 10)
-  const response = await fetch(`${API_BASE_URL}/processing-records?limit=1000`, {
+  const response = await fetch(`${API_BASE_URL}/processing-records?page=${page}&limit=${limit}`, {
     method: 'GET',
     headers: {
       'Accept': 'application/json',
@@ -296,6 +295,12 @@ const SuperAdvisor = () => {
   const [newVehicleVin, setNewVehicleVin] = useState('');
 
   const [records, setRecords] = useState<WarrantyRecord[]>([]);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [pageSize] = useState(10);
 
   // Delete record dialog states
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -392,49 +397,30 @@ const SuperAdvisor = () => {
   };
 
   // Load processing records from API
-  const loadProcessingRecords = async () => {
+  const loadProcessingRecords = async (page: number = 1) => {
     try {
       const token = localStorage.getItem('ev_warranty_token');
       
-      const response = await fetchProcessingRecords();
+      const response = await fetchProcessingRecords(page, pageSize);
       
-      if (response.status === 'success' && response.data?.records?.records) {
-        // API returns nested structure: data.records.records
-        const apiRecords = transformProcessingRecords(response.data.records.records);
+      if (response.status === 'success' && response.data) {
+        // New API structure: data.records (array) and data.pagination
+        const apiRecords = response.data.records || [];
+        const pagination = response.data.pagination;
         
-        // Merge with existing records, keeping local records that might have better data
-        setRecords(prevRecords => {
-          const mergedRecords = [...apiRecords];
-          
-          // Add any local records that aren't in the API response
-          prevRecords.forEach(localRecord => {
-            if (!mergedRecords.some(apiRecord => apiRecord.id === localRecord.id)) {
-              mergedRecords.unshift(localRecord); // Add to beginning
-            }
-          });
-          
-          // Sort by creation date (newest first)
-          return mergedRecords.sort((a, b) => 
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
-        });
-      } else if (response.data && Array.isArray(response.data)) {
-        // Maybe API returns data directly
-        const apiRecords = transformProcessingRecords(response.data);
-        setRecords(prevRecords => {
-          const mergedRecords = [...apiRecords];
-          prevRecords.forEach(localRecord => {
-            if (!mergedRecords.some(apiRecord => apiRecord.id === localRecord.id)) {
-              mergedRecords.unshift(localRecord);
-            }
-          });
-          return mergedRecords.sort((a, b) => 
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          );
-        });
+        // Transform records
+        const transformedRecords = transformProcessingRecords(apiRecords);
+        setRecords(transformedRecords);
+        
+        // Update pagination
+        if (pagination) {
+          setCurrentPage(pagination.currentPage || page);
+          setTotalPages(pagination.totalPages || 1);
+          setTotalItems(pagination.totalItems || 0);
+        }
       } else {
-       
-        // Don't clear existing records if API has no data
+        // No data, set empty
+        setRecords([]);
       }
     } catch (error) {
       // Keep existing records if API fails
@@ -1392,8 +1378,6 @@ const SuperAdvisor = () => {
 
   // Handle checkbox change for visitor same as customer
   const handleVisitorSameAsCustomerChange = (checked: boolean) => {
-
-    
     if (checked) {
       // Auto-fill visitor info with customer info
       setWarrantyRecordForm(prev => ({
@@ -1576,8 +1560,9 @@ const SuperAdvisor = () => {
       // Call API to create processing record
       const response = await createProcessingRecord(apiData);
     
-      // Refresh the records list from server to get complete data
-      await loadProcessingRecords();
+      // Refresh the records list from server to get complete data - reset to page 1
+      setCurrentPage(1);
+      await loadProcessingRecords(1);
       
       // Reset forms and close dialogs
       setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', customerPhone: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
@@ -2524,8 +2509,8 @@ const SuperAdvisor = () => {
         checkOutDate: result.data.checkOutDate
       });
 
-      // Reload processing records to update the table
-      await loadProcessingRecords();
+      // Reload processing records to update the table - stay on current page
+      await loadProcessingRecords(currentPage);
 
       // Close dialog after a short delay
       setTimeout(() => {
@@ -2722,8 +2707,10 @@ const SuperAdvisor = () => {
         description: 'Warranty record deleted successfully',
       });
 
-      // Refresh the records list
-      await loadProcessingRecords();
+      // Refresh the records list - smart pagination
+      const newPage = records.length === 1 && currentPage > 1 ? currentPage - 1 : currentPage;
+      setCurrentPage(newPage);
+      await loadProcessingRecords(newPage);
 
       // Close dialog
       setShowDeleteDialog(false);
@@ -2784,7 +2771,7 @@ const SuperAdvisor = () => {
         id: record.id,
         vin: fullRecord.vin || fullRecord.vehicle?.vin || record.vinNumber || '',
         odometer: (fullRecord.odometer || fullRecord.vehicleProcessingRecord?.odometer || record.odometer || 0).toString(),
-        guaranteeCases: guaranteeCases.length > 0 ? guaranteeCases : [{ contentGuarantee: '', guaranteeCaseId: null }],
+        guaranteeCases: guaranteeCases.length > 0 ? guaranteeCases : [{ contentGuarantee: '' }],
         visitorInfo: {
           fullName: fullRecord.visitorInfo?.fullName || fullRecord.visitor?.fullName || fullRecord.guest?.fullName || '',
           email: fullRecord.visitorInfo?.email || fullRecord.visitor?.email || fullRecord.guest?.email || '',
@@ -2831,27 +2818,36 @@ const SuperAdvisor = () => {
       }
 
       // Validate form
-      if (!editRecordForm.vin || !editRecordForm.odometer) {
+      if (!editRecordForm.odometer) {
         toast({
           title: 'Validation Error',
-          description: 'VIN and odometer are required',
+          description: 'Odometer is required',
           variant: 'destructive'
         });
         return;
       }
 
-      // For now, only update odometer and visitor info
-      // Guarantee cases update might not be supported by backend
-      const updateData: any = {
-        vin: editRecordForm.vin,
+      // Validate guarantee cases
+      const validGuaranteeCases = editRecordForm.guaranteeCases.filter(gc => gc.contentGuarantee.trim() !== '');
+      if (validGuaranteeCases.length === 0) {
+        toast({
+          title: 'Validation Error',
+          description: 'At least one guarantee case is required',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Prepare update data - send guaranteeCases in the format backend expects
+      const updateData = {
         odometer: parseInt(editRecordForm.odometer),
+        guaranteeCases: validGuaranteeCases.map((gc: any) => ({
+          contentGuarantee: gc.contentGuarantee.trim()
+        })),
         visitorInfo: editRecordForm.visitorInfo
       };
 
-      // Only include guarantee cases if they have content and backend supports it
-      const validGuaranteeCases = editRecordForm.guaranteeCases.filter(gc => gc.contentGuarantee.trim() !== '');
-    
-
+      
       console.log('Sending update data:', updateData); // Debug log
 
       const response = await fetch(`${API_BASE_URL}/processing-records/${editRecordForm.id}`, {
@@ -2877,8 +2873,8 @@ const SuperAdvisor = () => {
         description: 'Record updated successfully'
       });
 
-      // Refresh records list
-      await loadProcessingRecords();
+      // Refresh records list with current page
+      await loadProcessingRecords(currentPage);
 
       // Close dialog
       setShowEditRecordDialog(false);
@@ -2894,7 +2890,6 @@ const SuperAdvisor = () => {
     }
   };
 
- 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       {/* Header */}
@@ -3162,6 +3157,70 @@ const SuperAdvisor = () => {
               </Table>
             </div>
 
+            {/* Pagination UI */}
+            {records.length > 0 && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalItems)} of {totalItems} records
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const newPage = currentPage - 1;
+                      setCurrentPage(newPage);
+                      loadProcessingRecords(newPage);
+                    }}
+                    disabled={currentPage <= 1}
+                  >
+                    Previous
+                  </Button>
+                  
+                  {/* Page number buttons */}
+                  {(() => {
+                    const pages = [];
+                    const maxButtons = 5;
+                    let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+                    let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+                    
+                    if (endPage - startPage < maxButtons - 1) {
+                      startPage = Math.max(1, endPage - maxButtons + 1);
+                    }
+                    
+                    for (let i = startPage; i <= endPage; i++) {
+                      pages.push(
+                        <Button
+                          key={i}
+                          variant={currentPage === i ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => {
+                            setCurrentPage(i);
+                            loadProcessingRecords(i);
+                          }}
+                        >
+                          {i}
+                        </Button>
+                      );
+                    }
+                    return pages;
+                  })()}
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const newPage = currentPage + 1;
+                      setCurrentPage(newPage);
+                      loadProcessingRecords(newPage);
+                    }}
+                    disabled={currentPage >= totalPages}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
              
           </CardContent>
         </Card>
@@ -6257,16 +6316,16 @@ const SuperAdvisor = () => {
           </DialogHeader>
           
           <div className="space-y-4 py-4">
-            {/* VIN */}
+            {/* VIN - Read Only */}
             <div>
-              <Label htmlFor="edit-vin">VIN *</Label>
+              <Label htmlFor="edit-vin">VIN * (Cannot be changed)</Label>
               <Input
                 id="edit-vin"
                 value={editRecordForm.vin}
-                onChange={(e) => setEditRecordForm({ ...editRecordForm, vin: e.target.value })}
-                placeholder="Enter VIN"
-                className="mt-1"
+                disabled
+                className="mt-1 bg-gray-100 cursor-not-allowed font-mono"
               />
+              <p className="text-xs text-muted-foreground mt-1">VIN cannot be modified after record creation</p>
             </div>
 
             {/* Odometer */}
