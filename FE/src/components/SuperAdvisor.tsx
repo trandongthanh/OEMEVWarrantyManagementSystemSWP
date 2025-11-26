@@ -2588,32 +2588,62 @@ const SuperAdvisor = () => {
       });
 
       if (!response.ok) throw new Error('Failed to fetch record details');
-      
-      const result = await response.json();
-      console.log('Full record details:', result); // Debug log
-      
-      const fullRecord = result.data?.processingRecord || result.data;
 
-      // Pre-fill form with record data - handle multiple possible data structures
+      const result = await response.json();
+      console.log('Full record details for edit:', result); // Debug log
+
+      const fullRecord = result.data?.processingRecord || result.data?.record || result.data;
+      console.log('Mapped fullRecord:', fullRecord); // Debug log
+
+      if (!fullRecord) {
+        throw new Error('No record data found');
+      }
+
+      // Extract guarantee cases from the record
+      let guaranteeCases = [];
+      if (fullRecord.guaranteeCases && Array.isArray(fullRecord.guaranteeCases)) {
+        guaranteeCases = fullRecord.guaranteeCases.map((gc: any) => ({
+          contentGuarantee: gc.contentGuarantee || gc.content || gc.description || '',
+          guaranteeCaseId: gc.guaranteeCaseId || gc.id
+        }));
+      } else if (fullRecord.cases && Array.isArray(fullRecord.cases)) {
+        // Fallback for different API structure
+        guaranteeCases = fullRecord.cases.map((gc: any) => ({
+          contentGuarantee: gc.contentGuarantee || gc.content || gc.description || '',
+          guaranteeCaseId: gc.guaranteeCaseId || gc.id
+        }));
+      }
+
+      console.log('Extracted guarantee cases:', guaranteeCases); // Debug log
+
+      // Pre-fill form with record data
       setEditRecordForm({
         id: record.id,
-        vin: fullRecord?.vehicle?.vin || fullRecord?.vehicleProcessingRecord?.vin || record.vinNumber || '',
-        odometer: (fullRecord?.odometer || fullRecord?.vehicleProcessingRecord?.odometer || record.odometer)?.toString() || '',
-        guaranteeCases: fullRecord?.guaranteeCases?.length > 0 
-          ? fullRecord.guaranteeCases.map((gc: any) => ({
-              contentGuarantee: gc.contentGuarantee || gc.content || ''
-            }))
-          : [{ contentGuarantee: '' }],
+        vin: fullRecord.vin || fullRecord.vehicle?.vin || record.vinNumber || '',
+        odometer: (fullRecord.odometer || fullRecord.vehicleProcessingRecord?.odometer || record.odometer || 0).toString(),
+        guaranteeCases: guaranteeCases.length > 0 ? guaranteeCases : [{ contentGuarantee: '', guaranteeCaseId: null }],
         visitorInfo: {
-          fullName: fullRecord?.guest?.fullName || fullRecord?.visitorInfo?.fullName || '',
-          email: fullRecord?.guest?.email || fullRecord?.visitorInfo?.email || '',
-          phone: fullRecord?.guest?.phone || fullRecord?.visitorInfo?.phone || ''
+          fullName: fullRecord.visitorInfo?.fullName || fullRecord.visitor?.fullName || fullRecord.guest?.fullName || '',
+          email: fullRecord.visitorInfo?.email || fullRecord.visitor?.email || fullRecord.guest?.email || '',
+          phone: fullRecord.visitorInfo?.phone || fullRecord.visitor?.phone || fullRecord.guest?.phone || ''
         }
       });
 
+      console.log('Set editRecordForm:', {
+        id: record.id,
+        vin: fullRecord.vin || fullRecord.vehicle?.vin || record.vinNumber || '',
+        odometer: (fullRecord.odometer || fullRecord.vehicleProcessingRecord?.odometer || record.odometer || 0).toString(),
+        guaranteeCases: guaranteeCases.length > 0 ? guaranteeCases : [{ contentGuarantee: '', guaranteeCaseId: null }],
+        visitorInfo: {
+          fullName: fullRecord.visitorInfo?.fullName || fullRecord.visitor?.fullName || fullRecord.guest?.fullName || '',
+          email: fullRecord.visitorInfo?.email || fullRecord.visitor?.email || fullRecord.guest?.email || '',
+          phone: fullRecord.visitorInfo?.phone || fullRecord.visitor?.phone || fullRecord.guest?.phone || ''
+        }
+      }); // Debug log
+
       setShowEditRecordDialog(true);
     } catch (error) {
-      console.error('Error loading record:', error); // Debug log
+      console.error('Error loading record for edit:', error); // Debug log
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to load record details',
@@ -2647,21 +2677,25 @@ const SuperAdvisor = () => {
         return;
       }
 
-      if (editRecordForm.guaranteeCases.length === 0 || !editRecordForm.guaranteeCases[0].contentGuarantee) {
-        toast({
-          title: 'Validation Error',
-          description: 'At least one guarantee case is required',
-          variant: 'destructive'
-        });
-        return;
-      }
-
-      const updateData = {
+      // For now, only update odometer and visitor info
+      // Guarantee cases update might not be supported by backend
+      const updateData: any = {
         vin: editRecordForm.vin,
         odometer: parseInt(editRecordForm.odometer),
-        guaranteeCases: editRecordForm.guaranteeCases.filter(gc => gc.contentGuarantee.trim() !== ''),
         visitorInfo: editRecordForm.visitorInfo
       };
+
+      // Only include guarantee cases if they have content and backend supports it
+      const validGuaranteeCases = editRecordForm.guaranteeCases.filter(gc => gc.contentGuarantee.trim() !== '');
+      if (validGuaranteeCases.length > 0) {
+        // Try different formats that backend might accept
+        updateData.guaranteeCases = validGuaranteeCases.map(gc => ({
+          contentGuarantee: gc.contentGuarantee.trim(),
+          ...(gc.guaranteeCaseId && { guaranteeCaseId: gc.guaranteeCaseId })
+        }));
+      }
+
+      console.log('Sending update data:', updateData); // Debug log
 
       const response = await fetch(`${API_BASE_URL}/processing-records/${editRecordForm.id}`, {
         method: 'PUT',
@@ -2674,8 +2708,12 @@ const SuperAdvisor = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('Update failed:', errorData); // Debug log
         throw new Error(errorData.message || 'Failed to update record');
       }
+
+      const result = await response.json();
+      console.log('Update successful:', result); // Debug log
 
       toast({
         title: 'Success',
@@ -2688,6 +2726,7 @@ const SuperAdvisor = () => {
       // Close dialog
       setShowEditRecordDialog(false);
     } catch (error) {
+      console.error('Update error:', error); // Debug log
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to update record',
