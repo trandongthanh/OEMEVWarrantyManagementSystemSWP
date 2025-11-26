@@ -318,10 +318,7 @@ const SuperAdvisor = () => {
   const [recordToDelete, setRecordToDelete] = useState<WarrantyRecord | null>(null);
   const [isDeletingRecord, setIsDeletingRecord] = useState(false);
 
-  // Helper Functions
-  // Validate record - customerName is optional for new records (will be fetched from vehicle owner)
-  const validateRecord = (record: { vinNumber: string; customerName?: string; odometer: string; cases: CaseNote[] }) => 
-    record.vinNumber && record.odometer && record.cases.length > 0;
+  
 
   const mapApiStatus = (apiStatus: string): 'pending' | 'in-progress' | 'completed' => {
     // Pending statuses
@@ -6462,37 +6459,11 @@ const SuperAdvisor = () => {
                           )}
                         </Button>
                       )}
-                      {/* Delete button - only show if multiple cases */}
-                      {editRecordForm.guaranteeCases.length > 1 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const newCases = editRecordForm.guaranteeCases.filter((_: any, i: number) => i !== index);
-                            setEditRecordForm({ ...editRecordForm, guaranteeCases: newCases });
-                          }}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <XCircle className="h-3 w-3 mr-1" />
-                          Remove
-                        </Button>
-                      )}
+                     
                     </div>
                   </div>
                 ))}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setEditRecordForm({
-                      ...editRecordForm,
-                      guaranteeCases: [...editRecordForm.guaranteeCases, { contentGuarantee: '', guaranteeCaseId: null }]
-                    });
-                  }}
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add New Case
-                </Button>
+               
               </div>
             </div>
 
