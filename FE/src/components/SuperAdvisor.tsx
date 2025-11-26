@@ -554,7 +554,91 @@ const SuperAdvisor = () => {
         setIsLoadingVehicleList(false);
       }
     }
+  
+  const handleAddNewVehicle = async () => {
+    // Validate form
+    if (!addVehicleForm.vin || !addVehicleForm.dateOfManufacture || !addVehicleForm.placeOfManufacture || !addVehicleForm.vehicleModelId) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please fill in all required fields',
+        variant: 'destructive'
+      });
+        return;
+      }
 
+      // Check date is not in future (allow today)
+      if (addVehicleForm.dateOfManufacture && addVehicleForm.dateOfManufacture > todayDate) {
+        toast({
+          title: 'Validation Error',
+          description: 'Date of Manufacture cannot be in the future',
+          variant: 'destructive'
+        });
+          return;
+        }
+
+        try {
+          setIsAddingVehicle(true);
+          const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+                  
+          if (!token) {
+            toast({
+              title: 'Error',
+              description: 'Authentication token not found',
+              variant: 'destructive'
+            });
+              return;
+            }
+
+            const response = await axios.post(
+              `${API_BASE_URL}/vehicles`,
+              {
+                vin: addVehicleForm.vin,
+                dateOfManufacture: addVehicleForm.dateOfManufacture,
+                placeOfManufacture: addVehicleForm.placeOfManufacture,
+                vehicleModelId: addVehicleForm.vehicleModelId
+              },
+              {
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                }
+              });
+              if (response.data && response.data.status === 'success') {
+                toast({
+                  title: 'Success',
+                  description: 'Vehicle added successfully',
+                });
+                    
+                    // Refresh vehicle list
+                fetchVehicles(searchVehicle, undefined, pagination.currentPage, pagination.itemsPerPage);
+                    
+                    // Close dialog and reset form
+                setShowAddVehicleDialog(false);
+                setAddVehicleForm({
+                  vin: '',
+                  dateOfManufacture: '',
+                  placeOfManufacture: '',
+                  vehicleModelId: ''
+                });
+                  } else {
+                    toast({
+                      title: 'Error',
+                      description: 'Failed to add vehicle',
+                      variant: 'destructive'
+                    });
+                  }
+                } catch (error: any) {
+                  console.error('Add vehicle error:', error);
+                  toast({
+                    title: 'Error',
+                    description: error.response?.data?.message || 'Failed to add vehicle',
+                    variant: 'destructive'
+                  });
+                } finally {
+                  setIsAddingVehicle(false);
+                }
+              }
+    
   const handleSearchVehicleByVin = async (vinToSearch?: string) => {
     try {
       //reset các state
@@ -5782,91 +5866,7 @@ const SuperAdvisor = () => {
               Cancel
             </Button>
             <Button
-              onClick={async () => {
-                // Validate form
-                if (!addVehicleForm.vin || !addVehicleForm.dateOfManufacture || !addVehicleForm.placeOfManufacture || !addVehicleForm.vehicleModelId) {
-                  toast({
-                    title: 'Validation Error',
-                    description: 'Please fill in all required fields',
-                    variant: 'destructive'
-                  });
-                  return;
-                }
-
-                // Check date is not in future (allow today)
-                if (addVehicleForm.dateOfManufacture && addVehicleForm.dateOfManufacture > todayDate) {
-                  toast({
-                    title: 'Validation Error',
-                    description: 'Date of Manufacture cannot be in the future',
-                    variant: 'destructive'
-                  });
-                  return;
-                }
-
-                try {
-                  setIsAddingVehicle(true);
-                  const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-                  
-                  if (!token) {
-                    toast({
-                      title: 'Error',
-                      description: 'Authentication token not found',
-                      variant: 'destructive'
-                    });
-                    return;
-                  }
-
-                  const response = await axios.post(
-                    `${API_BASE_URL}/vehicles`,
-                    {
-                      vin: addVehicleForm.vin,
-                      dateOfManufacture: addVehicleForm.dateOfManufacture,
-                      placeOfManufacture: addVehicleForm.placeOfManufacture,
-                      vehicleModelId: addVehicleForm.vehicleModelId
-                    },
-                    {
-                      headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                      }
-                    }
-                  );
-
-                  if (response.data && response.data.status === 'success') {
-                    toast({
-                      title: 'Success',
-                      description: 'Vehicle added successfully',
-                    });
-                    
-                    // Refresh vehicle list
-                    fetchVehicles(searchVehicle, undefined, pagination.currentPage, pagination.itemsPerPage);
-                    
-                    // Close dialog and reset form
-                    setShowAddVehicleDialog(false);
-                    setAddVehicleForm({
-                      vin: '',
-                      dateOfManufacture: '',
-                      placeOfManufacture: '',
-                      vehicleModelId: ''
-                    });
-                  } else {
-                    toast({
-                      title: 'Error',
-                      description: 'Failed to add vehicle',
-                      variant: 'destructive'
-                    });
-                  }
-                } catch (error: any) {
-                  console.error('Add vehicle error:', error);
-                  toast({
-                    title: 'Error',
-                    description: error.response?.data?.message || 'Failed to add vehicle',
-                    variant: 'destructive'
-                  });
-                } finally {
-                  setIsAddingVehicle(false);
-                }
-              }}
+              onClick={handleAddNewVehicle}
               disabled={isAddingVehicle}
               className="bg-green-600 hover:bg-green-700"
             >
