@@ -243,6 +243,7 @@ export const processingRecordsService = {
       const groupedRecords: ProcessingRecordsByStatus = {
         CHECKED_IN: [],
         IN_DIAGNOSIS: [],
+        WAITING_CUSTOMER_APPROVAL: [],
         WAITING_FOR_PARTS: [],
         IN_REPAIR: [],
         COMPLETED: [],
