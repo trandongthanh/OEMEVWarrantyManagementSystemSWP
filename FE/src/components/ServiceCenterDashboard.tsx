@@ -552,12 +552,20 @@ const ServiceCenterDashboard = () => {
   // Request Management Tab States
   const [allStockTransferRequests, setAllStockTransferRequests] = useState<any[]>([]);
   const [requestFilter, setRequestFilter] = useState<'ALL' | 'APPROVED' | 'PENDING_APPROVAL' | 'CANCELLED'>('ALL');
+  const [requestCurrentPage, setRequestCurrentPage] = useState(1);
+  const [requestTotalPages, setRequestTotalPages] = useState(1);
+  const [requestTotalItems, setRequestTotalItems] = useState(0);
+  const [requestPageSize] = useState(20);
   const [showCreateRequestModal, setShowCreateRequestModal] = useState(false);
   const [showRequestDetailsModal, setShowRequestDetailsModal] = useState(false);
   const [showUpdateRequestModal, setShowUpdateRequestModal] = useState(false);
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [showCancelConfirmModal, setShowCancelConfirmModal] = useState(false);
   const [selectedRequestForAction, setSelectedRequestForAction] = useState<any | null>(null);
+  const [originalRequestForm, setOriginalRequestForm] = useState<{
+    requestingWarehouseId: string;
+    items: Array<{ typeComponentId: string; quantityRequested: number }>;
+  } | null>(null);
   const [requestForm, setRequestForm] = useState<{
     requestingWarehouseId: string;
     items: Array<{ typeComponentId: string; quantityRequested: number }>;
@@ -1060,7 +1068,7 @@ const ServiceCenterDashboard = () => {
       return;
     }
     try {
-      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests`, {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests?page=1&limit=50`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const requestsData = response.data?.data?.stockTransferRequests || [];
@@ -1933,7 +1941,7 @@ const ServiceCenterDashboard = () => {
   // ==================== Request Management Tab Functions ====================
 
   // Fetch all stock transfer requests for Request Management tab
-  const fetchAllStockTransferRequests = async () => {
+  const fetchAllStockTransferRequests = async (page: number = 1) => {
     setIsLoadingRequests(true);
     const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
     if (!token) {
@@ -1941,12 +1949,17 @@ const ServiceCenterDashboard = () => {
       return;
     }
     try {
-      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests`, {
+      const response = await axios.get(`${API_BASE_URL}/stock-transfer-requests?page=${page}&limit=${requestPageSize}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const requestsData = response.data?.data?.stockTransferRequests || [];
+      const pagination = response.data?.data?.pagination;
       console.log('📦 Fetched all stock transfer requests for management:', requestsData);
+      console.log('📄 Pagination info:', pagination);
       setAllStockTransferRequests(requestsData);
+      setRequestCurrentPage(pagination?.currentPage || page);
+      setRequestTotalPages(pagination?.totalPages || 1);
+      setRequestTotalItems(pagination?.totalItems || 0);
     } catch (error) {
       console.error('Failed to fetch stock transfer requests:', error);
       toast({
@@ -2030,8 +2043,9 @@ const ServiceCenterDashboard = () => {
       setRequestForm({ requestingWarehouseId: '', items: [{ typeComponentId: '', quantityRequested: 1 }] });
       setShowCreateRequestModal(false);
 
-      // Refresh list
-      await fetchAllStockTransferRequests();
+      // Refresh list - go back to page 1 after creating
+      setRequestCurrentPage(1);
+      await fetchAllStockTransferRequests(1);
     } catch (error: any) {
       console.error('Failed to create request:', error);
       toast({
@@ -2090,7 +2104,7 @@ const ServiceCenterDashboard = () => {
       setSelectedRequestForAction(null);
 
       // Refresh list and details if viewing
-      await fetchAllStockTransferRequests();
+      await fetchAllStockTransferRequests(requestCurrentPage);
       if (showRequestDetailsModal && requestDetailsData) {
         await fetchRequestDetails(requestId);
       }
@@ -2133,8 +2147,15 @@ const ServiceCenterDashboard = () => {
       setSelectedRequestForAction(null);
       setRequestDetailsData(null);
 
-      // Refresh list
-      await fetchAllStockTransferRequests();
+      // Refresh list - stay on current page or go to previous if last item deleted
+      const currentItemsCount = allStockTransferRequests.filter(req => requestFilter === 'ALL' || req.status === requestFilter).length;
+      if (currentItemsCount <= 1 && requestCurrentPage > 1) {
+        const newPage = requestCurrentPage - 1;
+        setRequestCurrentPage(newPage);
+        await fetchAllStockTransferRequests(newPage);
+      } else {
+        await fetchAllStockTransferRequests(requestCurrentPage);
+      }
     } catch (error: any) {
       console.error('Failed to delete request:', error);
       toast({
@@ -2173,7 +2194,7 @@ const ServiceCenterDashboard = () => {
       setShowCancelConfirmModal(false);
 
       // Refresh list and details if viewing
-      await fetchAllStockTransferRequests();
+      await fetchAllStockTransferRequests(requestCurrentPage);
       if (showRequestDetailsModal && requestDetailsData) {
         await fetchRequestDetails(requestId);
       }
@@ -2215,7 +2236,7 @@ const ServiceCenterDashboard = () => {
   useEffect(() => {
     if (user) {
       fetchWarehouses();
-      fetchAllStockTransferRequests();
+      fetchAllStockTransferRequests(1);
     }
   }, [user]);
 
@@ -2755,13 +2776,15 @@ const ServiceCenterDashboard = () => {
                                     disabled={request.status !== 'PENDING_APPROVAL'}
                                     onClick={() => {
                                       // Pre-fill form with current data
-                                      setRequestForm({
+                                      const formData = {
                                         requestingWarehouseId: request.requestingWarehouseId,
                                         items: request.items?.map(item => ({
                                           typeComponentId: item.typeComponentId,
                                           quantityRequested: item.quantityRequested
                                         })) || [{ typeComponentId: '', quantityRequested: 1 }]
-                                      });
+                                      };
+                                      setRequestForm(formData);
+                                      setOriginalRequestForm(JSON.parse(JSON.stringify(formData))); // Deep clone
                                       setSelectedRequestForAction(request);
                                       setShowUpdateRequestModal(true);
                                       if (request.requestingWarehouseId) {
@@ -2787,6 +2810,68 @@ const ServiceCenterDashboard = () => {
                           ))}
                         </TableBody>
                       </Table>
+                    </div>
+                  )}
+
+                  {/* Pagination Controls */}
+                  {!isLoadingRequests && allStockTransferRequests.length > 0 && (
+                    <div className="flex items-center justify-between mt-4">
+                      <div className="text-sm text-muted-foreground">
+                        Showing {((requestCurrentPage - 1) * requestPageSize) + 1} to {Math.min(requestCurrentPage * requestPageSize, requestTotalItems)} of {requestTotalItems} requests
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const newPage = requestCurrentPage - 1;
+                            setRequestCurrentPage(newPage);
+                            fetchAllStockTransferRequests(newPage);
+                          }}
+                          disabled={requestCurrentPage <= 1}
+                        >
+                          Previous
+                        </Button>
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(5, requestTotalPages) }, (_, i) => {
+                            let pageNum;
+                            if (requestTotalPages <= 5) {
+                              pageNum = i + 1;
+                            } else if (requestCurrentPage <= 3) {
+                              pageNum = i + 1;
+                            } else if (requestCurrentPage >= requestTotalPages - 2) {
+                              pageNum = requestTotalPages - 4 + i;
+                            } else {
+                              pageNum = requestCurrentPage - 2 + i;
+                            }
+                            return (
+                              <Button
+                                key={pageNum}
+                                variant={pageNum === requestCurrentPage ? 'default' : 'outline'}
+                                size="sm"
+                                onClick={() => {
+                                  setRequestCurrentPage(pageNum);
+                                  fetchAllStockTransferRequests(pageNum);
+                                }}
+                              >
+                                {pageNum}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const newPage = requestCurrentPage + 1;
+                            setRequestCurrentPage(newPage);
+                            fetchAllStockTransferRequests(newPage);
+                          }}
+                          disabled={requestCurrentPage >= requestTotalPages}
+                        >
+                          Next
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </CardContent>
@@ -5793,6 +5878,23 @@ const ServiceCenterDashboard = () => {
                 <Button 
                   variant="default" 
                   onClick={() => selectedRequestForAction && updateStockTransferRequest(selectedRequestForAction.id)}
+                  disabled={(() => {
+                    if (!originalRequestForm) return false;
+                    // Check if warehouse changed
+                    if (requestForm.requestingWarehouseId !== originalRequestForm.requestingWarehouseId) return false;
+                    // Check if items length changed
+                    if (requestForm.items.length !== originalRequestForm.items.length) return false;
+                    // Check if any item changed
+                    for (let i = 0; i < requestForm.items.length; i++) {
+                      const currentItem = requestForm.items[i];
+                      const originalItem = originalRequestForm.items[i];
+                      if (currentItem.typeComponentId !== originalItem.typeComponentId ||
+                          currentItem.quantityRequested !== originalItem.quantityRequested) {
+                        return false;
+                      }
+                    }
+                    return true; // No changes, disable button
+                  })()}
                 >
                   <Save className="h-4 w-4 mr-2" />
                   Update Request
