@@ -140,6 +140,8 @@ interface OwnerForm {
 const SuperAdvisor = () => {
   const { logout, getToken } = useAuth();
   const { toast } = useToast();
+  // Today's date in YYYY-MM-DD format for date max validation
+  const todayDate = new Date().toISOString().split('T')[0];
   
   // UI State
   const [searchVin, setSearchVin] = useState('');
@@ -2845,6 +2847,7 @@ const SuperAdvisor = () => {
         visitorInfo: editRecordForm.visitorInfo
       };
 
+      
       console.log('Sending update data:', updateData); // Debug log
 
       const response = await fetch(`${API_BASE_URL}/processing-records/${editRecordForm.id}`, {
@@ -3467,6 +3470,7 @@ const SuperAdvisor = () => {
                           <Input
                             type="date"
                             value={vehicleSearchResult.purchaseDate ? new Date(vehicleSearchResult.purchaseDate).toISOString().split('T')[0] : ''}
+                            max={todayDate}
                             onChange={(e) => setVehicleSearchResult(prev => prev ? ({
                               ...prev,
                               purchaseDate: e.target.value ? new Date(e.target.value).toISOString() : ''
@@ -5232,7 +5236,18 @@ const SuperAdvisor = () => {
                     <div>
                       <Button
                         size="sm"
-                        onClick={() => setIsEditingVehicle(true)}
+                        onClick={() => {
+                          // initialize edit form from currently selected vehicle detail
+                          if (selectedVehicleDetail) {
+                            setEditVehicleForm({
+                              dateOfManufacture: selectedVehicleDetail.dateOfManufacture ? new Date(selectedVehicleDetail.dateOfManufacture).toISOString().split('T')[0] : '',
+                              placeOfManufacture: selectedVehicleDetail.placeOfManufacture || '',
+                              licensePlate: selectedVehicleDetail.licensePlate || '',
+                              purchaseDate: selectedVehicleDetail.purchaseDate ? new Date(selectedVehicleDetail.purchaseDate).toISOString().split('T')[0] : ''
+                            });
+                          }
+                          setIsEditingVehicle(true);
+                        }}
                         className="bg-blue-600 hover:bg-blue-700"
                       >
                         <FileText className="h-4 w-4 mr-2" />
@@ -5262,6 +5277,7 @@ const SuperAdvisor = () => {
                         <Input
                           type="date"
                           value={editVehicleForm.dateOfManufacture}
+                          max={todayDate}
                           onChange={(e) => setEditVehicleForm(prev => ({ ...prev, dateOfManufacture: e.target.value }))}
                           className="mt-1"
                         />
@@ -5283,6 +5299,7 @@ const SuperAdvisor = () => {
                         <Input
                           type="date"
                           value={editVehicleForm.purchaseDate}
+                          max={todayDate}
                           onChange={(e) => setEditVehicleForm(prev => ({ ...prev, purchaseDate: e.target.value }))}
                           className="mt-1"
                         />
@@ -5385,6 +5402,24 @@ const SuperAdvisor = () => {
                 <Button
                   onClick={async () => {
                     try {
+                      // Validate date fields are not in the future
+                      if (editVehicleForm.dateOfManufacture && editVehicleForm.dateOfManufacture > todayDate) {
+                        toast({
+                          title: 'Validation Error',
+                          description: 'Date of Manufacture cannot be later than today',
+                          variant: 'destructive'
+                        });
+                        return;
+                      }
+                      // Validate purchase date is not in the future
+                      if (editVehicleForm.purchaseDate && editVehicleForm.purchaseDate > todayDate) {
+                        toast({
+                          title: 'Validation Error',
+                          description: 'Purchase date cannot be later than today',
+                          variant: 'destructive'
+                        });
+                        return;
+                      }
                       setIsUpdatingVehicle(true);
                       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
                       
@@ -5622,7 +5657,7 @@ const SuperAdvisor = () => {
                   type="date"
                   value={addVehicleForm.dateOfManufacture}
                   onChange={(e) => setAddVehicleForm(prev => ({ ...prev, dateOfManufacture: e.target.value }))}
-                  max={new Date().toISOString().split('T')[0]}
+                  max={todayDate}
                   className="mt-1"
                 />
                 <p className="text-xs text-gray-500 mt-1">Must be before today</p>
