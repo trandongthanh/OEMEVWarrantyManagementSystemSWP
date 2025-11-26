@@ -1095,7 +1095,7 @@ const TechnicianDashboard = ({
     } finally {
       setIsUpdatingCaseLine(false);
     }
-  }, []);
+  }, [activeTab, fetchIssueDiagnosisCaseLines, issueDiagnosisPage]);
 
   // Delete case line function
   const deleteCaseLine = useCallback(async (caseLineId: string) => {
@@ -1133,6 +1133,12 @@ const TechnicianDashboard = ({
         
         setDeleteCaseLineModalOpen(false);
         setCaseLineToDelete(null);
+        
+        // Refetch Issue Diagnosis case-lines to show latest data
+        if (activeTab === 'issue-diagnosis') {
+          await fetchIssueDiagnosisCaseLines(issueDiagnosisPage);
+        }
+        
         return true;
       } else {
         toast({
@@ -1168,7 +1174,7 @@ const TechnicianDashboard = ({
     } finally {
       setIsDeletingCaseLine(false);
     }
-  }, []);
+  }, [activeTab, fetchIssueDiagnosisCaseLines, issueDiagnosisPage]);
 
   // Fetch processing records with WAITING_CUSTOMER_APPROVAL status
   const fetchWaitingCustomerApprovalRecords = useCallback(async () => {
@@ -2164,6 +2170,13 @@ const TechnicianDashboard = ({
     }
   }, [activeTab, activeProcessingStatus, fetchWaitingCustomerApprovalRecords]);
 
+  // Fetch all case lines when Issue Diagnosis tab is active
+  useEffect(() => {
+    if (activeTab === 'issue-diagnosis') {
+      fetchIssueDiagnosisCaseLines(issueDiagnosisPage);
+    }
+  }, [activeTab, issueDiagnosisPage, fetchIssueDiagnosisCaseLines]);
+
   // Fetch case lines when guarantee case is selected
   useEffect(() => {
     const loadCaseLines = async () => {
@@ -2395,7 +2408,7 @@ const TechnicianDashboard = ({
                         : 'View and manage vehicle processing records in repair')}
                   </CardDescription>
                   
-                  {/* Status Filter Tabs */}
+                  {/* Status Filter Tabs - Only In Diagnosis */}
                   <div className="flex gap-3 mt-4">
                     <Button
                       variant={activeProcessingStatus === 'IN_DIAGNOSIS' ? 'default' : 'outline'}
@@ -2403,20 +2416,6 @@ const TechnicianDashboard = ({
                       className="flex items-center gap-2"
                     >
                       In Diagnosis ({(recordsByStatus.IN_DIAGNOSIS || []).length})
-                    </Button>
-                    <Button
-                      variant={activeProcessingStatus === 'WAITING_CUSTOMER_APPROVAL' ? 'default' : 'outline'}
-                      onClick={() => setActiveProcessingStatus('WAITING_CUSTOMER_APPROVAL')}
-                      className="flex items-center gap-2"
-                    >
-                      Waiting Customer Approval ({(recordsByStatus.WAITING_CUSTOMER_APPROVAL || []).length})
-                    </Button>
-                    <Button
-                      variant={activeProcessingStatus === 'PROCESSING' ? 'default' : 'outline'}
-                      onClick={() => setActiveProcessingStatus('PROCESSING')}
-                      className="flex items-center gap-2"
-                    >
-                      Processing ({caseLineTotal > 0 ? caseLineTotal : processingCaseLines.length})
                     </Button>
                   </div>
                 </CardHeader>
