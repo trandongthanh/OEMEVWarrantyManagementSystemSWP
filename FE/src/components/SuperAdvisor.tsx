@@ -555,6 +555,129 @@ const SuperAdvisor = () => {
       }
     }
   
+  const handleDeleteVehicle = async () => {
+    if (!vehicleToDelete) return;
+    try {
+      setIsDeletingVehicle(true);
+      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'Authentication token not found',
+          variant: 'destructive'
+        });
+        return;
+      }
+      const response = await axios.delete(`${API_BASE_URL}/vehicles/${vehicleToDelete.vin}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (response.data && response.data.status === 'success') {
+        toast({
+          title: 'Success',
+          description: 'Vehicle deleted successfully',
+      });
+      // Refresh vehicle list
+      fetchVehicles(searchVehicle, undefined, pagination.currentPage, pagination.itemsPerPage);
+      // Close dialog
+      setShowDeleteVehicleDialog(false);
+      setVehicleToDelete(null);
+      } else {
+        toast({
+          title: 'Error',
+          description: 'Failed to delete vehicle',
+          variant: 'destructive'
+        });
+      }
+    } catch (error: any) {
+      console.error('Delete vehicle error:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to delete vehicle',
+        variant: 'destructive'
+      });
+    } finally {
+        setIsDeletingVehicle(false);
+    }
+  }
+
+  const handleSaveVehicle = async () => {
+    try {
+      // check date không được phép ở tương lai
+      if (editVehicleForm.dateOfManufacture && editVehicleForm.dateOfManufacture > todayDate) {
+        toast({
+          title: 'Validation Error',
+          description: 'Date of Manufacture cannot be later than today',
+          variant: 'destructive'
+        });
+        return;
+      }
+        // check date không được phép ở tương lai
+      if (editVehicleForm.purchaseDate && editVehicleForm.purchaseDate > todayDate) {
+        toast({
+          title: 'Validation Error',
+          description: 'Purchase date cannot be later than today',
+          variant: 'destructive'
+        });
+        return;
+      }
+      setIsUpdatingVehicle(true);//ngăn không cho người dùng spam
+      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+        if (!token) {
+          toast({
+            title: 'Error',
+            description: 'Authentication token not found',
+            variant: 'destructive'
+          });
+          return;
+        }
+        // Prepare update payload
+        const updateData: any = {};
+        if (editVehicleForm.dateOfManufacture) updateData.dateOfManufacture = editVehicleForm.dateOfManufacture;
+        if (editVehicleForm.placeOfManufacture) updateData.placeOfManufacture = editVehicleForm.placeOfManufacture;
+        if (editVehicleForm.licensePlate) updateData.licensePlate = editVehicleForm.licensePlate;
+        if (editVehicleForm.purchaseDate) updateData.purchaseDate = editVehicleForm.purchaseDate;
+        const response = await axios.put(`${API_BASE_URL}/vehicles/${selectedVehicleDetail.vin}`,
+          updateData,{
+                        headers: {
+                          'Authorization': `Bearer ${token}`,
+                          'Content-Type': 'application/json'
+                        }
+                      });
+
+        if (response.data && response.data.status === 'success') {
+          toast({
+            title: 'Success',
+            description: 'Vehicle information updated successfully',
+          });        
+          // Update state
+          setSelectedVehicleDetail({
+            ...selectedVehicleDetail,
+            ...updateData
+          });
+          // Refresh vehicle list
+        fetchVehicles(searchVehicle, undefined, pagination.currentPage, pagination.itemsPerPage);
+        setIsEditingVehicle(false);
+        } else {
+          toast({
+            title: 'Error',
+            description: 'Failed to update vehicle information',
+            variant: 'destructive'
+          });
+        }
+      } catch (error: any) {
+          console.error('Update vehicle error:', error);
+          toast({
+            title: 'Error',
+            description: error.response?.data?.message || 'Failed to update vehicle information',
+            variant: 'destructive'
+          });
+        } finally {
+          setIsUpdatingVehicle(false);
+        }
+      }  
   const handleAddNewVehicle = async () => {
     // Validate form
     if (!addVehicleForm.vin || !addVehicleForm.dateOfManufacture || !addVehicleForm.placeOfManufacture || !addVehicleForm.vehicleModelId) {
@@ -566,7 +689,7 @@ const SuperAdvisor = () => {
         return;
       }
 
-      // Check date is not in future (allow today)
+      // Check date khong duoc phep o tuong lai
       if (addVehicleForm.dateOfManufacture && addVehicleForm.dateOfManufacture > todayDate) {
         toast({
           title: 'Validation Error',
@@ -577,7 +700,7 @@ const SuperAdvisor = () => {
         }
 
         try {
-          setIsAddingVehicle(true);
+          setIsAddingVehicle(true); //ngăn không cho người dùng spam
           const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
                   
           if (!token) {
@@ -600,7 +723,7 @@ const SuperAdvisor = () => {
               {
                 headers: {
                   'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
+                  'Content-Type': 'application/json'
                 }
               });
               if (response.data && response.data.status === 'success') {
@@ -612,7 +735,7 @@ const SuperAdvisor = () => {
                     // Refresh vehicle list
                 fetchVehicles(searchVehicle, undefined, pagination.currentPage, pagination.itemsPerPage);
                     
-                    // Close dialog and reset form
+                    // reset state để tắt dialog
                 setShowAddVehicleDialog(false);
                 setAddVehicleForm({
                   vin: '',
@@ -634,10 +757,10 @@ const SuperAdvisor = () => {
                     description: error.response?.data?.message || 'Failed to add vehicle',
                     variant: 'destructive'
                   });
-                } finally {
-                  setIsAddingVehicle(false);
-                }
-              }
+        } finally {
+          setIsAddingVehicle(false);
+        }
+      }
     
   const handleSearchVehicleByVin = async (vinToSearch?: string) => {
     try {
@@ -3447,9 +3570,9 @@ const SuperAdvisor = () => {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                  setSelectedVehicleDetail(vehicle);
-                                  setIsEditingVehicle(true);
-                                  setShowVehicleDetailDialog(true);
+                                  setSelectedVehicleDetail(vehicle);// set obj vào state để xem chi tiết xe
+                                  setIsEditingVehicle(true); //ngăn người dùng spam
+                                  setShowVehicleDetailDialog(true);//hiển thị bản dialog lên
                                 }}
                                 className="text-blue-600 hover:bg-blue-50"
                               >
@@ -5336,13 +5459,13 @@ const SuperAdvisor = () => {
       </Dialog>
 
       {/* Vehicle Detail Dialog */}
-      <Dialog open={showVehicleDetailDialog} onOpenChange={(open) => {
-        setShowVehicleDetailDialog(open);
-        if (!open) {
-          setIsEditingVehicle(false);
+      <Dialog open={showVehicleDetailDialog} onOpenChange={(open) => { //truyền một key event element vào
+        setShowVehicleDetailDialog(open); //set trạng thái của key đó 
+        if (!open) { //nếu là ESC, click button x,... sẽ là falsy
+          setIsEditingVehicle(false);//reset state
           setSelectedVehicleDetail(null);
         } else if (selectedVehicleDetail) {
-          // Initialize form when opening dialog
+          //lưu lại dữ liệu gốc của vehicle khi mở form (nếu có)
           setEditVehicleForm({
             dateOfManufacture: selectedVehicleDetail.dateOfManufacture ? new Date(selectedVehicleDetail.dateOfManufacture).toISOString().split('T')[0] : '',
             placeOfManufacture: selectedVehicleDetail.placeOfManufacture || '',
@@ -5444,6 +5567,7 @@ const SuperAdvisor = () => {
                         <p className="text-sm mt-1">
                           {selectedVehicleDetail.purchaseDate
                             ? new Date(selectedVehicleDetail.purchaseDate).toLocaleDateString('en-GB', {
+                              //toLocaleDateString chuyển date sang chuỗi để có thể đọc và trình bày
                                 day: '2-digit',
                                 month: '2-digit',
                                 year: 'numeric'
@@ -5488,7 +5612,7 @@ const SuperAdvisor = () => {
               </div>
 
               {/* Owner Information */}
-              {selectedVehicleDetail.owner && (
+              {selectedVehicleDetail.owner ? (
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold flex items-center space-x-2">
                     <User className="h-5 w-5 text-purple-600" />
@@ -5513,6 +5637,18 @@ const SuperAdvisor = () => {
                     </div>
                   </div>
                 </div>
+              ) : (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold flex items-center space-x-2">
+                    <User className="h-5 w-5 text-purple-600" />
+                    <span>Owner Information</span>
+                  </h3>
+                  <div className="grid grid-cols-1 gap-4 p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <span className="text-sm font-medium text-gray-600">No customer assigned!</span>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -5524,7 +5660,7 @@ const SuperAdvisor = () => {
                   variant="outline"
                   onClick={() => {
                     setIsEditingVehicle(false);
-                    // Reset form to original values
+                    // Reset form về những giá trị ban đầu
                     setEditVehicleForm({
                       dateOfManufacture: selectedVehicleDetail.dateOfManufacture ? new Date(selectedVehicleDetail.dateOfManufacture).toISOString().split('T')[0] : '',
                       placeOfManufacture: selectedVehicleDetail.placeOfManufacture || '',
@@ -5537,90 +5673,7 @@ const SuperAdvisor = () => {
                   Cancel
                 </Button>
                 <Button
-                  onClick={async () => {
-                    try {
-                      // Validate date fields are not in the future
-                      if (editVehicleForm.dateOfManufacture && editVehicleForm.dateOfManufacture > todayDate) {
-                        toast({
-                          title: 'Validation Error',
-                          description: 'Date of Manufacture cannot be later than today',
-                          variant: 'destructive'
-                        });
-                        return;
-                      }
-                      // Validate purchase date is not in the future
-                      if (editVehicleForm.purchaseDate && editVehicleForm.purchaseDate > todayDate) {
-                        toast({
-                          title: 'Validation Error',
-                          description: 'Purchase date cannot be later than today',
-                          variant: 'destructive'
-                        });
-                        return;
-                      }
-                      setIsUpdatingVehicle(true);
-                      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-                      
-                      if (!token) {
-                        toast({
-                          title: 'Error',
-                          description: 'Authentication token not found',
-                          variant: 'destructive'
-                        });
-                        return;
-                      }
-
-                      // Prepare update payload
-                      const updateData: any = {};
-                      if (editVehicleForm.dateOfManufacture) updateData.dateOfManufacture = editVehicleForm.dateOfManufacture;
-                      if (editVehicleForm.placeOfManufacture) updateData.placeOfManufacture = editVehicleForm.placeOfManufacture;
-                      if (editVehicleForm.licensePlate) updateData.licensePlate = editVehicleForm.licensePlate;
-                      if (editVehicleForm.purchaseDate) updateData.purchaseDate = editVehicleForm.purchaseDate;
-
-                      const response = await axios.put(
-                        `${API_BASE_URL}/vehicles/${selectedVehicleDetail.vin}`,
-                        updateData,
-                        {
-                          headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                          }
-                        }
-                      );
-
-                      if (response.data && response.data.status === 'success') {
-                        toast({
-                          title: 'Success',
-                          description: 'Vehicle information updated successfully',
-                        });
-                        
-                        // Update local state
-                        setSelectedVehicleDetail({
-                          ...selectedVehicleDetail,
-                          ...updateData
-                        });
-                        
-                        // Refresh vehicle list
-                        fetchVehicles(searchVehicle, undefined, pagination.currentPage, pagination.itemsPerPage);
-                        
-                        setIsEditingVehicle(false);
-                      } else {
-                        toast({
-                          title: 'Error',
-                          description: 'Failed to update vehicle information',
-                          variant: 'destructive'
-                        });
-                      }
-                    } catch (error: any) {
-                      console.error('Update vehicle error:', error);
-                      toast({
-                        title: 'Error',
-                        description: error.response?.data?.message || 'Failed to update vehicle information',
-                        variant: 'destructive'
-                      });
-                    } finally {
-                      setIsUpdatingVehicle(false);
-                    }
-                  }}
+                  onClick={handleSaveVehicle}
                   disabled={isUpdatingVehicle}
                   className="bg-blue-600 hover:bg-blue-700"
                 >
@@ -5706,6 +5759,7 @@ const SuperAdvisor = () => {
             <Button
               variant="outline"
               onClick={() => {
+                setShowVehicleDetailDialog(true);
                 setShowDeleteVehicleDialog(false);
                 setVehicleToDelete(null);
               }}
@@ -5715,62 +5769,7 @@ const SuperAdvisor = () => {
             </Button>
             <Button
               variant="destructive"
-              onClick={async () => {
-                if (!vehicleToDelete) return;
-                
-                try {
-                  setIsDeletingVehicle(true);
-                  const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
-                  
-                  if (!token) {
-                    toast({
-                      title: 'Error',
-                      description: 'Authentication token not found',
-                      variant: 'destructive'
-                    });
-                    return;
-                  }
-
-                  const response = await axios.delete(
-                    `${API_BASE_URL}/vehicles/${vehicleToDelete.vin}`,
-                    {
-                      headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                      }
-                    }
-                  );
-
-                  if (response.data && response.data.status === 'success') {
-                    toast({
-                      title: 'Success',
-                      description: 'Vehicle deleted successfully',
-                    });
-                    
-                    // Refresh vehicle list
-                    fetchVehicles(searchVehicle, undefined, pagination.currentPage, pagination.itemsPerPage);
-                    
-                    // Close dialog
-                    setShowDeleteVehicleDialog(false);
-                    setVehicleToDelete(null);
-                  } else {
-                    toast({
-                      title: 'Error',
-                      description: 'Failed to delete vehicle',
-                      variant: 'destructive'
-                    });
-                  }
-                } catch (error: any) {
-                  console.error('Delete vehicle error:', error);
-                  toast({
-                    title: 'Error',
-                    description: error.response?.data?.message || 'Failed to delete vehicle',
-                    variant: 'destructive'
-                  });
-                } finally {
-                  setIsDeletingVehicle(false);
-                }
-              }}
+              onClick={handleDeleteVehicle}
               disabled={isDeletingVehicle}
               className="bg-red-600 hover:bg-red-700"
             >
