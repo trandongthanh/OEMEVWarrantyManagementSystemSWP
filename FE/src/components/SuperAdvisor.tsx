@@ -2594,25 +2594,30 @@ const SuperAdvisor = () => {
       if (!response.ok) throw new Error('Failed to fetch record details');
       
       const result = await response.json();
-      const fullRecord = result.data?.processingRecord;
+      console.log('Full record details:', result); // Debug log
+      
+      const fullRecord = result.data?.processingRecord || result.data;
 
-      // Pre-fill form with record data
+      // Pre-fill form with record data - handle multiple possible data structures
       setEditRecordForm({
         id: record.id,
-        vin: fullRecord?.vehicleProcessingRecord?.vin || record.vinNumber || '',
-        odometer: fullRecord?.vehicleProcessingRecord?.odometer?.toString() || '',
-        guaranteeCases: fullRecord?.guaranteeCases?.map((gc: any) => ({
-          contentGuarantee: gc.contentGuarantee || ''
-        })) || [{ contentGuarantee: '' }],
+        vin: fullRecord?.vehicle?.vin || fullRecord?.vehicleProcessingRecord?.vin || record.vinNumber || '',
+        odometer: (fullRecord?.odometer || fullRecord?.vehicleProcessingRecord?.odometer || record.odometer)?.toString() || '',
+        guaranteeCases: fullRecord?.guaranteeCases?.length > 0 
+          ? fullRecord.guaranteeCases.map((gc: any) => ({
+              contentGuarantee: gc.contentGuarantee || gc.content || ''
+            }))
+          : [{ contentGuarantee: '' }],
         visitorInfo: {
-          fullName: fullRecord?.guest?.fullName || '',
-          email: fullRecord?.guest?.email || '',
-          phone: fullRecord?.guest?.phone || ''
+          fullName: fullRecord?.guest?.fullName || fullRecord?.visitorInfo?.fullName || '',
+          email: fullRecord?.guest?.email || fullRecord?.visitorInfo?.email || '',
+          phone: fullRecord?.guest?.phone || fullRecord?.visitorInfo?.phone || ''
         }
       });
 
       setShowEditRecordDialog(true);
     } catch (error) {
+      console.error('Error loading record:', error); // Debug log
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to load record details',
