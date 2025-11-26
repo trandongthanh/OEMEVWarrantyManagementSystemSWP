@@ -5402,16 +5402,16 @@ const SuperAdvisor = () => {
                 <Button
                   onClick={async () => {
                     try {
-                      // Validate date fields are not in the future
-                      if (editVehicleForm.dateOfManufacture && editVehicleForm.dateOfManufacture > todayDate) {
+                      // Require dateOfManufacture to be exactly today
+                      if (editVehicleForm.dateOfManufacture && editVehicleForm.dateOfManufacture !== todayDate) {
                         toast({
                           title: 'Validation Error',
-                          description: 'Date of Manufacture cannot be later than today',
+                          description: "Date of Manufacture must be today's date",
                           variant: 'destructive'
                         });
                         return;
                       }
-                      // Validate purchase date is not in the future
+                      // Require purchaseDate to be not in the future (allow today or past)
                       if (editVehicleForm.purchaseDate && editVehicleForm.purchaseDate > todayDate) {
                         toast({
                           title: 'Validation Error',
@@ -5705,8 +5705,8 @@ const SuperAdvisor = () => {
             >
               Cancel
             </Button>
-            <Button
-              onClick={async () => {
+                <Button
+                  onClick={async () => {
                 // Validate form
                 if (!addVehicleForm.vin || !addVehicleForm.dateOfManufacture || !addVehicleForm.placeOfManufacture || !addVehicleForm.vehicleModelId) {
                   toast({
@@ -5717,14 +5717,12 @@ const SuperAdvisor = () => {
                   return;
                 }
 
-                // Check date is not in future
-                const selectedDate = new Date(addVehicleForm.dateOfManufacture);
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                if (selectedDate > today) {
+                // Require Date of Manufacture to be exactly today
+                const todayDateLocal = new Date().toISOString().split('T')[0];
+                if (addVehicleForm.dateOfManufacture !== todayDateLocal) {
                   toast({
                     title: 'Validation Error',
-                    description: 'Date of Manufacture cannot be in the future',
+                    description: "Date of Manufacture must be today's date",
                     variant: 'destructive'
                   });
                   return;
