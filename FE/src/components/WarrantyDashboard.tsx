@@ -210,7 +210,7 @@ const WarrantyDashboard: React.FC = () => {
   };
 
   const handleCreateComponentClick = () => {
-    // Reset form and dropdown
+    // Reset form để có thể tạo mới
     setNewComponent({
       typeComponentId: '',
       sku: '',
