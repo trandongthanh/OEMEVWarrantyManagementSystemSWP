@@ -967,7 +967,8 @@ const ServiceCenterDashboard = () => {
     if (!token) return [] as WarrantyClaim[];
     try {
       const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` } });
-      const apiRecords = res.data?.data?.records?.records || [];
+      // Updated: API structure is now data.records (not data.records.records)
+      const apiRecords = res.data?.data?.records || [];
       console.log('🔍 Raw API records:', apiRecords);
       const mapped: WarrantyClaim[] = apiRecords.map((r: any) => {
         const mainTech = r.mainTechnician ? [{ 

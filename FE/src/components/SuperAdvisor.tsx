@@ -3309,7 +3309,7 @@ const SuperAdvisor = () => {
                       Vehicle List
                   </CardTitle>
                   <CardDescription>
-                    List of vehicles
+                    Manage vehicles and track their information
                   </CardDescription>
                 </div>
                 <Button
@@ -3324,76 +3324,69 @@ const SuperAdvisor = () => {
                   }}
                   className='bg-green-600 hover:bg-green-700'
                 >
-                  <Car className='h-4 w-4 mr-2' />
+                  <Plus className='h-4 w-4 mr-2' />
                   Add Vehicle
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
               {vehicleListResult.length !== 0 ? (
-                <div className='space-y-3'>
-                    {vehicleListResult.map((vehicle: any, index: number) => (
-                      <div
-                        key={vehicle.vin || index}
-                        className='bg-red-100 border border-red-700 rounded p-4 shadow-sm'
-                      >
-                        <h3 className='mb-2 text-sm text-red-500 font-bold'>Vehicle #{
-                          pagination.currentPage === 1 ? index + 1 : index + (pagination.currentPage * 10 - 10) + 1}
-                        </h3>
-
-                        <div className='bg-red-200 border border-red-700 rounded p-4 shadow-sm mb-4'>
-                          <div className='grid md:grid-cols-2 gap-3'>
-                            <div>
-                              <span className='text-sm font-medium text-black-600'>VIN: </span>
-                              <span className='text-sm font-mono'>{vehicle.vin ? vehicle.vin : 'N/A'} </span>
-                            </div>
-
-                            <div>
-                              <span className='text-sm font-medium text-black-600'>Place of Manufacture: </span>
-                              <span className='text-sm font-mono'>{vehicle.placeOfManufacture ? vehicle.placeOfManufacture : 'N/A'} </span>
-                            </div>
-
-                            <div>
-                              <span className='text-sm font-medium text-black-600'>Registration date: </span>
-                              <span className='text-sm font-mono'>
-                                {vehicle?.registerationDate
-                                ? new Date(vehicle.registerationDate).toLocaleDateString('en-GB', {
+                <div className='overflow-x-auto'>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>VIN</TableHead>
+                        <TableHead>Place of Manufacture</TableHead>
+                        <TableHead>Date of Manufacture</TableHead>
+                        <TableHead>Owner</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {vehicleListResult.map((vehicle: any, index: number) => (
+                        <TableRow key={vehicle.vin || index} className="hover:bg-muted/50">
+                          <TableCell className="font-mono text-sm">{vehicle.vin || 'N/A'}</TableCell>
+                          <TableCell>{vehicle.placeOfManufacture || 'N/A'}</TableCell>
+                          <TableCell>
+                            {vehicle.dateOfManufacture
+                              ? new Date(vehicle.dateOfManufacture).toLocaleDateString('en-GB', {
                                   day: '2-digit',
                                   month: '2-digit',
                                   year: 'numeric'
-                                }).split('/').join('/') : 'N/A'}
-                              </span>
+                                })
+                              : 'N/A'}
+                          </TableCell>
+                          <TableCell>{vehicle.owner ? vehicle.owner.fullName : 'No owner'}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex gap-2 justify-end">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedVehicleDetail(vehicle);
+                                  setShowVehicleDetailDialog(true);
+                                }}
+                                className="text-green-600 hover:bg-green-50"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setVehicleToDelete(vehicle);
+                                  setShowDeleteVehicleDialog(true);
+                                }}
+                                className="text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
                             </div>
-
-                            <div>
-                              <span className='text-sm font-medium text-black-600'>Owner: </span>
-                              <span className='text-sm font-mono'>{vehicle.owner ? vehicle.owner.fullName : 'No customer assigned!'} </span>
-                            </div>
-
-                          </div>
-                        </div>
-                        <div className='grid md:grid-cols-2 gap-3'>
-                          <Button
-                            className="bg-red-500 text-white hover:bg-red-600 border-red-500"
-                            onClick={() => {
-                              setSelectedVehicleDetail(vehicle);
-                              setShowVehicleDetailDialog(true);
-                            }}
-                          >
-                            View Details
-                          </Button>
-                          <Button
-                            className="bg-red-500 text-white hover:bg-red-600 border-red-500"
-                            onClick={() => {
-                              setVehicleToDelete(vehicle);
-                              setShowDeleteVehicleDialog(true);
-                            }}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
               ) : (
                 <div className='text-center py-12'>
@@ -3402,7 +3395,7 @@ const SuperAdvisor = () => {
                     List of Vehicle is Empty
                   </h3>
                   <p className='text-sm text-muted-foreground'>
-                    You can create new vehicle by click the button
+                    You can create new vehicle by clicking the button above
                   </p>
                 </div>
               )}
