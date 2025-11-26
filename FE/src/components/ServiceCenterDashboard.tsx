@@ -4744,7 +4744,7 @@ const ServiceCenterDashboard = () => {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Package className="h-5 w-5 text-blue-600" />
-                Stock Transfer Request Details
+                Stock Transfer Request
               </DialogTitle>
               <DialogDescription>
                 Complete information about the stock transfer request

@@ -2816,32 +2816,34 @@ const SuperAdvisor = () => {
       }
 
       // Validate form
-      if (!editRecordForm.vin || !editRecordForm.odometer) {
+      if (!editRecordForm.odometer) {
         toast({
           title: 'Validation Error',
-          description: 'VIN and odometer are required',
+          description: 'Odometer is required',
           variant: 'destructive'
         });
         return;
       }
 
-      // For now, only update odometer and visitor info
-      // Guarantee cases update might not be supported by backend
-      const updateData: any = {
-        vin: editRecordForm.vin,
+      // Validate guarantee cases
+      const validGuaranteeCases = editRecordForm.guaranteeCases.filter(gc => gc.contentGuarantee.trim() !== '');
+      if (validGuaranteeCases.length === 0) {
+        toast({
+          title: 'Validation Error',
+          description: 'At least one guarantee case is required',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Prepare update data - send guaranteeCases in the format backend expects
+      const updateData = {
         odometer: parseInt(editRecordForm.odometer),
+        guaranteeCases: validGuaranteeCases.map((gc: any) => ({
+          contentGuarantee: gc.contentGuarantee.trim()
+        })),
         visitorInfo: editRecordForm.visitorInfo
       };
-
-      // Only include guarantee cases if they have content and backend supports it
-      const validGuaranteeCases = editRecordForm.guaranteeCases.filter(gc => gc.contentGuarantee.trim() !== '');
-      if (validGuaranteeCases.length > 0) {
-        // Try different formats that backend might accept
-        updateData.guaranteeCases = validGuaranteeCases.map((gc: any) => ({
-          contentGuarantee: gc.contentGuarantee.trim(),
-          ...(gc.guaranteeCaseId && { guaranteeCaseId: gc.guaranteeCaseId })
-        }));
-      }
 
       console.log('Sending update data:', updateData); // Debug log
 
@@ -6279,16 +6281,16 @@ const SuperAdvisor = () => {
           </DialogHeader>
           
           <div className="space-y-4 py-4">
-            {/* VIN */}
+            {/* VIN - Read Only */}
             <div>
-              <Label htmlFor="edit-vin">VIN *</Label>
+              <Label htmlFor="edit-vin">VIN * (Cannot be changed)</Label>
               <Input
                 id="edit-vin"
                 value={editRecordForm.vin}
-                onChange={(e) => setEditRecordForm({ ...editRecordForm, vin: e.target.value })}
-                placeholder="Enter VIN"
-                className="mt-1"
+                disabled
+                className="mt-1 bg-gray-100 cursor-not-allowed font-mono"
               />
+              <p className="text-xs text-muted-foreground mt-1">VIN cannot be modified after record creation</p>
             </div>
 
             {/* Odometer */}
