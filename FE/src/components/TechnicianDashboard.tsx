@@ -1136,7 +1136,17 @@ const TechnicianDashboard = ({
         
         // Refetch Issue Diagnosis case-lines to show latest data
         if (activeTab === 'issue-diagnosis') {
-          await fetchIssueDiagnosisCaseLines(issueDiagnosisPage);
+          // Remove the deleted case line from local state first
+          const updatedCaseLines = issueDiagnosisCaseLines.filter(cl => cl.id !== caseLineId);
+          
+          // If current page becomes empty and we're not on page 1, go back to previous page
+          if (updatedCaseLines.length === 0 && issueDiagnosisPage > 1) {
+            const newPage = issueDiagnosisPage - 1;
+            setIssueDiagnosisPage(newPage);
+            await fetchIssueDiagnosisCaseLines(newPage);
+          } else {
+            await fetchIssueDiagnosisCaseLines(issueDiagnosisPage);
+          }
         }
         
         return true;
@@ -1174,7 +1184,7 @@ const TechnicianDashboard = ({
     } finally {
       setIsDeletingCaseLine(false);
     }
-  }, [activeTab, fetchIssueDiagnosisCaseLines, issueDiagnosisPage]);
+  }, [activeTab, fetchIssueDiagnosisCaseLines, issueDiagnosisPage, issueDiagnosisCaseLines]);
 
   // Fetch processing records with WAITING_CUSTOMER_APPROVAL status
   const fetchWaitingCustomerApprovalRecords = useCallback(async () => {
@@ -2580,7 +2590,7 @@ const TechnicianDashboard = ({
                         <TableHead>Check-in Date</TableHead>
                         <TableHead>Main Technician</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Caselines</TableHead>
+                        <TableHead>Cases</TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
