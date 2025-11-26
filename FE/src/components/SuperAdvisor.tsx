@@ -143,11 +143,44 @@ const SuperAdvisor = () => {
   
   // UI State
   const [searchVin, setSearchVin] = useState('');
-  const [searchMode, setSearchMode] = useState<'warranty' | 'vehicle' | 'phone'>('phone');
-  const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false);
+  const [searchMode, setSearchMode] = useState<'warranty' | 'vehicle' | 'phone' | 'vehicleList'>('phone');
+  const [isAddNewcaseOpen, setIsAddNewcaseOpen] = useState(false); 
+
+  //UI for vehicle list
+  const [searchVehicle, setSearchVehicle] = useState('');
+  const [vehicleListResult, setVehicleListResult] = useState([]);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    totalPages: 0,
+    totalItems: 0,
+    itemsPerPage: 10
+  });
+  const [isLoadingVehicleList, setIsLoadingVehicleList] = useState(false);
+  const [selectedVehicleDetail, setSelectedVehicleDetail] = useState<any>(null);
+  const [showVehicleDetailDialog, setShowVehicleDetailDialog] = useState(false);
+  const [isEditingVehicle, setIsEditingVehicle] = useState(false);
+  const [editVehicleForm, setEditVehicleForm] = useState({
+    dateOfManufacture: '',
+    placeOfManufacture: '',
+    licensePlate: '',
+    purchaseDate: ''
+  });
+  const [isUpdatingVehicle, setIsUpdatingVehicle] = useState(false);
+  const [showDeleteVehicleDialog, setShowDeleteVehicleDialog] = useState(false);
+  const [vehicleToDelete, setVehicleToDelete] = useState<any>(null);
+  const [isDeletingVehicle, setIsDeletingVehicle] = useState(false);
+  const [showAddVehicleDialog, setShowAddVehicleDialog] = useState(false);
+  const [isAddingVehicle, setIsAddingVehicle] = useState(false);
+  const [vehicleModels, setVehicleModels] = useState<any[]>([]);
+  const [addVehicleForm, setAddVehicleForm] = useState({
+    vin: '',
+    dateOfManufacture: '',
+    placeOfManufacture: '',
+    vehicleModelId: ''
+  });
   
   // Record State
-  const [selectedRecord, setSelectedRecord] = useState<WarrantyRecord | null>(null);
+  
   const [currentCaseText, setCurrentCaseText] = useState('');
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
   
@@ -229,9 +262,6 @@ const SuperAdvisor = () => {
   const [otpVerifiedForCustomer, setOtpVerifiedForCustomer] = useState(false);
   const [otpCountdownForCustomer, setOtpCountdownForCustomer] = useState(0);
 
-  // Visitor same as customer checkbox state
-  const [visitorSameAsCustomer, setVisitorSameAsCustomer] = useState(false);
-
   // Warranty check states
   const [odometer, setOdometer] = useState('');
   const [isCheckingWarranty, setIsCheckingWarranty] = useState(false);
@@ -253,8 +283,7 @@ const SuperAdvisor = () => {
   });
   const [isUpdatingRecord, setIsUpdatingRecord] = useState(false);
 
-  // Create Record Dialog states (standalone - không cần warranty check)
-  const [showStandaloneCreateDialog, setShowStandaloneCreateDialog] = useState(false);
+  
 
   // States for customer vehicle warranty check in phone mode
   const [selectedVehicleForWarranty, setSelectedVehicleForWarranty] = useState<any>(null);
@@ -291,6 +320,48 @@ const SuperAdvisor = () => {
     // Default fallback
     return 'pending';
   };
+    
+    // useEffect để render vehicle list
+    useEffect(() => {
+      if (searchMode !== 'vehicleList') {
+        return;
+      }
+      //tạo những biến liên quan để truyền vào
+      const query = searchVehicle.trim() || undefined;
+      const controller = new AbortController(); //tạo điều khiển để gửi signal
+      const debounedMs = 300;
+
+      const timer = setTimeout(() => {
+        fetchVehicles(query, controller.signal, pagination.currentPage, pagination.itemsPerPage);
+      }, debounedMs)
+
+      return () => {
+        clearTimeout(timer);
+        controller.abort();
+      };
+    }, [searchMode, searchVehicle, pagination.currentPage, pagination.itemsPerPage]);
+
+  // Extract unique vehicle models from fetched vehicles when dialog opens
+  useEffect(() => {
+    if (showAddVehicleDialog && vehicleListResult.length > 0) {
+      const uniqueModels: any[] = [];
+      const modelIds = new Set();
+      
+      vehicleListResult.forEach((vehicle: any) => {
+        if (vehicle.model && vehicle.vehicleModelId && !modelIds.has(vehicle.vehicleModelId)) {
+          modelIds.add(vehicle.vehicleModelId);
+          uniqueModels.push({
+            vehicleModelId: vehicle.vehicleModelId,
+            modelName: vehicle.model.modelName,
+            company: vehicle.model.company
+          });
+        }
+      });
+      
+      setVehicleModels(uniqueModels);
+    }
+  }, [showAddVehicleDialog, vehicleListResult]);
+
 
   // Transform API processing records to WarrantyRecord format
   const transformProcessingRecords = (apiRecords: any[]): WarrantyRecord[] => {
@@ -395,9 +466,88 @@ const SuperAdvisor = () => {
     }
   }, [foundCustomer, warrantyStatus]);
 
+
+  //call API get vehicle list with pagination
+  const fetchVehicles = async (vinQuery: string, signal?: AbortSignal, page: number = 1, limit: number = 10) => {
+      try {
+        setIsLoadingVehicleList(true);
+        let vinParam = vinQuery || undefined;
+        const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+        
+        if(!token){
+          toast({
+          title: 'Error',
+          description: 'Authentication token not found',
+          variant: 'destructive'
+        });
+        setVehicleListResult([]);
+        setIsLoadingVehicleList(false);
+        return;
+        }
+
+        //call API with pagination params
+        const reponse = await axios.get(`${API_BASE_URL}/vehicles`, {
+          params: {
+            page,
+            limit
+          },
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          signal //dùng để phá hủy request 
+        });
+
+        if (reponse.data && reponse.data.status === 'success') {
+          const rawData = reponse.data.data.vehicles || [];
+          
+          // Update pagination state from API response
+          if (reponse.data.data.pagination) {
+            setPagination({
+              currentPage: reponse.data.data.pagination.currentPage || page,
+              totalPages: reponse.data.data.pagination.totalPages || 1,
+              totalItems: reponse.data.data.pagination.totalItems || rawData.length,
+              itemsPerPage: reponse.data.data.pagination.itemsPerPage || limit
+            });
+          }
+          
+          // Apply client-side VIN filter for search-as-you-type
+          if (vinParam !== undefined && vinParam !== '') {
+            const filteredVehicleList = rawData.filter((vehicle: any) => 
+              vehicle.vin && vehicle.vin.toLowerCase().startsWith(vinParam.toLowerCase())
+            );
+            setVehicleListResult(filteredVehicleList);
+          } else {
+            setVehicleListResult(rawData);
+          }
+        } else {
+          setVehicleListResult([]);
+          toast({
+            title: 'Something Went Wrong',
+            description: 'List of vehicles not found! Please try again.',
+            variant: 'destructive'
+          });
+        }
+      } catch (err: any) {
+        if (axios.isCancel?.(err) || err.name === 'CanceledError') {
+          console.log('Request canceled');
+          
+        } else {
+          toast({
+            title: 'Something Went Wrong',
+            description: 'List of vehicles not found! Please try again.',
+            variant: 'destructive'
+          });
+        }
+        setVehicleListResult([]);
+      } finally {
+        setIsLoadingVehicleList(false);
+      }
+    }
+
   const handleSearchVehicleByVin = async (vinToSearch?: string) => {
     try {
-      // Reset customer search state and warranty info
+      //reset các state
       setHasSearchedCustomer(false);
       setFoundCustomer(null);
       setWarrantyStatus(null);
@@ -405,6 +555,8 @@ const SuperAdvisor = () => {
       setOdometer('');
       
       const vin = vinToSearch || searchVin.trim();
+      //vinToSearch được truyền vào khi nhập ở Register New Vehicle
+      //searchVin là state được lấy khi nhập ở phần find Vehicle By VIN
       
       if (!vin) {
         toast({
@@ -428,7 +580,7 @@ const SuperAdvisor = () => {
 
       const apiUrl = `${API_BASE_URL}/vehicles/${vin}`;
 
-      // Search vehicle by VIN
+      //call API
       const response = await axios.get(apiUrl, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -439,6 +591,7 @@ const SuperAdvisor = () => {
       if (response.data && response.data.status === 'success' && response.data.data && response.data.data.vehicle) {
         const vehicle = response.data.data.vehicle;
 
+        // Set vehicle search result
         setVehicleSearchResult({
           vin: vehicle.vin,
           dateOfManufacture: vehicle.dateOfManufacture,
@@ -447,21 +600,20 @@ const SuperAdvisor = () => {
           company: vehicle.company || 'N/A',
           licensePlate: vehicle.licensePlate,
           purchaseDate: vehicle.purchaseDate,
-          // Backend trả về registerationDate (lỗi chính tả trong DB/model)
           registerationDate: vehicle.registerationDate || null,
           owner: vehicle.owner
         });
 
-        // Reset warranty status for new vehicle - user must check warranty first
+        // reset state của warranty để gán lại thông tin hiện tại
         setWarrantyStatus(null);
         setWarrantyDetails(null);
 
-        // Reset customer search states and initialize owner form
+        //reset state thông tin của khách hàng để gán lại thông tin hiện tại
         setCustomerSearchPhone('');
         setFoundCustomer(null);
         setHasSearchedCustomer(false);
 
-        // Initialize owner form with existing owner data or empty
+        // gán thông tin owner vào form
         if (vehicle.owner) {
           setOwnerForm({
             fullName: vehicle.owner.fullName || '',
@@ -514,6 +666,11 @@ const SuperAdvisor = () => {
       setVehicleSearchResult(null);
     }
   };
+
+  const handleSearchVehicle = async () => {
+    const controller = new AbortController();
+    fetchVehicles(searchVehicle.trim() || undefined, controller.signal) //tạo remote để điều khiển hủy request
+  }
 
   const handleSearchCustomerByPhone = async (phoneToSearch?: string) => {
     //tham số phone truyền vào khi sử dụng tính năng Register New Vehicle cho customer đã tồn tại trong hệ thống
@@ -826,8 +983,8 @@ const SuperAdvisor = () => {
       return;
     }
 
-    setIsCheckingVehicleWarranty(true);
-    setVehicleWarrantyStatus(null);
+    setIsCheckingVehicleWarranty(true);//ngăn user spam button
+    setVehicleWarrantyStatus(null);//set lại trạng thái
 
     try {
       const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
@@ -843,22 +1000,23 @@ const SuperAdvisor = () => {
         });
 
         if (recordsResponse.data && recordsResponse.data.status === 'success' && recordsResponse.data.data?.records?.records) {
-          // Find the latest completed record for this vehicle
+          // filter các record đã hoàn thành
           const completedRecords = recordsResponse.data.data.records.records.filter(
             (record: any) => record.status === 'COMPLETED' && record.vin === vehicle.vin
           );
 
           if (completedRecords.length > 0) {
-            // Sort by checkOutDate descending to get the latest
+            //sort để lấy record mới nhất
             completedRecords.sort((a: any, b: any) => {
               const dateA = new Date(a.checkOutDate || a.createdAt).getTime();
               const dateB = new Date(b.checkOutDate || b.createdAt).getTime();
               return dateB - dateA;
             });
 
-            const latestCompletedRecord = completedRecords[0];
-            const lastOdometer = latestCompletedRecord.odometer;
+            const latestCompletedRecord = completedRecords[0];//lấy record mới nhất ở đầu
+            const lastOdometer = latestCompletedRecord.odometer;//lấy odometer của record mới nhất để so sánh
 
+            //odo hiện tại nhập phải lớn hơn odo lần sửa chữa cuối cùng
             if (parseInt(vehicleOdometer) <= lastOdometer) {
               toast({
                 title: 'Invalid Odometer',
@@ -894,14 +1052,14 @@ const SuperAdvisor = () => {
         
         const generalWarranty = warrantyData?.generalWarranty;
         
-        // Check if warranty is valid (both duration and mileage must be ACTIVE)
+        //check nếu cả 2 đều valid thì isValid = true
         const isDurationValid = generalWarranty?.duration?.status === 'ACTIVE';
         const isMileageValid = generalWarranty?.mileage?.status === 'ACTIVE';
         const isValid = isDurationValid && isMileageValid;
         
         // Set warranty data for dialog
-        setWarrantyDialogData(warrantyData);
-        setCurrentVehicleForWarranty(vehicle);
+        setWarrantyDialogData(warrantyData);//obj chứa thông tin chi tiết bảo hành
+        setCurrentVehicleForWarranty(vehicle);//chứa xe hiện tại đang bảo hành để hiển thị chi tiết thông tin xe
         setVehicleWarrantyStatus(isValid ? 'valid' : 'expired');
         setShowWarrantyDialog(true);
       } else {
@@ -936,13 +1094,13 @@ const SuperAdvisor = () => {
 
     const vinToSearch = newVehicleVin.trim();
     
-    // Save the phone from registration flow before switching modes
+    //lưu số điện thoại khách hàng để sử dụng trong flow đăng kí xe
     if (customerSearchPhone.trim()) {
       setRegistrationFlowPhone(customerSearchPhone.trim());
 
     }
 
-    // Switch to customer mode (Find Vehicle by VIN) and auto search
+    // tự động chuyển sang trang find Vehicle By VIN
     setSearchMode('vehicle');
     setSearchVin(vinToSearch);
     
@@ -951,7 +1109,7 @@ const SuperAdvisor = () => {
       description: 'Switched to Find Vehicle by VIN mode and searching...',
     });
 
-    // Auto search after a brief delay to allow state to update
+    // chuyển qua tab tìm kiếm xe và tự động tìm kiếm xe
     setTimeout(async () => {
       try {
         await handleSearchVehicleByVin(vinToSearch);
@@ -1218,8 +1376,6 @@ const SuperAdvisor = () => {
 
   // Handle checkbox change for visitor same as customer
   const handleVisitorSameAsCustomerChange = (checked: boolean) => {
-    setVisitorSameAsCustomer(checked);
-    
     if (checked) {
       // Auto-fill visitor info with customer info
       setWarrantyRecordForm(prev => ({
@@ -1410,7 +1566,6 @@ const SuperAdvisor = () => {
       setWarrantyRecordForm({ vin: '', odometer: '', purchaseDate: '', customerName: '', customerPhone: '', cases: [], visitorFullName: '', visitorPhone: '', customerEmail: '' });
       setWarrantyRecordCaseText('');
       setShowCreateWarrantyDialog(false);
-      setVisitorSameAsCustomer(false); // Reset checkbox
 
       
       toast({
@@ -2581,32 +2736,62 @@ const SuperAdvisor = () => {
       });
 
       if (!response.ok) throw new Error('Failed to fetch record details');
-      
-      const result = await response.json();
-      console.log('Full record details:', result); // Debug log
-      
-      const fullRecord = result.data?.processingRecord || result.data;
 
-      // Pre-fill form with record data - handle multiple possible data structures
+      const result = await response.json();
+      console.log('Full record details for edit:', result); // Debug log
+
+      const fullRecord = result.data?.processingRecord || result.data?.record || result.data;
+      console.log('Mapped fullRecord:', fullRecord); // Debug log
+
+      if (!fullRecord) {
+        throw new Error('No record data found');
+      }
+
+      // Extract guarantee cases from the record
+      let guaranteeCases = [];
+      if (fullRecord.guaranteeCases && Array.isArray(fullRecord.guaranteeCases)) {
+        guaranteeCases = fullRecord.guaranteeCases.map((gc: any) => ({
+          contentGuarantee: gc.contentGuarantee || gc.content || gc.description || '',
+          guaranteeCaseId: gc.guaranteeCaseId || gc.id
+        }));
+      } else if (fullRecord.cases && Array.isArray(fullRecord.cases)) {
+        // Fallback for different API structure
+        guaranteeCases = fullRecord.cases.map((gc: any) => ({
+          contentGuarantee: gc.contentGuarantee || gc.content || gc.description || '',
+          guaranteeCaseId: gc.guaranteeCaseId || gc.id
+        }));
+      }
+
+      console.log('Extracted guarantee cases:', guaranteeCases); // Debug log
+
+      // Pre-fill form with record data
       setEditRecordForm({
         id: record.id,
-        vin: fullRecord?.vehicle?.vin || fullRecord?.vehicleProcessingRecord?.vin || record.vinNumber || '',
-        odometer: (fullRecord?.odometer || fullRecord?.vehicleProcessingRecord?.odometer || record.odometer)?.toString() || '',
-        guaranteeCases: fullRecord?.guaranteeCases?.length > 0 
-          ? fullRecord.guaranteeCases.map((gc: any) => ({
-              contentGuarantee: gc.contentGuarantee || gc.content || ''
-            }))
-          : [{ contentGuarantee: '' }],
+        vin: fullRecord.vin || fullRecord.vehicle?.vin || record.vinNumber || '',
+        odometer: (fullRecord.odometer || fullRecord.vehicleProcessingRecord?.odometer || record.odometer || 0).toString(),
+        guaranteeCases: guaranteeCases.length > 0 ? guaranteeCases : [{ contentGuarantee: '' }],
         visitorInfo: {
-          fullName: fullRecord?.guest?.fullName || fullRecord?.visitorInfo?.fullName || '',
-          email: fullRecord?.guest?.email || fullRecord?.visitorInfo?.email || '',
-          phone: fullRecord?.guest?.phone || fullRecord?.visitorInfo?.phone || ''
+          fullName: fullRecord.visitorInfo?.fullName || fullRecord.visitor?.fullName || fullRecord.guest?.fullName || '',
+          email: fullRecord.visitorInfo?.email || fullRecord.visitor?.email || fullRecord.guest?.email || '',
+          phone: fullRecord.visitorInfo?.phone || fullRecord.visitor?.phone || fullRecord.guest?.phone || ''
         }
       });
 
+      console.log('Set editRecordForm:', {
+        id: record.id,
+        vin: fullRecord.vin || fullRecord.vehicle?.vin || record.vinNumber || '',
+        odometer: (fullRecord.odometer || fullRecord.vehicleProcessingRecord?.odometer || record.odometer || 0).toString(),
+        guaranteeCases: guaranteeCases.length > 0 ? guaranteeCases : [{ contentGuarantee: '', guaranteeCaseId: null }],
+        visitorInfo: {
+          fullName: fullRecord.visitorInfo?.fullName || fullRecord.visitor?.fullName || fullRecord.guest?.fullName || '',
+          email: fullRecord.visitorInfo?.email || fullRecord.visitor?.email || fullRecord.guest?.email || '',
+          phone: fullRecord.visitorInfo?.phone || fullRecord.visitor?.phone || fullRecord.guest?.phone || ''
+        }
+      }); // Debug log
+
       setShowEditRecordDialog(true);
     } catch (error) {
-      console.error('Error loading record:', error); // Debug log
+      console.error('Error loading record for edit:', error); // Debug log
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to load record details',
@@ -2640,21 +2825,25 @@ const SuperAdvisor = () => {
         return;
       }
 
-      if (editRecordForm.guaranteeCases.length === 0 || !editRecordForm.guaranteeCases[0].contentGuarantee) {
-        toast({
-          title: 'Validation Error',
-          description: 'At least one guarantee case is required',
-          variant: 'destructive'
-        });
-        return;
-      }
-
-      const updateData = {
+      // For now, only update odometer and visitor info
+      // Guarantee cases update might not be supported by backend
+      const updateData: any = {
         vin: editRecordForm.vin,
         odometer: parseInt(editRecordForm.odometer),
-        guaranteeCases: editRecordForm.guaranteeCases.filter(gc => gc.contentGuarantee.trim() !== ''),
         visitorInfo: editRecordForm.visitorInfo
       };
+
+      // Only include guarantee cases if they have content and backend supports it
+      const validGuaranteeCases = editRecordForm.guaranteeCases.filter(gc => gc.contentGuarantee.trim() !== '');
+      if (validGuaranteeCases.length > 0) {
+        // Try different formats that backend might accept
+        updateData.guaranteeCases = validGuaranteeCases.map((gc: any) => ({
+          contentGuarantee: gc.contentGuarantee.trim(),
+          ...(gc.guaranteeCaseId && { guaranteeCaseId: gc.guaranteeCaseId })
+        }));
+      }
+
+      console.log('Sending update data:', updateData); // Debug log
 
       const response = await fetch(`${API_BASE_URL}/processing-records/${editRecordForm.id}`, {
         method: 'PUT',
@@ -2667,8 +2856,12 @@ const SuperAdvisor = () => {
 
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('Update failed:', errorData); // Debug log
         throw new Error(errorData.message || 'Failed to update record');
       }
+
+      const result = await response.json();
+      console.log('Update successful:', result); // Debug log
 
       toast({
         title: 'Success',
@@ -2681,6 +2874,7 @@ const SuperAdvisor = () => {
       // Close dialog
       setShowEditRecordDialog(false);
     } catch (error) {
+      console.error('Update error:', error); // Debug log
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to update record',
@@ -2688,149 +2882,6 @@ const SuperAdvisor = () => {
       });
     } finally {
       setIsUpdatingRecord(false);
-    }
-  };
-
-  // Open standalone create dialog
-  const handleOpenStandaloneCreate = () => {
-    // Reset form
-    setWarrantyRecordForm({
-      vin: '',
-      odometer: '',
-      purchaseDate: '',
-      customerName: '',
-      customerPhone: '',
-      cases: [],
-      visitorFullName: '',
-      visitorPhone: '',
-      customerEmail: ''
-    });
-    setWarrantyRecordCaseText('');
-    setEvidenceImages([]);
-    setShowStandaloneCreateDialog(true);
-  };
-
-  // Handle evidence image upload (if not exists)
-  const handleEvidenceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    setUploadingImage(true);
-
-    try {
-      const uploadPromises = Array.from(files).map(async (file) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('upload_preset', 'ml_default'); // Replace with your Cloudinary upload preset
-
-        const response = await fetch(
-          'https://api.cloudinary.com/v1_1/dkqomtqvv/image/upload', // Replace with your Cloudinary cloud name
-          {
-            method: 'POST',
-            body: formData
-          }
-        );
-
-        const data = await response.json();
-        return data.secure_url;
-      });
-
-      const uploadedUrls = await Promise.all(uploadPromises);
-      setEvidenceImages([...evidenceImages, ...uploadedUrls]);
-
-      toast({
-        title: 'Success',
-        description: `${uploadedUrls.length} image(s) uploaded successfully`
-      });
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: 'Failed to upload images',
-        variant: 'destructive'
-      });
-    } finally {
-      setUploadingImage(false);
-    }
-  };
-
-  // Handle create warranty record
-  const handleCreateWarrantyRecord = async () => {
-    try {
-      setIsCreatingRecord(true);
-
-      // Validate form
-      if (!warrantyRecordForm.vin || !warrantyRecordForm.odometer) {
-        toast({
-          title: 'Validation Error',
-          description: 'VIN and odometer are required',
-          variant: 'destructive'
-        });
-        return;
-      }
-
-      if (warrantyRecordForm.cases.length === 0) {
-        toast({
-          title: 'Validation Error',
-          description: 'At least one guarantee case is required',
-          variant: 'destructive'
-        });
-        return;
-      }
-
-      // Prepare record data
-      const recordData = {
-        vin: warrantyRecordForm.vin,
-        odometer: parseInt(warrantyRecordForm.odometer),
-        guaranteeCases: warrantyRecordForm.cases.map((caseText: string) => ({
-          contentGuarantee: caseText
-        })),
-        visitorInfo: {
-          fullName: warrantyRecordForm.visitorFullName || 'Guest',
-          phone: warrantyRecordForm.visitorPhone || '',
-          email: warrantyRecordForm.customerEmail || ''
-        },
-        evidenceImageUrls: evidenceImages
-      };
-
-      // Call API to create record
-      const result = await createProcessingRecord(recordData);
-
-      toast({
-        title: 'Success',
-        description: 'Warranty record created successfully'
-      });
-
-      // Refresh records list - reset to page 1
-      setCurrentPage(1);
-      await loadProcessingRecords(1);
-
-      // Close dialog
-      setShowCreateWarrantyDialog(false);
-      setShowStandaloneCreateDialog(false);
-
-      // Reset form
-      setWarrantyRecordForm({
-        vin: '',
-        odometer: '',
-        purchaseDate: '',
-        customerName: '',
-        customerPhone: '',
-        cases: [],
-        visitorFullName: '',
-        visitorPhone: '',
-        customerEmail: ''
-      });
-      setWarrantyRecordCaseText('');
-      setEvidenceImages([]);
-
-    } catch (error) {
-      toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to create record',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsCreatingRecord(false);
     }
   };
 
@@ -2885,7 +2936,7 @@ const SuperAdvisor = () => {
                 className={searchMode === 'vehicle' ? 'bg-green-600 hover:bg-green-700' : ''}
               >
                 <Car className="h-4 w-4 mr-2" />
-                Find Vehicle by VIN
+                Register Vehicle
               </Button>
               <Button
                 variant={searchMode === 'warranty' ? 'default' : 'outline'}
@@ -2896,10 +2947,19 @@ const SuperAdvisor = () => {
                 <FileText className="h-4 w-4 mr-2" />
                 View Warranty Records
               </Button>
+              <Button
+                variant={searchMode === 'vehicleList' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setSearchMode('vehicleList')}
+                className={searchMode === 'vehicleList' ? 'bg-red-600 hover:bg-red-700' : ''}
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                Vehicles List
+              </Button>
             </div>
 
             {/* Dynamic Search Bar - Only for customer and phone modes */}
-            {searchMode !== 'warranty' && (
+            {searchMode !== 'warranty' && searchMode !== 'vehicleList' && (
               <div className="flex gap-3">
                 <div className="flex-1 relative">
                   {searchMode === 'vehicle' ? (
@@ -2910,7 +2970,7 @@ const SuperAdvisor = () => {
                   <Input
                     placeholder={
                       searchMode === 'vehicle'
-                        ? "Enter VIN to find vehicle "
+                        ? "Enter VIN to register vehicle "
                         : "Enter phone number"
                     }
                     className="pl-10 h-11"
@@ -2952,6 +3012,31 @@ const SuperAdvisor = () => {
                 </Button>
               </div>
             )}
+            {/*Vehicles List Search Bar */}
+            {searchMode === 'vehicleList' && (
+              <div className='flex gap-3'>
+              <div className='flex-1 relative'>
+                <Car className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
+                <Input
+                  placeholder='Enter VIN to find vehicle'
+                  className='pl-10 h-11'
+                  value={searchVehicle}
+                  onChange={(e) => {   
+                    setSearchVehicle(e.target.value)
+                  }}
+                />
+              </div>
+            <Button
+              size='sm'
+              className='bg-red-600 hover:bg-red-700'
+              onClick={
+                () => handleSearchVehicle()
+              }
+            >
+            Search VIN
+            </Button>
+          </div>
+        )}
           </CardContent>
         </Card>
 
@@ -3136,7 +3221,180 @@ const SuperAdvisor = () => {
         </Card>
         )}
 
-        {/* Customer Search Results Section - Only show in customer mode */}
+        {/*Vehicle List Result Section */}
+        {searchMode === 'vehicleList' && (
+          <Card className='shadow-lg'>
+            <CardHeader>
+              <div className='flex items-center justify-between'>
+                <div>
+                  <CardTitle className='text-xl'>
+                      Vehicle List
+                  </CardTitle>
+                  <CardDescription>
+                    List of vehicles
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={() => {
+                    setShowAddVehicleDialog(true);
+                    setAddVehicleForm({
+                      vin: '',
+                      dateOfManufacture: '',
+                      placeOfManufacture: '',
+                      vehicleModelId: ''
+                    });
+                  }}
+                  className='bg-green-600 hover:bg-green-700'
+                >
+                  <Car className='h-4 w-4 mr-2' />
+                  Add Vehicle
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {vehicleListResult.length !== 0 ? (
+                <div className='space-y-3'>
+                    {vehicleListResult.map((vehicle: any, index: number) => (
+                      <div
+                        key={vehicle.vin || index}
+                        className='bg-red-100 border border-red-700 rounded p-4 shadow-sm'
+                      >
+                        <h3 className='mb-2 text-sm text-red-500 font-bold'>Vehicle #{
+                          pagination.currentPage === 1 ? index + 1 : index + (pagination.currentPage * 10 - 10) + 1}
+                        </h3>
+
+                        <div className='bg-red-200 border border-red-700 rounded p-4 shadow-sm mb-4'>
+                          <div className='grid md:grid-cols-2 gap-3'>
+                            <div>
+                              <span className='text-sm font-medium text-black-600'>VIN: </span>
+                              <span className='text-sm font-mono'>{vehicle.vin ? vehicle.vin : 'N/A'} </span>
+                            </div>
+
+                            <div>
+                              <span className='text-sm font-medium text-black-600'>Place of Manufacture: </span>
+                              <span className='text-sm font-mono'>{vehicle.placeOfManufacture ? vehicle.placeOfManufacture : 'N/A'} </span>
+                            </div>
+
+                            <div>
+                              <span className='text-sm font-medium text-black-600'>Registration date: </span>
+                              <span className='text-sm font-mono'>
+                                {vehicle?.registerationDate
+                                ? new Date(vehicle.registerationDate).toLocaleDateString('en-GB', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric'
+                                }).split('/').join('/') : 'N/A'}
+                              </span>
+                            </div>
+
+                            <div>
+                              <span className='text-sm font-medium text-black-600'>Owner: </span>
+                              <span className='text-sm font-mono'>{vehicle.owner ? vehicle.owner.fullName : 'No customer assigned!'} </span>
+                            </div>
+
+                          </div>
+                        </div>
+                        <div className='grid md:grid-cols-2 gap-3'>
+                          <Button
+                            className="bg-red-500 text-white hover:bg-red-600 border-red-500"
+                            onClick={() => {
+                              setSelectedVehicleDetail(vehicle);
+                              setShowVehicleDetailDialog(true);
+                            }}
+                          >
+                            View Details
+                          </Button>
+                          <Button
+                            className="bg-red-500 text-white hover:bg-red-600 border-red-500"
+                            onClick={() => {
+                              setVehicleToDelete(vehicle);
+                              setShowDeleteVehicleDialog(true);
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <div className='text-center py-12'>
+                  <Car className='mx-auto h-12 w-12 text-muted-foreground mb-4' />
+                  <h3 className='text-lg font-medium text-muted-foreground mb-2'>
+                    List of Vehicle is Empty
+                  </h3>
+                  <p className='text-sm text-muted-foreground'>
+                    You can create new vehicle by click the button
+                  </p>
+                </div>
+              )}
+              
+              {/* Pagination Controls */}
+              {vehicleListResult.length > 0 && pagination.totalPages > 1 && (
+                <div className='flex items-center justify-between mt-6 pt-4 border-t'>
+                  <div className='text-sm text-gray-600'>
+                    Showing {((pagination.currentPage - 1) * pagination.itemsPerPage) + 1} to {Math.min(pagination.currentPage * pagination.itemsPerPage, pagination.totalItems)} of {pagination.totalItems} vehicles
+                  </div>
+                  <div className='flex items-center gap-2'>
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      onClick={() => {
+                        setPagination(prev => ({ ...prev, currentPage: prev.currentPage - 1 }));
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      disabled={pagination.currentPage === 1 || isLoadingVehicleList}
+                    >
+                      Previous
+                    </Button>
+                    <div className='flex items-center gap-1'>
+                      {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
+                        let pageNum;
+                        if (pagination.totalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (pagination.currentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (pagination.currentPage >= pagination.totalPages - 2) {
+                          pageNum = pagination.totalPages - 4 + i;
+                        } else {
+                          pageNum = pagination.currentPage - 2 + i;
+                        }
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={pagination.currentPage === pageNum ? 'default' : 'outline'}
+                            size='sm'
+                            onClick={() => {
+                              setPagination(prev => ({ ...prev, currentPage: pageNum }));
+                              window.scrollTo({ top: 0, behavior: 'smooth' });
+                            }}
+                            disabled={isLoadingVehicleList}
+                            className='w-8 h-8 p-0'
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
+                    </div>
+                    <Button
+                      variant='outline'
+                      size='sm'
+                      onClick={() => {
+                        setPagination(prev => ({ ...prev, currentPage: prev.currentPage + 1 }));
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}
+                      disabled={pagination.currentPage === pagination.totalPages || isLoadingVehicleList}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Vehicle Search Results Section*/}
         {searchMode === 'vehicle' && (
           <Card className="shadow-lg">
             <CardHeader>
@@ -3911,7 +4169,7 @@ const SuperAdvisor = () => {
                                   </div>
                                   <Button
                                     onClick={() => handleCheckVehicleWarranty(vehicle)}
-                                    disabled={isCheckingVehicleWarranty}
+                                    disabled={isCheckingVehicleWarranty}//ngăn user spam button
                                     className="bg-green-600 hover:bg-green-700"
                                   >
                                     {isCheckingVehicleWarranty ? 'Checking...' : 'Check Warranty'}
@@ -4905,6 +5163,612 @@ const SuperAdvisor = () => {
                 )}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Vehicle Detail Dialog */}
+      <Dialog open={showVehicleDetailDialog} onOpenChange={(open) => {
+        setShowVehicleDetailDialog(open);
+        if (!open) {
+          setIsEditingVehicle(false);
+          setSelectedVehicleDetail(null);
+        } else if (selectedVehicleDetail) {
+          // Initialize form when opening dialog
+          setEditVehicleForm({
+            dateOfManufacture: selectedVehicleDetail.dateOfManufacture ? new Date(selectedVehicleDetail.dateOfManufacture).toISOString().split('T')[0] : '',
+            placeOfManufacture: selectedVehicleDetail.placeOfManufacture || '',
+            licensePlate: selectedVehicleDetail.licensePlate || '',
+            purchaseDate: selectedVehicleDetail.purchaseDate ? new Date(selectedVehicleDetail.purchaseDate).toISOString().split('T')[0] : ''
+          });
+        }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <Car className="h-5 w-5" />
+              <span>Vehicle Details</span>
+            </DialogTitle>
+            <DialogDescription>
+              {isEditingVehicle ? 'Edit vehicle information' : 'Complete information about the vehicle'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedVehicleDetail && (
+            <div className="space-y-6 py-4">
+              {/* Vehicle Information */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold flex items-center space-x-2">
+                  <Car className="h-5 w-5 text-blue-600" />
+                  <span>Vehicle Information</span>
+                </h3>
+                <div className="space-y-4">
+                  {/* VIN and Registration Date - Separate div */}
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <span className="text-sm font-medium text-gray-600">VIN</span>
+                        <p className="text-sm font-mono mt-1">{selectedVehicleDetail.vin || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <span className="text-sm font-medium text-gray-600">Registration Date</span>
+                        <p className="text-sm mt-1">
+                          {selectedVehicleDetail.registerationDate
+                            ? new Date(selectedVehicleDetail.registerationDate).toLocaleDateString('en-GB', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric'
+                              })
+                            : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Edit Button */}
+                  {!isEditingVehicle && (
+                    <div>
+                      <Button
+                        size="sm"
+                        onClick={() => setIsEditingVehicle(true)}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        Edit
+                      </Button>
+                    </div>
+                  )}
+                  
+                  {/* Editable Fields - Separate div */}
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">License Plate</Label>
+                      {isEditingVehicle ? (
+                        <Input
+                          value={editVehicleForm.licensePlate}
+                          onChange={(e) => setEditVehicleForm(prev => ({ ...prev, licensePlate: e.target.value }))}
+                          className="mt-1"
+                        />
+                      ) : (
+                        <p className="text-sm font-mono mt-1">{selectedVehicleDetail.licensePlate || 'N/A'}</p>
+                      )}
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Date of Manufacture</Label>
+                      {isEditingVehicle ? (
+                        <Input
+                          type="date"
+                          value={editVehicleForm.dateOfManufacture}
+                          onChange={(e) => setEditVehicleForm(prev => ({ ...prev, dateOfManufacture: e.target.value }))}
+                          className="mt-1"
+                        />
+                      ) : (
+                        <p className="text-sm mt-1">
+                          {selectedVehicleDetail.dateOfManufacture
+                            ? new Date(selectedVehicleDetail.dateOfManufacture).toLocaleDateString('en-GB', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric'
+                              })
+                            : 'N/A'}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Purchase Date</Label>
+                      {isEditingVehicle ? (
+                        <Input
+                          type="date"
+                          value={editVehicleForm.purchaseDate}
+                          onChange={(e) => setEditVehicleForm(prev => ({ ...prev, purchaseDate: e.target.value }))}
+                          className="mt-1"
+                        />
+                      ) : (
+                        <p className="text-sm mt-1">
+                          {selectedVehicleDetail.purchaseDate
+                            ? new Date(selectedVehicleDetail.purchaseDate).toLocaleDateString('en-GB', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric'
+                              })
+                            : 'N/A'}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium text-gray-600">Place of Manufacture</Label>
+                      {isEditingVehicle ? (
+                        <Input
+                          value={editVehicleForm.placeOfManufacture}
+                          onChange={(e) => setEditVehicleForm(prev => ({ ...prev, placeOfManufacture: e.target.value }))}
+                          className="mt-1"
+                        />
+                      ) : (
+                        <p className="text-sm mt-1">{selectedVehicleDetail.placeOfManufacture || 'N/A'}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                </div>
+              </div>
+
+              {/* Model Information */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold flex items-center space-x-2">
+                  <FileText className="h-5 w-5 text-green-600" />
+                  <span>Model Information</span>
+                </h3>
+                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <span className="text-sm font-medium text-gray-600">Model</span>
+                    <p className="text-sm mt-1">{selectedVehicleDetail.model?.modelName || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-gray-600">Company</span>
+                    <p className="text-sm mt-1">{selectedVehicleDetail.model?.company?.name || 'N/A'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Owner Information */}
+              {selectedVehicleDetail.owner && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-semibold flex items-center space-x-2">
+                    <User className="h-5 w-5 text-purple-600" />
+                    <span>Owner Information</span>
+                  </h3>
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <span className="text-sm font-medium text-gray-600">Full Name</span>
+                      <p className="text-sm mt-1">{selectedVehicleDetail.owner.fullName || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-gray-600">Phone</span>
+                      <p className="text-sm font-mono mt-1">{selectedVehicleDetail.owner.phone || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-gray-600">Email</span>
+                      <p className="text-sm mt-1">{selectedVehicleDetail.owner.email || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-gray-600">Address</span>
+                      <p className="text-sm mt-1">{selectedVehicleDetail.owner.address || 'N/A'}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            {isEditingVehicle ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsEditingVehicle(false);
+                    // Reset form to original values
+                    setEditVehicleForm({
+                      dateOfManufacture: selectedVehicleDetail.dateOfManufacture ? new Date(selectedVehicleDetail.dateOfManufacture).toISOString().split('T')[0] : '',
+                      placeOfManufacture: selectedVehicleDetail.placeOfManufacture || '',
+                      licensePlate: selectedVehicleDetail.licensePlate || '',
+                      purchaseDate: selectedVehicleDetail.purchaseDate ? new Date(selectedVehicleDetail.purchaseDate).toISOString().split('T')[0] : ''
+                    });
+                  }}
+                  disabled={isUpdatingVehicle}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={async () => {
+                    try {
+                      setIsUpdatingVehicle(true);
+                      const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+                      
+                      if (!token) {
+                        toast({
+                          title: 'Error',
+                          description: 'Authentication token not found',
+                          variant: 'destructive'
+                        });
+                        return;
+                      }
+
+                      // Prepare update payload
+                      const updateData: any = {};
+                      if (editVehicleForm.dateOfManufacture) updateData.dateOfManufacture = editVehicleForm.dateOfManufacture;
+                      if (editVehicleForm.placeOfManufacture) updateData.placeOfManufacture = editVehicleForm.placeOfManufacture;
+                      if (editVehicleForm.licensePlate) updateData.licensePlate = editVehicleForm.licensePlate;
+                      if (editVehicleForm.purchaseDate) updateData.purchaseDate = editVehicleForm.purchaseDate;
+
+                      const response = await axios.put(
+                        `${API_BASE_URL}/vehicles/${selectedVehicleDetail.vin}`,
+                        updateData,
+                        {
+                          headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                          }
+                        }
+                      );
+
+                      if (response.data && response.data.status === 'success') {
+                        toast({
+                          title: 'Success',
+                          description: 'Vehicle information updated successfully',
+                        });
+                        
+                        // Update local state
+                        setSelectedVehicleDetail({
+                          ...selectedVehicleDetail,
+                          ...updateData
+                        });
+                        
+                        // Refresh vehicle list
+                        fetchVehicles(searchVehicle, undefined, pagination.currentPage, pagination.itemsPerPage);
+                        
+                        setIsEditingVehicle(false);
+                      } else {
+                        toast({
+                          title: 'Error',
+                          description: 'Failed to update vehicle information',
+                          variant: 'destructive'
+                        });
+                      }
+                    } catch (error: any) {
+                      console.error('Update vehicle error:', error);
+                      toast({
+                        title: 'Error',
+                        description: error.response?.data?.message || 'Failed to update vehicle information',
+                        variant: 'destructive'
+                      });
+                    } finally {
+                      setIsUpdatingVehicle(false);
+                    }
+                  }}
+                  disabled={isUpdatingVehicle}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  {isUpdatingVehicle ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowVehicleDetailDialog(false);
+                  setSelectedVehicleDetail(null);
+                }}
+              >
+                Close
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Vehicle Confirmation Dialog */}
+      <Dialog open={showDeleteVehicleDialog} onOpenChange={setShowDeleteVehicleDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2 text-red-600">
+              <Car className="h-5 w-5" />
+              <span>Confirm Delete Vehicle</span>
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this vehicle? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          {vehicleToDelete && (
+            <div className="py-4">
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg space-y-2">
+                <div>
+                  <span className="text-sm font-medium text-gray-700">VIN: </span>
+                  <span className="text-sm font-mono">{vehicleToDelete.vin}</span>
+                </div>
+                {vehicleToDelete.owner && (
+                  <div>
+                    <span className="text-sm font-medium text-gray-700">Owner: </span>
+                    <span className="text-sm">{vehicleToDelete.owner.fullName}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowDeleteVehicleDialog(false);
+                setVehicleToDelete(null);
+              }}
+              disabled={isDeletingVehicle}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (!vehicleToDelete) return;
+                
+                try {
+                  setIsDeletingVehicle(true);
+                  const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+                  
+                  if (!token) {
+                    toast({
+                      title: 'Error',
+                      description: 'Authentication token not found',
+                      variant: 'destructive'
+                    });
+                    return;
+                  }
+
+                  const response = await axios.delete(
+                    `${API_BASE_URL}/vehicles/${vehicleToDelete.vin}`,
+                    {
+                      headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                      }
+                    }
+                  );
+
+                  if (response.data && response.data.status === 'success') {
+                    toast({
+                      title: 'Success',
+                      description: 'Vehicle deleted successfully',
+                    });
+                    
+                    // Refresh vehicle list
+                    fetchVehicles(searchVehicle, undefined, pagination.currentPage, pagination.itemsPerPage);
+                    
+                    // Close dialog
+                    setShowDeleteVehicleDialog(false);
+                    setVehicleToDelete(null);
+                  } else {
+                    toast({
+                      title: 'Error',
+                      description: 'Failed to delete vehicle',
+                      variant: 'destructive'
+                    });
+                  }
+                } catch (error: any) {
+                  console.error('Delete vehicle error:', error);
+                  toast({
+                    title: 'Error',
+                    description: error.response?.data?.message || 'Failed to delete vehicle',
+                    variant: 'destructive'
+                  });
+                } finally {
+                  setIsDeletingVehicle(false);
+                }
+              }}
+              disabled={isDeletingVehicle}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {isDeletingVehicle ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Deleting...
+                </>
+              ) : (
+                'Confirm Delete'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Vehicle Dialog */}
+      <Dialog open={showAddVehicleDialog} onOpenChange={setShowAddVehicleDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center space-x-2">
+              <Car className="h-5 w-5 text-green-600" />
+              <span>Add New Vehicle</span>
+            </DialogTitle>
+            <DialogDescription>
+              Fill in the information to add a new vehicle to the system
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-sm font-medium">VIN <span className="text-red-500">*</span></Label>
+                <Input
+                  placeholder="Enter VIN number"
+                  value={addVehicleForm.vin}
+                  onChange={(e) => setAddVehicleForm(prev => ({ ...prev, vin: e.target.value }))}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-medium">Date of Manufacture <span className="text-red-500">*</span></Label>
+                <Input
+                  type="date"
+                  value={addVehicleForm.dateOfManufacture}
+                  onChange={(e) => setAddVehicleForm(prev => ({ ...prev, dateOfManufacture: e.target.value }))}
+                  max={new Date().toISOString().split('T')[0]}
+                  className="mt-1"
+                />
+                <p className="text-xs text-gray-500 mt-1">Must be before today</p>
+              </div>
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Place of Manufacture <span className="text-red-500">*</span></Label>
+              <Input
+                placeholder="e.g., Hanoi, Vietnam"
+                value={addVehicleForm.placeOfManufacture}
+                onChange={(e) => setAddVehicleForm(prev => ({ ...prev, placeOfManufacture: e.target.value }))}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">Vehicle Model <span className="text-red-500">*</span></Label>
+              <select
+                value={addVehicleForm.vehicleModelId}
+                onChange={(e) => setAddVehicleForm(prev => ({ ...prev, vehicleModelId: e.target.value }))}
+                className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select a vehicle model</option>
+                {vehicleModels.map((model: any) => (
+                  <option key={model.vehicleModelId} value={model.vehicleModelId}>
+                    {model.modelName} - {model.company?.name || 'Unknown Company'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowAddVehicleDialog(false);
+                setAddVehicleForm({
+                  vin: '',
+                  dateOfManufacture: '',
+                  placeOfManufacture: '',
+                  vehicleModelId: ''
+                });
+              }}
+              disabled={isAddingVehicle}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={async () => {
+                // Validate form
+                if (!addVehicleForm.vin || !addVehicleForm.dateOfManufacture || !addVehicleForm.placeOfManufacture || !addVehicleForm.vehicleModelId) {
+                  toast({
+                    title: 'Validation Error',
+                    description: 'Please fill in all required fields',
+                    variant: 'destructive'
+                  });
+                  return;
+                }
+
+                // Check date is not in future
+                const selectedDate = new Date(addVehicleForm.dateOfManufacture);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                if (selectedDate > today) {
+                  toast({
+                    title: 'Validation Error',
+                    description: 'Date of Manufacture cannot be in the future',
+                    variant: 'destructive'
+                  });
+                  return;
+                }
+
+                try {
+                  setIsAddingVehicle(true);
+                  const token = typeof getToken === 'function' ? getToken() : localStorage.getItem('ev_warranty_token');
+                  
+                  if (!token) {
+                    toast({
+                      title: 'Error',
+                      description: 'Authentication token not found',
+                      variant: 'destructive'
+                    });
+                    return;
+                  }
+
+                  const response = await axios.post(
+                    `${API_BASE_URL}/vehicles`,
+                    {
+                      vin: addVehicleForm.vin,
+                      dateOfManufacture: addVehicleForm.dateOfManufacture,
+                      placeOfManufacture: addVehicleForm.placeOfManufacture,
+                      vehicleModelId: addVehicleForm.vehicleModelId
+                    },
+                    {
+                      headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                      }
+                    }
+                  );
+
+                  if (response.data && response.data.status === 'success') {
+                    toast({
+                      title: 'Success',
+                      description: 'Vehicle added successfully',
+                    });
+                    
+                    // Refresh vehicle list
+                    fetchVehicles(searchVehicle, undefined, pagination.currentPage, pagination.itemsPerPage);
+                    
+                    // Close dialog and reset form
+                    setShowAddVehicleDialog(false);
+                    setAddVehicleForm({
+                      vin: '',
+                      dateOfManufacture: '',
+                      placeOfManufacture: '',
+                      vehicleModelId: ''
+                    });
+                  } else {
+                    toast({
+                      title: 'Error',
+                      description: 'Failed to add vehicle',
+                      variant: 'destructive'
+                    });
+                  }
+                } catch (error: any) {
+                  console.error('Add vehicle error:', error);
+                  toast({
+                    title: 'Error',
+                    description: error.response?.data?.message || 'Failed to add vehicle',
+                    variant: 'destructive'
+                  });
+                } finally {
+                  setIsAddingVehicle(false);
+                }
+              }}
+              disabled={isAddingVehicle}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {isAddingVehicle ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Adding...
+                </>
+              ) : (
+                'Add Vehicle'
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
