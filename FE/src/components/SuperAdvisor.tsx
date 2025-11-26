@@ -3354,10 +3354,10 @@ const SuperAdvisor = () => {
                             </div>
 
                             <div>
-                              <span className='text-sm font-medium text-black-600'>Registration date: </span>
+                              <span className='text-sm font-medium text-black-600'>Date of manufacture: </span>
                               <span className='text-sm font-mono'>
-                                {vehicle?.registerationDate
-                                ? new Date(vehicle.registerationDate).toLocaleDateString('en-GB', {
+                                {vehicle?.dateOfManufacture
+                                ? new Date(vehicle.dateOfManufacture).toLocaleDateString('en-GB', {
                                   day: '2-digit',
                                   month: '2-digit',
                                   year: 'numeric'
