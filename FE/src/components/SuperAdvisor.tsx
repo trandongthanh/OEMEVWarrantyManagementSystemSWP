@@ -270,7 +270,17 @@ const SuperAdvisor = () => {
 
   // Edit Record states
   const [showEditRecordDialog, setShowEditRecordDialog] = useState(false);
-  const [editRecordForm, setEditRecordForm] = useState({
+  const [editRecordForm, setEditRecordForm] = useState<{
+    id: string;
+    vin: string;
+    odometer: string;
+    guaranteeCases: Array<{ contentGuarantee: string; guaranteeCaseId?: string | null }>;
+    visitorInfo: {
+      fullName: string;
+      email: string;
+      phone: string;
+    };
+  }>({
     id: '',
     vin: '',
     odometer: '',
@@ -282,6 +292,7 @@ const SuperAdvisor = () => {
     }
   });
   const [isUpdatingRecord, setIsUpdatingRecord] = useState(false);
+  const [updatingGuaranteeCaseId, setUpdatingGuaranteeCaseId] = useState<string | null>(null); // Track which case is being updated
 
   
 
@@ -2797,6 +2808,71 @@ const SuperAdvisor = () => {
         description: error instanceof Error ? error.message : 'Failed to load record details',
         variant: 'destructive'
       });
+    }
+  };
+
+  // Handle update individual guarantee case
+  const handleUpdateGuaranteeCase = async (guaranteeCaseId: string, contentGuarantee: string) => {
+    try {
+      setUpdatingGuaranteeCaseId(guaranteeCaseId);
+
+      const token = localStorage.getItem('ev_warranty_token');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'Authentication token not found',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Validate content
+      if (!contentGuarantee.trim()) {
+        toast({
+          title: 'Validation Error',
+          description: 'Case content cannot be empty',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/guarantee-cases/${guaranteeCaseId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contentGuarantee: contentGuarantee.trim()
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update guarantee case');
+      }
+
+      toast({
+        title: 'Success',
+        description: 'Guarantee case updated successfully'
+      });
+
+      // Reload the record to get updated data
+      if (editRecordForm.id) {
+        const record = records.find(r => r.id === editRecordForm.id);
+        if (record) {
+          await handleEditRecord(record);
+        }
+      }
+
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to update guarantee case',
+        variant: 'destructive'
+      });
+    } finally {
+      setUpdatingGuaranteeCaseId(null);
     }
   };
 
@@ -6309,32 +6385,64 @@ const SuperAdvisor = () => {
             {/* Guarantee Cases */}
             <div>
               <Label>Guarantee Cases *</Label>
-              <div className="space-y-2 mt-2">
-                {editRecordForm.guaranteeCases.map((gc, index) => (
-                  <div key={index} className="flex gap-2">
-                    <Textarea
-                      value={gc.contentGuarantee}
-                      onChange={(e) => {
-                        const newCases = [...editRecordForm.guaranteeCases];
-                        newCases[index].contentGuarantee = e.target.value;
-                        setEditRecordForm({ ...editRecordForm, guaranteeCases: newCases });
-                      }}
-                      placeholder="Describe the warranty issue"
-                      className="flex-1"
-                      rows={2}
-                    />
-                    {editRecordForm.guaranteeCases.length > 1 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const newCases = editRecordForm.guaranteeCases.filter((_, i) => i !== index);
+              <p className="text-xs text-muted-foreground mt-1 mb-2">
+                Click "Save" to update each case individually
+              </p>
+              <div className="space-y-3 mt-2">
+                {editRecordForm.guaranteeCases.map((gc: any, index: number) => (
+                  <div key={index} className="border rounded-lg p-3 bg-gray-50">
+                    <div className="flex gap-2 mb-2">
+                      <Textarea
+                        value={gc.contentGuarantee}
+                        onChange={(e) => {
+                          const newCases = [...editRecordForm.guaranteeCases];
+                          newCases[index].contentGuarantee = e.target.value;
                           setEditRecordForm({ ...editRecordForm, guaranteeCases: newCases });
                         }}
-                      >
-                        <XCircle className="h-4 w-4" />
-                      </Button>
-                    )}
+                        placeholder="Describe the warranty issue"
+                        className="flex-1"
+                        rows={2}
+                      />
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      {/* Save button - only show if case has guaranteeCaseId */}
+                      {gc.guaranteeCaseId && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => handleUpdateGuaranteeCase(gc.guaranteeCaseId, gc.contentGuarantee)}
+                          disabled={updatingGuaranteeCaseId === gc.guaranteeCaseId || !gc.contentGuarantee.trim()}
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          {updatingGuaranteeCaseId === gc.guaranteeCaseId ? (
+                            <>
+                              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white mr-1"></div>
+                              Saving...
+                            </>
+                          ) : (
+                            <>
+                              <Save className="h-3 w-3 mr-1" />
+                              Save
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {/* Delete button - only show if multiple cases */}
+                      {editRecordForm.guaranteeCases.length > 1 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const newCases = editRecordForm.guaranteeCases.filter((_: any, i: number) => i !== index);
+                            setEditRecordForm({ ...editRecordForm, guaranteeCases: newCases });
+                          }}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <XCircle className="h-3 w-3 mr-1" />
+                          Remove
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ))}
                 <Button
@@ -6343,12 +6451,12 @@ const SuperAdvisor = () => {
                   onClick={() => {
                     setEditRecordForm({
                       ...editRecordForm,
-                      guaranteeCases: [...editRecordForm.guaranteeCases, { contentGuarantee: '' }]
+                      guaranteeCases: [...editRecordForm.guaranteeCases, { contentGuarantee: '', guaranteeCaseId: null }]
                     });
                   }}
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  Add Case
+                  Add New Case
                 </Button>
               </div>
             </div>
