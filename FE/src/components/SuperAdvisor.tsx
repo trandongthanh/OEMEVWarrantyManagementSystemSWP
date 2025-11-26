@@ -3364,6 +3364,18 @@ const SuperAdvisor = () => {
                                 size="sm"
                                 onClick={() => {
                                   setSelectedVehicleDetail(vehicle);
+                                  setIsEditingVehicle(true);
+                                  setShowVehicleDetailDialog(true);
+                                }}
+                                className="text-blue-600 hover:bg-blue-50"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedVehicleDetail(vehicle);
                                   setShowVehicleDetailDialog(true);
                                 }}
                                 className="text-green-600 hover:bg-green-50"
@@ -5296,20 +5308,6 @@ const SuperAdvisor = () => {
                     </div>
                   </div>
                   
-                  {/* Edit Button */}
-                  {!isEditingVehicle && (
-                    <div>
-                      <Button
-                        size="sm"
-                        onClick={() => setIsEditingVehicle(true)}
-                        className="bg-blue-600 hover:bg-blue-700"
-                      >
-                        <FileText className="h-4 w-4 mr-2" />
-                        Edit
-                      </Button>
-                    </div>
-                  )}
-                  
                   {/* Editable Fields - Separate div */}
                   <div className="p-4 bg-gray-50 rounded-lg">
                     <div className="grid grid-cols-2 gap-4">
@@ -5532,15 +5530,38 @@ const SuperAdvisor = () => {
                 </Button>
               </>
             ) : (
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowVehicleDetailDialog(false);
-                  setSelectedVehicleDetail(null);
-                }}
-              >
-                Close
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsEditingVehicle(true);
+                  }}
+                  className="text-blue-600 hover:bg-blue-50"
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    setShowVehicleDetailDialog(false);
+                    setVehicleToDelete(selectedVehicleDetail);
+                    setShowDeleteVehicleDialog(true);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowVehicleDetailDialog(false);
+                    setSelectedVehicleDetail(null);
+                  }}
+                >
+                  Close
+                </Button>
+              </>
             )}
           </DialogFooter>
         </DialogContent>
