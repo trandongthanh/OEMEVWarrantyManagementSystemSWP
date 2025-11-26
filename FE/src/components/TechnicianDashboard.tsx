@@ -277,6 +277,7 @@ interface CaseLine {
   photos: string[];
   photoFiles?: File[];
   createdDate: string;
+  createdAt?: string; // API field for created timestamp
   status: string;
   // Additional fields from API response
   diagnosisText?: string;
@@ -391,11 +392,19 @@ const TechnicianDashboard = ({
   const [processingCaseLines, setProcessingCaseLines] = useState<CaseLine[]>([]);
   const [isLoadingProcessing, setIsLoadingProcessing] = useState(false);
   
-  // Pagination state for case lines
+  // Pagination state for case lines (Processing Records tab)
   const [caseLinePage, setCaseLinePage] = useState(1);
   const [caseLineLimit] = useState(10);
   const [caseLineTotalPages, setCaseLineTotalPages] = useState(1);
   const [caseLineTotal, setCaseLineTotal] = useState(0);
+
+  // Pagination state for Issue Diagnosis tab
+  const [issueDiagnosisCaseLines, setIssueDiagnosisCaseLines] = useState<CaseLine[]>([]);
+  const [issueDiagnosisPage, setIssueDiagnosisPage] = useState(1);
+  const [issueDiagnosisLimit] = useState(10);
+  const [issueDiagnosisTotalPages, setIssueDiagnosisTotalPages] = useState(1);
+  const [issueDiagnosisTotal, setIssueDiagnosisTotal] = useState(0);
+  const [isLoadingIssueDiagnosis, setIsLoadingIssueDiagnosis] = useState(false);
 
   // Processing Records View states
   const [selectedRecord, setSelectedRecord] = useState<ProcessingRecord | null>(null);
@@ -773,6 +782,104 @@ const TechnicianDashboard = ({
     }
   }, []);
 
+  // Fetch case lines for Issue Diagnosis tab
+  const fetchIssueDiagnosisCaseLines = useCallback(async (page: number = 1) => {
+    try {
+      setIsLoadingIssueDiagnosis(true);
+      const token = getAuthToken();
+      
+      if (!token) {
+        setIsLoadingIssueDiagnosis(false);
+        return;
+      }
+
+      const url = `https://dongthanhswp.space/api/v1/case-lines?page=${page}&limit=${issueDiagnosisLimit}`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      // Map case lines from paginated API response
+      const allCaseLines: any[] = [];
+      
+      if (result?.data?.caseLines && Array.isArray(result.data.caseLines)) {
+        result.data.caseLines.forEach((caseLine: any) => {
+          const mappedCaseLine = {
+            id: caseLine.id,
+            typeComponentId: caseLine.typeComponentId || caseLine.type_component_id,
+            correctionText: caseLine.correctionText,
+            warrantyStatus: caseLine.warrantyStatus,
+            status: caseLine.status,
+            quantity: caseLine.quantity,
+            rejectionReason: caseLine.rejectionReason,
+            diagnosticTechId: caseLine.diagnosticTechId || caseLine.diagnostic_tech_id,
+            repairTechId: caseLine.repairTechId || caseLine.repair_tech_id,
+            caseId: caseLine.guaranteeCaseId || caseLine.guarantee_case_id,
+            // Type component info
+            typeComponent: caseLine.typeComponent ? {
+              typeComponentId: caseLine.typeComponent.typeComponentId,
+              name: caseLine.typeComponent.name,
+              category: caseLine.typeComponent.category,
+              sku: caseLine.typeComponent.sku || '',
+              price: caseLine.typeComponent.price || 0
+            } : null,
+            // Guarantee case info with case number
+            guaranteeCase: caseLine.guaranteeCase ? {
+              guaranteeCaseId: caseLine.guaranteeCase.guaranteeCaseId,
+              caseNumber: `GC-${caseLine.guaranteeCase.guaranteeCaseId.substring(0, 8)}`,
+              contentGuarantee: caseLine.guaranteeCase.contentGuarantee,
+              status: caseLine.guaranteeCase.status,
+              vehicleProcessingRecord: caseLine.guaranteeCase.vehicleProcessingRecord ? {
+                vehicleProcessingRecordId: caseLine.guaranteeCase.vehicleProcessingRecord.vehicleProcessingRecordId,
+                vin: caseLine.guaranteeCase.vehicleProcessingRecord.vin
+              } : undefined
+            } : undefined,
+            // Diagnostic tech info
+            diagnosticTech: caseLine.diagnosticTechnician ? {
+              userId: caseLine.diagnosticTechnician.userId,
+              name: caseLine.diagnosticTechnician.name
+            } : undefined,
+            // For backward compatibility with UI
+            createdAt: caseLine.createdAt,
+            updatedAt: caseLine.updatedAt
+          };
+          
+          allCaseLines.push(mappedCaseLine);
+        });
+      }
+
+      // Update pagination info
+      if (result?.data?.pagination) {
+        const pagination = result.data.pagination;
+        setIssueDiagnosisPage(pagination.page || 1);
+        setIssueDiagnosisTotalPages(pagination.totalPages || 1);
+        setIssueDiagnosisTotal(pagination.total || 0);
+      }
+
+      setIssueDiagnosisCaseLines(allCaseLines);
+      
+    } catch (error) {
+      console.error('❌ Error fetching issue diagnosis case lines:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to fetch case lines',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingIssueDiagnosis(false);
+    }
+  }, [issueDiagnosisLimit]);
+
   // Fetch case line details by ID for Processing records
   const fetchCaseLineDetails = useCallback(async (caseLineId: string) => {
     try {
@@ -952,6 +1059,11 @@ const TechnicianDashboard = ({
           setSelectedCaseLine(mappedCaseLine);
         }
         setUpdateCaseLineModalOpen(false);
+        
+        // Refetch Issue Diagnosis case-lines to show latest data
+        if (activeTab === 'issue-diagnosis') {
+          await fetchIssueDiagnosisCaseLines(issueDiagnosisPage);
+        }
         
         return response.data;
       } else {
@@ -1953,6 +2065,13 @@ const TechnicianDashboard = ({
     }
   };
 
+  // useEffect to fetch Issue Diagnosis case-lines when tab or page changes
+  useEffect(() => {
+    if (activeTab === 'issue-diagnosis') {
+      fetchIssueDiagnosisCaseLines(issueDiagnosisPage);
+    }
+  }, [activeTab, issueDiagnosisPage, fetchIssueDiagnosisCaseLines]);
+
   // useEffect hooks to call API
 
   // Load data on component mount
@@ -2574,7 +2693,7 @@ const TechnicianDashboard = ({
             </div>
           </TabsContent>
 
-          {/* Issue Diagnosis Tab - show created case lines (no modal) */}
+          {/* Issue Diagnosis Tab - show all case lines from server */}
           <TabsContent value="issue-diagnosis">
             <div className="space-y-6">
               <Card>
@@ -2584,145 +2703,187 @@ const TechnicianDashboard = ({
                     Issue Diagnosis
                   </CardTitle>
                   <CardDescription>
-                    Case lines you created from the Create Issue Diagnosis form.
+                    All case lines from the server - Showing {issueDiagnosisTotal} total case lines
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {createdCaseLines.length === 0 ? (
+                  {isLoadingIssueDiagnosis ? (
+                    <div className="text-center py-8 text-slate-500">
+                      <RefreshCw className="h-8 w-8 mx-auto mb-2 text-slate-300 animate-spin" />
+                      <p>Loading case lines...</p>
+                    </div>
+                  ) : issueDiagnosisCaseLines.length === 0 ? (
                     <div className="text-center py-8 text-slate-500">
                       <AlertCircle className="h-8 w-8 mx-auto mb-2 text-slate-300" />
-                      <p>No created case lines yet</p>
+                      <p>No case lines found</p>
                     </div>
                   ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Case Line ID</TableHead>
-                          <TableHead>Guarantee Case</TableHead>
-                          <TableHead>Component ID</TableHead>
-                          <TableHead>Quantity</TableHead>
-                          <TableHead>Warranty Status</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Created At</TableHead>
-                          <TableHead>Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {createdCaseLines.map((cl) => (
-                          <TableRow key={cl.caseLineId}>
-                            <TableCell className="font-mono text-xs">{cl.caseLineId?.substring(0,8)}...</TableCell>
-                            <TableCell>{cl.guaranteeCaseId || 'N/A'}</TableCell>
-                            <TableCell className="font-mono text-sm">{cl.componentId || '—'}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="font-semibold">{cl.quantity ?? 0}</Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={cl.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}>{cl.warrantyStatus || 'N/A'}</Badge>
-                            </TableCell>
-                            <TableCell>{cl.status || 'N/A'}</TableCell>
-                            <TableCell>{formatSafeDate(cl.createdAt)}</TableCell>
-                            <TableCell>
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={async () => {
-                                    try {
-                                      const id = cl.caseLineId || '';
-                                      if (!id) {
-                                        toast({ title: 'Error', description: 'Invalid case line id', variant: 'destructive' });
-                                        return;
-                                      }
-
-                                      // Load full details and open view modal
-                                      const details = await fetchCaseLineDetails(id);
-                                      if (details) {
-                                        setSelectedCaseLine(details as any);
-                                        setViewCaseLineModalOpen(true);
-                                      } else {
-                                        toast({ title: 'Not found', description: 'Case line details not found', variant: 'destructive' });
-                                      }
-                                    } catch (err) {
-                                      console.error('Failed to load case line details from Issue Diagnosis tab', err);
-                                      toast({ title: 'Error', description: 'Failed to load case line details', variant: 'destructive' });
-                                    }
-                                  }}
-                                  title="View Case"
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={async () => {
-                                    // Open Update modal pre-filled with case line details
-                                    try {
-                                      const id = cl.caseLineId || '';
-                                      if (!id) {
-                                        toast({ title: 'Error', description: 'Invalid case line id', variant: 'destructive' });
-                                        return;
-                                      }
-                                      const details = await fetchCaseLineDetails(id);
-                                      if (!details) {
-                                        toast({ title: 'Not found', description: 'Case line details not found', variant: 'destructive' });
-                                        return;
-                                      }
-
-                                      setSelectedCaseLine(details as any);
-
-                                      const typeComponentId = details.typeComponentId || details.typeComponent?.typeComponentId || cl.componentId || '';
-
-                                      const formData = {
-                                        correctionText: details.correctionText || '',
-                                        typeComponentId: typeComponentId,
-                                        quantity: details.quantity || 0,
-                                        warrantyStatus: details.warrantyStatus || 'ELIGIBLE',
-                                        rejectionReason: details.rejectionReason || ''
-                                      };
-
-                                      if (typeComponentId) {
-                                        setUpdateComponentSearchQuery(details.componentName || details.typeComponent?.name || '');
-                                      } else {
-                                        setUpdateComponentSearchQuery('');
-                                      }
-
-                                      setUpdateCaseLineForm(formData);
-
-                                      // If we can find the record id, fetch compatible components
-                                      const recordId = details.guaranteeCase?.vehicleProcessingRecord?.vehicleProcessingRecordId || details.guaranteeCase?.vehicleProcessingRecord?.recordId || details.guaranteeCase?.vehicleProcessingRecord?.id;
-                                      if (recordId) {
-                                        await fetchCompatibleComponents(recordId.toString(), '');
-                                      }
-
-                                      setUpdateCaseLineModalOpen(true);
-                                    } catch (err) {
-                                      console.error('Failed to open update modal for case line', err);
-                                      toast({ title: 'Error', description: 'Failed to prepare update form', variant: 'destructive' });
-                                    }
-                                  }}
-                                  title="Update"
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => {
-                                    setCaseLineToDelete(cl.caseLineId || '');
-                                    setDeleteCaseLineModalOpen(true);
-                                  }}
-                                  title="Delete"
-                                >
-                                  <Trash className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
+                    <>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Case Line ID</TableHead>
+                            <TableHead>Guarantee Case</TableHead>
+                            <TableHead>Warranty Status</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Created At</TableHead>
+                            <TableHead>Actions</TableHead>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHeader>
+                        <TableBody>
+                          {issueDiagnosisCaseLines.map((cl) => (
+                            <TableRow key={cl.id}>
+                              <TableCell className="font-mono text-xs">{cl.id}</TableCell>
+                              <TableCell>
+                                {cl.guaranteeCase ? (
+                                  <div className="space-y-1">
+                                    <div className="font-mono text-xs">{cl.guaranteeCase.caseNumber}</div>
+                                    <div className="text-xs text-muted-foreground">{cl.guaranteeCase.contentGuarantee}</div>
+                                    {/* VIN intentionally hidden in Issue Diagnosis list */}
+                                  </div>
+                                ) : 'N/A'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={cl.warrantyStatus === 'ELIGIBLE' ? 'default' : 'destructive'}>{cl.warrantyStatus || 'N/A'}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={getCaseLineBadgeVariant(cl.status)}>
+                                  {getCaseLineStatusLabel(cl.status)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{formatSafeDate(cl.createdAt || cl.createdDate)}</TableCell>
+                              <TableCell>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={async () => {
+                                      try {
+                                        const id = cl.id || '';
+                                        if (!id) {
+                                          toast({ title: 'Error', description: 'Invalid case line id', variant: 'destructive' });
+                                          return;
+                                        }
+
+                                        // Load full details and open view modal
+                                        const details = await fetchCaseLineDetails(id);
+                                        if (details) {
+                                          setSelectedCaseLine(details as any);
+                                          setViewCaseLineModalOpen(true);
+                                        } else {
+                                          toast({ title: 'Not found', description: 'Case line details not found', variant: 'destructive' });
+                                        }
+                                      } catch (err) {
+                                        console.error('Failed to load case line details from Issue Diagnosis tab', err);
+                                        toast({ title: 'Error', description: 'Failed to load case line details', variant: 'destructive' });
+                                      }
+                                    }}
+                                    title="View Case"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={async () => {
+                                      // Open Update modal pre-filled with case line details
+                                      try {
+                                        const id = cl.id || '';
+                                        if (!id) {
+                                          toast({ title: 'Error', description: 'Invalid case line id', variant: 'destructive' });
+                                          return;
+                                        }
+                                        const details = await fetchCaseLineDetails(id);
+                                        if (!details) {
+                                          toast({ title: 'Not found', description: 'Case line details not found', variant: 'destructive' });
+                                          return;
+                                        }
+
+                                        setSelectedCaseLine(details as any);
+
+                                        const typeComponentId = details.typeComponentId || details.typeComponent?.typeComponentId || cl.typeComponentId || '';
+
+                                        const formData = {
+                                          correctionText: details.correctionText || '',
+                                          typeComponentId: typeComponentId,
+                                          quantity: details.quantity || 0,
+                                          warrantyStatus: details.warrantyStatus || 'ELIGIBLE',
+                                          rejectionReason: details.rejectionReason || ''
+                                        };
+
+                                        if (typeComponentId) {
+                                          setUpdateComponentSearchQuery(details.componentName || details.typeComponent?.name || '');
+                                        } else {
+                                          setUpdateComponentSearchQuery('');
+                                        }
+
+                                        setUpdateCaseLineForm(formData);
+
+                                        // If we can find the record id, fetch compatible components
+                                        const recordId = details.guaranteeCase?.vehicleProcessingRecord?.vehicleProcessingRecordId || details.guaranteeCase?.vehicleProcessingRecord?.recordId || details.guaranteeCase?.vehicleProcessingRecord?.id;
+                                        if (recordId) {
+                                          await fetchCompatibleComponents(recordId.toString(), '');
+                                        }
+
+                                        setUpdateCaseLineModalOpen(true);
+                                      } catch (err) {
+                                        console.error('Failed to open update modal for case line', err);
+                                        toast({ title: 'Error', description: 'Failed to prepare update form', variant: 'destructive' });
+                                      }
+                                    }}
+                                    title="Update"
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => {
+                                      setCaseLineToDelete(cl.id || '');
+                                      setDeleteCaseLineModalOpen(true);
+                                    }}
+                                    title="Delete"
+                                  >
+                                    <Trash className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+
+                      {/* Pagination Controls */}
+                      {issueDiagnosisTotalPages > 1 && (
+                        <div className="flex items-center justify-between mt-4">
+                          <div className="text-sm text-muted-foreground">
+                            Page {issueDiagnosisPage} of {issueDiagnosisTotalPages} ({issueDiagnosisTotal} total)
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setIssueDiagnosisPage(prev => Math.max(1, prev - 1))}
+                              disabled={issueDiagnosisPage === 1 || isLoadingIssueDiagnosis}
+                            >
+                              <ChevronLeft className="h-4 w-4 mr-1" />
+                              Previous
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setIssueDiagnosisPage(prev => Math.min(issueDiagnosisTotalPages, prev + 1))}
+                              disabled={issueDiagnosisPage === issueDiagnosisTotalPages || isLoadingIssueDiagnosis}
+                            >
+                              Next
+                              <ChevronRight className="h-4 w-4 ml-1" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>
